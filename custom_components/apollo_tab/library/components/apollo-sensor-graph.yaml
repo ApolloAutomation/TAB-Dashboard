@@ -1,0 +1,25 @@
+schema: 1
+id: apollo/sensor-graph
+version: 1.0.0
+name: Sensor graph
+description: The last 24 hours of a sensor as a line.
+icon: mdi:chart-line
+size: 2x1
+params:
+  entity:
+    domain: sensor
+inputs:
+  history:
+    source: recorder
+    entity: "{{ entity }}"
+    hours: 24
+  reading: "{{ states(entity) }}"
+layout:
+  - type: chart
+    value: history
+  - type: label
+    text: "{{ reading }}"
+preview:
+  inputs:
+    history: [19.2, 19.4, 19.3, 19.9, 20.4, 20.2, 20.9, 21.3, 21.1, 21.7, 21.9, 21.4]
+    reading: "21.4"

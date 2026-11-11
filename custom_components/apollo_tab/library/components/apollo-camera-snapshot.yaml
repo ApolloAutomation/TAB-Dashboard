@@ -1,0 +1,30 @@
+schema: 1
+id: apollo/camera-snapshot
+version: 1.0.0
+name: Camera snapshot
+description: A still image from a camera that refreshes every few seconds.
+icon: mdi:cctv
+header: false
+size: 2x1
+params:
+  entity:
+    domain: camera
+inputs:
+  snapshot:
+    source: camera
+    entity: "{{ entity }}"
+    refresh: 10s
+  name: "{{ state_attr(entity, 'friendly_name') }}"
+outputs:
+  open_live:
+    local: open_live
+layout:
+  - type: image
+    value: snapshot
+    on_tap: open_live
+  - type: label
+    text: "{{ name }}"
+preview:
+  inputs:
+    snapshot: mdi:cctv
+    name: Driveway

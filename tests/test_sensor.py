@@ -1,10 +1,11 @@
 """Tests for the dashboard engine sensor and device registry tracking."""
 
 import logging
+from unittest.mock import patch
 
 import pytest
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import EventBus, HomeAssistant
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
@@ -120,7 +121,8 @@ async def test_child_device_created_and_removed(
 
     assert hass.states.async_entity_ids("sensor") == sensor_ids
     for record in caplog.records:
-        if record.levelno < logging.WARNING:
+        # The http dependency warns when it has no fast zlib in this environment.
+        if record.levelno < logging.WARNING or record.name == "aiohttp_fast_zlib":
             continue
         assert "has not been tested by Home Assistant" in record.getMessage()
 
@@ -443,3 +445,38 @@ async def test_not_installed_state_translation(hass: HomeAssistant) -> None:
     key = "component.apollo_tab.entity.sensor.dashboard_engine.state.not_installed"
     translations = await async_get_translations(hass, "en", "entity", {DOMAIN})
     assert translations[key] == "Not installed"
+
+
+async def test_stale_reconcile_after_reload_adds_nothing(
+    hass: HomeAssistant,
+    device_registry: dr.DeviceRegistry,
+    config_entry: MockConfigEntry,
+    add_tablet: AddTablet,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A deferred reconcile from before a reload must not add sensors again."""
+    add_tablet()
+    captured = []
+    real_listen = EventBus.async_listen
+
+    def spy(self, event_type, listener, *args, **kwargs):
+        if event_type == dr.EVENT_DEVICE_REGISTRY_UPDATED and getattr(
+            listener, "__module__", ""
+        ).endswith("apollo_tab.sensor"):
+            captured.append(listener)
+        return real_listen(self, event_type, listener, *args, **kwargs)
+
+    with patch.object(EventBus, "async_listen", spy):
+        await setup_integration(hass, config_entry)
+    assert len(captured) == 1
+
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    add_tablet(mac="AA:BB:CC:DD:EE:02", name="Hall Tablet")
+    await setup_integration(hass, config_entry)
+
+    caplog.clear()
+    captured[0](None)  # the old setup's listener, as if its event arrived late
+    await hass.async_block_till_done()
+
+    assert "does not generate unique IDs" not in caplog.text

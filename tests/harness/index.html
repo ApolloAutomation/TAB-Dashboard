@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Apollo TAB-1 harness</title>
+  <style>
+    :root {
+      --primary-text-color: #e8eaed;
+      --secondary-text-color: #9aa0a8;
+      --primary-background-color: #101418;
+      --card-background-color: #181c23;
+      --divider-color: #39414d;
+      --primary-color: #f5b547;
+      --text-primary-color: #101418;
+      --error-color: #db4437;
+      font-family: system-ui, sans-serif;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--primary-background-color);
+      color: var(--primary-text-color);
+    }
+    #app {
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .cards-grid {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 20px;
+    }
+    .sample {
+      display: grid;
+      gap: 8px;
+    }
+    .sample-label {
+      font-size: 13px;
+      color: var(--secondary-text-color);
+    }
+    .editor-shell {
+      width: min(560px, 100%);
+      margin: 0 auto;
+      padding: 20px;
+      border-radius: 12px;
+      background: var(--card-background-color);
+    }
+  </style>
+</head>
+<body>
+  <main id="app"></main>
+  <script type="module">
+    import { createMockHass } from "./mock-hass.js";
+
+    const fixtures = await fetch("./fixtures.json").then((response) => response.json());
+    const mock = createMockHass(fixtures);
+    mock.connection.sendMessagePromise = mock.callWS.bind(mock);
+    window.hassConnection = Promise.resolve({ conn: mock.connection });
+    window.__apolloFixtures = fixtures;
+    window.__apolloMockHass = mock;
+
+    await import("../../custom_components/apollo_tab/frontend/apollo-tab.js");
+
+    const query = new URLSearchParams(location.search);
+    const view = query.get("view") || "cards";
+    const themeId = query.get("theme") || "midnight";
+    const theme = fixtures.themes.find((entry) => entry.id === themeId) || fixtures.themes[0];
+    const app = document.getElementById("app");
+
+    function cardSample(fixture, title, eventOverride) {
+      const wrap = document.createElement("section");
+      wrap.className = "sample";
+
+      const label = document.createElement("div");
+      label.className = "sample-label";
+      label.textContent = title || fixture.init.name || fixture.id;
+
+      const card = document.createElement("apollo-tab-card");
+      const width = fixture.init.w || 376;
+      const height = fixture.init.h || 184;
+      card.style.width = `${width}px`;
+      card.style.height = `${height}px`;
+
+      const config = {
+        ...(fixture.card || {}),
+        component: fixture.id,
+        title: title || fixture.init.name || fixture.id,
+      };
+      if (eventOverride) {
+        config.__scenario = eventOverride;
+      }
+      card.setConfig(config);
+      card.hass = mock;
+      wrap.append(label, card);
+      return wrap;
+    }
+
+    async function renderCards() {
+      document.body.style.background = theme.wall;
+      const grid = document.createElement("div");
+      grid.className = "cards-grid";
+      for (const fixture of fixtures.cards) {
+        grid.append(cardSample(fixture));
+      }
+      app.append(grid);
+    }
+
+    async function renderStates() {
+      document.body.style.background = theme.wall;
+      const grid = document.createElement("div");
+      grid.className = "cards-grid";
+      const light = fixtures.cards.find((entry) => entry.id.includes("light-tile")) || fixtures.cards[0];
+      const slider = fixtures.cards.find((entry) => entry.id.includes("slider")) || fixtures.cards[0];
+
+      grid.append(
+        cardSample(light, "off", "off"),
+        cardSample(light, "on", "on"),
+        cardSample(slider, "zero", "zero"),
+        cardSample(slider, "half", "half"),
+        cardSample(slider, "full", "full"),
+        cardSample(light, "subscription error", "error"),
+        cardSample(light, "slot error", "slot-error"),
+        cardSample(light, "example", "example"),
+        cardSample(light, "missing entity", "missing"),
+        cardSample(light, "custom colour", "custom-color"),
+        cardSample(light, "vertical gradient", "vertical"),
+        cardSample(light, "horizontal gradient", "horizontal"),
+        cardSample(light, "transparency", "transparency"),
+        cardSample(light, "custom accent", "accent"),
+      );
+      app.append(grid);
+    }
+
+    async function renderEditor() {
+      const shell = document.createElement("div");
+      shell.className = "editor-shell";
+      const editor = document.createElement("apollo-tab-card-editor");
+      const fixture =
+        fixtures.cards.find((entry) => entry.id === "apollo/light-slider") ||
+        fixtures.cards.find((entry) => entry.id.includes("slider")) ||
+        fixtures.cards[0];
+      editor.setConfig({
+        type: "custom:apollo-tab-card",
+        component: fixture.id,
+        params: fixture.card?.params || {},
+        grid_options: fixture.card?.grid_options || { columns: 12, rows: 3 },
+      });
+      editor.hass = mock;
+      shell.append(editor);
+      app.append(shell);
+    }
+
+    async function renderPreview() {
+      const preview = document.createElement("apollo-tab-preview");
+      preview.hass = mock;
+      preview.dashboard = fixtures.layout.url_path || "tab-1";
+      app.append(preview);
+    }
+
+    async function renderPanel() {
+      const panel = document.createElement("apollo-tab-panel");
+      panel.hass = mock;
+      panel.narrow = false;
+      panel.route = {};
+      panel.panel = {};
+      app.replaceWith(panel);
+    }
+
+    if (view === "cards") {
+      await renderCards();
+    } else if (view === "states") {
+      await renderStates();
+    } else if (view === "editor") {
+      await renderEditor();
+    } else if (view === "preview") {
+      await renderPreview();
+    } else if (view === "panel") {
+      await renderPanel();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+schema: 1
+id: apollo/light-tile
+version: 1.0.0
+name: Light tile
+description: Turn a light on or off and see its brightness.
+icon: mdi:lightbulb
+size: 1x1
+params:
+  entity:
+    domain: light
+inputs:
+  state: "{{ states(entity) }}"
+  brightness: "{{ state_attr(entity, 'brightness') | int(0) * 100 // 255 }}"
+outputs:
+  toggle:
+    action: light.toggle
+    data:
+      entity_id: "{{ entity }}"
+    feedback: optimistic
+layout:
+  - type: switch
+    value: state
+    on_tap: toggle
+  - type: label
+    text: "{{ brightness }}%"
+preview:
+  inputs:
+    state: "on"
+    brightness: 80

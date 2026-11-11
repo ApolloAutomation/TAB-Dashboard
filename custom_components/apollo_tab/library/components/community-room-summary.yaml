@@ -1,0 +1,37 @@
+schema: 1
+id: community/room-summary
+version: 1.0.0
+name: Room summary
+description: Temperature, humidity and lights for one room, with a link to its page.
+icon: mdi:sofa
+header: false
+size: 2x1
+params:
+  temperature_sensor:
+    domain: sensor
+  humidity_sensor:
+    domain: sensor
+  lights:
+    domain: light
+    multiple: true
+  page:
+    type: page
+inputs:
+  temperature: "{{ states(temperature_sensor) }}"
+  humidity: "{{ states(humidity_sensor) }}"
+  lights_on: "{{ expand(lights) | selectattr('state', 'eq', 'on') | list | count }}"
+outputs:
+  go_to_page:
+    local: go_to_page
+    page: "{{ page }}"
+layout:
+  - type: label
+    text: "{{ temperature }}° · {{ humidity }}% · {{ lights_on }} lights on"
+  - type: button
+    text: View room
+    on_tap: go_to_page
+preview:
+  inputs:
+    temperature: "21.5"
+    humidity: "46"
+    lights_on: 2

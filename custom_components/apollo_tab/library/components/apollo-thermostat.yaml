@@ -1,0 +1,50 @@
+schema: 1
+id: apollo/thermostat
+version: 1.0.0
+name: Thermostat
+description: Set one target temperature and see what the heating is doing. Low and high target modes (heat_cool) are not supported yet.
+icon: mdi:thermostat
+size: 2x2
+params:
+  entity:
+    domain: climate
+inputs:
+  target: "{{ state_attr(entity, 'temperature') }}"
+  current: "{{ state_attr(entity, 'current_temperature') }}"
+  action: "{{ state_attr(entity, 'hvac_action') or states(entity) }}"
+  low: "{{ state_attr(entity, 'min_temp') | float(7) }}"
+  high: "{{ state_attr(entity, 'max_temp') | float(35) }}"
+  step: "{{ state_attr(entity, 'target_temp_step') | float(0.5) }}"
+outputs:
+  set_target:
+    action: climate.set_temperature
+    data:
+      entity_id: "{{ entity }}"
+      temperature: "{{ value }}"
+    feedback: progress
+  set_mode:
+    action: climate.set_hvac_mode
+    data:
+      entity_id: "{{ entity }}"
+      hvac_mode: heat
+    feedback: progress
+layout:
+  - type: thermostat
+    value: target
+    min: "{{ low }}"
+    max: "{{ high }}"
+    step: "{{ step }}"
+    on_change: set_target
+  - type: button
+    text: Heat
+    on_tap: set_mode
+  - type: label
+    text: "Now {{ current if current is not none else '–' }}° · {{ action }}"
+preview:
+  inputs:
+    target: 21.5
+    current: 20.8
+    action: heating
+    low: 7
+    high: 35
+    step: 0.5

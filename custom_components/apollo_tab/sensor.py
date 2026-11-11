@@ -1,7 +1,7 @@
 """Dashboard engine status sensor, one per tablet."""
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -28,6 +28,15 @@ async def async_setup_entry(
     # Unique IDs of the sensors this platform has added. A unique ID holds the
     # MAC, so a tablet keeps one sensor even if its device ID changes.
     added: set[str] = set()
+    unloaded = False
+
+    @callback
+    def mark_unloaded() -> None:
+        """Block deferred reconciles from adding entities after unload."""
+        nonlocal unloaded
+        unloaded = True
+
+    entry.async_on_unload(mark_unloaded)
 
     @callback
     def reconcile() -> None:
@@ -41,11 +50,9 @@ async def async_setup_entry(
                 entity_registry.async_remove(entity_id)
             added.discard(unique_id)
 
-        # A deferred call can run after unload, when the platform is gone.
-        can_add = entry.state in (
-            ConfigEntryState.SETUP_IN_PROGRESS,
-            ConfigEntryState.LOADED,
-        )
+        # A deferred call can run after this setup was unloaded, even when the
+        # entry has been set up again since.
+        can_add = not unloaded
         for unique_id, device in wanted.items():
             if unique_id not in added:
                 if can_add:

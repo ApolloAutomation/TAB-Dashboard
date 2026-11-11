@@ -1,0 +1,36 @@
+schema: 1
+id: apollo/fan
+version: 1.0.0
+name: Fan
+description: Turn a fan on or off, or set it to half speed.
+icon: mdi:fan
+size: 1x1
+params:
+  entity:
+    domain: fan
+inputs:
+  state: "{{ states(entity) }}"
+  percentage: "{{ state_attr(entity, 'percentage') or 0 }}"
+outputs:
+  toggle:
+    action: fan.toggle
+    data:
+      entity_id: "{{ entity }}"
+    feedback: optimistic
+  set_percentage:
+    action: fan.set_percentage
+    data:
+      entity_id: "{{ entity }}"
+      percentage: 50
+    feedback: optimistic
+layout:
+  - type: switch
+    value: state
+    on_tap: toggle
+  - type: button
+    text: "50%"
+    on_tap: set_percentage
+preview:
+  inputs:
+    state: "on"
+    percentage: 50

@@ -1,0 +1,66 @@
+schema: 1
+id: apollo/media-player
+version: 1.0.0
+name: Media player
+description: Artwork, track title, transport buttons and volume.
+icon: mdi:speaker
+header: false
+size: 2x1
+params:
+  entity:
+    domain: media_player
+inputs:
+  title: "{{ state_attr(entity, 'media_title') or '' }}"
+  artist: "{{ state_attr(entity, 'media_artist') or '' }}"
+  state: "{{ states(entity) }}"
+  volume: "{{ ((state_attr(entity, 'volume_level') or 0) * 100) | int }}"
+  artwork: "{{ state_attr(entity, 'entity_picture_local') or state_attr(entity, 'entity_picture') or 'mdi:music-note' }}"
+outputs:
+  play_pause:
+    action: media_player.media_play_pause
+    data:
+      entity_id: "{{ entity }}"
+    feedback: optimistic
+  next:
+    action: media_player.media_next_track
+    data:
+      entity_id: "{{ entity }}"
+    feedback: optimistic
+  previous:
+    action: media_player.media_previous_track
+    data:
+      entity_id: "{{ entity }}"
+    feedback: optimistic
+  set_volume:
+    action: media_player.volume_set
+    data:
+      entity_id: "{{ entity }}"
+      volume_level: "{{ value | float / 100 }}"
+    feedback: optimistic
+layout:
+  - type: image
+    value: artwork
+    side: true
+  - type: label
+    text: "{{ title }} · {{ artist }}"
+  - type: button
+    icon: mdi:skip-previous
+    on_tap: previous
+  - type: button
+    icon: mdi:play-pause
+    on_tap: play_pause
+  - type: button
+    icon: mdi:skip-next
+    on_tap: next
+  - type: slider
+    value: volume
+    min: 0
+    max: 100
+    on_change: set_volume
+preview:
+  inputs:
+    title: Soft focus
+    artist: Mara Lind
+    state: playing
+    volume: 35
+    artwork: mdi:music-note
