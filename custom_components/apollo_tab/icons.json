@@ -1,0 +1,9 @@
+{
+  "entity": {
+    "sensor": {
+      "dashboard_engine": {
+        "default": "mdi:view-dashboard-outline"
+      }
+    }
+  }
+}

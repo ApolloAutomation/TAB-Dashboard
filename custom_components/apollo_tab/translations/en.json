@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Finds the Apollo TAB-1 tablets that are already set up through ESPHome and adds a dashboard engine status sensor to each one. There is nothing to configure."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "dashboard_engine": {
+        "name": "Dashboard engine",
+        "state": {
+          "not_installed": "Not installed"
+        }
+      }
+    }
+  }
+}
