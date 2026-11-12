@@ -14,10 +14,74 @@ from custom_components.apollo_tab.maker.convert import (
 )
 from custom_components.apollo_tab.maker.geometry import SCREEN_H, SCREEN_W
 from custom_components.apollo_tab.maker.schema import validate_component
+from tests.harness.build_fixtures import _sample_dashboard
 
 LIBRARY = (
     Path(__file__).resolve().parents[1] / "custom_components" / "apollo_tab" / "library"
 )
+
+# The hash of the sample dashboard's layout before sources were added; the
+# layout is the tablet payload, so recording sources must not change it.
+SAMPLE_HASH = "eca2d5d9d42b262f"
+
+# A dashboard saved by the first release's own editor: a heading, a Bubble
+# Card the tablet cannot draw, and the old "Tablet preview" view.
+REAL_DASHBOARD = {
+    "apollo_tab": {"version": 1, "theme": "midnight"},
+    "views": [
+        {
+            "type": "sections",
+            "title": "Home",
+            "path": "home",
+            "icon": "mdi:home",
+            "max_columns": 3,
+            "sections": [
+                {
+                    "type": "grid",
+                    "cards": [
+                        {"type": "heading", "heading": "Home"},
+                        {
+                            "type": "custom:bubble-card",
+                            "card_type": "button",
+                            "entity": "fan.bedroom_main_bedroom_fan",
+                            "sub_button": {
+                                "bottom": [
+                                    {
+                                        "name": "Controls",
+                                        "group": [
+                                            {
+                                                "sub_button_type": "slider",
+                                                "name": "Fan speed",
+                                                "show_background": False,
+                                                "always_visible": True,
+                                                "hide_when_parent_unavailable": True,
+                                            },
+                                            {
+                                                "name": "More info",
+                                                "icon": "mdi:chevron-right",
+                                                "show_background": False,
+                                                "state_background": False,
+                                                "fill_width": False,
+                                            },
+                                        ],
+                                    }
+                                ]
+                            },
+                            "grid_options": {"rows": "1.656", "columns": 6},
+                        },
+                    ],
+                }
+            ],
+        },
+        {
+            "type": "panel",
+            "title": "Tablet preview",
+            "path": "preview",
+            "icon": "mdi:tablet",
+            "cards": [{"type": "custom:apollo-tab-preview"}],
+        },
+    ],
+}
 
 SENSITIVE_RAW = {
     "id": "me/vault-lock",
@@ -910,3 +974,186 @@ def test_infinite_column_span_is_one_column() -> None:
     assert _span(float("inf")) == 1
     assert _span(float("-inf")) == 1
     assert _span(float("nan")) == 1
+
+
+def top_level_ids(layout):
+    """Return the ids of every heading and card drawn on the layout's pages."""
+    return [widget["id"] for page in layout["pages"] for widget in page["w"]]
+
+
+def test_sources_map_cards_and_headings(components, themes):
+    """Every drawn heading and card id maps to its view, section and card."""
+    config = make_dashboard(
+        [
+            {
+                "cards": [
+                    {"type": "heading", "heading": "Kitchen"},
+                    tab_card("apollo/light-tile", params={"entity": "light.kitchen"}),
+                    tab_card("apollo/fan", params={"entity": "fan.kitchen"}),
+                ]
+            }
+        ]
+    )
+    result = convert(config, components, themes)
+    widgets = result["layout"]["pages"][0]["w"]
+    assert [widget["t"] for widget in widgets] == ["heading", "card", "card"]
+    assert result["sources"] == {
+        str(widget["id"]): [0, 0, ci] for ci, widget in enumerate(widgets)
+    }
+    assert set(result["sources"]) == {str(i) for i in top_level_ids(result["layout"])}
+
+
+def test_sources_section_title_has_no_card_index(components, themes):
+    """A heading drawn from a section title has no card index."""
+    config = make_dashboard(
+        [
+            {"cards": [tab_card("apollo/fan", params={"entity": "fan.hall"})]},
+            {
+                "title": "Lights",
+                "cards": [
+                    tab_card("apollo/light-tile", params={"entity": "light.hall"})
+                ],
+            },
+        ]
+    )
+    result = convert(config, components, themes)
+    widgets = {widget["id"]: widget for widget in result["layout"]["pages"][0]["w"]}
+    [heading_id] = [i for i, widget in widgets.items() if widget["t"] == "heading"]
+    assert widgets[heading_id]["text"] == "Lights"
+    assert result["sources"][str(heading_id)] == [0, 1, None]
+    assert sorted(result["sources"].values(), key=str) == sorted(
+        [[0, 0, 0], [0, 1, None], [0, 1, 0]], key=str
+    )
+
+
+def test_sources_skip_cards_that_are_left_out(components, themes):
+    """Cards the tablet does not draw have no entry in sources."""
+    graphs = [
+        {"cards": [tab_card("apollo/sensor-graph", params={"entity": f"sensor.g{n}"})]}
+        for n in range(1, 5)
+    ]
+    config = make_dashboard(
+        [
+            {
+                "cards": [
+                    {"type": "custom:bubble-card", "entity": "fan.bedroom"},
+                    tab_card("apollo/no-such-card", params={"entity": "light.k"}),
+                    tab_card("apollo/sensor-graph", params={"entity": "sensor.g0"}),
+                ]
+            },
+            *graphs,
+        ]
+    )
+    result = convert(config, components, themes)
+    codes = {
+        (w["section"], w["card"]): w["code"]
+        for w in result["warnings"]
+        if w["card"] is not None
+    }
+    assert codes == {
+        (0, 0): "not_tab_element",
+        (0, 1): "unknown_component",
+        (4, 0): "over_budget_charts",
+    }
+    drawn = result["sources"].values()
+    assert [0, 0, 0] not in drawn
+    assert [0, 0, 1] not in drawn
+    assert [0, 4, 0] not in drawn
+    assert sorted(drawn) == [[0, 0, 2], [0, 1, 0], [0, 2, 0], [0, 3, 0]]
+    assert set(result["sources"]) == {str(i) for i in top_level_ids(result["layout"])}
+
+
+def test_sources_follow_cards_onto_later_screens(components, themes):
+    """Cards of a split section keep their own address on the later screen."""
+    tiles = [
+        tab_card("apollo/light-tile", params={"entity": f"light.l{n}"})
+        for n in range(24)
+    ]
+    config = make_dashboard(
+        [{"title": "Lights", "column_span": 3, "cards": tiles}],
+        path="home",
+        title="Home",
+    )
+    result = convert(config, components, themes)
+    assert [w["code"] for w in result["warnings"]] == ["section_split"]
+    first, second = result["layout"]["pages"]
+    assert (first["id"], second["id"]) == ("home", "home-2")
+    sources = result["sources"]
+    first_cards = [sources[str(w["id"])] for w in first["w"] if w["t"] == "card"]
+    second_cards = [sources[str(w["id"])] for w in second["w"] if w["t"] == "card"]
+    assert first_cards == [[0, 0, ci] for ci in range(18)]
+    assert second_cards == [[0, 0, ci] for ci in range(18, 24)]
+    headings = [
+        sources[str(w["id"])]
+        for page in (first, second)
+        for w in page["w"]
+        if w["t"] == "heading"
+    ]
+    assert headings == [[0, 0, None], [0, 0, None]]
+
+
+def test_sources_leave_layout_and_hash_unchanged(components, themes):
+    """Recording sources changes neither the layout nor its hash."""
+    result = convert(_sample_dashboard(), components, themes)
+    layout = result["layout"]
+    assert layout["hash"] == SAMPLE_HASH
+    assert layout_hash(layout) == SAMPLE_HASH
+    text = json.dumps(layout)
+    for key in ('"vi"', '"si"', '"ci"', '"sources"'):
+        assert key not in text
+    assert set(result["sources"]) == {str(i) for i in top_level_ids(layout)}
+    for source in result["sources"].values():
+        assert len(source) == 3
+
+
+def test_real_dashboard_keeps_heading_and_reports_other_card(components, themes):
+    """The owner's dashboard keeps its heading and names the Bubble Card."""
+    result = convert(REAL_DASHBOARD, components, themes)
+    layout = result["layout"]
+    assert [page["id"] for page in layout["pages"]] == ["home"]
+    [heading] = layout["pages"][0]["w"]
+    assert heading["t"] == "heading"
+    assert heading["text"] == "Home"
+    assert result["sources"] == {"1": [0, 0, 0]}
+    assert result["warnings"] == [
+        {
+            "code": "not_tab_element",
+            "view": 0,
+            "section": 0,
+            "card": 1,
+            "page": None,
+            "r": None,
+            "detail": "custom:bubble-card",
+        }
+    ]
+
+
+def test_empty_full_width_page_has_no_screen(components, themes):
+    """A new dashboard's one empty page gives no screen and no warnings."""
+    config = make_dashboard(
+        [{"type": "grid", "column_span": 3, "cards": []}],
+        title="Home",
+        path="home",
+        icon="mdi:home",
+    )
+    result = convert(config, components, themes)
+    assert result["layout"]["pages"] == []
+    assert result["layout"]["nav"] == []
+    assert result["warnings"] == []
+    assert result["sources"] == {}
+
+
+def test_full_width_section_flows_six_units(components, themes):
+    """A full-width section fits six one-unit cards across the screen."""
+    tiles = [
+        tab_card("apollo/light-tile", params={"entity": f"light.l{n}"})
+        for n in range(7)
+    ]
+    config = make_dashboard([{"type": "grid", "column_span": 3, "cards": tiles}])
+    result = convert(config, components, themes)
+    assert result["warnings"] == []
+    rects = [widget["r"] for widget in result["layout"]["pages"][0]["w"]]
+    assert [r[0] for r in rects[:6]] == [100, 292, 484, 676, 868, 1060]
+    assert {r[1] for r in rects[:6]} == {20}
+    assert rects[6][:2] == [100, 20 + 3 * 64]
+    assert [r[2:] for r in rects] == [[184, 184]] * 7

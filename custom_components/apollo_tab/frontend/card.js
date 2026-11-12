@@ -12,14 +12,11 @@ import {
   dashboardFromPath,
   feedbackReduce,
   isOn,
-  pickStubParams,
   resolveBound,
   subscriptionKey,
 } from "./logic.js";
 import { cardTokens, renderCard } from "./render.js";
 import { cardStyles, rendererStyles } from "./styles.js";
-
-const DOCUMENTATION_URL = "https://github.com/ApolloAutomation/TAB-Dashboard";
 
 function makeElement(tag, className) {
   const element = document.createElement(tag);
@@ -66,27 +63,6 @@ function valueSlot(widget) {
 export class ApolloTabCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("apollo-tab-card-editor");
-  }
-
-  static getStubConfig(hass, entities, entitiesFallback) {
-    const library = getCachedLibrary();
-    const component = library?.components?.[0];
-    if (!component) {
-      return { component: "apollo/light-tile", params: {} };
-    }
-    return {
-      component: component.id,
-      params: pickStubParams(
-        component.params,
-        hass?.states || {},
-        entities || [],
-        entitiesFallback || [],
-      ),
-      grid_options: {
-        columns: component.grid?.columns,
-        rows: component.grid?.rows,
-      },
-    };
   }
 
   constructor() {
@@ -700,6 +676,10 @@ export class ApolloTabCard extends HTMLElement {
   }
 }
 
+// Defines one element per library card, so dashboards that use an alias
+// type such as custom:apollo-tab-el-apollo-light-tile keep rendering. They
+// are not listed in Home Assistant's card picker: TAB-1 cards are added in
+// the TAB-1 panel.
 export function defineAliases(library) {
   for (const component of library?.components || []) {
     const tag = aliasTag(component.id);
@@ -707,46 +687,11 @@ export function defineAliases(library) {
     if (!customElements.get(tag)) {
       const fixedComponent = component;
       class ApolloTabAlias extends ApolloTabCard {
-        static getStubConfig(hass, entities, entitiesFallback) {
-          return {
-            type: "custom:apollo-tab-card",
-            component: fixedComponent.id,
-            params: pickStubParams(
-              fixedComponent.params,
-              hass?.states || {},
-              entities || [],
-              entitiesFallback || [],
-            ),
-            grid_options: {
-              columns: fixedComponent.grid?.columns,
-              rows: fixedComponent.grid?.rows,
-            },
-          };
-        }
-
         setConfig(config) {
           super.setConfig({ ...config, component: fixedComponent.id });
         }
       }
       customElements.define(tag, ApolloTabAlias);
     }
-  }
-
-  // Home Assistant keeps a reference to this array, so change it in place.
-  window.customCards = window.customCards || [];
-  for (let index = window.customCards.length - 1; index >= 0; index -= 1) {
-    if (String(window.customCards[index].type || "").startsWith("apollo-tab-el-")) {
-      window.customCards.splice(index, 1);
-    }
-  }
-
-  for (const component of library?.components || []) {
-    window.customCards.push({
-      type: aliasTag(component.id),
-      name: `TAB-1 ${component.name}`,
-      description: component.description,
-      preview: true,
-      documentationURL: DOCUMENTATION_URL,
-    });
   }
 }

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import yaml
 from homeassistant.core import HomeAssistant
 
 from custom_components.apollo_tab.library import Library
@@ -308,3 +310,32 @@ async def test_user_folder_created(
     library = Library(hass)
     await library.async_load()
     assert folder.is_dir()
+
+
+BUILTIN_DIR = (
+    Path(__file__).parent.parent
+    / "custom_components"
+    / "apollo_tab"
+    / "library"
+    / "components"
+)
+
+# Words from Home Assistant's insides that the people choosing a card do not
+# use, and names written with underscores.
+JARGON = re.compile(
+    r"\b(cover|covers|entity|entities|domain|domains|hvac|transport|component|"
+    r"components)\b|\b[a-z0-9]+_[a-z0-9_]+\b",
+    re.IGNORECASE,
+)
+
+
+def test_builtin_cards_are_described_in_plain_words() -> None:
+    """The picker shows each built-in card's name and description as is."""
+    offenders = []
+    for path in sorted(BUILTIN_DIR.glob("*.yaml")):
+        card = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for key in ("name", "description"):
+            text = card.get(key, "")
+            if JARGON.search(text):
+                offenders.append(f"{path.name} {key}: {text}")
+    assert offenders == []

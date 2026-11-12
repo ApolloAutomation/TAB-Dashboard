@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -20,6 +21,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.apollo_tab import manager as manager_module
+from custom_components.apollo_tab.maker.convert import convert_dashboard
 
 from .conftest import setup_integration
 
@@ -338,3 +340,55 @@ async def test_yaml_future_mtime_browser_load_does_not_loop(
             await asyncio.sleep(0.05)
     assert manager.layouts["tab-yaml"]["layout"]["hash"] != first
     assert loads <= 2
+
+
+async def test_preview_returns_layout_values_and_sources(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A preview converts a draft, evaluates its slots and maps its cards."""
+    await setup_integration(hass, config_entry)
+    hass.states.async_set("light.kitchen", "on")
+    manager = config_entry.runtime_data.manager
+    preview = await manager.async_preview(TAB_CONFIG)
+    assert set(preview) == {"layout", "warnings", "values", "sources"}
+    library = config_entry.runtime_data.library
+    expected = convert_dashboard(
+        TAB_CONFIG,
+        components=library.components,
+        themes=library.themes,
+        approved=library.approved_ids(),
+    )
+    assert preview["layout"] == expected["layout"]
+    assert preview["warnings"] == []
+    assert preview["sources"] == {"1": [0, 0, 0]}
+    slots = expected["bindings"]["slots"]
+    assert set(preview["values"]) == {str(slot["n"]) for slot in slots}
+    assert "on" in preview["values"].values()
+
+
+async def test_preview_stores_nothing_and_tells_no_listener(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    tab_dashboard: Callable[..., Awaitable[Any]],
+    hass_storage: dict[str, Any],
+) -> None:
+    """A preview leaves the stored layouts, the store and listeners alone."""
+    await setup_integration(hass, config_entry)
+    await tab_dashboard(TAB_CONFIG)
+    manager = config_entry.runtime_data.manager
+    before = copy.deepcopy(manager.layouts)
+    events: list[tuple[str, str]] = []
+    manager.async_listen(lambda kind, path: events.append((kind, path)))
+    with patch.object(manager, "_async_save") as save:
+        preview = await manager.async_preview(WARM_CONFIG)
+        await hass.async_block_till_done()
+    assert preview["layout"]["theme"]["id"] == "warm"
+    assert manager.layouts == before
+    assert manager.theme_for("tab-1") == "midnight"
+    assert events == []
+    save.assert_not_called()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
+    await hass.async_block_till_done()
+    stored = hass_storage["apollo_tab.layouts"]["data"]
+    assert stored["tab-1"]["layout"]["theme"]["id"] == "midnight"

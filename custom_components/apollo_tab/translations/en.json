@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "description": "Adds a TAB-1 panel to the sidebar where you create dashboards for the Apollo TAB-1, and TAB-1 elements to the dashboard card picker. It also finds the TAB-1 tablets that are already set up through ESPHome. Layouts are not sent to tablets yet. There is nothing to configure."
+        "description": "Adds a TAB-1 panel to the sidebar, where you build dashboards for the Apollo TAB-1 tablet and see what the tablet will show. It also finds the TAB-1 tablets that are already set up through ESPHome. Dashboards are not sent to tablets yet. There is nothing to configure."
       }
     }
   },

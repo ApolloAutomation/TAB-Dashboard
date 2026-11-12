@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const frontend = path.resolve(here, "../../custom_components/apollo_tab/frontend");
 const logicPath = path.join(frontend, "logic.js");
+const modelPath = path.join(frontend, "model.js");
 
 const expected = [
   "HEX_RE",
@@ -27,16 +28,10 @@ const expected = [
   "aliasTag",
   "dashboardFromPath",
   "subscriptionKey",
-  "gridForSize",
-  "sizePreset",
-  "pickStubParams",
-  "paramsSchema",
   "styleToForm",
   "formToStyle",
   "cleanConfig",
   "feedbackReduce",
-  "nextDashboardPath",
-  "starterConfig",
   "warningText",
   "warningPlace",
 ];
@@ -44,6 +39,103 @@ const expected = [
 test("logic module exports the complete public surface", async () => {
   const module = await import(pathToFileURL(logicPath));
   for (const name of expected) {
+    assert.equal(Object.hasOwn(module, name), true, `missing export ${name}`);
+  }
+});
+
+const removed = [
+  "gridForSize",
+  "sizePreset",
+  "pickStubParams",
+  "paramsSchema",
+  "nextDashboardPath",
+  "starterConfig",
+];
+
+test("logic module no longer exports the old editor helpers", async () => {
+  const module = await import(pathToFileURL(logicPath));
+  for (const name of removed) {
+    assert.equal(Object.hasOwn(module, name), false, `unexpected export ${name}`);
+  }
+});
+
+const modelExpected = [
+  "CARD_TYPE",
+  "PREVIEW_TYPE",
+  "ALIAS_PREFIX",
+  "UNIT_COLUMNS",
+  "UNIT_ROWS",
+  "MAX_UNITS_HIGH",
+  "MAX_UNITS_WIDE",
+  "MAX_ENTITIES",
+  "HISTORY_LIMIT",
+  "DEFAULT_THEME",
+  "GROUP_IDS",
+  "PAGE_ICONS",
+  "stableStringify",
+  "sameConfig",
+  "sourceKey",
+  "parseSourceKey",
+  "slugPath",
+  "newDashboardConfig",
+  "newPage",
+  "nextDashboardPath",
+  "nextDashboardTitle",
+  "mergeDashboards",
+  "isGridSection",
+  "sectionSpan",
+  "pageKind",
+  "pageList",
+  "componentOf",
+  "cardKind",
+  "isAllowed",
+  "cardEntities",
+  "otherEntities",
+  "getCard",
+  "usesWholeScreen",
+  "pageScreens",
+  "pageItems",
+  "pageNotes",
+  "dashboardNotes",
+  "notShownCounts",
+  "addPage",
+  "renamePage",
+  "setPageIcon",
+  "movePage",
+  "removePage",
+  "addCard",
+  "updateCard",
+  "cardSize",
+  "maxUnitsWide",
+  "resizeCard",
+  "moveItem",
+  "canMove",
+  "removeItem",
+  "setHeadingText",
+  "setTheme",
+  "useWholeScreen",
+  "groupOf",
+  "pickerGroups",
+  "paramFields",
+  "singleEntityParam",
+  "entityChoices",
+  "paramsComplete",
+  "pageChoices",
+  "hexToRgb",
+  "styleDefaults",
+  "createHistory",
+  "historyPush",
+  "historyUndo",
+  "historyRedo",
+  "canUndo",
+  "canRedo",
+  "SaveQueue",
+  "classifyRemote",
+];
+
+test("model module exports the complete public surface", async () => {
+  const module = await import(pathToFileURL(modelPath));
+  for (const name of modelExpected) {
     assert.equal(Object.hasOwn(module, name), true, `missing export ${name}`);
   }
 });

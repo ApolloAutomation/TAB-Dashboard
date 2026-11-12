@@ -2,7 +2,7 @@ schema: 1
 id: apollo/media-player
 version: 1.0.0
 name: Media player
-description: Artwork, track title, transport buttons and volume.
+description: What is playing, with its picture, play, pause and skip buttons, and the volume.
 icon: mdi:speaker
 header: false
 size: 2x1

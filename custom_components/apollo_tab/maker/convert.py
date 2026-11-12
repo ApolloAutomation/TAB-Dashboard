@@ -58,13 +58,16 @@ def convert_dashboard(
     themes: Mapping[str, dict],
     approved: Set[str],
 ) -> dict:
-    """Return {"layout": ..., "bindings": ..., "warnings": [...]}.
+    """Return {"layout": ..., "bindings": ..., "warnings": [...], "sources": {...}}.
 
-    Never raises for bad dashboards.
+    sources maps the id of every heading and card drawn on a page, as a
+    string, to the [view, section, card] it came from. Never raises for bad
+    dashboards.
     """
     if not isinstance(config, dict):
         config = {}
     warnings: list[dict] = []
+    sources: dict[str, list] = {}
     options = _options(config, warnings)
     theme_id = options.get("theme", DEFAULT_THEME)
     theme = themes.get(theme_id) or themes.get(DEFAULT_THEME) or {}
@@ -111,10 +114,15 @@ def convert_dashboard(
         "screen": [SCREEN_W, SCREEN_H],
         "theme": {"id": theme_id, **theme},
         "nav": nav,
-        "pages": _number_pages(pages, bindings),
+        "pages": _number_pages(pages, bindings, sources),
     }
     layout["hash"] = layout_hash(layout)
-    return {"layout": layout, "bindings": bindings, "warnings": warnings}
+    return {
+        "layout": layout,
+        "bindings": bindings,
+        "warnings": warnings,
+        "sources": sources,
+    }
 
 
 def _options(config: dict, warnings: list[dict]) -> dict:
@@ -489,14 +497,21 @@ def _apply_caps(page: dict, warnings: list[dict]) -> None:
     page["items"] = kept
 
 
-def _number_pages(pages: list[dict], bindings: dict) -> list[dict]:
-    """Assign widget ids and slot numbers, returning the layout pages."""
+def _number_pages(
+    pages: list[dict], bindings: dict, sources: dict[str, list]
+) -> list[dict]:
+    """Assign widget ids and slot numbers, returning the layout pages.
+
+    Records in sources where each numbered heading and card came from, so
+    the layout itself does not need to carry that.
+    """
     slot_numbers: dict[str, int] = {}
     out_pages = []
     next_id = 1
     for page in pages:
         widgets = []
         for item in page["items"]:
+            sources[str(next_id)] = [item["vi"], item["si"], item["ci"]]
             if item["kind"] == "heading":
                 built: dict[str, Any] = {
                     "id": next_id,

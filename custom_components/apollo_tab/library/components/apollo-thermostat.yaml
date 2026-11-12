@@ -2,7 +2,7 @@ schema: 1
 id: apollo/thermostat
 version: 1.0.0
 name: Thermostat
-description: Set one target temperature and see what the heating is doing. Low and high target modes (heat_cool) are not supported yet.
+description: Set one target temperature and see what the heating is doing. Heating and cooling together, with a low and a high target, is not supported yet.
 icon: mdi:thermostat
 size: 2x2
 params:

@@ -1,5 +1,6 @@
 """The apollo_tab websocket commands."""
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -14,6 +15,8 @@ from .tablets import async_get_tablets
 
 if TYPE_CHECKING:
     from . import ApolloTabData
+
+_LOGGER = logging.getLogger(__name__)
 
 # Card subscriptions per websocket connection.
 MAX_CARD_SUBSCRIPTIONS = 100
@@ -292,6 +295,42 @@ async def websocket_layout_get(
 
 @websocket_api.require_admin
 @websocket_api.websocket_command(
+    {
+        probatio.Required("type"): "apollo_tab/layout/preview",
+        probatio.Required("config"): dict,
+    }
+)
+@websocket_api.async_response
+async def websocket_layout_preview(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Convert an unsaved dashboard config and return what a tablet would show.
+
+    Nothing is stored, so the editor can preview a draft before it is saved.
+    """
+    if (data := _loaded_data(hass, connection, msg["id"])) is None:
+        return
+    try:
+        preview = await data.manager.async_preview(msg["config"])
+    except Exception:
+        _LOGGER.exception("Preview conversion failed")
+        connection.send_error(
+            msg["id"], "conversion_failed", "The dashboard could not be converted"
+        )
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "layout": json_safe(preview["layout"]),
+            "warnings": json_safe(preview["warnings"]),
+            "values": json_safe(preview["values"]),
+            "sources": json_safe(preview["sources"]),
+        },
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
     {probatio.Required("type"): "apollo_tab/layout/subscribe"}
 )
 @websocket_api.async_response
@@ -329,7 +368,7 @@ async def websocket_layout_subscribe(
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    """Register the ten commands of the websocket API."""
+    """Register the eleven commands of the websocket API."""
     websocket_api.async_register_command(hass, websocket_strings)
     websocket_api.async_register_command(hass, websocket_library)
     websocket_api.async_register_command(hass, websocket_library_subscribe)
@@ -339,4 +378,5 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_card_call)
     websocket_api.async_register_command(hass, websocket_dashboards)
     websocket_api.async_register_command(hass, websocket_layout_get)
+    websocket_api.async_register_command(hass, websocket_layout_preview)
     websocket_api.async_register_command(hass, websocket_layout_subscribe)

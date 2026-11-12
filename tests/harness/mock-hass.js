@@ -5,6 +5,7 @@ function defineStandIns() {
         this._icon = value;
         this.title = value || "";
         this.style.display = "inline-block";
+        this.style.flex = "0 0 auto";
         this.style.width = "1em";
         this.style.height = "1em";
         this.style.borderRadius = "3px";
@@ -18,55 +19,32 @@ function defineStandIns() {
     customElements.define("ha-icon", HaIcon);
   }
 
+  // Like Home Assistant's own: it decides for itself whether to show, and
+  // shows a 48 px button only when the window is narrow or the sidebar is
+  // set to always hidden. Otherwise it draws nothing and takes no room.
   if (!customElements.get("ha-menu-button")) {
     class HaMenuButton extends HTMLElement {
-      connectedCallback() {
-        this.textContent = "☰";
-      }
-    }
-    customElements.define("ha-menu-button", HaMenuButton);
-  }
-
-  const params = new URLSearchParams(location.search);
-  if (params.get("haform") !== "0" && !customElements.get("ha-form")) {
-    class HaForm extends HTMLElement {
       constructor() {
         super();
         this.attachShadow({ mode: "open" });
-        this._data = {};
-        this._schema = [];
-      }
-
-      set data(value) {
-        this._data = value || {};
-        this._draw();
-      }
-
-      get data() {
-        return this._data;
-      }
-
-      set schema(value) {
-        this._schema = value || [];
-        this._draw();
-      }
-
-      get schema() {
-        return this._schema;
       }
 
       set hass(value) {
         this._hass = value;
-      }
-
-      set computeLabel(value) {
-        this._computeLabel = value;
         this._draw();
       }
 
-      set computeHelper(value) {
-        this._computeHelper = value;
+      get hass() {
+        return this._hass;
+      }
+
+      set narrow(value) {
+        this._narrow = Boolean(value);
         this._draw();
+      }
+
+      get narrow() {
+        return Boolean(this._narrow);
       }
 
       connectedCallback() {
@@ -74,149 +52,77 @@ function defineStandIns() {
       }
 
       _draw() {
-        if (!this.shadowRoot || !this.isConnected) {
-          return;
-        }
-
-        this.shadowRoot.replaceChildren();
-        const style = document.createElement("style");
-        style.textContent = `
-          :host { display: grid; gap: 10px; }
-          label { display: grid; gap: 5px; }
-          input, select { min-height: 38px; padding: 7px; }
-          small { color: #9aa0a8; }
-        `;
-        this.shadowRoot.append(style);
-
-        for (const item of this._schema) {
-          const label = document.createElement("label");
-          const text = document.createElement("span");
-          text.textContent = this._computeLabel?.(item) || item.name;
-          label.append(text);
-
-          const control = this._control(item);
-          label.append(control);
-
-          const helper = this._computeHelper?.(item);
-          if (helper) {
-            const small = document.createElement("small");
-            small.textContent = helper;
-            label.append(small);
-          }
-          this.shadowRoot.append(label);
-        }
-      }
-
-      _control(item) {
-        let control;
-        const selector = item.selector || {};
-
-        if (selector.select) {
-          control = document.createElement("select");
-          for (const entry of selector.select.options || []) {
-            const option = document.createElement("option");
-            option.value = typeof entry === "string" ? entry : entry.value;
-            option.textContent = typeof entry === "string" ? entry : entry.label;
-            control.append(option);
-          }
-          control.value = this._data[item.name] ?? "";
-        } else {
-          control = document.createElement("input");
-
-          if (selector.boolean) {
-            control.type = "checkbox";
-            control.checked = Boolean(this._data[item.name]);
-          } else if (selector.number) {
-            control.type = selector.number.mode === "slider" ? "range" : "number";
-            if (selector.number.min !== undefined) control.min = selector.number.min;
-            if (selector.number.max !== undefined) control.max = selector.number.max;
-            if (selector.number.step !== undefined) control.step = selector.number.step;
-            control.value = this._data[item.name] ?? selector.number.min ?? 0;
-          } else if (selector.color_rgb) {
-            control.type = "color";
-            const rgb = this._data[item.name] || [0, 0, 0];
-            control.value = `#${rgb
-              .map((part) => Number(part).toString(16).padStart(2, "0"))
-              .join("")}`;
-          } else {
-            control.type = "text";
-            const value = this._data[item.name];
-            control.value = Array.isArray(value) ? value.join(", ") : value ?? "";
-          }
-        }
-
-        const eventName =
-          control.type === "text" || control.type === "number" || control.type === "range"
-            ? "input"
-            : "change";
-
-        control.addEventListener(eventName, () => {
-          const next = { ...this._data };
-          if (selector.boolean) {
-            next[item.name] = control.checked;
-          } else if (selector.number) {
-            next[item.name] = Number(control.value);
-          } else if (selector.color_rgb) {
-            next[item.name] = [
-              Number.parseInt(control.value.slice(1, 3), 16),
-              Number.parseInt(control.value.slice(3, 5), 16),
-              Number.parseInt(control.value.slice(5, 7), 16),
-            ];
-          } else if (selector.entity?.multiple) {
-            next[item.name] = control.value
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean);
-          } else {
-            next[item.name] = control.value;
-          }
-
-          this._data = next;
-          this.dispatchEvent(
-            new CustomEvent("value-changed", {
-              detail: { value: next },
-              bubbles: true,
-              composed: true,
-            }),
-          );
-        });
-
-        return control;
+        const show = this._narrow || this._hass?.dockedSidebar === "always_hidden";
+        this.shadowRoot.innerHTML = show
+          ? `<style>:host { position: relative; } button { display: block; width: 48px; height: 48px;
+              border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 22px; }</style>
+             <button type="button" aria-label="Sidebar toggle">☰</button>`
+          : "<style>:host { position: relative; }</style>";
       }
     }
-    customElements.define("ha-form", HaForm);
+    customElements.define("ha-menu-button", HaMenuButton);
   }
 }
 
-function sampleStates() {
-  const ids = [
-    "light.kitchen",
-    "light.living_room",
-    "light.bedroom",
-    "switch.fan",
-    "switch.coffee",
-    "climate.hall",
-    "sensor.temperature",
-    "sensor.energy",
-    "sensor.humidity",
-    "camera.front_door",
-    "lock.front_door",
-    "alarm_control_panel.home",
-  ];
+const STATES = [
+  ["light.kitchen", "on", "Kitchen"],
+  ["light.living_room", "off", "Living room"],
+  ["light.bedroom", "on", "Bedroom lamp"],
+  ["light.hidden_helper", "off", "Hidden helper"],
+  ["switch.fan", "off", "Fan switch"],
+  ["switch.coffee", "on", "Coffee machine"],
+  ["fan.bedroom_main_bedroom_fan", "on", "Bedroom fan"],
+  ["climate.hall", "heat", "Hall"],
+  ["cover.lounge", "open", "Lounge blinds"],
+  ["media_player.den", "playing", "Den speaker"],
+  ["weather.home", "sunny", "Home"],
+  ["scene.movie", "scening", "Movie night"],
+  ["scene.dinner", "scening", "Dinner"],
+  ["person.sam", "home", "Sam"],
+  ["sensor.temperature", "21.5", "Temperature"],
+  ["sensor.energy", "3.2", "Energy"],
+  ["sensor.humidity", "48", "Humidity"],
+  ["camera.front_door", "idle", "Front door camera"],
+  ["lock.front_door", "locked", "Front door"],
+  ["alarm_control_panel.home", "disarmed", "House alarm"],
+];
 
+function sampleStates() {
   return Object.fromEntries(
-    ids.map((entityId, index) => [
+    STATES.map(([entityId, state, name]) => [
       entityId,
-      {
-        entity_id: entityId,
-        state: index % 2 ? "off" : "on",
-        attributes: {
-          friendly_name: entityId.split(".")[1].replaceAll("_", " "),
-        },
-      },
+      { entity_id: entityId, state, attributes: { friendly_name: name } },
     ]),
   );
 }
+
+const AREAS = {
+  kitchen: { area_id: "kitchen", name: "Kitchen" },
+  bedroom: { area_id: "bedroom", name: "Bedroom" },
+};
+
+const ENTITIES = {
+  "light.kitchen": { entity_id: "light.kitchen", area_id: "kitchen" },
+  "light.bedroom": { entity_id: "light.bedroom", area_id: "bedroom" },
+  "fan.bedroom_main_bedroom_fan": { entity_id: "fan.bedroom_main_bedroom_fan", area_id: "bedroom" },
+  "light.hidden_helper": { entity_id: "light.hidden_helper", hidden: true },
+};
+
+// A lock card from the user's folder that has not been allowed yet.
+const DOOR_LOCK = {
+  id: "me/door-lock",
+  tag: "apollo-tab-el-me-door-lock",
+  name: "Door lock",
+  description: "A lock card from your folder.",
+  icon: "mdi:lock",
+  version: "1.0.0",
+  size: [1, 1],
+  grid: { columns: 6, rows: 3 },
+  source: "user",
+  sensitive: true,
+  approved: false,
+  params: { entity: { kind: "entity", domain: "lock", multiple: false } },
+};
 
 // The tokens the integration sends for a card with no style of its own.
 function plainStyle(theme) {
@@ -240,11 +146,16 @@ function setSwitch(init, values, value) {
   setBound(init, "on", values, value);
 }
 
+function hasParams(card) {
+  return Boolean(card?.params && typeof card.params === "object" && Object.keys(card.params).length);
+}
+
 function scenarioEvents(fixture, card, themes) {
   const scenario = card.__scenario;
   const init = structuredClone(fixture.init);
   const values = structuredClone(fixture.values || {});
-  const themeId = new URLSearchParams(location.search).get("theme");
+  const query = new URLSearchParams(location.search);
+  const themeId = card.style?.theme || query.get("theme");
   const theme = themes.find((entry) => entry.id === themeId) || themes[0] || {};
   let style = { ...plainStyle(theme), ...structuredClone(fixture.styles?.[scenario] || {}) };
 
@@ -258,7 +169,8 @@ function scenarioEvents(fixture, card, themes) {
     ];
   }
 
-  if (scenario === "example") {
+  // Like the integration, a card without its settings shows example values.
+  if (scenario === "example" || (!scenario && !hasParams(card))) {
     init.demo = true;
   }
 
@@ -301,80 +213,254 @@ function scenarioEvents(fixture, card, themes) {
   ];
 }
 
-export function createMockHass(fixtures) {
+function fail(code, message = code) {
+  return Object.assign(new Error(message), { code });
+}
+
+// options.seed: "none", "sample" (default) or "real" (uses options.realConfig).
+// options.community adds a lock card from the user's folder to the library.
+export function createMockHass(fixtures, options = {}) {
   defineStandIns();
 
   const listeners = new Set();
   const calls = [];
-  const configs = new Map();
-  for (const dashboard of fixtures.dashboards?.dashboards || []) {
-    configs.set(dashboard.url_path, {
-      apollo_tab: { version: 1, theme: dashboard.theme || "midnight" },
-      views: [],
-    });
+  const library = structuredClone(fixtures.library);
+  if (options.community) {
+    library.components.push(structuredClone(DOOR_LOCK));
   }
+
+  // A small in-memory stand-in for Home Assistant's storage dashboards.
+  const dashboards = new Map();
+  let counter = 0;
+  let failingSaves = 0;
+  let saveDelay = 0;
+  let lostAnswers = 0;
+  const failing = new Map();
+  // down: the connection is lost. waiting: commands sent meanwhile.
+  // underWay: commands sent and not answered yet.
+  const connection = { down: false, waiting: [], underWay: new Set() };
+
+  const addDashboard = (urlPath, title, config, showInSidebar) => {
+    dashboards.set(urlPath, {
+      id: urlPath.replaceAll("-", "_"),
+      url_path: urlPath,
+      title,
+      icon: "mdi:tablet-dashboard",
+      mode: "storage",
+      show_in_sidebar: showInSidebar,
+      require_admin: false,
+      config: config ? structuredClone(config) : null,
+    });
+  };
+
+  const seed = options.seed || "sample";
+  if (seed === "sample") {
+    addDashboard("tab-1", "TAB-1", fixtures.sample_config, false);
+  } else if (seed === "real") {
+    addDashboard("tab-1", "TAB-1", options.realConfig, true);
+  }
+
+  const emit = (type, event) => {
+    for (const record of [...listeners]) {
+      if (record.message.type === type) {
+        record.callback(event);
+      }
+    }
+  };
+
+  const emitLayout = (event) => emit("apollo_tab/layout/subscribe", event);
+
+  const itemOf = (dashboard) => {
+    const { config: _config, ...item } = dashboard;
+    return structuredClone(item);
+  };
+
+  const byId = (id) => [...dashboards.values()].find((entry) => entry.id === id);
+
+  // announce: false stores without the event, as for a browser whose
+  // connection is down at the time.
+  const store = (urlPath, config, announce = true) => {
+    const dashboard = dashboards.get(urlPath);
+    dashboard.config = structuredClone(config);
+    if (!announce) {
+      return;
+    }
+    queueMicrotask(() =>
+      emitLayout({ type: "converted", url_path: urlPath, hash: String(++counter), warnings: 0 }),
+    );
+  };
+
+  // Listeners for the connection's own events, such as "ready".
+  const connectionListeners = new Map();
+
+  // Like the integration, "pages" is the number of screens in the converted
+  // layout: a page with no cards gives none, a long page gives several.
+  const tabDashboards = async () => {
+    const list = [];
+    for (const dashboard of dashboards.values()) {
+      const config = dashboard.config;
+      const settings = config?.apollo_tab;
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+        continue;
+      }
+      const converted = await preview(config);
+      list.push({
+        url_path: dashboard.url_path,
+        title: dashboard.title,
+        mode: dashboard.mode,
+        theme: typeof settings.theme === "string" ? settings.theme : "midnight",
+        pages: converted.layout.pages.length,
+        warnings: converted.warnings.length,
+        hash: converted.layout.hash,
+      });
+    }
+    return { dashboards: list, tablets: 0, sent_to_tablets: false };
+  };
+
+  const preview = async (config) => {
+    const response = await fetch(`${location.origin}/api/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    if (!response.ok) {
+      throw fail("conversion_failed", "The dashboard could not be converted");
+    }
+    return response.json();
+  };
 
   const hass = {
     states: sampleStates(),
+    areas: structuredClone(AREAS),
+    devices: {},
+    entities: structuredClone(ENTITIES),
     user: { is_admin: true },
     language: "en",
     panels: {},
+    // "docked", "always_hidden" or "auto", as the person set the sidebar.
+    dockedSidebar: "docked",
     calls,
-    async callWS(message) {
-      calls.push(structuredClone(message));
-
-      if (message.type === "apollo_tab/strings") {
-        return { strings: fixtures.strings };
+    // Like Home Assistant's websocket library: a command sent while the
+    // connection is down waits and goes out once it is back, and one under
+    // way when the connection drops is answered with code 3, "Connection
+    // lost", whether or not it reached Home Assistant.
+    callWS(message) {
+      if (connection.down) {
+        return new Promise((resolve, reject) => connection.waiting.push({ message, resolve, reject }));
       }
-      if (message.type === "apollo_tab/library") {
-        return fixtures.library;
-      }
-      if (message.type === "apollo_tab/library/reload") {
-        return {
-          components: fixtures.library.components.length,
-          errors: fixtures.library.errors?.length || 0,
+      return new Promise((resolve, reject) => {
+        const entry = { resolve, reject };
+        connection.underWay.add(entry);
+        const settle = (answer) => {
+          if (connection.underWay.delete(entry)) {
+            answer();
+          }
         };
-      }
-      if (message.type === "apollo_tab/library/approve") {
-        const component = fixtures.library.components.find(
-          (entry) => entry.id === message.component_id,
+        hass.answerWS(message).then(
+          (value) => settle(() => resolve(value)),
+          (error) => settle(() => reject(error)),
         );
-        if (!component) {
-          throw Object.assign(new Error("Not found"), { code: "not_found" });
-        }
-        component.approved = message.approved;
-        return { approved: message.approved };
-      }
-      if (message.type === "apollo_tab/dashboards") {
-        return fixtures.dashboards;
-      }
-      if (message.type === "apollo_tab/layout/get") {
-        if (message.url_path !== fixtures.layout.url_path) {
-          throw Object.assign(new Error("Not found"), { code: "not_found" });
-        }
-        return fixtures.layout;
-      }
-      if (message.type === "apollo_tab/card/call") {
-        return { ok: true };
-      }
-      if (message.type === "lovelace/dashboards/list") {
-        return fixtures.dashboards?.dashboards || [];
-      }
-      if (message.type === "lovelace/dashboards/create") {
-        configs.set(message.url_path, { views: [] });
-        return null;
-      }
-      if (message.type === "lovelace/config") {
-        return structuredClone(configs.get(message.url_path) || { views: [] });
-      }
-      if (message.type === "lovelace/config/save") {
-        configs.set(message.url_path, structuredClone(message.config));
-        return null;
+      });
+    },
+    async answerWS(message) {
+      calls.push(structuredClone(message));
+      const failures = failing.get(message.type) || 0;
+      if (failures > 0) {
+        failing.set(message.type, failures - 1);
+        throw fail("error", "Fixture error");
       }
 
-      throw Object.assign(new Error(`Unsupported command: ${message.type}`), {
-        code: "unsupported",
-      });
+      switch (message.type) {
+        case "apollo_tab/strings":
+          return { strings: fixtures.strings };
+        case "apollo_tab/library":
+          return structuredClone(library);
+        case "apollo_tab/library/reload":
+          return { components: library.components.length, errors: library.errors?.length || 0 };
+        case "apollo_tab/library/approve": {
+          const component = library.components.find((entry) => entry.id === message.component_id);
+          if (!component) {
+            throw fail("not_found", "Not found");
+          }
+          component.approved = message.approved;
+          return { approved: message.approved };
+        }
+        case "apollo_tab/dashboards":
+          return tabDashboards();
+        case "apollo_tab/layout/get":
+          if (message.url_path !== fixtures.layout.url_path) {
+            throw fail("not_found", "Not found");
+          }
+          return fixtures.layout;
+        case "apollo_tab/layout/preview":
+          return preview(message.config);
+        case "apollo_tab/card/call":
+          return { ok: true };
+        case "lovelace/dashboards/list":
+          return [...dashboards.values()].map(itemOf);
+        case "lovelace/dashboards/create": {
+          const urlPath = message.url_path;
+          if (typeof urlPath !== "string" || !urlPath.includes("-") || dashboards.has(urlPath)) {
+            throw fail("invalid_format", "Invalid url_path");
+          }
+          addDashboard(urlPath, message.title, null, message.show_in_sidebar !== false);
+          const dashboard = dashboards.get(urlPath);
+          dashboard.icon = message.icon ?? dashboard.icon;
+          dashboard.mode = message.mode ?? dashboard.mode;
+          dashboard.require_admin = Boolean(message.require_admin);
+          return itemOf(dashboard);
+        }
+        case "lovelace/dashboards/update": {
+          const dashboard = byId(message.dashboard_id);
+          if (!dashboard) {
+            throw fail("not_found", "Dashboard not found");
+          }
+          for (const key of ["title", "icon", "show_in_sidebar", "require_admin"]) {
+            if (key in message) {
+              dashboard[key] = message[key];
+            }
+          }
+          return itemOf(dashboard);
+        }
+        case "lovelace/dashboards/delete": {
+          const dashboard = byId(message.dashboard_id);
+          if (!dashboard) {
+            throw fail("not_found", "Dashboard not found");
+          }
+          dashboards.delete(dashboard.url_path);
+          queueMicrotask(() => emitLayout({ type: "removed", url_path: dashboard.url_path }));
+          return null;
+        }
+        case "lovelace/config": {
+          const dashboard = dashboards.get(message.url_path);
+          if (!dashboard || !dashboard.config) {
+            throw fail("config_not_found", "No config found.");
+          }
+          return structuredClone(dashboard.config);
+        }
+        case "lovelace/config/save": {
+          if (!dashboards.has(message.url_path)) {
+            throw fail("config_not_found", "No config found.");
+          }
+          if (failingSaves > 0) {
+            failingSaves -= 1;
+            throw fail("error", "Fixture save error");
+          }
+          // Like a slow connection: the config is stored when the answer
+          // comes back, not when the save is sent.
+          if (saveDelay > 0) {
+            await new Promise((resolve) => setTimeout(resolve, saveDelay));
+          }
+          store(message.url_path, message.config);
+          if (lostAnswers > 0) {
+            lostAnswers -= 1;
+            throw Object.assign(new Error("Connection lost"), { code: 3 });
+          }
+          return null;
+        }
+        default:
+          throw fail("unsupported", `Unsupported command: ${message.type}`);
+      }
     },
     connection: {
       async subscribeMessage(callback, message) {
@@ -394,11 +480,7 @@ export function createMockHass(fixtures) {
               });
               return;
             }
-            for (const event of scenarioEvents(
-              fixture,
-              message.card,
-              fixtures.themes || [],
-            )) {
+            for (const event of scenarioEvents(fixture, message.card, fixtures.themes || [])) {
               callback(event);
             }
           });
@@ -409,6 +491,99 @@ export function createMockHass(fixtures) {
       sendMessagePromise(message) {
         return hass.callWS(message);
       },
+      addEventListener(type, callback) {
+        if (!connectionListeners.has(type)) {
+          connectionListeners.set(type, new Set());
+        }
+        connectionListeners.get(type).add(callback);
+      },
+      removeEventListener(type, callback) {
+        connectionListeners.get(type)?.delete(callback);
+      },
+    },
+
+    // Test hooks for the scripted browser run.
+    externalSave(urlPath, config) {
+      if (!dashboards.has(urlPath)) {
+        throw fail("not_found", "Dashboard not found");
+      }
+      store(urlPath, config);
+    },
+    // Another browser saves while this one's connection is down: the change
+    // is stored, but no event about it reaches this browser.
+    saveWhileOffline(urlPath, config) {
+      if (!dashboards.has(urlPath)) {
+        throw fail("not_found", "Dashboard not found");
+      }
+      store(urlPath, config, false);
+    },
+    // Another browser deletes a dashboard while this one's connection is
+    // down: no "removed" event reaches this browser.
+    deleteWhileOffline(urlPath) {
+      if (!dashboards.delete(urlPath)) {
+        throw fail("not_found", "Dashboard not found");
+      }
+    },
+    // The connection drops: every command under way is answered with
+    // "Connection lost" (a save among them may still be stored, for
+    // example a slow one), and commands sent from now on wait.
+    dropConnection() {
+      connection.down = true;
+      for (const entry of [...connection.underWay]) {
+        connection.underWay.delete(entry);
+        entry.reject(Object.assign(new Error("Connection lost"), { code: 3 }));
+      }
+    },
+    // The connection comes back. Home Assistant's own connection then opens
+    // its subscriptions again and fires "ready"; nothing tells what changed.
+    // Commands that waited go out after that.
+    reconnect() {
+      connection.down = false;
+      for (const callback of [...(connectionListeners.get("ready") || [])]) {
+        callback(hass.connection);
+      }
+      const waiting = connection.waiting.splice(0);
+      setTimeout(() => {
+        for (const { message, resolve, reject } of waiting) {
+          hass.callWS(message).then(resolve, reject);
+        }
+      }, 50);
+    },
+    // The next `count` saves are stored, but their answer is lost with the
+    // connection: they fail with code 3, "Connection lost".
+    loseSaveAnswers(count) {
+      lostAnswers = Math.max(0, Number(count) || 0);
+    },
+    // How many listeners wait for the connection's "ready" event.
+    readyListeners() {
+      return connectionListeners.get("ready")?.size || 0;
+    },
+    failSaves(count) {
+      failingSaves = Math.max(0, Number(count) || 0);
+    },
+    // The next `count` calls of one command type fail.
+    failCalls(type, count) {
+      failing.set(type, Math.max(0, Number(count) || 0));
+    },
+    // Every later lovelace/config/save answers after `ms` milliseconds.
+    slowSaves(ms) {
+      saveDelay = Math.max(0, Number(ms) || 0);
+    },
+    addDashboard(urlPath, title, config) {
+      addDashboard(urlPath, title, config, false);
+    },
+    // A dashboard kept in a YAML file: listed, but not changeable here.
+    addYamlDashboard(urlPath, title, config) {
+      addDashboard(urlPath, title, config, false);
+      dashboards.get(urlPath).mode = "yaml";
+    },
+    getConfig(urlPath) {
+      const config = dashboards.get(urlPath)?.config;
+      return config ? structuredClone(config) : null;
+    },
+    getDashboard(urlPath) {
+      const dashboard = dashboards.get(urlPath);
+      return dashboard ? itemOf(dashboard) : null;
     },
   };
 

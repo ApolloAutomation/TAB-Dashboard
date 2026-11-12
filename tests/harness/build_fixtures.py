@@ -30,7 +30,7 @@ ERROR_SAMPLE = {
 }
 
 
-def _load_components():
+def load_components():
     """Load and validate every built-in Component file."""
     components = {}
     for path in sorted(COMPONENTS_DIR.glob("*.yaml")):
@@ -107,7 +107,7 @@ def _to_float(value, default=0.0):
         return default
 
 
-def _renderer():
+def renderer():
     """Return a sandboxed Jinja environment with Home Assistant stand-ins."""
     env = SandboxedEnvironment()
     env.globals["states"] = _states
@@ -129,7 +129,7 @@ def _coerce(text):
     return text
 
 
-def _render_slots(slots, env):
+def render_slots(slots, env):
     """Render every slot once into a values mapping keyed by slot number."""
     values = {}
     for slot in slots:
@@ -225,16 +225,22 @@ def _sample_dashboard():
     }
 
 
+def load_theme_entries():
+    """Load the bundled themes in file order."""
+    return json.loads((LIBRARY_DIR / "themes.json").read_text(encoding="utf-8"))
+
+
 def build() -> dict:
-    """Build the whole fixtures payload as a dictionary."""
-    strings = json.loads((LIBRARY_DIR / "strings.json").read_text(encoding="utf-8"))
-    theme_entries = json.loads(
-        (LIBRARY_DIR / "themes.json").read_text(encoding="utf-8")
-    )
+    """Build the whole fixtures payload as a dictionary.
+
+    The UI strings are not included: the harness page reads strings.json
+    itself, so changing a string never makes this file stale.
+    """
+    theme_entries = load_theme_entries()
     themes = {entry["id"]: entry for entry in theme_entries}
-    components = _load_components()
+    components = load_components()
     library = _library(components, theme_entries)
-    env = _renderer()
+    env = renderer()
     cards = []
     for entry in library["components"]:
         component = components[entry["id"]]
@@ -246,18 +252,20 @@ def build() -> dict:
                 "id": entry["id"],
                 "card": card_config,
                 "init": public_card(compiled),
-                "values": _render_slots(compiled.get("slots") or [], env),
+                "values": render_slots(compiled.get("slots") or [], env),
             }
         )
+    sample = _sample_dashboard()
     result = convert_dashboard(
-        _sample_dashboard(), components=components, themes=themes, approved=set()
+        sample, components=components, themes=themes, approved=set()
     )
     layout = result["layout"]
     layout_entry = {
         "url_path": "tab-1",
         "layout": layout,
         "warnings": result["warnings"],
-        "values": _render_slots(result["bindings"]["slots"], env),
+        "values": render_slots(result["bindings"]["slots"], env),
+        "sources": result["sources"],
     }
     dashboards = {
         "dashboards": [
@@ -275,18 +283,24 @@ def build() -> dict:
         "sent_to_tablets": False,
     }
     return {
-        "strings": strings,
         "themes": theme_entries,
         "library": library,
         "cards": cards,
+        "sample_config": sample,
         "layout": layout_entry,
         "dashboards": dashboards,
     }
 
 
 def render_text() -> str:
-    """Return the fixtures file content as deterministic JSON text."""
-    return json.dumps(build(), indent=1, sort_keys=True) + "\n"
+    """Return the fixtures file content as deterministic JSON text.
+
+    Keys keep the order they were built in, as Home Assistant's own JSON
+    does: a card's params stay in the order of its YAML file, which is the
+    order the forms show them in. The build is deterministic, so the text is
+    too.
+    """
+    return json.dumps(build(), indent=1) + "\n"
 
 
 def main() -> None:

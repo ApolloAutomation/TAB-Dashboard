@@ -1,5 +1,7 @@
 """Tests for the apollo_tab websocket commands."""
 
+from unittest.mock import patch
+
 from homeassistant.auth.models import Group, User
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import (
@@ -59,6 +61,50 @@ layout:
     value: state
     on_tap: toggle
 """
+
+VAULT_COMPONENT = """\
+id: me/vault
+version: 1.0.0
+name: Vault
+size: 1x1
+params:
+  entity: {domain: lock}
+inputs:
+  state: "{{ states(entity) }}"
+outputs:
+  unlock:
+    action: lock.unlock
+    data: {entity_id: "{{ entity }}"}
+    feedback: confirm
+layout:
+  - type: button
+    icon: mdi:lock-open
+    on_tap: unlock
+"""
+
+VAULT_CONFIG = {
+    "apollo_tab": {"version": 1, "theme": "midnight"},
+    "views": [
+        {
+            "type": "sections",
+            "path": "home",
+            "title": "Home",
+            "max_columns": 3,
+            "sections": [
+                {
+                    "type": "grid",
+                    "cards": [
+                        {
+                            "type": "custom:apollo-tab-card",
+                            "component": "me/vault",
+                            "params": {"entity": "lock.front_door"},
+                        }
+                    ],
+                }
+            ],
+        }
+    ],
+}
 
 
 async def test_strings(
@@ -283,6 +329,7 @@ async def test_every_admin_command_requires_admin(
         },
         {"type": "apollo_tab/dashboards"},
         {"type": "apollo_tab/layout/get", "url_path": "tab-1"},
+        {"type": "apollo_tab/layout/preview", "config": {}},
         {"type": "apollo_tab/layout/subscribe"},
     ]
     for command in commands:
@@ -442,6 +489,7 @@ async def test_commands_report_not_loaded(
         },
         {"type": "apollo_tab/dashboards"},
         {"type": "apollo_tab/layout/get", "url_path": "tab-1"},
+        {"type": "apollo_tab/layout/preview", "config": {}},
         {"type": "apollo_tab/layout/subscribe"},
     ]
     for command in commands:
@@ -449,3 +497,203 @@ async def test_commands_report_not_loaded(
         response = await client.receive_json()
         assert not response["success"], command
         assert response["error"]["code"] == "not_loaded", command
+
+
+async def _preview(client, config: object) -> dict:
+    """Send one layout/preview command and return the response."""
+    await client.send_json_auto_id(
+        {"type": "apollo_tab/layout/preview", "config": config}
+    )
+    return await client.receive_json()
+
+
+async def test_layout_preview(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    hass_ws_client: ClientSessionGenerator,
+) -> None:
+    """layout/preview converts a draft and links drawn items to its cards."""
+    hass.states.async_set("light.kitchen", "on")
+    await setup_integration(hass, config_entry)
+    client = await hass_ws_client(hass)
+    response = await _preview(client, TAB_CONFIG)
+    assert response["success"], response
+    result = response["result"]
+    assert set(result) == {"layout", "warnings", "values", "sources"}
+    assert result["layout"]["v"] == 1
+    assert len(result["layout"]["hash"]) == 16
+    assert result["warnings"] == []
+    assert "on" in result["values"].values()
+    assert result["sources"] == {"1": [0, 0, 0], "2": [0, 0, 1]}
+    for source in result["sources"].values():
+        assert isinstance(source, list)
+        assert len(source) == 3
+    ids = {str(item["id"]) for page in result["layout"]["pages"] for item in page["w"]}
+    assert set(result["sources"]) == ids
+
+
+async def test_layout_preview_does_not_save(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    tab_dashboard: SaveDashboard,
+) -> None:
+    """A preview stores no layout and leaves saved dashboards unchanged."""
+    await setup_integration(hass, config_entry)
+    client = await tab_dashboard(PLAIN_CONFIG, url_path="plain-view")
+    response = await _preview(client, TAB_CONFIG)
+    assert response["success"], response
+    await hass.async_block_till_done()
+    await client.send_json_auto_id({"type": "apollo_tab/dashboards"})
+    response = await client.receive_json()
+    assert response["success"], response
+    assert response["result"]["dashboards"] == []
+    assert config_entry.runtime_data.manager.layouts == {}
+    await client.send_json_auto_id(
+        {"type": "lovelace/config", "url_path": "plain-view"}
+    )
+    response = await client.receive_json()
+    assert response["success"], response
+    assert response["result"] == PLAIN_CONFIG
+
+
+async def test_layout_preview_rejects_a_config_that_is_not_a_mapping(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    hass_ws_client: ClientSessionGenerator,
+) -> None:
+    """A config that is not a mapping fails the command's schema."""
+    await setup_integration(hass, config_entry)
+    client = await hass_ws_client(hass)
+    for config in (["views"], "views: []", 3, None):
+        response = await _preview(client, config)
+        assert not response["success"], config
+        assert response["error"]["code"] == "invalid_format", config
+
+
+async def test_layout_preview_reports_a_conversion_failure(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    hass_ws_client: ClientSessionGenerator,
+) -> None:
+    """An unexpected conversion error is answered with conversion_failed."""
+    await setup_integration(hass, config_entry)
+    client = await hass_ws_client(hass)
+    manager = config_entry.runtime_data.manager
+    with patch.object(manager, "async_preview", side_effect=RuntimeError("boom")):
+        response = await _preview(client, TAB_CONFIG)
+    assert not response["success"]
+    assert response["error"] == {
+        "code": "conversion_failed",
+        "message": "The dashboard could not be converted",
+    }
+
+
+async def test_layout_preview_leaves_out_a_card_that_is_not_allowed(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    hass_ws_client: ClientSessionGenerator,
+    user_components,
+) -> None:
+    """A lock card from the user folder is drawn only after it is allowed."""
+    user_components("vault.yaml", VAULT_COMPONENT)
+    await setup_integration(hass, config_entry)
+    client = await hass_ws_client(hass)
+    response = await _preview(client, VAULT_CONFIG)
+    assert response["success"], response
+    result = response["result"]
+    [warning] = result["warnings"]
+    assert warning["code"] == "needs_approval"
+    assert (warning["view"], warning["section"], warning["card"]) == (0, 0, 0)
+    assert warning["detail"] == "me/vault"
+    assert result["sources"] == {}
+    assert result["layout"]["pages"] == []
+    await client.send_json_auto_id(
+        {
+            "type": "apollo_tab/library/approve",
+            "component_id": "me/vault",
+            "approved": True,
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"], response
+    assert response["result"] == {"approved": True}
+    response = await _preview(client, VAULT_CONFIG)
+    assert response["success"], response
+    result = response["result"]
+    assert result["warnings"] == []
+    assert result["sources"] == {"1": [0, 0, 0]}
+    assert result["layout"]["pages"][0]["w"][0]["component"] == "me/vault"
+
+
+async def test_hidden_dashboard_is_listed_and_converted(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    hass_ws_client: ClientSessionGenerator,
+) -> None:
+    """A dashboard left out of the sidebar is still a TAB-1 dashboard."""
+    await setup_integration(hass, config_entry)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "lovelace/dashboards/create",
+            "url_path": "tab-1",
+            "title": "TAB-1 dashboard",
+            "icon": "mdi:tablet-dashboard",
+            "mode": "storage",
+            "require_admin": False,
+            "show_in_sidebar": False,
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"], response
+    assert response["result"]["show_in_sidebar"] is False
+    assert response["result"]["id"] == "tab_1"
+    await client.send_json_auto_id(
+        {"type": "lovelace/config/save", "url_path": "tab-1", "config": TAB_CONFIG}
+    )
+    response = await client.receive_json()
+    assert response["success"], response
+    await hass.async_block_till_done()
+    await client.send_json_auto_id({"type": "apollo_tab/dashboards"})
+    response = await client.receive_json()
+    assert response["success"], response
+    [dashboard] = response["result"]["dashboards"]
+    assert dashboard["url_path"] == "tab-1"
+    assert dashboard["title"] == "TAB-1 dashboard"
+    assert dashboard["pages"] == 1
+
+
+async def test_hiding_a_dashboard_keeps_its_layout(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    tab_dashboard: SaveDashboard,
+) -> None:
+    """Taking a converted dashboard out of the sidebar keeps its layout."""
+    await setup_integration(hass, config_entry)
+    client = await tab_dashboard(TAB_CONFIG)
+    await client.send_json_auto_id(
+        {
+            "type": "lovelace/dashboards/update",
+            "dashboard_id": "tab_1",
+            "show_in_sidebar": False,
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"], response
+    assert response["result"]["show_in_sidebar"] is False
+    await hass.async_block_till_done()
+    await client.send_json_auto_id({"type": "apollo_tab/dashboards"})
+    response = await client.receive_json()
+    assert response["success"], response
+    assert [d["url_path"] for d in response["result"]["dashboards"]] == ["tab-1"]
+    await client.send_json_auto_id(
+        {"type": "apollo_tab/layout/get", "url_path": "tab-1"}
+    )
+    response = await client.receive_json()
+    assert response["success"], response
+    texts = [
+        item.get("text")
+        for page in response["result"]["layout"]["pages"]
+        for item in page["w"]
+    ]
+    assert "Lights" in texts
