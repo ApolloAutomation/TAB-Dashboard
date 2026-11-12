@@ -103,53 +103,6 @@ test("subscriptionKey ignores key order and unrelated keys", () => {
   assert.equal(first, second);
 });
 
-test("gridForSize maps firmware units to dashboard cells", () => {
-  assert.deepEqual(logic.gridForSize([2, 1]), { columns: 12, rows: 3 });
-  assert.deepEqual(logic.gridForSize("1x2"), { columns: 6, rows: 6 });
-});
-
-test("sizePreset uses component grid when options are absent", () => {
-  assert.equal(logic.sizePreset({}, { grid: { columns: 12, rows: 6 } }), "2x2");
-  assert.equal(logic.sizePreset({ columns: 7, rows: 4 }, {}), "custom");
-});
-
-test("pickStubParams prefers unused entities and caps lists at four", () => {
-  const result = logic.pickStubParams(
-    {
-      main: { kind: "entity", domain: "light", multiple: false },
-      others: { kind: "entity", domain: "light", multiple: true },
-      amount: { kind: "number" },
-    },
-    {
-      "light.f": {},
-      "light.g": {},
-    },
-    ["light.a", "light.b", "light.c", "light.d", "light.e"],
-    ["light.z"],
-  );
-  assert.equal(result.main, "light.a");
-  assert.deepEqual(result.others, ["light.b", "light.c", "light.d", "light.e"]);
-  assert.equal(Object.hasOwn(result, "amount"), false);
-});
-
-test("paramsSchema returns selector shapes", () => {
-  const schema = logic.paramsSchema({
-    entity: { kind: "entity", domain: "light", multiple: false },
-    number: { kind: "number", min: 0, max: null },
-    page: { kind: "page" },
-  }, {});
-  assert.deepEqual(schema[0], {
-    name: "entity",
-    required: true,
-    selector: { entity: { filter: { domain: "light" }, multiple: false } },
-  });
-  assert.deepEqual(schema[1], {
-    name: "number",
-    selector: { number: { mode: "box", min: 0, step: "any" } },
-  });
-  assert.deepEqual(schema[2], { name: "page", selector: { text: {} } });
-});
-
 test("formToStyle drops empty parts", () => {
   assert.equal(logic.formToStyle({
     theme: "",
@@ -254,18 +207,6 @@ test("feedbackReduce tick expires feedback", () => {
   assert.deepEqual(logic.feedbackReduce(pulse, { type: "tick", now: 9 }), pulse);
 });
 
-test("nextDashboardPath skips taken paths", () => {
-  assert.equal(logic.nextDashboardPath(["tab-1", "tab-1-2"]), "tab-1-3");
-  assert.equal(logic.nextDashboardPath([]), "tab-1");
-});
-
-test("starterConfig marks a TAB-1 dashboard with three columns", () => {
-  const config = logic.starterConfig();
-  assert.equal(config.apollo_tab.version, 1);
-  assert.equal(config.views[0].max_columns, 3);
-  assert.equal(config.views[1].cards[0].type, "custom:apollo-tab-preview");
-});
-
 test("warningText falls back to the code", () => {
   assert.equal(logic.warningText({ code: "missing", detail: "" }, {}), "missing");
   assert.equal(
@@ -274,9 +215,8 @@ test("warningText falls back to the code", () => {
   );
 });
 
-test("warningPlace reports one-based indexes", () => {
-  assert.equal(
-    logic.warningPlace({ view: 0, section: 1, card: 2 }),
-    "View 1, section 2, card 3",
-  );
+test("warningPlace reports the page and the card", () => {
+  assert.equal(logic.warningPlace({ view: 0, section: 1, card: 2 }), "Page 1, card 3");
+  assert.equal(logic.warningPlace({ view: 1, section: 0, card: null }), "Page 2");
+  assert.equal(logic.warningPlace({ view: null, section: null, card: null }), "");
 });

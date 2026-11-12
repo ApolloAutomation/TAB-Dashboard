@@ -78,13 +78,31 @@ export function getCachedLibrary() {
 // or reloaded; it is then opened again after 2 s, 4 s, 8 s ... up to 30 s.
 // onRestored runs after each such reopening, because changes made in between
 // were not reported.
-function keepSubscribed(conn, type, onEvent, onRestored) {
+//
+// After a lost connection (a laptop asleep, a Wi-Fi drop, a browser tab
+// Home Assistant disconnected while hidden), Home Assistant's connection
+// opens its subscriptions again by itself and fires "ready", without the
+// events from the time in between. With afterReconnect, onRestored runs
+// then too.
+function keepSubscribed(conn, type, onEvent, onRestored, { afterReconnect = false } = {}) {
   let active = true;
   let unsubscribe = null;
   let timer = null;
   let delay = 0;
   let attempt = 0;
   let lost = false;
+
+  // A subscription being opened again after not_loaded runs onRestored
+  // itself once it is open.
+  const reconnected = () => {
+    if (active && !lost) {
+      onRestored?.();
+    }
+  };
+  const watchConnection = afterReconnect && typeof conn.addEventListener === "function";
+  if (watchConnection) {
+    conn.addEventListener("ready", reconnected);
+  }
 
   const retry = () => {
     if (!active || timer) {
@@ -154,6 +172,9 @@ function keepSubscribed(conn, type, onEvent, onRestored) {
     attempt += 1;
     clearTimeout(timer);
     timer = null;
+    if (watchConnection) {
+      conn.removeEventListener?.("ready", reconnected);
+    }
     const stop = unsubscribe;
     unsubscribe = null;
     stop?.();
@@ -179,9 +200,10 @@ export function onLibraryChanged(conn, callback) {
 }
 
 // onEvent gets every converted and removed event; onRestored runs when the
-// subscription was reopened and the caller should load everything again.
+// subscription was reopened or the connection came back, and the caller
+// should load everything again.
 export function onLayoutChanged(conn, onEvent, onRestored) {
-  return keepSubscribed(conn, "apollo_tab/layout/subscribe", onEvent, onRestored);
+  return keepSubscribed(conn, "apollo_tab/layout/subscribe", onEvent, onRestored, { afterReconnect: true });
 }
 
 function replay(record, listener) {
@@ -436,4 +458,9 @@ export function callCard(conn, card, widget, event, value, confirmed = false) {
     message.value = value;
   }
   return conn.sendMessagePromise(message);
+}
+
+// Converts a config that is not saved; resolves to {layout, warnings, values, sources}.
+export function previewLayout(conn, config) {
+  return conn.sendMessagePromise({ type: "apollo_tab/layout/preview", config });
 }

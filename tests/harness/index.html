@@ -6,16 +6,28 @@
   <link rel="icon" href="data:,">
   <title>Apollo TAB-1 harness</title>
   <style>
+    /* Home Assistant's own default colours, dark and light, so contrast
+       checks see what people see. */
     :root {
-      --primary-text-color: #e8eaed;
-      --secondary-text-color: #9aa0a8;
-      --primary-background-color: #101418;
-      --card-background-color: #181c23;
-      --divider-color: #39414d;
-      --primary-color: #f5b547;
-      --text-primary-color: #101418;
+      --primary-text-color: #e1e1e1;
+      --secondary-text-color: #9b9b9b;
+      --primary-background-color: #111111;
+      --card-background-color: #1c1c1c;
+      --divider-color: rgba(225, 225, 225, 0.12);
+      --primary-color: #009ac7;
+      --text-primary-color: #ffffff;
       --error-color: #db4437;
       font-family: system-ui, sans-serif;
+    }
+    :root.ha-light {
+      --primary-text-color: #141414;
+      --secondary-text-color: #5e5e5e;
+      --primary-background-color: #fafafa;
+      --card-background-color: #ffffff;
+      --divider-color: rgba(0, 0, 0, 0.12);
+      --primary-color: #009ac7;
+      --text-primary-color: #ffffff;
+      --error-color: #db4437;
     }
     * {
       box-sizing: border-box;
@@ -29,6 +41,10 @@
     #app {
       min-height: 100vh;
       padding: 20px;
+    }
+    apollo-tab-panel {
+      display: block;
+      min-height: 100vh;
     }
     .cards-grid {
       display: flex;
@@ -44,13 +60,6 @@
       font-size: 13px;
       color: var(--secondary-text-color);
     }
-    .editor-shell {
-      width: min(560px, 100%);
-      margin: 0 auto;
-      padding: 20px;
-      border-radius: 12px;
-      background: var(--card-background-color);
-    }
   </style>
 </head>
 <body>
@@ -58,17 +67,39 @@
   <script type="module">
     import { createMockHass } from "./mock-hass.js";
 
-    const fixtures = await fetch("./fixtures.json").then((response) => response.json());
-    const mock = createMockHass(fixtures);
-    mock.connection.sendMessagePromise = mock.callWS.bind(mock);
+    const query = new URLSearchParams(location.search);
+    const view = query.get("view") || "cards";
+    const seed = query.get("seed") || "sample";
+    if (query.get("ha") === "light") {
+      document.documentElement.classList.add("ha-light");
+    }
+
+    const getJson = (url) =>
+      fetch(url).then((response) => {
+        if (!response.ok) {
+          throw new Error(`${url}: ${response.status}`);
+        }
+        return response.json();
+      });
+
+    const [fixtures, strings, realConfig] = await Promise.all([
+      getJson("./fixtures.json"),
+      getJson("../../custom_components/apollo_tab/library/strings.json"),
+      seed === "real" ? getJson("./real-dashboard.json") : Promise.resolve(null),
+    ]);
+    fixtures.strings = strings;
+
+    const mock = createMockHass(fixtures, {
+      seed,
+      realConfig,
+      community: Boolean(query.get("community")),
+    });
     window.hassConnection = Promise.resolve({ conn: mock.connection });
     window.__apolloFixtures = fixtures;
     window.__apolloMockHass = mock;
 
     await import("../../custom_components/apollo_tab/frontend/apollo-tab.js");
 
-    const query = new URLSearchParams(location.search);
-    const view = query.get("view") || "cards";
     const themeId = query.get("theme") || "midnight";
     const theme = fixtures.themes.find((entry) => entry.id === themeId) || fixtures.themes[0];
     const app = document.getElementById("app");
@@ -101,7 +132,7 @@
       return wrap;
     }
 
-    async function renderCards() {
+    function renderCards() {
       document.body.style.background = theme.wall;
       const grid = document.createElement("div");
       grid.className = "cards-grid";
@@ -111,7 +142,7 @@
       app.append(grid);
     }
 
-    async function renderStates() {
+    function renderStates() {
       document.body.style.background = theme.wall;
       const grid = document.createElement("div");
       grid.className = "cards-grid";
@@ -137,51 +168,45 @@
       app.append(grid);
     }
 
-    async function renderEditor() {
-      const shell = document.createElement("div");
-      shell.className = "editor-shell";
-      const editor = document.createElement("apollo-tab-card-editor");
-      const fixture =
-        fixtures.cards.find((entry) => entry.id === "apollo/light-slider") ||
-        fixtures.cards.find((entry) => entry.id.includes("slider")) ||
-        fixtures.cards[0];
-      editor.setConfig({
-        type: "custom:apollo-tab-card",
-        component: fixture.id,
-        params: fixture.card?.params || {},
-        grid_options: fixture.card?.grid_options || { columns: 12, rows: 3 },
-      });
-      editor.hass = mock;
-      shell.append(editor);
-      app.append(shell);
-    }
-
-    async function renderPreview() {
+    function renderPreview() {
       const preview = document.createElement("apollo-tab-preview");
       preview.hass = mock;
       preview.dashboard = fixtures.layout.url_path || "tab-1";
       app.append(preview);
     }
 
-    async function renderPanel() {
+    // Home Assistant makes a new panel element each time the person comes
+    // back to the panel through its sidebar; the scripted run does the same
+    // with window.__apolloOpenPanel(path).
+    function openPanel(path) {
       const panel = document.createElement("apollo-tab-panel");
-      panel.hass = mock;
-      panel.narrow = false;
-      panel.route = {};
+      panel.narrow = window.innerWidth < 870;
+      panel.route = { prefix: "/apollo-tab", path };
       panel.panel = {};
-      app.replaceWith(panel);
+      panel.hass = mock;
+      window.__apolloPanel?.remove();
+      document.body.append(panel);
+      window.__apolloPanel = panel;
+      return panel;
+    }
+
+    function renderPanel() {
+      app.remove();
+      openPanel(query.get("route") || "");
+      window.__apolloOpenPanel = openPanel;
+      window.addEventListener("resize", () => {
+        window.__apolloPanel.narrow = window.innerWidth < 870;
+      });
     }
 
     if (view === "cards") {
-      await renderCards();
+      renderCards();
     } else if (view === "states") {
-      await renderStates();
-    } else if (view === "editor") {
-      await renderEditor();
+      renderStates();
     } else if (view === "preview") {
-      await renderPreview();
+      renderPreview();
     } else if (view === "panel") {
-      await renderPanel();
+      renderPanel();
     }
   </script>
 </body>

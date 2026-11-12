@@ -1,13 +1,16 @@
-# Writing Components
+# Writing a card
 
-A Component is a YAML file that builds a dashboard element from native widgets
-called Types. Layouts are not sent to tablets yet, so today a Component draws
-on the Home Assistant dashboard and in the tablet preview only.
+A card for the TAB-1 tablet is a small YAML file. It says what the card
+shows and which devices it controls, and builds the card from the tablet's
+own drawing parts. In this guide that file is called a Component, and the
+drawing parts are called Types. Dashboards are not sent to tablets yet, so
+today a card you write draws on the Home Assistant dashboard and in the
+TAB-1 panel's picture of the tablet only.
 
 Put your files in `<config>/apollo_tab/components/` (one folder, no
-sub-folders), then press "Reload elements" in the TAB-1 panel or reload the
-integration. A bad file is listed with its error and does not affect the
-others.
+sub-folders), then press "Look for new cards" under Advanced in the TAB-1
+panel or reload the integration. A bad file is listed with its error and
+does not affect the others.
 
 ## File structure
 
@@ -46,7 +49,7 @@ you mean the word: `state: "on"`.
 
 ## Params
 
-Params are what the user fills in when placing the element. A Component has at
+Params are what the user fills in when placing the card. A Component has at
 most 8. Each one is one of these:
 
 ```yaml
@@ -60,7 +63,7 @@ A number param must have a `default`.
 
 ## Inputs
 
-Inputs are the live values the element reads. A Component has at most 16. Each
+Inputs are the live values the card reads. A Component has at most 16. Each
 one is one of these:
 
 ```yaml
@@ -101,11 +104,12 @@ It shows `0%` while the entity is missing and `80%` once the light reports a
 brightness of 204.
 
 In templates, a missing entity gives `states(e) == "unknown"` and
-`state_attr(e, a) is none`. The card also shows "Entity not found".
+`state_attr(e, a) is none`. The card also shows "Not found in Home
+Assistant".
 
 ## Outputs
 
-Outputs are what the element can do. A Component has at most 12. Each one is
+Outputs are what the card can do. A Component has at most 12. Each one is
 one of these:
 
 ```yaml
@@ -172,7 +176,7 @@ that Type:
 Any item may also have `for_each: <multiple-entity param>` together with
 `as: <name>`. It is repeated once per entity, with `<name>` set to the entity
 id. At most 8 entities are used, and a card has at most 32 widgets. Anything
-beyond that is cut, with the warning that part of the element does not fit.
+beyond that is cut, with the warning that part of the card does not fit.
 
 - `value` is the bare name of an input, or a template (it contains `{{` or
   `{%`).
@@ -189,10 +193,10 @@ beyond that is cut, with the warning that part of the element does not fit.
 
 ## Preview
 
-`preview` gives example values for the card picker and for a card whose
-entities are not chosen yet. `preview.params` maps param names to values of the
-param's type. `preview.inputs` maps input names to a string, number, boolean or
-list of numbers.
+`preview` gives example values for the TAB-1 panel's card picker and for a
+card whose entities are not chosen yet. `preview.params` maps param names to
+values of the param's type. `preview.inputs` maps input names to a string,
+number, boolean or list of numbers.
 
 ## Templates
 
@@ -251,10 +255,10 @@ time or takes longer than 0.2 seconds three times within a minute, or when it
 uses more than 1 second of rendering within 10 seconds. A single slow render
 does not switch it off, because a busy Home Assistant can delay any render. A
 switched-off value shows the error `switched off: ...` and is not updated. This
-applies to that template with those settings only, so the same element with
+applies to that template with those settings only, so the same card with
 another entity keeps working. It is tried again after 5 minutes, when the
-elements are reloaded ("Reload elements" in the TAB-1 panel, or reloading the
-integration), or when Home Assistant restarts.
+cards are reloaded ("Look for new cards" under Advanced in the TAB-1 panel,
+or reloading the integration), or when Home Assistant restarts.
 
 Identical live values are worked out once and shared between all open cards.
 One browser connection can have at most 100 live card subscriptions; the
@@ -331,14 +335,14 @@ use.
 - `inputs` turn Home Assistant state into values for the widgets. `state` is
   the on or off text for the switch. `brightness` converts the 0 to 255
   attribute to a percentage.
-- `outputs` are the two things the element can do. In `set_brightness`, `value`
+- `outputs` are the two things the card can do. In `set_brightness`, `value`
   is the slider's new position. Both use `optimistic` because lights respond
   quickly.
 - `layout` places a switch driven by `state`, a slider driven by `brightness`,
   and a label showing the percentage. The label uses a template, the other two
   use the bare input name.
-- `preview` gives the card picker something sensible to show. `"on"` is quoted
-  so that YAML does not read it as a boolean.
+- `preview` gives the TAB-1 panel's card picker something sensible to show.
+  `"on"` is quoted so that YAML does not read it as a boolean.
 
 ## The built-in Thermostat
 

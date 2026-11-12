@@ -207,107 +207,6 @@ export function subscriptionKey(card, dashboard) {
   );
 }
 
-export function gridForSize(size) {
-  const pair = Array.isArray(size)
-    ? size
-    : String(size).split("x").map(Number);
-  return {
-    columns: pair[0] * 6,
-    rows: pair[1] * 3,
-  };
-}
-
-export function sizePreset(gridOptions, component) {
-  const source =
-    Number.isFinite(gridOptions?.columns) && Number.isFinite(gridOptions?.rows)
-      ? gridOptions
-      : component?.grid || {};
-
-  for (const preset of ["1x1", "2x1", "1x2", "2x2"]) {
-    const grid = gridForSize(preset);
-    if (source.columns === grid.columns && source.rows === grid.rows) {
-      return preset;
-    }
-  }
-  return "custom";
-}
-
-export function pickStubParams(params, states, entities, entitiesFallback) {
-  const result = {};
-  const sources = [entities || [], entitiesFallback || [], Object.keys(states || {})];
-  const used = new Set();
-
-  for (const [name, spec] of Object.entries(params || {})) {
-    if (spec.kind !== "entity") {
-      continue;
-    }
-
-    const matches = [];
-    for (const source of sources) {
-      for (const entity of source) {
-        if (
-          typeof entity === "string" &&
-          entity.startsWith(`${spec.domain}.`) &&
-          !used.has(entity) &&
-          !matches.includes(entity)
-        ) {
-          matches.push(entity);
-          if (!spec.multiple || matches.length === 4) {
-            break;
-          }
-        }
-      }
-      if ((!spec.multiple && matches.length) || matches.length === 4) {
-        break;
-      }
-    }
-
-    if (matches.length) {
-      if (spec.multiple) {
-        result[name] = matches.slice(0, 4);
-        matches.slice(0, 4).forEach((entity) => used.add(entity));
-      } else {
-        result[name] = matches[0];
-        used.add(matches[0]);
-      }
-    }
-  }
-
-  return result;
-}
-
-export function paramsSchema(params, strings) {
-  void strings;
-  return Object.entries(params || {}).map(([name, spec]) => {
-    if (spec.kind === "entity") {
-      return {
-        name,
-        required: true,
-        selector: {
-          entity: {
-            filter: { domain: spec.domain },
-            multiple: Boolean(spec.multiple),
-          },
-        },
-      };
-    }
-
-    if (spec.kind === "number") {
-      const number = { mode: "box" };
-      if (spec.min !== null && spec.min !== undefined) {
-        number.min = spec.min;
-      }
-      if (spec.max !== null && spec.max !== undefined) {
-        number.max = spec.max;
-      }
-      number.step = "any";
-      return { name, selector: { number } };
-    }
-
-    return { name, selector: { text: {} } };
-  });
-}
-
 function hexToRgb(hex) {
   return [
     Number.parseInt(hex.slice(1, 3), 16),
@@ -460,46 +359,6 @@ export function feedbackReduce(state, event) {
   return current;
 }
 
-export function nextDashboardPath(paths) {
-  const taken = new Set(paths || []);
-  if (!taken.has("tab-1")) {
-    return "tab-1";
-  }
-  let number = 2;
-  while (taken.has(`tab-1-${number}`)) {
-    number += 1;
-  }
-  return `tab-1-${number}`;
-}
-
-export function starterConfig() {
-  return {
-    apollo_tab: { version: 1, theme: "midnight" },
-    views: [
-      {
-        type: "sections",
-        title: "Home",
-        path: "home",
-        icon: "mdi:home",
-        max_columns: 3,
-        sections: [
-          {
-            type: "grid",
-            cards: [{ type: "heading", heading: "Home" }],
-          },
-        ],
-      },
-      {
-        type: "panel",
-        title: "Tablet preview",
-        path: "preview",
-        icon: "mdi:tablet",
-        cards: [{ type: "custom:apollo-tab-preview" }],
-      },
-    ],
-  };
-}
-
 export function warningText(warning, strings) {
   const key = `warn.${warning.code}`;
   return format(strings?.[key] ?? warning.code, {
@@ -507,16 +366,14 @@ export function warningText(warning, strings) {
   });
 }
 
+// Where a warning applies, in the words the panel uses: pages and cards.
 export function warningPlace(warning) {
   const parts = [];
   if (warning.view !== null && warning.view !== undefined) {
-    parts.push(`View ${warning.view + 1}`);
-  }
-  if (warning.section !== null && warning.section !== undefined) {
-    parts.push(`section ${warning.section + 1}`);
+    parts.push(`Page ${warning.view + 1}`);
   }
   if (warning.card !== null && warning.card !== undefined) {
-    parts.push(`card ${warning.card + 1}`);
+    parts.push(parts.length ? `card ${warning.card + 1}` : `Card ${warning.card + 1}`);
   }
   return parts.join(", ");
 }

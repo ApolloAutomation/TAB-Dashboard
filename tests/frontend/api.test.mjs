@@ -3,6 +3,7 @@ import assert from "node:assert";
 import {
   onLayoutChanged,
   onLibraryChanged,
+  previewLayout,
   subscribeCard,
 } from "../../custom_components/apollo_tab/frontend/api.js";
 
@@ -458,6 +459,72 @@ test("onLayoutChanged reports events and a reopened subscription", async () => {
   }
 });
 
+// Home Assistant's connection fires "ready" after it has come back and opened
+// its subscriptions again; events from the time in between are lost.
+function withConnectionEvents(conn) {
+  conn.listeners = new Map();
+  conn.addEventListener = (type, callback) => {
+    conn.listeners.set(type, [...(conn.listeners.get(type) || []), callback]);
+  };
+  conn.removeEventListener = (type, callback) => {
+    conn.listeners.set(
+      type,
+      (conn.listeners.get(type) || []).filter((entry) => entry !== callback),
+    );
+  };
+  conn.fire = (type) => {
+    for (const callback of conn.listeners.get(type) || []) {
+      callback(conn);
+    }
+  };
+  return conn;
+}
+
+test("onLayoutChanged asks for a reload when the connection comes back", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    const conn = withConnectionEvents(makeConnection());
+    let restored = 0;
+    const stop = onLayoutChanged(
+      conn,
+      () => {},
+      () => {
+        restored += 1;
+      },
+    );
+    await settle();
+    assert.equal(restored, 0);
+
+    conn.fire("ready");
+    assert.equal(restored, 1);
+
+    // While the subscription is opened again after not_loaded, the reopened
+    // subscription asks once, not the connection as well.
+    conn.calls[0].callback({ type: "not_loaded" });
+    conn.fire("ready");
+    assert.equal(restored, 1);
+    mock.timers.tick(2000);
+    await settle();
+    assert.equal(restored, 2);
+
+    stop();
+    assert.deepEqual(conn.listeners.get("ready"), []);
+    conn.fire("ready");
+    assert.equal(restored, 2);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("onLibraryChanged does not watch the connection", async () => {
+  const conn = withConnectionEvents(makeConnection());
+  const stop = onLibraryChanged(conn, () => {});
+  await settle();
+  assert.equal((conn.listeners.get("ready") || []).length, 0);
+  stop();
+});
+
 test("a refused subscription is not tried again", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
 
@@ -475,4 +542,19 @@ test("a refused subscription is not tried again", async () => {
   } finally {
     mock.timers.reset();
   }
+});
+
+test("previewLayout sends the config and returns the answer", async () => {
+  const config = { apollo_tab: { version: 1 }, views: [] };
+  const answer = { layout: { pages: [] }, warnings: [], values: {}, sources: {} };
+  const sent = [];
+  const conn = {
+    sendMessagePromise(message) {
+      sent.push(message);
+      return Promise.resolve(answer);
+    },
+  };
+
+  assert.equal(await previewLayout(conn, config), answer);
+  assert.deepEqual(sent, [{ type: "apollo_tab/layout/preview", config }]);
 });

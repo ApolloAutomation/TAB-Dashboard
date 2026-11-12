@@ -2,7 +2,7 @@ schema: 1
 id: apollo/blinds
 version: 1.0.0
 name: Blinds
-description: Open, stop, close and set the position of a cover.
+description: Open, stop and close blinds, curtains or a garage door, or set how far open they are.
 icon: mdi:blinds
 size: 1x2
 params:

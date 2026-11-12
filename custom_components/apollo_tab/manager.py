@@ -184,8 +184,33 @@ class DashboardManager:
         entry = self.layouts.get(url_path)
         if entry is None:
             return {}
+        return await self._async_evaluate_slots(entry["bindings"])
+
+    async def async_preview(self, config: dict) -> dict[str, Any]:
+        """Convert a config that is not saved and evaluate its slots once.
+
+        Nothing is stored and no listener is told.
+        """
+        result = convert_dashboard(
+            config,
+            components=self.library.components,
+            themes=self.library.themes,
+            approved=self.library.approved_ids(),
+        )
+        return {
+            "layout": result["layout"],
+            "warnings": result["warnings"],
+            "values": await self._async_evaluate_slots(result["bindings"]),
+            "sources": result["sources"],
+        }
+
+    async def _async_evaluate_slots(self, bindings: dict) -> dict[str, Any]:
+        """Evaluate every slot of some bindings once, keyed by slot number.
+
+        A slot whose template or action fails is left out.
+        """
         values: dict[str, Any] = {}
-        for slot in entry["bindings"].get("slots", []):
+        for slot in bindings.get("slots", []):
             try:
                 values[str(slot["n"])] = await live.async_evaluate_slot(
                     self._hass, slot
