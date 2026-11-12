@@ -23,7 +23,7 @@ your tablets.
 
 ## Requirements
 
-- Home Assistant 2026.11 or newer.
+- Home Assistant 2026.10 or newer.
 - At least one TAB-1 set up through the ESPHome integration. The integration
   recognises tablets by the firmware's ESPHome project name,
   `ApolloAutomation.TAB-1`.
@@ -33,7 +33,7 @@ your tablets.
 The integration is not in the default Marketplace catalog yet. Add it as a
 custom repository:
 
-1. In Home Assistant, open the Marketplace. It must be connected to GitHub
+1. In Home Assistant, open the Marketplace (HACS before 2026.11). It must be connected to GitHub
    before a custom repository can be added.
 2. Add `https://github.com/ApolloAutomation/TAB-Dashboard` as a custom
    repository of type "Integration".
