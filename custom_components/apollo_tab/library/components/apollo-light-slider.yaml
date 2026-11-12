@@ -1,0 +1,41 @@
+schema: 1
+id: apollo/light-slider
+version: 1.0.0
+name: Light with slider
+description: A light switch with a brightness slider.
+icon: mdi:lightbulb-on
+size: 2x1
+params:
+  entity:
+    domain: light
+inputs:
+  state: "{{ states(entity) }}"
+  brightness: "{{ state_attr(entity, 'brightness') | int(0) * 100 // 255 }}"
+  rgb_color: "{{ state_attr(entity, 'rgb_color') or '' }}"
+outputs:
+  toggle:
+    action: light.toggle
+    data:
+      entity_id: "{{ entity }}"
+    feedback: optimistic
+  set_brightness:
+    action: light.turn_on
+    data:
+      entity_id: "{{ entity }}"
+      brightness_pct: "{{ value }}"
+    feedback: optimistic
+layout:
+  - type: switch
+    value: state
+    on_tap: toggle
+  - type: slider
+    value: brightness
+    min: 0
+    max: 100
+    on_change: set_brightness
+  - type: label
+    text: "{{ brightness }}%"
+preview:
+  inputs:
+    state: "on"
+    brightness: 68

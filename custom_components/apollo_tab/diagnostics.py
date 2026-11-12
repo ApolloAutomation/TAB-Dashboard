@@ -1,6 +1,7 @@
 """Diagnostics for the Apollo TAB Dashboard integration."""
 
-from typing import Any
+import copy
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -10,16 +11,23 @@ from .const import DOMAIN
 from .sensor import engine_unique_id
 from .tablets import async_get_tablets
 
+if TYPE_CHECKING:
+    from . import ApolloTabData
+
+REDACTED = "**REDACTED**"
+WARNING_KEYS = ("code", "view", "section", "card", "page")
+
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
-    """Return the tablets found and their dashboard engine status.
+    """Return the tablets, the library and the dashboards.
 
     The output holds no full MAC address. A tablet with its default name ends
     in the last three MAC bytes, put there by the firmware's
     name_add_mac_suffix option. That part of the name is left in, as ESPHome's
-    own diagnostics do.
+    own diagnostics do. User-written dashboard text is redacted, because
+    diagnostics get pasted into public issues.
     """
     entity_registry = er.async_get(hass)
     tablets: list[dict[str, Any]] = []
@@ -32,8 +40,7 @@ async def async_get_config_entry_diagnostics(
         tablets.append(
             {
                 "device_id": device.id,
-                "name": device.name_by_user or device.name,
-                "area_id": device.area_id,
+                "name": device.name,
                 "sw_version": device.sw_version,
                 "disabled": device.disabled,
                 "esphome_entry_state": (
@@ -44,4 +51,73 @@ async def async_get_config_entry_diagnostics(
             }
         )
     tablets.sort(key=lambda tablet: tablet["device_id"])
-    return {"tablet_count": len(tablets), "tablets": tablets}
+    data = getattr(entry, "runtime_data", None)
+    return {
+        "tablet_count": len(tablets),
+        "tablets": tablets,
+        "sent_to_tablets": False,
+        "library": _library_diagnostics(data),
+        "dashboards": _dashboards_diagnostics(data),
+    }
+
+
+def _library_diagnostics(data: ApolloTabData | None) -> dict[str, Any]:
+    """Return the library summary without messages or user text."""
+    if data is None:
+        return {"components": [], "errors": []}
+    library = data.library
+    components = [
+        {
+            "id": component_id,
+            "version": component["version"],
+            "source": component["source"],
+            "sensitive": component["sensitive"],
+            "approved": library.is_approved(component_id),
+        }
+        for component_id, component in library.components.items()
+    ]
+    components.sort(key=lambda component: component["id"])
+    errors = [
+        {"file": error["file"], "index": error["index"], "code": error["code"]}
+        for error in library.errors
+    ]
+    return {"components": components, "errors": errors}
+
+
+def _dashboards_diagnostics(data: ApolloTabData | None) -> list[dict[str, Any]]:
+    """Return every stored layout with user-written text redacted."""
+    if data is None:
+        return []
+    return [
+        {
+            "url_path": url_path,
+            "mode": stored["mode"],
+            "pages": len(stored["layout"]["pages"]),
+            "hash": stored["layout"]["hash"],
+            "warnings": [
+                {key: warning.get(key) for key in WARNING_KEYS}
+                for warning in stored["warnings"]
+            ],
+            "layout": _redact_layout(stored["layout"]),
+        }
+        for url_path, stored in sorted(data.manager.layouts.items())
+    ]
+
+
+def _redact_layout(layout: dict[str, Any]) -> dict[str, Any]:
+    """Return a deep copy with titles and heading texts replaced."""
+    redacted = copy.deepcopy(layout)
+    for item in redacted.get("nav", []):
+        if isinstance(item.get("title"), str):
+            item["title"] = REDACTED
+    for page in redacted.get("pages", []):
+        if isinstance(page.get("title"), str):
+            page["title"] = REDACTED
+        for item in page.get("w", []):
+            if item.get("t") == "heading" and isinstance(item.get("text"), str):
+                item["text"] = REDACTED
+            elif item.get("t") == "card":
+                header = item.get("header") or {}
+                if isinstance(header.get("title"), str):
+                    header["title"] = REDACTED
+    return redacted

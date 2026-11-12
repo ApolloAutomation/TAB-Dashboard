@@ -1,0 +1,28 @@
+schema: 1
+id: apollo/scene-row
+version: 1.0.0
+name: Scene row
+description: One button for each scene you pick.
+icon: mdi:palette
+header: false
+size: 2x1
+params:
+  scenes:
+    domain: scene
+    multiple: true
+outputs:
+  activate:
+    action: scene.turn_on
+    data:
+      entity_id: "{{ scene }}"
+    feedback: pulse
+layout:
+  - type: button
+    for_each: scenes
+    as: scene
+    icon: mdi:palette
+    text: "{{ state_attr(scene, 'friendly_name') or scene }}"
+    on_tap: activate
+preview:
+  params:
+    scenes: [scene.movie, scene.dinner, scene.relax, scene.all_off]

@@ -1,0 +1,3363 @@
+{
+ "cards": [
+  {
+   "card": {
+    "component": "apollo/alarm-panel",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/alarm-panel",
+   "init": {
+    "component": "apollo/alarm-panel",
+    "demo": true,
+    "entities": [],
+    "h": 376,
+    "header": {
+     "icon": "mdi:shield-home",
+     "r": [
+      16,
+      16,
+      344,
+      32
+     ],
+     "title": "Alarm panel"
+    },
+    "name": "Alarm panel",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       212,
+       344,
+       44
+      ],
+      "size": "l",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     },
+     {
+      "confirm": "Arm home?",
+      "i": 1,
+      "r": [
+       16,
+       264,
+       109,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "confirm"
+      },
+      "text": "Arm home"
+     },
+     {
+      "confirm": "Arm away?",
+      "i": 2,
+      "r": [
+       133,
+       264,
+       109,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "confirm"
+      },
+      "text": "Arm away"
+     },
+     {
+      "confirm": "Disarm?",
+      "i": 3,
+      "r": [
+       250,
+       264,
+       109,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "confirm"
+      },
+      "text": "Disarm"
+     }
+    ]
+   },
+   "values": {
+    "1": "armed_home"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/blinds",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/blinds",
+   "init": {
+    "component": "apollo/blinds",
+    "demo": true,
+    "entities": [],
+    "h": 376,
+    "header": {
+     "icon": "mdi:blinds",
+     "r": [
+      16,
+      16,
+      152,
+      32
+     ],
+     "title": "Blinds"
+    },
+    "name": "Blinds",
+    "on": null,
+    "w": 184,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "icon": "mdi:arrow-up",
+      "r": [
+       16,
+       180,
+       45,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "progress"
+      }
+     },
+     {
+      "i": 1,
+      "icon": "mdi:stop",
+      "r": [
+       69,
+       180,
+       45,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "progress"
+      }
+     },
+     {
+      "i": 2,
+      "icon": "mdi:arrow-down",
+      "r": [
+       122,
+       180,
+       45,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "progress"
+      }
+     },
+     {
+      "change": {
+       "policy": "progress"
+      },
+      "i": 3,
+      "max": 100,
+      "min": 0,
+      "r": [
+       16,
+       284,
+       152,
+       40
+      ],
+      "step": 1,
+      "t": "slider",
+      "value": 60
+     },
+     {
+      "i": 4,
+      "r": [
+       16,
+       332,
+       152,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "open \u00b7 60%"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/camera-snapshot",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/camera-snapshot",
+   "init": {
+    "component": "apollo/camera-snapshot",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": null,
+    "name": "Camera snapshot",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       16,
+       344,
+       116
+      ],
+      "refresh": 10,
+      "t": "image",
+      "tap": {
+       "local": "open_live"
+      },
+      "value": "mdi:cctv"
+     },
+     {
+      "i": 1,
+      "r": [
+       16,
+       140,
+       344,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "Driveway"
+   }
+  },
+  {
+   "card": {
+    "component": "community/energy-gauge",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "community/energy-gauge",
+   "init": {
+    "component": "community/energy-gauge",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": {
+     "icon": "mdi:lightning-bolt",
+     "r": [
+      16,
+      16,
+      152,
+      32
+     ],
+     "title": "Energy gauge"
+    },
+    "name": "Energy gauge",
+    "on": null,
+    "w": 184,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "max": {
+       "s": 1
+      },
+      "min": 0,
+      "r": [
+       16,
+       56,
+       152,
+       76
+      ],
+      "step": 0.5,
+      "t": "thermostat",
+      "value": 2400
+     },
+     {
+      "i": 1,
+      "r": [
+       16,
+       140,
+       152,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 2
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": 5000,
+    "2": "2400 W"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/fan",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/fan",
+   "init": {
+    "component": "apollo/fan",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": {
+     "icon": "mdi:fan",
+     "r": [
+      16,
+      16,
+      152,
+      32
+     ],
+     "title": "Fan"
+    },
+    "name": "Fan",
+    "on": "on",
+    "w": 184,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       56,
+       152,
+       40
+      ],
+      "t": "switch",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "value": "on"
+     },
+     {
+      "i": 1,
+      "r": [
+       16,
+       104,
+       152,
+       64
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "text": "50%"
+     }
+    ]
+   },
+   "values": {}
+  },
+  {
+   "card": {
+    "component": "apollo/light-tile",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/light-tile",
+   "init": {
+    "component": "apollo/light-tile",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": {
+     "icon": "mdi:lightbulb",
+     "r": [
+      16,
+      16,
+      152,
+      32
+     ],
+     "title": "Light tile"
+    },
+    "name": "Light tile",
+    "on": "on",
+    "w": 184,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       92,
+       152,
+       40
+      ],
+      "t": "switch",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "value": "on"
+     },
+     {
+      "i": 1,
+      "r": [
+       16,
+       140,
+       152,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "80%"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/light-slider",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/light-slider",
+   "init": {
+    "component": "apollo/light-slider",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": {
+     "icon": "mdi:lightbulb-on",
+     "r": [
+      16,
+      16,
+      272,
+      32
+     ],
+     "title": "Light with slider"
+    },
+    "name": "Light with slider",
+    "on": "on",
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       296,
+       14,
+       64,
+       36
+      ],
+      "t": "switch",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "value": "on"
+     },
+     {
+      "change": {
+       "policy": "optimistic"
+      },
+      "i": 1,
+      "max": 100,
+      "min": 0,
+      "r": [
+       16,
+       92,
+       344,
+       40
+      ],
+      "step": 1,
+      "t": "slider",
+      "value": 68
+     },
+     {
+      "i": 2,
+      "r": [
+       16,
+       140,
+       344,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "68%"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/lock",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/lock",
+   "init": {
+    "component": "apollo/lock",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": null,
+    "name": "Lock",
+    "on": null,
+    "w": 184,
+    "warnings": [],
+    "widgets": [
+     {
+      "confirm": {
+       "s": 1
+      },
+      "i": 0,
+      "icon": "mdi:lock",
+      "r": [
+       16,
+       36,
+       72,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "confirm"
+      }
+     },
+     {
+      "confirm": {
+       "s": 2
+      },
+      "i": 1,
+      "icon": "mdi:lock-open",
+      "r": [
+       96,
+       36,
+       72,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "confirm"
+      }
+     },
+     {
+      "i": 2,
+      "r": [
+       16,
+       140,
+       152,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 3
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "Lock Front door?",
+    "2": "Unlock Front door?",
+    "3": "Front door: locked"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/media-player",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/media-player",
+   "init": {
+    "component": "apollo/media-player",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": null,
+    "name": "Media player",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       16,
+       152,
+       152
+      ],
+      "refresh": 0,
+      "t": "image",
+      "value": "mdi:music-note"
+     },
+     {
+      "i": 1,
+      "r": [
+       180,
+       16,
+       180,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     },
+     {
+      "i": 2,
+      "icon": "mdi:skip-previous",
+      "r": [
+       180,
+       52,
+       54,
+       68
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "optimistic"
+      }
+     },
+     {
+      "i": 3,
+      "icon": "mdi:play-pause",
+      "r": [
+       242,
+       52,
+       54,
+       68
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "optimistic"
+      }
+     },
+     {
+      "i": 4,
+      "icon": "mdi:skip-next",
+      "r": [
+       304,
+       52,
+       54,
+       68
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "optimistic"
+      }
+     },
+     {
+      "change": {
+       "policy": "optimistic"
+      },
+      "i": 5,
+      "max": 100,
+      "min": 0,
+      "r": [
+       180,
+       128,
+       180,
+       40
+      ],
+      "step": 1,
+      "t": "slider",
+      "value": 35
+     }
+    ]
+   },
+   "values": {
+    "1": "Soft focus \u00b7 Mara Lind"
+   }
+  },
+  {
+   "card": {
+    "component": "community/presence-chips",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "community/presence-chips",
+   "init": {
+    "component": "community/presence-chips",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": null,
+    "name": "Presence chips",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       16,
+       168,
+       116
+      ],
+      "refresh": 0,
+      "t": "image",
+      "value": {
+       "s": 1
+      }
+     },
+     {
+      "i": 1,
+      "r": [
+       192,
+       16,
+       168,
+       116
+      ],
+      "refresh": 0,
+      "t": "image",
+      "value": {
+       "s": 2
+      }
+     },
+     {
+      "i": 2,
+      "r": [
+       16,
+       140,
+       168,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 3
+      }
+     },
+     {
+      "i": 3,
+      "r": [
+       192,
+       140,
+       168,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 4
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "mdi:account",
+    "2": "mdi:account",
+    "3": "person.alex: unknown",
+    "4": "person.sam: unknown"
+   }
+  },
+  {
+   "card": {
+    "component": "community/room-summary",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "community/room-summary",
+   "init": {
+    "component": "community/room-summary",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": null,
+    "name": "Room summary",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       36,
+       344,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     },
+     {
+      "i": 1,
+      "r": [
+       16,
+       72,
+       344,
+       96
+      ],
+      "t": "button",
+      "text": "View room"
+     }
+    ]
+   },
+   "values": {
+    "1": "21.5\u00b0 \u00b7 46% \u00b7 2 lights on"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/scene-row",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/scene-row",
+   "init": {
+    "component": "apollo/scene-row",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": null,
+    "name": "Scene row",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "icon": "mdi:palette",
+      "r": [
+       16,
+       72,
+       80,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "pulse"
+      },
+      "text": {
+       "s": 1
+      }
+     },
+     {
+      "i": 1,
+      "icon": "mdi:palette",
+      "r": [
+       104,
+       72,
+       80,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "pulse"
+      },
+      "text": {
+       "s": 2
+      }
+     },
+     {
+      "i": 2,
+      "icon": "mdi:palette",
+      "r": [
+       192,
+       72,
+       80,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "pulse"
+      },
+      "text": {
+       "s": 3
+      }
+     },
+     {
+      "i": 3,
+      "icon": "mdi:palette",
+      "r": [
+       280,
+       72,
+       80,
+       96
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "pulse"
+      },
+      "text": {
+       "s": 4
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "scene.movie",
+    "2": "scene.dinner",
+    "3": "scene.relax",
+    "4": "scene.all_off"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/sensor-graph",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/sensor-graph",
+   "init": {
+    "component": "apollo/sensor-graph",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": {
+     "icon": "mdi:chart-line",
+     "r": [
+      16,
+      16,
+      344,
+      32
+     ],
+     "title": "Sensor graph"
+    },
+    "name": "Sensor graph",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "kind": "line",
+      "r": [
+       16,
+       56,
+       344,
+       76
+      ],
+      "t": "chart",
+      "value": [
+       19.2,
+       19.4,
+       19.3,
+       19.9,
+       20.4,
+       20.2,
+       20.9,
+       21.3,
+       21.1,
+       21.7,
+       21.9,
+       21.4
+      ]
+     },
+     {
+      "i": 1,
+      "r": [
+       16,
+       140,
+       344,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": 21.4
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/sensor-value",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/sensor-value",
+   "init": {
+    "component": "apollo/sensor-value",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": {
+     "icon": "mdi:gauge",
+     "r": [
+      16,
+      16,
+      152,
+      32
+     ],
+     "title": "Sensor value"
+    },
+    "name": "Sensor value",
+    "on": null,
+    "w": 184,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       124,
+       152,
+       44
+      ],
+      "size": "l",
+      "t": "label",
+      "tap": {
+       "local": "open_details"
+      },
+      "text": {
+       "s": 1
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": "46%"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/thermostat",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/thermostat",
+   "init": {
+    "component": "apollo/thermostat",
+    "demo": true,
+    "entities": [],
+    "h": 376,
+    "header": {
+     "icon": "mdi:thermostat",
+     "r": [
+      16,
+      16,
+      344,
+      32
+     ],
+     "title": "Thermostat"
+    },
+    "name": "Thermostat",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "change": {
+       "policy": "progress"
+      },
+      "i": 0,
+      "max": {
+       "s": 2
+      },
+      "min": {
+       "s": 1
+      },
+      "r": [
+       16,
+       56,
+       344,
+       212
+      ],
+      "step": {
+       "s": 3
+      },
+      "t": "thermostat",
+      "value": 21.5
+     },
+     {
+      "i": 1,
+      "r": [
+       16,
+       276,
+       344,
+       48
+      ],
+      "t": "button",
+      "tap": {
+       "policy": "progress"
+      },
+      "text": "Heat"
+     },
+     {
+      "i": 2,
+      "r": [
+       16,
+       332,
+       344,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 4
+      }
+     }
+    ]
+   },
+   "values": {
+    "1": 7,
+    "2": 35,
+    "3": 0.5,
+    "4": "Now 20.8\u00b0 \u00b7 heating"
+   }
+  },
+  {
+   "card": {
+    "component": "apollo/weather",
+    "type": "custom:apollo-tab-card"
+   },
+   "id": "apollo/weather",
+   "init": {
+    "component": "apollo/weather",
+    "demo": true,
+    "entities": [],
+    "h": 184,
+    "header": {
+     "icon": "mdi:weather-partly-cloudy",
+     "r": [
+      16,
+      16,
+      344,
+      32
+     ],
+     "title": "Weather"
+    },
+    "name": "Weather",
+    "on": null,
+    "w": 376,
+    "warnings": [],
+    "widgets": [
+     {
+      "i": 0,
+      "r": [
+       16,
+       56,
+       112,
+       112
+      ],
+      "refresh": 0,
+      "t": "image",
+      "tap": {
+       "local": "open_details"
+      },
+      "value": "mdi:weather-cloudy"
+     },
+     {
+      "i": 1,
+      "r": [
+       140,
+       56,
+       220,
+       28
+      ],
+      "size": "m",
+      "t": "label",
+      "text": {
+       "s": 1
+      }
+     },
+     {
+      "i": 2,
+      "kind": "bars",
+      "r": [
+       140,
+       92,
+       220,
+       76
+      ],
+      "t": "chart",
+      "value": [
+       14,
+       11,
+       13,
+       15,
+       10
+      ]
+     }
+    ]
+   },
+   "values": {
+    "1": "12\u00b0 \u00b7 cloudy"
+   }
+  }
+ ],
+ "dashboards": {
+  "dashboards": [
+   {
+    "hash": "eca2d5d9d42b262f",
+    "mode": "storage",
+    "pages": 3,
+    "theme": "midnight",
+    "title": "TAB-1",
+    "url_path": "tab-1",
+    "warnings": 4
+   }
+  ],
+  "sent_to_tablets": false,
+  "tablets": 0
+ },
+ "layout": {
+  "layout": {
+   "hash": "eca2d5d9d42b262f",
+   "nav": [
+    {
+     "icon": "mdi:home",
+     "page": "home",
+     "title": "Home"
+    },
+    {
+     "icon": "mdi:thermometer",
+     "page": "climate",
+     "title": "Climate"
+    }
+   ],
+   "pages": [
+    {
+     "icon": "mdi:home",
+     "id": "home",
+     "title": "Home",
+     "view": 0,
+     "w": [
+      {
+       "id": 1,
+       "r": [
+        100,
+        20,
+        1144,
+        56
+       ],
+       "t": "heading",
+       "text": "Energy"
+      },
+      {
+       "component": "apollo/sensor-graph",
+       "header": {
+        "icon": "mdi:chart-line",
+        "r": [
+         116,
+         100,
+         344,
+         32
+        ],
+        "title": {
+         "s": 1
+        }
+       },
+       "id": 2,
+       "r": [
+        100,
+        84,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 3,
+         "kind": "line",
+         "r": [
+          116,
+          140,
+          344,
+          76
+         ],
+         "t": "chart",
+         "value": {
+          "s": 2
+         }
+        },
+        {
+         "id": 4,
+         "r": [
+          116,
+          224,
+          344,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 3
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/sensor-graph",
+       "header": {
+        "icon": "mdi:chart-line",
+        "r": [
+         500,
+         100,
+         344,
+         32
+        ],
+        "title": {
+         "s": 4
+        }
+       },
+       "id": 5,
+       "r": [
+        484,
+        84,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 6,
+         "kind": "line",
+         "r": [
+          500,
+          140,
+          344,
+          76
+         ],
+         "t": "chart",
+         "value": {
+          "s": 5
+         }
+        },
+        {
+         "id": 7,
+         "r": [
+          500,
+          224,
+          344,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 6
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/sensor-graph",
+       "header": {
+        "icon": "mdi:chart-line",
+        "r": [
+         884,
+         100,
+         344,
+         32
+        ],
+        "title": {
+         "s": 7
+        }
+       },
+       "id": 8,
+       "r": [
+        868,
+        84,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 9,
+         "kind": "line",
+         "r": [
+          884,
+          140,
+          344,
+          76
+         ],
+         "t": "chart",
+         "value": {
+          "s": 8
+         }
+        },
+        {
+         "id": 10,
+         "r": [
+          884,
+          224,
+          344,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 9
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/sensor-graph",
+       "header": {
+        "icon": "mdi:chart-line",
+        "r": [
+         116,
+         292,
+         344,
+         32
+        ],
+        "title": {
+         "s": 10
+        }
+       },
+       "id": 11,
+       "r": [
+        100,
+        276,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 12,
+         "kind": "line",
+         "r": [
+          116,
+          332,
+          344,
+          76
+         ],
+         "t": "chart",
+         "value": {
+          "s": 11
+         }
+        },
+        {
+         "id": 13,
+         "r": [
+          116,
+          416,
+          344,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 12
+         }
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "icon": "mdi:home",
+     "id": "home-2",
+     "title": "Home (2)",
+     "view": 0,
+     "w": [
+      {
+       "id": 14,
+       "r": [
+        100,
+        20,
+        376,
+        56
+       ],
+       "t": "heading",
+       "text": "Lights"
+      },
+      {
+       "component": "apollo/light-tile",
+       "header": {
+        "icon": "mdi:lightbulb",
+        "r": [
+         116,
+         100,
+         152,
+         32
+        ],
+        "title": {
+         "s": 13
+        }
+       },
+       "id": 15,
+       "on": {
+        "s": 14
+       },
+       "r": [
+        100,
+        84,
+        184,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 16,
+         "r": [
+          116,
+          176,
+          152,
+          40
+         ],
+         "t": "switch",
+         "tap": {
+          "policy": "optimistic"
+         },
+         "value": {
+          "s": 14
+         }
+        },
+        {
+         "id": 17,
+         "r": [
+          116,
+          224,
+          152,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 15
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/light-slider",
+       "header": {
+        "icon": "mdi:lightbulb-on",
+        "r": [
+         116,
+         292,
+         272,
+         32
+        ],
+        "title": {
+         "s": 16
+        }
+       },
+       "id": 18,
+       "on": {
+        "s": 17
+       },
+       "r": [
+        100,
+        276,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 19,
+         "r": [
+          396,
+          290,
+          64,
+          36
+         ],
+         "t": "switch",
+         "tap": {
+          "policy": "optimistic"
+         },
+         "value": {
+          "s": 17
+         }
+        },
+        {
+         "change": {
+          "policy": "optimistic"
+         },
+         "id": 20,
+         "max": 100,
+         "min": 0,
+         "r": [
+          116,
+          368,
+          344,
+          40
+         ],
+         "step": 1,
+         "t": "slider",
+         "value": {
+          "s": 18
+         }
+        },
+        {
+         "id": 21,
+         "r": [
+          116,
+          416,
+          344,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 19
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/fan",
+       "header": {
+        "icon": "mdi:fan",
+        "r": [
+         116,
+         484,
+         152,
+         32
+        ],
+        "title": {
+         "s": 20
+        }
+       },
+       "id": 22,
+       "on": {
+        "s": 21
+       },
+       "r": [
+        100,
+        468,
+        184,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 23,
+         "r": [
+          116,
+          524,
+          152,
+          40
+         ],
+         "t": "switch",
+         "tap": {
+          "policy": "optimistic"
+         },
+         "value": {
+          "s": 21
+         }
+        },
+        {
+         "id": 24,
+         "r": [
+          116,
+          572,
+          152,
+          64
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "optimistic"
+         },
+         "text": "50%"
+        }
+       ]
+      },
+      {
+       "component": "apollo/sensor-value",
+       "header": {
+        "icon": "mdi:gauge",
+        "r": [
+         308,
+         484,
+         152,
+         32
+        ],
+        "title": {
+         "s": 22
+        }
+       },
+       "id": 25,
+       "r": [
+        292,
+        468,
+        184,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 26,
+         "r": [
+          308,
+          592,
+          152,
+          44
+         ],
+         "size": "l",
+         "t": "label",
+         "tap": {
+          "local": "open_details"
+         },
+         "text": {
+          "s": 23
+         }
+        }
+       ]
+      },
+      {
+       "id": 27,
+       "r": [
+        484,
+        20,
+        376,
+        56
+       ],
+       "t": "heading",
+       "text": "Rooms"
+      },
+      {
+       "component": "apollo/media-player",
+       "id": 28,
+       "r": [
+        484,
+        84,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 29,
+         "r": [
+          500,
+          100,
+          152,
+          152
+         ],
+         "refresh": 0,
+         "t": "image",
+         "value": {
+          "s": 24
+         }
+        },
+        {
+         "id": 30,
+         "r": [
+          664,
+          100,
+          180,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 25
+         }
+        },
+        {
+         "icon": "mdi:skip-previous",
+         "id": 31,
+         "r": [
+          664,
+          136,
+          54,
+          68
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "optimistic"
+         }
+        },
+        {
+         "icon": "mdi:play-pause",
+         "id": 32,
+         "r": [
+          726,
+          136,
+          54,
+          68
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "optimistic"
+         }
+        },
+        {
+         "icon": "mdi:skip-next",
+         "id": 33,
+         "r": [
+          788,
+          136,
+          54,
+          68
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "optimistic"
+         }
+        },
+        {
+         "change": {
+          "policy": "optimistic"
+         },
+         "id": 34,
+         "max": 100,
+         "min": 0,
+         "r": [
+          664,
+          212,
+          180,
+          40
+         ],
+         "step": 1,
+         "t": "slider",
+         "value": {
+          "s": 26
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/weather",
+       "header": {
+        "icon": "mdi:weather-partly-cloudy",
+        "r": [
+         500,
+         292,
+         344,
+         32
+        ],
+        "title": {
+         "s": 27
+        }
+       },
+       "id": 35,
+       "r": [
+        484,
+        276,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 36,
+         "r": [
+          500,
+          332,
+          112,
+          112
+         ],
+         "refresh": 0,
+         "t": "image",
+         "tap": {
+          "local": "open_details"
+         },
+         "value": {
+          "s": 28
+         }
+        },
+        {
+         "id": 37,
+         "r": [
+          624,
+          332,
+          220,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 29
+         }
+        },
+        {
+         "id": 38,
+         "kind": "bars",
+         "r": [
+          624,
+          368,
+          220,
+          76
+         ],
+         "t": "chart",
+         "value": {
+          "s": 30
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/camera-snapshot",
+       "id": 39,
+       "r": [
+        484,
+        468,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 40,
+         "r": [
+          500,
+          484,
+          344,
+          116
+         ],
+         "refresh": 10,
+         "t": "image",
+         "tap": {
+          "local": "open_live"
+         },
+         "value": {
+          "s": 31
+         }
+        },
+        {
+         "id": 41,
+         "r": [
+          500,
+          608,
+          344,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 32
+         }
+        }
+       ]
+      },
+      {
+       "id": 42,
+       "r": [
+        868,
+        20,
+        376,
+        56
+       ],
+       "t": "heading",
+       "text": "Rooms"
+      },
+      {
+       "component": "apollo/lock",
+       "id": 43,
+       "r": [
+        868,
+        84,
+        184,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "confirm": {
+          "s": 33
+         },
+         "icon": "mdi:lock",
+         "id": 44,
+         "r": [
+          884,
+          120,
+          72,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "confirm"
+         }
+        },
+        {
+         "confirm": {
+          "s": 34
+         },
+         "icon": "mdi:lock-open",
+         "id": 45,
+         "r": [
+          964,
+          120,
+          72,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "confirm"
+         }
+        },
+        {
+         "id": 46,
+         "r": [
+          884,
+          224,
+          152,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 35
+         }
+        }
+       ]
+      },
+      {
+       "component": "apollo/scene-row",
+       "id": 47,
+       "r": [
+        868,
+        276,
+        376,
+        184
+       ],
+       "t": "card",
+       "w": [
+        {
+         "icon": "mdi:palette",
+         "id": 48,
+         "r": [
+          884,
+          348,
+          168,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "pulse"
+         },
+         "text": {
+          "s": 36
+         }
+        },
+        {
+         "icon": "mdi:palette",
+         "id": 49,
+         "r": [
+          1060,
+          348,
+          168,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "pulse"
+         },
+         "text": {
+          "s": 37
+         }
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "icon": "mdi:thermometer",
+     "id": "climate",
+     "title": "Climate",
+     "view": 1,
+     "w": [
+      {
+       "id": 50,
+       "r": [
+        100,
+        20,
+        376,
+        56
+       ],
+       "t": "heading",
+       "text": "Climate"
+      },
+      {
+       "component": "apollo/thermostat",
+       "header": {
+        "icon": "mdi:thermostat",
+        "r": [
+         116,
+         100,
+         344,
+         32
+        ],
+        "title": {
+         "s": 38
+        }
+       },
+       "id": 51,
+       "r": [
+        100,
+        84,
+        376,
+        376
+       ],
+       "t": "card",
+       "w": [
+        {
+         "change": {
+          "policy": "progress"
+         },
+         "id": 52,
+         "max": {
+          "s": 41
+         },
+         "min": {
+          "s": 40
+         },
+         "r": [
+          116,
+          140,
+          344,
+          212
+         ],
+         "step": {
+          "s": 42
+         },
+         "t": "thermostat",
+         "value": {
+          "s": 39
+         }
+        },
+        {
+         "id": 53,
+         "r": [
+          116,
+          360,
+          344,
+          48
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "progress"
+         },
+         "text": "Heat"
+        },
+        {
+         "id": 54,
+         "r": [
+          116,
+          416,
+          344,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 43
+         }
+        }
+       ]
+      },
+      {
+       "id": 55,
+       "r": [
+        484,
+        20,
+        376,
+        56
+       ],
+       "t": "heading",
+       "text": "Climate"
+      },
+      {
+       "component": "apollo/alarm-panel",
+       "header": {
+        "icon": "mdi:shield-home",
+        "r": [
+         500,
+         100,
+         344,
+         32
+        ],
+        "title": {
+         "s": 44
+        }
+       },
+       "id": 56,
+       "r": [
+        484,
+        84,
+        376,
+        376
+       ],
+       "t": "card",
+       "w": [
+        {
+         "id": 57,
+         "r": [
+          500,
+          296,
+          344,
+          44
+         ],
+         "size": "l",
+         "t": "label",
+         "text": {
+          "s": 45
+         }
+        },
+        {
+         "confirm": "Arm home?",
+         "id": 58,
+         "r": [
+          500,
+          348,
+          109,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "confirm"
+         },
+         "text": "Arm home"
+        },
+        {
+         "confirm": "Arm away?",
+         "id": 59,
+         "r": [
+          617,
+          348,
+          109,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "confirm"
+         },
+         "text": "Arm away"
+        },
+        {
+         "confirm": "Disarm?",
+         "id": 60,
+         "r": [
+          734,
+          348,
+          109,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "confirm"
+         },
+         "text": "Disarm"
+        }
+       ]
+      },
+      {
+       "id": 61,
+       "r": [
+        868,
+        20,
+        376,
+        56
+       ],
+       "t": "heading",
+       "text": "Climate"
+      },
+      {
+       "component": "apollo/blinds",
+       "header": {
+        "icon": "mdi:blinds",
+        "r": [
+         884,
+         100,
+         152,
+         32
+        ],
+        "title": {
+         "s": 46
+        }
+       },
+       "id": 62,
+       "r": [
+        868,
+        84,
+        184,
+        376
+       ],
+       "t": "card",
+       "w": [
+        {
+         "icon": "mdi:arrow-up",
+         "id": 63,
+         "r": [
+          884,
+          264,
+          45,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "progress"
+         }
+        },
+        {
+         "icon": "mdi:stop",
+         "id": 64,
+         "r": [
+          937,
+          264,
+          45,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "progress"
+         }
+        },
+        {
+         "icon": "mdi:arrow-down",
+         "id": 65,
+         "r": [
+          990,
+          264,
+          45,
+          96
+         ],
+         "t": "button",
+         "tap": {
+          "policy": "progress"
+         }
+        },
+        {
+         "change": {
+          "policy": "progress"
+         },
+         "id": 66,
+         "max": 100,
+         "min": 0,
+         "r": [
+          884,
+          368,
+          152,
+          40
+         ],
+         "step": 1,
+         "t": "slider",
+         "value": {
+          "s": 47
+         }
+        },
+        {
+         "id": 67,
+         "r": [
+          884,
+          416,
+          152,
+          28
+         ],
+         "size": "m",
+         "t": "label",
+         "text": {
+          "s": 48
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "screen": [
+    1280,
+    800
+   ],
+   "theme": {
+    "acc": "#F5B547",
+    "acc2": "#6CB4FF",
+    "accf": "#F5B547",
+    "accf_pr": "#D99A2B",
+    "acct": "#0E1116",
+    "bw": 0,
+    "card": "#181C23",
+    "card2": "#232833",
+    "card2_pr": "#303746",
+    "card_pr": "#232833",
+    "dark": true,
+    "description": "Dark and calm, amber for lights. The default.",
+    "id": "midnight",
+    "ion": "#F5B547",
+    "line": "#2A303A",
+    "name": "Midnight",
+    "onbg": "#33291A",
+    "onbg_pr": "#4A3A20",
+    "ontx": "#F7E3BC",
+    "r": 16,
+    "r2": 10,
+    "tx": "#E8EAED",
+    "tx2": "#9AA0A8",
+    "wall": "#101418"
+   },
+   "v": 1
+  },
+  "url_path": "tab-1",
+  "values": {
+   "1": "Sensor graph",
+   "10": "Sensor graph",
+   "11": [],
+   "12": "unknown",
+   "13": "Light tile",
+   "14": "unknown",
+   "15": "0%",
+   "16": "Light with slider",
+   "17": "unknown",
+   "18": 0,
+   "19": "0%",
+   "2": [],
+   "20": "Fan",
+   "21": "unknown",
+   "22": "Sensor value",
+   "23": "unknown",
+   "24": "mdi:music-note",
+   "25": " \u00b7 ",
+   "26": 0,
+   "27": "Weather",
+   "28": "mdi:weather-unknown",
+   "29": "None\u00b0 \u00b7 unknown",
+   "3": "unknown",
+   "30": [],
+   "31": "",
+   "32": "None",
+   "33": "Lock None?",
+   "34": "Unlock None?",
+   "35": "None: unknown",
+   "36": "scene.movie",
+   "37": "scene.dinner",
+   "38": "Thermostat",
+   "39": "None",
+   "4": "Sensor graph",
+   "40": 7,
+   "41": 35,
+   "42": 0.5,
+   "43": "Now \u2013\u00b0 \u00b7 unknown",
+   "44": "Alarm panel",
+   "45": "unknown",
+   "46": "Blinds",
+   "47": 0,
+   "48": "unknown \u00b7 0%",
+   "5": [],
+   "6": "unknown",
+   "7": "Sensor graph",
+   "8": [],
+   "9": "unknown"
+  },
+  "warnings": [
+   {
+    "card": 4,
+    "code": "not_tab_element",
+    "detail": "tile",
+    "page": null,
+    "r": null,
+    "section": 1,
+    "view": 0
+   },
+   {
+    "card": null,
+    "code": "section_split",
+    "detail": "",
+    "page": null,
+    "r": null,
+    "section": 2,
+    "view": 0
+   },
+   {
+    "card": null,
+    "code": "section_split",
+    "detail": "",
+    "page": null,
+    "r": null,
+    "section": 0,
+    "view": 1
+   },
+   {
+    "card": 4,
+    "code": "over_budget_charts",
+    "detail": "",
+    "page": "home",
+    "r": [
+     484,
+     276,
+     376,
+     184
+    ],
+    "section": 0,
+    "view": 0
+   }
+  ]
+ },
+ "library": {
+  "components": [
+   {
+    "approved": true,
+    "description": "Arm or disarm an alarm. Always asks before acting.",
+    "grid": {
+     "columns": 12,
+     "rows": 6
+    },
+    "icon": "mdi:shield-home",
+    "id": "apollo/alarm-panel",
+    "name": "Alarm panel",
+    "params": {
+     "entity": {
+      "domain": "alarm_control_panel",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": true,
+    "size": [
+     2,
+     2
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-alarm-panel",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Open, stop, close and set the position of a cover.",
+    "grid": {
+     "columns": 6,
+     "rows": 6
+    },
+    "icon": "mdi:blinds",
+    "id": "apollo/blinds",
+    "name": "Blinds",
+    "params": {
+     "entity": {
+      "domain": "cover",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     1,
+     2
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-blinds",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "A still image from a camera that refreshes every few seconds.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:cctv",
+    "id": "apollo/camera-snapshot",
+    "name": "Camera snapshot",
+    "params": {
+     "entity": {
+      "domain": "camera",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-camera-snapshot",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "A power reading on a dial with a limit you choose.",
+    "grid": {
+     "columns": 6,
+     "rows": 3
+    },
+    "icon": "mdi:lightning-bolt",
+    "id": "community/energy-gauge",
+    "name": "Energy gauge",
+    "params": {
+     "entity": {
+      "domain": "sensor",
+      "kind": "entity",
+      "multiple": false
+     },
+     "max": {
+      "default": 5000.0,
+      "kind": "number",
+      "max": null,
+      "min": null
+     }
+    },
+    "sensitive": false,
+    "size": [
+     1,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-community-energy-gauge",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Turn a fan on or off, or set it to half speed.",
+    "grid": {
+     "columns": 6,
+     "rows": 3
+    },
+    "icon": "mdi:fan",
+    "id": "apollo/fan",
+    "name": "Fan",
+    "params": {
+     "entity": {
+      "domain": "fan",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     1,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-fan",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Turn a light on or off and see its brightness.",
+    "grid": {
+     "columns": 6,
+     "rows": 3
+    },
+    "icon": "mdi:lightbulb",
+    "id": "apollo/light-tile",
+    "name": "Light tile",
+    "params": {
+     "entity": {
+      "domain": "light",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     1,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-light-tile",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "A light switch with a brightness slider.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:lightbulb-on",
+    "id": "apollo/light-slider",
+    "name": "Light with slider",
+    "params": {
+     "entity": {
+      "domain": "light",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-light-slider",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Lock or unlock a door. Always asks before acting.",
+    "grid": {
+     "columns": 6,
+     "rows": 3
+    },
+    "icon": "mdi:lock",
+    "id": "apollo/lock",
+    "name": "Lock",
+    "params": {
+     "entity": {
+      "domain": "lock",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": true,
+    "size": [
+     1,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-lock",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Artwork, track title, transport buttons and volume.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:speaker",
+    "id": "apollo/media-player",
+    "name": "Media player",
+    "params": {
+     "entity": {
+      "domain": "media_player",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-media-player",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Who is home, with a picture for each person.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:account-multiple",
+    "id": "community/presence-chips",
+    "name": "Presence chips",
+    "params": {
+     "people": {
+      "domain": "person",
+      "kind": "entity",
+      "multiple": true
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-community-presence-chips",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Temperature, humidity and lights for one room, with a link to its page.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:sofa",
+    "id": "community/room-summary",
+    "name": "Room summary",
+    "params": {
+     "humidity_sensor": {
+      "domain": "sensor",
+      "kind": "entity",
+      "multiple": false
+     },
+     "lights": {
+      "domain": "light",
+      "kind": "entity",
+      "multiple": true
+     },
+     "page": {
+      "kind": "page"
+     },
+     "temperature_sensor": {
+      "domain": "sensor",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-community-room-summary",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "One button for each scene you pick.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:palette",
+    "id": "apollo/scene-row",
+    "name": "Scene row",
+    "params": {
+     "scenes": {
+      "domain": "scene",
+      "kind": "entity",
+      "multiple": true
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-scene-row",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "The last 24 hours of a sensor as a line.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:chart-line",
+    "id": "apollo/sensor-graph",
+    "name": "Sensor graph",
+    "params": {
+     "entity": {
+      "domain": "sensor",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-sensor-graph",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "One sensor reading in large type.",
+    "grid": {
+     "columns": 6,
+     "rows": 3
+    },
+    "icon": "mdi:gauge",
+    "id": "apollo/sensor-value",
+    "name": "Sensor value",
+    "params": {
+     "entity": {
+      "domain": "sensor",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     1,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-sensor-value",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Set one target temperature and see what the heating is doing. Low and high target modes (heat_cool) are not supported yet.",
+    "grid": {
+     "columns": 12,
+     "rows": 6
+    },
+    "icon": "mdi:thermostat",
+    "id": "apollo/thermostat",
+    "name": "Thermostat",
+    "params": {
+     "entity": {
+      "domain": "climate",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     2
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-thermostat",
+    "version": "1.0.0"
+   },
+   {
+    "approved": true,
+    "description": "Current conditions and the next five days.",
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "icon": "mdi:weather-partly-cloudy",
+    "id": "apollo/weather",
+    "name": "Weather",
+    "params": {
+     "entity": {
+      "domain": "weather",
+      "kind": "entity",
+      "multiple": false
+     }
+    },
+    "sensitive": false,
+    "size": [
+     2,
+     1
+    ],
+    "source": "builtin",
+    "tag": "apollo-tab-el-apollo-weather",
+    "version": "1.0.0"
+   }
+  ],
+  "components_path": "/config/apollo_tab/components",
+  "errors": [
+   {
+    "code": "unknown_key",
+    "file": "my-card.yaml",
+    "id": "me/thing",
+    "index": 0,
+    "message": "outputs.toggle: unknown key 'foo'"
+   }
+  ],
+  "themes": [
+   {
+    "acc": "#F5B547",
+    "acc2": "#6CB4FF",
+    "accf": "#F5B547",
+    "accf_pr": "#D99A2B",
+    "acct": "#0E1116",
+    "bw": 0,
+    "card": "#181C23",
+    "card2": "#232833",
+    "card2_pr": "#303746",
+    "card_pr": "#232833",
+    "dark": true,
+    "description": "Dark and calm, amber for lights. The default.",
+    "id": "midnight",
+    "ion": "#F5B547",
+    "line": "#2A303A",
+    "name": "Midnight",
+    "onbg": "#33291A",
+    "onbg_pr": "#4A3A20",
+    "ontx": "#F7E3BC",
+    "r": 16,
+    "r2": 10,
+    "tx": "#E8EAED",
+    "tx2": "#9AA0A8",
+    "wall": "#101418"
+   },
+   {
+    "acc": "#B86E00",
+    "acc2": "#1F6FD1",
+    "accf": "#9C5C00",
+    "accf_pr": "#7E4A00",
+    "acct": "#FFFFFF",
+    "bw": 0,
+    "card": "#FFFFFF",
+    "card2": "#E2E6EC",
+    "card2_pr": "#D2D7DE",
+    "card_pr": "#E9ECF0",
+    "dark": false,
+    "description": "Bright and crisp for kitchens and sunny rooms.",
+    "id": "daylight",
+    "ion": "#B86E00",
+    "line": "#DDE1E6",
+    "name": "Daylight",
+    "onbg": "#FFF1D6",
+    "onbg_pr": "#F2DFB8",
+    "ontx": "#5A3600",
+    "r": 16,
+    "r2": 10,
+    "tx": "#15181D",
+    "tx2": "#5D6570",
+    "wall": "#EEF0F3"
+   },
+   {
+    "acc": "#FF9F5A",
+    "acc2": "#7FC8A9",
+    "accf": "#FF9F5A",
+    "accf_pr": "#E0813E",
+    "acct": "#1B1714",
+    "bw": 1,
+    "card": "#201C18",
+    "card2": "#322A23",
+    "card2_pr": "#41372E",
+    "card_pr": "#322A23",
+    "dark": true,
+    "description": "Earthy dark tones for living spaces.",
+    "id": "warm",
+    "ion": "#FF9F5A",
+    "line": "#3A322A",
+    "name": "Warm",
+    "onbg": "#45301F",
+    "onbg_pr": "#5A3E27",
+    "ontx": "#FFD9BC",
+    "r": 18,
+    "r2": 12,
+    "tx": "#F2EADF",
+    "tx2": "#B3A797",
+    "wall": "#1B1714"
+   },
+   {
+    "acc": "#7C5CD6",
+    "acc2": "#2F9C8C",
+    "accf": "#7C5CD6",
+    "accf_pr": "#6547B8",
+    "acct": "#FFFFFF",
+    "bw": 0,
+    "card": "#FFFFFF",
+    "card2": "#EFEAF5",
+    "card2_pr": "#E2DAEE",
+    "card_pr": "#F1ECF7",
+    "dark": false,
+    "description": "Pastel tints and round corners.",
+    "id": "soft",
+    "ion": "#7C5CD6",
+    "line": "#FFFFFF",
+    "name": "Soft",
+    "onbg": "#EEE7FB",
+    "onbg_pr": "#DDD2F6",
+    "ontx": "#3B2A73",
+    "r": 28,
+    "r2": 20,
+    "tx": "#2A2433",
+    "tx2": "#6B6279",
+    "wall": "#F6F3F9"
+   },
+   {
+    "acc": "#F0F4F0",
+    "acc2": "#F0F4F0",
+    "accf": "#F0F4F0",
+    "accf_pr": "#C8CCC8",
+    "acct": "#0A0A0A",
+    "bw": 2,
+    "card": "#0A0A0A",
+    "card2": "#202020",
+    "card2_pr": "#383838",
+    "card_pr": "#282828",
+    "dark": true,
+    "description": "Black and white with thick borders. Readable across the room.",
+    "id": "mono",
+    "ion": "#0A0A0A",
+    "line": "#F0F4F0",
+    "name": "Mono",
+    "onbg": "#F0F4F0",
+    "onbg_pr": "#C8CCC8",
+    "ontx": "#0A0A0A",
+    "r": 8,
+    "r2": 6,
+    "tx": "#F0F4F0",
+    "tx2": "#A6A6A6",
+    "wall": "#0A0A0A"
+   },
+   {
+    "acc": "#FFD48A",
+    "acc2": "#A8D8FF",
+    "accf": "#FFD48A",
+    "accf_pr": "#E0B66C",
+    "acct": "#10243F",
+    "bw": 1,
+    "card": "#2D4567",
+    "card2": "#3A4F74",
+    "card2_pr": "#4A5E8C",
+    "card_pr": "#3E5473",
+    "dark": true,
+    "description": "Deep blue with light cards. The frosted wallpaper version is not available yet, so this is a flat approximation.",
+    "id": "glass",
+    "ion": "#FFD48A",
+    "line": "#5B7096",
+    "name": "Glass",
+    "onbg": "#5A5648",
+    "onbg_pr": "#6E6850",
+    "ontx": "#FFF4DC",
+    "r": 24,
+    "r2": 16,
+    "tx": "#FFFFFF",
+    "tx2": "#DCE3F0",
+    "wall": "#1A3E62"
+   }
+  ]
+ },
+ "strings": {
+  "card.action_failed": "That did not work: {message}",
+  "card.choose_entity": "Choose an entity in the editor",
+  "card.demo_action": "Choose an entity first",
+  "card.entity_missing": "Entity not found: {entity}",
+  "card.example": "Example",
+  "card.invalid": "This element's settings are not valid: {message}",
+  "card.loading": "Loading",
+  "card.needs_approval": "An administrator must allow this element before it can control locks or alarms",
+  "card.sent": "Sent",
+  "card.unauthorized": "You are not allowed to do that",
+  "card.unknown_component": "The element \"{id}\" is not installed",
+  "card.waiting": "Waiting for Home Assistant",
+  "confirm.cancel": "Cancel",
+  "confirm.ok": "Confirm",
+  "confirm.title": "Are you sure?",
+  "editor.accent": "Accent colour",
+  "editor.approve": "Allow this element",
+  "editor.approve_text": "This element comes from your components folder and can control locks or alarms. It stays switched off until an administrator allows it.",
+  "editor.basic_form": "Home Assistant's form controls could not be loaded, so a basic form is shown.",
+  "editor.color": "Card colour",
+  "editor.element": "Element",
+  "editor.entities": "What it shows and controls",
+  "editor.gradient": "Gradient",
+  "editor.gradient_horizontal": "Left to right",
+  "editor.gradient_none": "None",
+  "editor.gradient_note": "The tablet draws at most 4 left-to-right gradients on a page. Extra ones are drawn as a plain colour.",
+  "editor.gradient_to": "Second colour",
+  "editor.gradient_vertical": "Top to bottom",
+  "editor.not_tab_dashboard": "This dashboard is not a TAB-1 dashboard. The element works here, but it is not converted for a tablet.",
+  "editor.revoke": "Stop allowing this element",
+  "editor.size": "Size",
+  "editor.size_custom": "Custom (set on the Layout tab)",
+  "editor.style": "Style",
+  "editor.theme": "Theme",
+  "editor.theme_dashboard": "Same as the dashboard",
+  "editor.title": "Title",
+  "editor.title_helper": "Leave empty to use the entity's name",
+  "editor.transparency": "Transparency",
+  "editor.transparency_helper": "Mixes the card colour with the page background. The tablet receives the mixed colour.",
+  "editor.use_accent": "Use my own accent colour",
+  "editor.use_color": "Use my own card colour",
+  "panel.allow": "Allow",
+  "panel.allowed": "Allowed",
+  "panel.create": "Create TAB-1 dashboard",
+  "panel.create_failed": "The dashboard could not be created: {message}",
+  "panel.creating": "Creating the dashboard",
+  "panel.dashboards": "Your TAB-1 dashboards",
+  "panel.edit": "Open the editor",
+  "panel.elements": "Elements",
+  "panel.elements_count": "{count} elements installed",
+  "panel.errors": "Files with problems",
+  "panel.folder_hint": "To add elements, put Component YAML files in the apollo_tab/components folder of your Home Assistant configuration, then press Reload elements.",
+  "panel.intro": "Build a dashboard for the Apollo TAB-1 with Home Assistant's own dashboard editor.",
+  "panel.none": "No TAB-1 dashboard yet.",
+  "panel.not_sent": "Layouts are not sent to tablets yet. You can build, preview and check dashboards today.",
+  "panel.pages": "{count} pages",
+  "panel.reload": "Reload elements",
+  "panel.reloaded": "Elements reloaded",
+  "panel.revoke": "Stop allowing",
+  "panel.sensitive": "Controls locks or alarms",
+  "panel.source_builtin": "Built in",
+  "panel.source_user": "From your folder",
+  "panel.tablets_none": "No TAB-1 tablet found yet. You can still build dashboards.",
+  "panel.tablets_some": "Tablets found: {count}",
+  "panel.theme": "Theme",
+  "panel.title": "TAB-1 dashboards",
+  "panel.warnings": "{count} things to check",
+  "panel.yaml_note": "This dashboard is kept in a YAML file. Change its theme there, under apollo_tab.",
+  "preview.admin_only": "The tablet preview is available to administrators.",
+  "preview.no_pages": "This dashboard has no pages yet. Add a TAB-1 element to a section.",
+  "preview.no_warnings": "Everything fits.",
+  "preview.not_sent": "Layouts are not sent to tablets yet. This shows what a tablet would receive.",
+  "preview.not_tab": "This is not a TAB-1 dashboard.",
+  "preview.omitted": "Left out",
+  "preview.page": "Page {n} of {count}",
+  "preview.title": "Tablet preview",
+  "preview.warnings": "Things to check",
+  "size.1x1": "Small",
+  "size.1x2": "Tall",
+  "size.2x1": "Wide",
+  "size.2x2": "Large",
+  "warn.card_too_tall": "This element is taller than a page and was made shorter",
+  "warn.card_too_wide": "This element is wider than its section and was made narrower",
+  "warn.columns_differ": "This view does not use 3 columns here, so the tablet's arrangement will differ. Set the view to 3 columns",
+  "warn.element_clipped": "Part of this element does not fit at this size",
+  "warn.invalid_card": "This element's settings are not valid: {detail}",
+  "warn.invalid_options": "The apollo_tab settings of this dashboard are not valid, so the defaults are used",
+  "warn.needs_approval": "This element must be allowed by an administrator: {detail}",
+  "warn.nested_section_ignored": "Sections inside sections are not supported and were left out",
+  "warn.not_tab_element": "This card is not a TAB-1 element, so it was left out: {detail}",
+  "warn.over_budget_arcs": "A page can show 4 dials. This one was left out",
+  "warn.over_budget_charts": "A page can show 4 charts. This one was left out",
+  "warn.over_budget_gradients": "A page can show 4 left-to-right gradients. This one is drawn as a plain colour",
+  "warn.params_incomplete": "This element has no entity yet and shows example values",
+  "warn.section_not_grid": "This section type is not supported and was left out",
+  "warn.section_split": "This section is taller than a page and continues on the next page",
+  "warn.strategy_not_supported": "Automatically generated dashboards, views and sections cannot be converted",
+  "warn.too_many_nav": "The tablet's side rail shows 8 views. The others are reached by swiping",
+  "warn.too_many_pages": "A dashboard can have 20 pages. The rest were left out",
+  "warn.unknown_component": "This element is not installed: {detail}",
+  "warn.view_extras_ignored": "Badges, headers and sidebars of a view are not shown on the tablet",
+  "warn.view_not_sections": "This view is not a sections view, so it was left out",
+  "warn.visibility_ignored": "Visibility conditions are not supported yet. This is always shown on the tablet"
+ },
+ "themes": [
+  {
+   "acc": "#F5B547",
+   "acc2": "#6CB4FF",
+   "accf": "#F5B547",
+   "accf_pr": "#D99A2B",
+   "acct": "#0E1116",
+   "bw": 0,
+   "card": "#181C23",
+   "card2": "#232833",
+   "card2_pr": "#303746",
+   "card_pr": "#232833",
+   "dark": true,
+   "description": "Dark and calm, amber for lights. The default.",
+   "id": "midnight",
+   "ion": "#F5B547",
+   "line": "#2A303A",
+   "name": "Midnight",
+   "onbg": "#33291A",
+   "onbg_pr": "#4A3A20",
+   "ontx": "#F7E3BC",
+   "r": 16,
+   "r2": 10,
+   "tx": "#E8EAED",
+   "tx2": "#9AA0A8",
+   "wall": "#101418"
+  },
+  {
+   "acc": "#B86E00",
+   "acc2": "#1F6FD1",
+   "accf": "#9C5C00",
+   "accf_pr": "#7E4A00",
+   "acct": "#FFFFFF",
+   "bw": 0,
+   "card": "#FFFFFF",
+   "card2": "#E2E6EC",
+   "card2_pr": "#D2D7DE",
+   "card_pr": "#E9ECF0",
+   "dark": false,
+   "description": "Bright and crisp for kitchens and sunny rooms.",
+   "id": "daylight",
+   "ion": "#B86E00",
+   "line": "#DDE1E6",
+   "name": "Daylight",
+   "onbg": "#FFF1D6",
+   "onbg_pr": "#F2DFB8",
+   "ontx": "#5A3600",
+   "r": 16,
+   "r2": 10,
+   "tx": "#15181D",
+   "tx2": "#5D6570",
+   "wall": "#EEF0F3"
+  },
+  {
+   "acc": "#FF9F5A",
+   "acc2": "#7FC8A9",
+   "accf": "#FF9F5A",
+   "accf_pr": "#E0813E",
+   "acct": "#1B1714",
+   "bw": 1,
+   "card": "#201C18",
+   "card2": "#322A23",
+   "card2_pr": "#41372E",
+   "card_pr": "#322A23",
+   "dark": true,
+   "description": "Earthy dark tones for living spaces.",
+   "id": "warm",
+   "ion": "#FF9F5A",
+   "line": "#3A322A",
+   "name": "Warm",
+   "onbg": "#45301F",
+   "onbg_pr": "#5A3E27",
+   "ontx": "#FFD9BC",
+   "r": 18,
+   "r2": 12,
+   "tx": "#F2EADF",
+   "tx2": "#B3A797",
+   "wall": "#1B1714"
+  },
+  {
+   "acc": "#7C5CD6",
+   "acc2": "#2F9C8C",
+   "accf": "#7C5CD6",
+   "accf_pr": "#6547B8",
+   "acct": "#FFFFFF",
+   "bw": 0,
+   "card": "#FFFFFF",
+   "card2": "#EFEAF5",
+   "card2_pr": "#E2DAEE",
+   "card_pr": "#F1ECF7",
+   "dark": false,
+   "description": "Pastel tints and round corners.",
+   "id": "soft",
+   "ion": "#7C5CD6",
+   "line": "#FFFFFF",
+   "name": "Soft",
+   "onbg": "#EEE7FB",
+   "onbg_pr": "#DDD2F6",
+   "ontx": "#3B2A73",
+   "r": 28,
+   "r2": 20,
+   "tx": "#2A2433",
+   "tx2": "#6B6279",
+   "wall": "#F6F3F9"
+  },
+  {
+   "acc": "#F0F4F0",
+   "acc2": "#F0F4F0",
+   "accf": "#F0F4F0",
+   "accf_pr": "#C8CCC8",
+   "acct": "#0A0A0A",
+   "bw": 2,
+   "card": "#0A0A0A",
+   "card2": "#202020",
+   "card2_pr": "#383838",
+   "card_pr": "#282828",
+   "dark": true,
+   "description": "Black and white with thick borders. Readable across the room.",
+   "id": "mono",
+   "ion": "#0A0A0A",
+   "line": "#F0F4F0",
+   "name": "Mono",
+   "onbg": "#F0F4F0",
+   "onbg_pr": "#C8CCC8",
+   "ontx": "#0A0A0A",
+   "r": 8,
+   "r2": 6,
+   "tx": "#F0F4F0",
+   "tx2": "#A6A6A6",
+   "wall": "#0A0A0A"
+  },
+  {
+   "acc": "#FFD48A",
+   "acc2": "#A8D8FF",
+   "accf": "#FFD48A",
+   "accf_pr": "#E0B66C",
+   "acct": "#10243F",
+   "bw": 1,
+   "card": "#2D4567",
+   "card2": "#3A4F74",
+   "card2_pr": "#4A5E8C",
+   "card_pr": "#3E5473",
+   "dark": true,
+   "description": "Deep blue with light cards. The frosted wallpaper version is not available yet, so this is a flat approximation.",
+   "id": "glass",
+   "ion": "#FFD48A",
+   "line": "#5B7096",
+   "name": "Glass",
+   "onbg": "#5A5648",
+   "onbg_pr": "#6E6850",
+   "ontx": "#FFF4DC",
+   "r": 24,
+   "r2": 16,
+   "tx": "#FFFFFF",
+   "tx2": "#DCE3F0",
+   "wall": "#1A3E62"
+  }
+ ]
+}

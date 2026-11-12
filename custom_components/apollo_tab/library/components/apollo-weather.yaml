@@ -1,0 +1,40 @@
+schema: 1
+id: apollo/weather
+version: 1.0.0
+name: Weather
+description: Current conditions and the next five days.
+icon: mdi:weather-partly-cloudy
+size: 2x1
+params:
+  entity:
+    domain: weather
+inputs:
+  condition: "{{ states(entity) }}"
+  icon: "mdi:weather-{{ {'clear-night': 'night', 'partlycloudy': 'partly-cloudy', 'exceptional': 'cloudy-alert'}.get(states(entity), states(entity)) }}"
+  temperature: "{{ state_attr(entity, 'temperature') }}"
+  forecast:
+    action: weather.get_forecasts
+    data:
+      entity_id: "{{ entity }}"
+      type: daily
+    result: "{{ response[entity].forecast[:5] | map(attribute='temperature') | list }}"
+    refresh: 30min
+outputs:
+  open_details:
+    local: open_details
+layout:
+  - type: image
+    value: icon
+    side: true
+    on_tap: open_details
+  - type: label
+    text: "{{ temperature }}° · {{ condition }}"
+  - type: chart
+    value: forecast
+    kind: bars
+preview:
+  inputs:
+    condition: cloudy
+    icon: mdi:weather-cloudy
+    temperature: 12
+    forecast: [14, 11, 13, 15, 10]

@@ -1,0 +1,40 @@
+schema: 1
+id: apollo/lock
+version: 1.0.0
+name: Lock
+description: Lock or unlock a door. Always asks before acting.
+icon: mdi:lock
+header: false
+size: 1x1
+params:
+  entity:
+    domain: lock
+inputs:
+  state: "{{ states(entity) }}"
+  name: "{{ state_attr(entity, 'friendly_name') }}"
+outputs:
+  lock:
+    action: lock.lock
+    data:
+      entity_id: "{{ entity }}"
+    feedback: confirm
+  unlock:
+    action: lock.unlock
+    data:
+      entity_id: "{{ entity }}"
+    feedback: confirm
+layout:
+  - type: button
+    icon: mdi:lock
+    on_tap: lock
+    confirm: "Lock {{ name }}?"
+  - type: button
+    icon: mdi:lock-open
+    on_tap: unlock
+    confirm: "Unlock {{ name }}?"
+  - type: label
+    text: "{{ name }}: {{ state }}"
+preview:
+  inputs:
+    state: locked
+    name: Front door

@@ -1,0 +1,25 @@
+schema: 1
+id: apollo/sensor-value
+version: 1.0.0
+name: Sensor value
+description: One sensor reading in large type.
+icon: mdi:gauge
+size: 1x1
+params:
+  entity:
+    domain: sensor
+inputs:
+  reading: "{{ states(entity) }}"
+  unit: "{{ state_attr(entity, 'unit_of_measurement') or '' }}"
+outputs:
+  open_details:
+    local: open_details
+layout:
+  - type: label
+    text: "{{ reading }}{{ unit }}"
+    size: l
+    on_tap: open_details
+preview:
+  inputs:
+    reading: "46"
+    unit: "%"

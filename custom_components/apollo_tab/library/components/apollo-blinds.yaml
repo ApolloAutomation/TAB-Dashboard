@@ -1,0 +1,56 @@
+schema: 1
+id: apollo/blinds
+version: 1.0.0
+name: Blinds
+description: Open, stop, close and set the position of a cover.
+icon: mdi:blinds
+size: 1x2
+params:
+  entity:
+    domain: cover
+inputs:
+  position: "{{ state_attr(entity, 'current_position') | int(0) }}"
+  state: "{{ states(entity) }}"
+outputs:
+  open:
+    action: cover.open_cover
+    data:
+      entity_id: "{{ entity }}"
+    feedback: progress
+  close:
+    action: cover.close_cover
+    data:
+      entity_id: "{{ entity }}"
+    feedback: progress
+  stop:
+    action: cover.stop_cover
+    data:
+      entity_id: "{{ entity }}"
+    feedback: progress
+  set_position:
+    action: cover.set_cover_position
+    data:
+      entity_id: "{{ entity }}"
+      position: "{{ value }}"
+    feedback: progress
+layout:
+  - type: button
+    icon: mdi:arrow-up
+    on_tap: open
+  - type: button
+    icon: mdi:stop
+    on_tap: stop
+  - type: button
+    icon: mdi:arrow-down
+    on_tap: close
+  - type: slider
+    value: position
+    min: 0
+    max: 100
+    on_change: set_position
+  - type: label
+    text: "{{ state }} · {{ position }}%"
+preview:
+  inputs:
+    position: 60
+    state: open

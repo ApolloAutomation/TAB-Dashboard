@@ -1,0 +1,47 @@
+schema: 1
+id: apollo/alarm-panel
+version: 1.0.0
+name: Alarm panel
+description: Arm or disarm an alarm. Always asks before acting.
+icon: mdi:shield-home
+size: 2x2
+params:
+  entity:
+    domain: alarm_control_panel
+inputs:
+  state: "{{ states(entity) }}"
+outputs:
+  arm_home:
+    action: alarm_control_panel.alarm_arm_home
+    data:
+      entity_id: "{{ entity }}"
+    feedback: confirm
+  arm_away:
+    action: alarm_control_panel.alarm_arm_away
+    data:
+      entity_id: "{{ entity }}"
+    feedback: confirm
+  disarm:
+    action: alarm_control_panel.alarm_disarm
+    data:
+      entity_id: "{{ entity }}"
+    feedback: confirm
+layout:
+  - type: label
+    text: "{{ state }}"
+    size: l
+  - type: button
+    text: Arm home
+    on_tap: arm_home
+    confirm: Arm home?
+  - type: button
+    text: Arm away
+    on_tap: arm_away
+    confirm: Arm away?
+  - type: button
+    text: Disarm
+    on_tap: disarm
+    confirm: Disarm?
+preview:
+  inputs:
+    state: armed_home

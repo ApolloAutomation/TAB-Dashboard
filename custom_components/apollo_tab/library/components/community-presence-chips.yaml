@@ -1,0 +1,26 @@
+schema: 1
+id: community/presence-chips
+version: 1.0.0
+name: Presence chips
+description: Who is home, with a picture for each person.
+icon: mdi:account-multiple
+header: false
+size: 2x1
+params:
+  people:
+    domain: person
+    multiple: true
+inputs:
+  home_count: "{{ expand(people) | selectattr('state', 'eq', 'home') | list | count }}"
+layout:
+  - type: image
+    for_each: people
+    as: person
+    value: "{{ state_attr(person, 'entity_picture') or 'mdi:account' }}"
+  - type: label
+    for_each: people
+    as: person
+    text: "{{ state_attr(person, 'friendly_name') or person }}: {{ states(person) }}"
+preview:
+  params:
+    people: [person.alex, person.sam]

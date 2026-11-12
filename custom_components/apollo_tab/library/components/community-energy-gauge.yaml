@@ -1,0 +1,26 @@
+schema: 1
+id: community/energy-gauge
+version: 1.0.0
+name: Energy gauge
+description: A power reading on a dial with a limit you choose.
+icon: mdi:lightning-bolt
+size: 1x1
+params:
+  entity:
+    domain: sensor
+  max:
+    type: number
+    default: 5000
+inputs:
+  power: "{{ states(entity) | float(0) }}"
+  limit: "{{ max }}"
+layout:
+  - type: thermostat
+    value: power
+    max: "{{ limit }}"
+  - type: label
+    text: "{{ power }} W"
+preview:
+  inputs:
+    power: 2400
+    limit: 5000
