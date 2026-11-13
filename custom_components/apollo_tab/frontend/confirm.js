@@ -11,7 +11,9 @@ export function confirmOpen() {
 // The dialog sits in its own shadow root on document.body with its own
 // styles, so it is themed the same on a dashboard and in the TAB-1 panel.
 // danger marks an OK that cannot be undone with an icon as well as colour.
-export function openConfirm({ title, text, okLabel, cancelLabel, danger = false }) {
+// more, when given, is a second paragraph, such as which tablets a deleted
+// dashboard leaves.
+export function openConfirm({ title, text, more = "", okLabel, cancelLabel, danger = false }) {
   return new Promise((resolve) => {
     const host = document.createElement("div");
     const root = host.attachShadow({ mode: "open" });
@@ -28,6 +30,15 @@ export function openConfirm({ title, text, okLabel, cancelLabel, danger = false 
     const body = document.createElement("p");
     body.id = "confirm-text";
     body.textContent = text;
+    const paragraphs = [body];
+    if (more) {
+      const extra = document.createElement("p");
+      extra.id = "confirm-more";
+      extra.dataset.test = "confirm-more";
+      extra.textContent = more;
+      paragraphs.push(extra);
+      dialog.setAttribute("aria-describedby", "confirm-text confirm-more");
+    }
     const actions = document.createElement("div");
     actions.className = "actions";
 
@@ -51,7 +62,7 @@ export function openConfirm({ title, text, okLabel, cancelLabel, danger = false 
     ok.append(label);
 
     actions.append(cancel, ok);
-    dialog.append(heading, body, actions);
+    dialog.append(heading, ...paragraphs, actions);
     root.append(style, dialog);
     document.body.append(host);
     openCount += 1;

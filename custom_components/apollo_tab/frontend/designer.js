@@ -1,4 +1,13 @@
-import { getConnection, loadLibrary, loadStrings, onLayoutChanged, previewLayout, t } from "./api.js";
+import {
+  assignTablet,
+  getConnection,
+  loadLibrary,
+  loadStrings,
+  onLayoutChanged,
+  onTabletsChanged,
+  previewLayout,
+  t,
+} from "./api.js";
 import {
   buildCardForm,
   buildDashboardSettings,
@@ -36,6 +45,7 @@ import {
   historyRedo,
   historyUndo,
   maxUnitsWide,
+  mergeDashboards,
   moveCardToPage,
   moveItem,
   movePage,
@@ -62,6 +72,7 @@ import {
 import { openCardPicker } from "./picker.js";
 import { renderPage } from "./render.js";
 import { canvasStyles, designerStyles, formStyles, pickerStyles, rendererStyles } from "./styles.js";
+import { captionLines, deleteNote, newTabletCount, shownOnRows, tabletsShowing } from "./tablets.js";
 
 const KEEP_IN_SIDEBAR_KEY = "apollo_tab.sidebar_keep";
 const COMPACT_BELOW = 900;
@@ -341,6 +352,12 @@ function banner(className) {
   return box;
 }
 
+function alertLine(text) {
+  const line = el("p", "alert", text);
+  line.setAttribute("role", "alert");
+  return line;
+}
+
 export class ApolloTabDesigner extends HTMLElement {
   constructor() {
     super();
@@ -400,6 +417,18 @@ export class ApolloTabDesigner extends HTMLElement {
     this._frame = 0;
     this._lastSaveState = null;
     this._titleFocus = false;
+    // The tablets (null until Home Assistant sent them) and a final failure
+    // to get them; the TAB-1 dashboards in the one order, with their titles
+    // (null until read); the tablets this editor is moving to the dashboard
+    // right now, and the failure of the last such move.
+    this._tablets = null;
+    this._tabletsError = null;
+    this._tabRows = null;
+    this._tabRowsSeq = 0;
+    this._tabRowsTimer = null;
+    this._assigning = new Set();
+    this._shownOnError = "";
+    this._shownOnKey = null;
 
     // Work left behind by a closed editor has its own guard (see leftBehind).
     this._onBeforeUnload = (event) => {
@@ -519,6 +548,11 @@ export class ApolloTabDesigner extends HTMLElement {
     this._stops = [];
     clearTimeout(this._previewTimer);
     clearTimeout(this._toastTimer);
+    clearTimeout(this._tabRowsTimer);
+    this._tabRowsTimer = null;
+    this._tabRowsSeq += 1;
+    this._assigning.clear();
+    this._shownOnError = "";
     // A message about this dashboard is not shown for the next one.
     this._toast = null;
     clearInterval(this._refreshTimer);
@@ -687,10 +721,22 @@ export class ApolloTabDesigner extends HTMLElement {
       onLayoutChanged(
         this._conn,
         (event) => this._layoutEvent(event),
-        () => this._checkRemote(),
+        () => {
+          this._checkRemote();
+          this._loadTabRows();
+        },
       ),
       () => document.removeEventListener("visibilitychange", onVisible),
+      // Which tablets show this dashboard, and how it is going there.
+      onTabletsChanged(this._conn, (tablets) => this._tabletsChanged(tablets), {
+        onError: (error) => {
+          this._tabletsError = error;
+          this._fillTabletLines();
+          this._fillShownOn();
+        },
+      }),
     );
+    this._loadTabRows();
     this._refreshTimer = setInterval(() => {
       if (document.visibilityState === "visible" && this._status === "ready") {
         this._requestPreview();
@@ -1405,8 +1451,14 @@ export class ApolloTabDesigner extends HTMLElement {
 
     const caption = el("div", "caption-row");
     const captionText = el("div");
-    captionText.append(el("h2", null, t("editor.tablet_label")), el("p", "small", t("editor.tablet_note")));
+    // Under the heading: which tablets show this dashboard, and how it is
+    // going there (see _fillTabletLines).
+    const tabletLines = el("div", "tablet-lines");
+    tabletLines.dataset.test = "tablet-lines";
+    captionText.append(el("h2", null, t("editor.tablet_label")), tabletLines);
     caption.append(captionText);
+    this._els.tabletLines = tabletLines;
+    this._fillTabletLines();
     if (!this._readOnly) {
       const add = makeButton(null, {
         className: "primary",
@@ -1501,11 +1553,13 @@ export class ApolloTabDesigner extends HTMLElement {
       layout,
       screenIndex,
       { values: this._preview.values || {}, errors: {} },
-      { sx: scale, sy: scale, interactive: false },
+      { sx: scale, sy: scale, interactive: false, tablet: true },
     );
 
     const page = layout.pages?.[screenIndex];
-    if (!page) {
+    // A page with no cards is still a page on the tablet, with its side bar
+    // entry; here it gets the "add the first card" help.
+    if (!page || !Array.isArray(page.w) || !page.w.length) {
       const empty = el("div", "empty-page");
       empty.style.color = layout.theme?.tx || "#E8EAED";
       empty.append(el("p", null, t("editor.empty_page")));
@@ -1847,6 +1901,7 @@ export class ApolloTabDesigner extends HTMLElement {
     side.classList.toggle("sheet", sheet);
     this._els.root.classList.toggle("sheet-open", sheet);
     this._els.sideNotes = null;
+    this._els.shownOn = null;
 
     this._keepFocus(side, () => {
       side.replaceChildren();
@@ -1922,6 +1977,7 @@ export class ApolloTabDesigner extends HTMLElement {
           title: this._dashboard?.title || "",
           themes: this._library?.themes || [],
           themeId: this._themeId(),
+          shownOn: this._shownOnBlock(),
           showInSidebar: this._dashboard?.show_in_sidebar === true,
           onRename: (title) => this._updateDashboard({ title }),
           onTheme: (themeId) => this._commit(setTheme(this._draft, themeId), { side: false }),
@@ -2856,12 +2912,225 @@ export class ApolloTabDesigner extends HTMLElement {
     }
   }
 
+  // ---- tablets ---------------------------------------------------------
+
+  _tabletsChanged(tablets) {
+    this._tablets = tablets;
+    this._tabletsError = null;
+    this._fillTabletLines();
+    this._fillShownOn();
+  }
+
+  // Reads the TAB-1 dashboards with their titles, in the one order, for the
+  // "Shown on" block and the delete question. Kept as it was when Home
+  // Assistant cannot be reached.
+  async _loadTabRows() {
+    if (!this._hass || this._status !== "ready") {
+      return;
+    }
+    const seq = ++this._tabRowsSeq;
+    let rows;
+    try {
+      const [tab, list] = await Promise.all([
+        this._hass.callWS({ type: "apollo_tab/dashboards" }),
+        this._hass.callWS({ type: "lovelace/dashboards/list" }),
+      ]);
+      rows = mergeDashboards(Array.isArray(tab?.dashboards) ? tab.dashboards : [], Array.isArray(list) ? list : []);
+    } catch {
+      return;
+    }
+    if (seq !== this._tabRowsSeq) {
+      return;
+    }
+    this._tabRows = rows;
+    this._fillShownOn();
+  }
+
+  // Several saves in a row are read once, after the last.
+  _scheduleTabRows() {
+    clearTimeout(this._tabRowsTimer);
+    this._tabRowsTimer = setTimeout(() => {
+      this._tabRowsTimer = null;
+      this._loadTabRows();
+    }, 300);
+  }
+
+  // The lines under "What the tablet will show": a line per tablet that
+  // shows this dashboard, or "Not shown on a tablet yet". Nothing while the
+  // tablets are not known.
+  _fillTabletLines() {
+    const box = this._els.tabletLines;
+    if (!box) {
+      return;
+    }
+    if (!Array.isArray(this._tablets) || this._tabletsError) {
+      box.replaceChildren();
+      return;
+    }
+    const lines = captionLines(this._tablets, this._urlPath, t);
+    box.replaceChildren(
+      ...lines.map((line) => {
+        const node = el("p", "small tablet-line", line.text);
+        node.dataset.test = "tablet-line";
+        node.dataset.kind = line.kind;
+        if (line.mac) {
+          node.dataset.mac = line.mac;
+        }
+        if (line.tone) {
+          node.dataset.tone = line.tone;
+        }
+        return node;
+      }),
+    );
+  }
+
+  // The "Shown on" block under the dashboard's theme. It is made with the
+  // side panel and filled again when the tablets change.
+  _shownOnBlock() {
+    const block = el("div", "shown-on");
+    block.dataset.test = "shown-on";
+    this._els.shownOn = block;
+    this._shownOnKey = null;
+    this._fillShownOn();
+    return block;
+  }
+
+  _fillShownOn() {
+    const block = this._els.shownOn;
+    if (!block) {
+      return;
+    }
+    const rows = Array.isArray(this._tablets)
+      ? shownOnRows(this._tablets, this._urlPath, this._tabRows || [], t)
+      : null;
+    // New tablets are not listed: an admin turns one on from Home.
+    const waiting = Array.isArray(this._tablets) ? newTabletCount(this._tablets) > 0 : false;
+    const failure = this._tabletsError ? errorMessage(this._tabletsError) : null;
+    // Drawn again only when something it says changed, so a status change
+    // on a tablet does not take focus from its button.
+    const key = JSON.stringify([rows, waiting, failure, this._shownOnError, [...this._assigning], this._urlPath]);
+    if (key === this._shownOnKey) {
+      return;
+    }
+    this._shownOnKey = key;
+    const active = this.shadowRoot.activeElement;
+    const focusKey = active && block.contains(active) ? active.dataset.focus || "shown-on-heading" : null;
+
+    const heading = el("h4", "shown-on-heading", t("editor.on_tablet_heading"));
+    heading.tabIndex = -1;
+    heading.dataset.focus = "shown-on-heading";
+    const children = [heading];
+    if (failure !== null) {
+      children.push(alertLine(t("tablets.load_failed", { message: failure })));
+    } else if (rows === null) {
+      children.push(el("p", "small", t("tablets.loading")));
+    } else if (!rows.length) {
+      if (!waiting) {
+        const none = el("p", "small", t("editor.on_tablet_none"));
+        none.dataset.test = "shown-on-none";
+        children.push(none);
+      }
+    } else {
+      const list = el("ul", "shown-on-list");
+      for (const row of rows) {
+        const item = el("li", "shown-on-row");
+        item.dataset.test = "shown-on-row";
+        item.dataset.mac = row.mac;
+        item.dataset.here = String(row.here);
+        const words = el("div", "shown-on-text");
+        words.append(el("span", "shown-on-name", row.name), el("span", "small", row.text));
+        item.append(words);
+        // A tablet always shows one dashboard, so there is nothing to untick
+        // here; another tablet can be moved to this one.
+        if (!row.here) {
+          const button = makeButton(t("editor.on_tablet_show"), {
+            test: "show-here",
+            focus: `show-here:${row.mac}`,
+            disabled: this._assigning.has(row.mac),
+            onClick: () => this._showHere(row.mac),
+          });
+          button.dataset.mac = row.mac;
+          item.append(button);
+        }
+        list.append(item);
+      }
+      children.push(list, el("p", "helper", t("editor.on_tablet_helper")));
+    }
+    if (failure === null && waiting) {
+      const note = el("p", "small", t("editor.on_tablet_new"));
+      note.dataset.test = "shown-on-new";
+      children.push(note);
+    }
+    if (this._shownOnError) {
+      const alert = alertLine(this._shownOnError);
+      alert.dataset.test = "shown-on-error";
+      children.push(alert);
+    }
+    // The address, for the show_dashboard action in automations.
+    const name = el("p", "automation-name");
+    name.dataset.test = "automation-name";
+    name.append(el("span", "field-label", t("editor.on_tablet_name")), el("code", null, this._urlPath || ""));
+    children.push(name);
+    block.replaceChildren(...children);
+
+    if (focusKey) {
+      const target = [...block.querySelectorAll("[data-focus]")].find((node) => node.dataset.focus === focusKey);
+      // The button is gone once its tablet shows this dashboard.
+      (target && !target.disabled ? target : heading).focus({ preventScroll: true });
+    }
+  }
+
+  async _showHere(mac) {
+    if (this._assigning.has(mac) || !this._conn) {
+      return;
+    }
+    const run = this._run;
+    const urlPath = this._urlPath;
+    this._assigning.add(mac);
+    this._shownOnError = "";
+    this._fillShownOn();
+    try {
+      // The answer reaches every listener of the tablet list, this one too.
+      await assignTablet(this._conn, mac, urlPath);
+    } catch (error) {
+      if (run === this._run) {
+        this._shownOnError = t("tablets.failed", { message: errorMessage(error) });
+      }
+    } finally {
+      if (run === this._run) {
+        this._assigning.delete(mac);
+        this._fillShownOn();
+      }
+    }
+  }
+
+  // The second paragraph of the delete question: which tablets show this
+  // dashboard and which one they will show instead. The dashboards are
+  // read again first, so it names the right one.
+  async _deleteNote() {
+    if (!Array.isArray(this._tablets) || !tabletsShowing(this._tablets, this._urlPath).length) {
+      return "";
+    }
+    await this._loadTabRows();
+    // Without the dashboards it cannot tell where the tablets go, and it
+    // does not guess.
+    if (!this._tabRows || !Array.isArray(this._tablets)) {
+      return "";
+    }
+    return deleteNote(this._tablets, this._urlPath, this._tabRows, t);
+  }
+
   async _deleteDashboard() {
     const run = this._run;
     const dashboard = this._dashboard;
+    const more = await this._deleteNote();
+    if (run !== this._run) {
+      return;
+    }
     const accepted = await openConfirm({
       title: t("settings.delete_title", { name: dashboard?.title || "" }),
       text: t("settings.delete_text"),
+      more,
       okLabel: t("settings.delete_ok"),
       cancelLabel: t("confirm.cancel"),
       danger: true,
@@ -2924,6 +3193,12 @@ export class ApolloTabDesigner extends HTMLElement {
   // ---- changes made somewhere else -------------------------------------
 
   _layoutEvent(event) {
+    // Another dashboard that came, changed or went may change the titles
+    // the "Shown on" block names and the one a deleted dashboard's tablets
+    // move to. This one's own saves change neither.
+    if (["converted", "removed", "renamed"].includes(event?.type) && event.url_path !== this._urlPath) {
+      this._scheduleTabRows();
+    }
     if (event?.url_path !== this._urlPath) {
       return;
     }

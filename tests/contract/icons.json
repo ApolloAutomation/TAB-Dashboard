@@ -1,0 +1,431 @@
+{
+ "version": 1,
+ "fallback": "mdi:help-circle-outline",
+ "placeholder": "mdi:image-outline",
+ "icons": {
+  "mdi:account": [
+   983044,
+   1
+  ],
+  "mdi:account-multiple": [
+   983054,
+   1
+  ],
+  "mdi:alert-circle-outline": [
+   984534,
+   1
+  ],
+  "mdi:arrow-down": [
+   983109,
+   1
+  ],
+  "mdi:arrow-left": [
+   983117,
+   1
+  ],
+  "mdi:arrow-right": [
+   983124,
+   1
+  ],
+  "mdi:arrow-up": [
+   983133,
+   1
+  ],
+  "mdi:baby-face-outline": [
+   986749,
+   1
+  ],
+  "mdi:bed": [
+   983779,
+   1
+  ],
+  "mdi:bell": [
+   983194,
+   1
+  ],
+  "mdi:blinds": [
+   983212,
+   1
+  ],
+  "mdi:calendar": [
+   983277,
+   1
+  ],
+  "mdi:car": [
+   983307,
+   1
+  ],
+  "mdi:cctv": [
+   985006,
+   1
+  ],
+  "mdi:ceiling-light": [
+   984937,
+   1
+  ],
+  "mdi:chart-line": [
+   983338,
+   1
+  ],
+  "mdi:check": [
+   983340,
+   1
+  ],
+  "mdi:chevron-down": [
+   983360,
+   1
+  ],
+  "mdi:chevron-left": [
+   983361,
+   1
+  ],
+  "mdi:chevron-right": [
+   983362,
+   1
+  ],
+  "mdi:chevron-up": [
+   983363,
+   1
+  ],
+  "mdi:clock-outline": [
+   983376,
+   1
+  ],
+  "mdi:close": [
+   983382,
+   1
+  ],
+  "mdi:cog": [
+   984211,
+   1
+  ],
+  "mdi:desk": [
+   987705,
+   1
+  ],
+  "mdi:door": [
+   985114,
+   1
+  ],
+  "mdi:door-open": [
+   985116,
+   1
+  ],
+  "mdi:fan": [
+   983568,
+   1
+  ],
+  "mdi:fire": [
+   983608,
+   1
+  ],
+  "mdi:floor-lamp": [
+   985309,
+   1
+  ],
+  "mdi:flower": [
+   983626,
+   1
+  ],
+  "mdi:garage": [
+   984793,
+   1
+  ],
+  "mdi:garage-open": [
+   984794,
+   1
+  ],
+  "mdi:gauge": [
+   983706,
+   1
+  ],
+  "mdi:help-circle-outline": [
+   984613,
+   1
+  ],
+  "mdi:home": [
+   983772,
+   1
+  ],
+  "mdi:home-assistant": [
+   985040,
+   1
+  ],
+  "mdi:image-off-outline": [
+   987601,
+   1
+  ],
+  "mdi:image-outline": [
+   985462,
+   1
+  ],
+  "mdi:information-outline": [
+   983805,
+   1
+  ],
+  "mdi:lamp": [
+   984757,
+   1
+  ],
+  "mdi:lan-disconnect": [
+   983833,
+   1
+  ],
+  "mdi:led-strip-variant": [
+   987217,
+   1
+  ],
+  "mdi:lightbulb": [
+   983861,
+   1
+  ],
+  "mdi:lightbulb-group": [
+   987731,
+   1
+  ],
+  "mdi:lightbulb-on": [
+   984808,
+   1
+  ],
+  "mdi:lightbulb-outline": [
+   983862,
+   1
+  ],
+  "mdi:lightning-bolt": [
+   988171,
+   1
+  ],
+  "mdi:lock": [
+   983870,
+   1
+  ],
+  "mdi:lock-open": [
+   983871,
+   1
+  ],
+  "mdi:lock-outline": [
+   983873,
+   1
+  ],
+  "mdi:minus": [
+   983924,
+   1
+  ],
+  "mdi:motion-sensor": [
+   986513,
+   1
+  ],
+  "mdi:music": [
+   984922,
+   1
+  ],
+  "mdi:music-note": [
+   983944,
+   1
+  ],
+  "mdi:palette": [
+   984024,
+   1
+  ],
+  "mdi:pause": [
+   984036,
+   1
+  ],
+  "mdi:play": [
+   984074,
+   1
+  ],
+  "mdi:play-pause": [
+   984078,
+   1
+  ],
+  "mdi:plus": [
+   984085,
+   1
+  ],
+  "mdi:power": [
+   984101,
+   1
+  ],
+  "mdi:power-plug": [
+   984741,
+   1
+  ],
+  "mdi:robot-vacuum": [
+   984845,
+   1
+  ],
+  "mdi:shield-home": [
+   984714,
+   1
+  ],
+  "mdi:shield-lock": [
+   985501,
+   1
+  ],
+  "mdi:shield-off": [
+   985502,
+   1
+  ],
+  "mdi:shower": [
+   985504,
+   1
+  ],
+  "mdi:silverware-fork-knife": [
+   985712,
+   1
+  ],
+  "mdi:skip-next": [
+   984237,
+   1
+  ],
+  "mdi:skip-previous": [
+   984238,
+   1
+  ],
+  "mdi:snowflake": [
+   984855,
+   1
+  ],
+  "mdi:sofa": [
+   984249,
+   1
+  ],
+  "mdi:speaker": [
+   984259,
+   1
+  ],
+  "mdi:star": [
+   984270,
+   1
+  ],
+  "mdi:stop": [
+   984283,
+   1
+  ],
+  "mdi:tablet": [
+   984310,
+   1
+  ],
+  "mdi:tablet-dashboard": [
+   986830,
+   1
+  ],
+  "mdi:television": [
+   984322,
+   1
+  ],
+  "mdi:thermometer": [
+   984335,
+   1
+  ],
+  "mdi:thermostat": [
+   983955,
+   1
+  ],
+  "mdi:toggle-switch": [
+   984353,
+   1
+  ],
+  "mdi:view-dashboard": [
+   984430,
+   1
+  ],
+  "mdi:volume-high": [
+   984446,
+   1
+  ],
+  "mdi:volume-medium": [
+   984448,
+   1
+  ],
+  "mdi:volume-off": [
+   984449,
+   1
+  ],
+  "mdi:washing-machine": [
+   984874,
+   1
+  ],
+  "mdi:water": [
+   984460,
+   1
+  ],
+  "mdi:water-percent": [
+   984462,
+   1
+  ],
+  "mdi:weather-cloudy": [
+   984464,
+   1
+  ],
+  "mdi:weather-cloudy-alert": [
+   986927,
+   1
+  ],
+  "mdi:weather-fog": [
+   984465,
+   1
+  ],
+  "mdi:weather-hail": [
+   984466,
+   1
+  ],
+  "mdi:weather-lightning": [
+   984467,
+   1
+  ],
+  "mdi:weather-lightning-rainy": [
+   984702,
+   1
+  ],
+  "mdi:weather-night": [
+   984468,
+   1
+  ],
+  "mdi:weather-partly-cloudy": [
+   984469,
+   1
+  ],
+  "mdi:weather-pouring": [
+   984470,
+   1
+  ],
+  "mdi:weather-rainy": [
+   984471,
+   1
+  ],
+  "mdi:weather-snowy": [
+   984472,
+   1
+  ],
+  "mdi:weather-snowy-rainy": [
+   984703,
+   1
+  ],
+  "mdi:weather-sunny": [
+   984473,
+   1
+  ],
+  "mdi:weather-windy": [
+   984477,
+   1
+  ],
+  "mdi:weather-windy-variant": [
+   984478,
+   1
+  ],
+  "mdi:wifi-off": [
+   984490,
+   1
+  ],
+  "mdi:window-closed": [
+   984494,
+   1
+  ],
+  "mdi:window-open": [
+   984497,
+   1
+  ]
+ }
+}

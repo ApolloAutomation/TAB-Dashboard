@@ -93,6 +93,10 @@
       seed,
       realConfig,
       community: Boolean(query.get("community")),
+      // "three", "no-engine", "new" or "all" stand-in tablets, and a second
+      // dashboard, "Night".
+      tablets: query.get("tablets") || "none",
+      night: Boolean(query.get("night")),
     });
     window.hassConnection = Promise.resolve({ conn: mock.connection });
     window.__apolloFixtures = fixtures;

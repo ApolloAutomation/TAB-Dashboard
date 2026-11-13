@@ -1,0 +1,77 @@
+{
+  "about": "What the tablet's own screen says (CONTRACT.md section 11). The firmware's words: TAB-1 checks engine/tab_state.h and its screens against this file, and the panel's tests read the tablet's words from here. {hotspot} is the set-up hotspot's name (below). {name} is the tablet's name as the waiting screen shows it above the headline: the ESPHome friendly name with the last six characters of the MAC, which is also the name Home Assistant gives the tablet when it adds it.",
+  "hotspot": "Apollo TAB1 Hotspot",
+  "waiting": {
+    "hotspot": {
+      "when": "No Wi-Fi, the set-up hotspot is on",
+      "headline": "Set up Wi-Fi",
+      "step": "Join the Wi-Fi “{hotspot}” from a phone"
+    },
+    "connecting": {
+      "when": "No Wi-Fi yet, the hotspot not on yet (a known Wi-Fi is tried first, up to 90 s)",
+      "headline": "Connecting to Wi-Fi…",
+      "step": "If it cannot connect, its set-up hotspot comes on within 2 minutes"
+    },
+    "add": {
+      "when": "On Wi-Fi, no key, never erased (or erased over USB), Home Assistant not connected",
+      "headline": "Add this tablet in Home Assistant",
+      "step": "It shows up by itself in Settings > Devices & services"
+    },
+    "erased": {
+      "when": "The same after the hold-the-screen erase, until the tablet has a key again",
+      "headline": "Confirm this tablet in Home Assistant",
+      "step": "In Settings > System > Repairs, confirm only “Authentication expired for {name}”",
+      "step_long_name": "In Settings > System > Repairs, confirm only “Authentication expired” for the name above",
+      "step2": "If this Home Assistant never had this tablet, add it in Settings > Devices & services"
+    },
+    "starting": {
+      "when": "Home Assistant connected, the tablet has its key, TAB-1 has not greeted it yet (8 s for a tablet never turned on, 5 minutes for one turned on before)",
+      "headline": "Waiting for TAB-1 in Home Assistant",
+      "step": "If Home Assistant has finished starting, open TAB-1 there and turn this tablet on"
+    },
+    "turn_on": {
+      "when": "Home Assistant connected, no greeting from TAB-1 after that wait (8 s for a tablet without a key)",
+      "headline": "Ready to turn on",
+      "step": "Open TAB-1 in Home Assistant and turn this tablet on"
+    },
+    "wait_ha": {
+      "when": "The tablet has its key, Home Assistant not connected",
+      "headline": "Waiting for Home Assistant",
+      "step": "Check that Home Assistant is running and lists this tablet in Settings > Devices & services"
+    },
+    "loading": {
+      "when": "TAB-1 greeted it, a dashboard on its way (or the first 3 s after the greeting)",
+      "headline": "Connected to Home Assistant",
+      "step": "Getting the dashboard…"
+    },
+    "pick": {
+      "when": "TAB-1 greeted it, nothing to show (tab_clear, or no dashboard 3 s after the greeting)",
+      "headline": "Nothing to show yet",
+      "step": "Open TAB-1 in Home Assistant to see what this tablet should show"
+    },
+    "closed": {
+      "when": "The 15-minute set-up window closed without a key",
+      "headline": "Setup not finished",
+      "step": "Restart the tablet to finish setup"
+    },
+    "no_wifi": {
+      "when": "The set-up window closed on a tablet with its key that had no Wi-Fi",
+      "headline": "No Wi-Fi",
+      "step": "Turn the tablet off and on, then join “{hotspot}” from a phone"
+    }
+  },
+  "notes": {
+    "hotspot": {
+      "when": "Over a dashboard, Home Assistant not connected: no Wi-Fi, the set-up hotspot is on",
+      "text": "No Wi-Fi. Join the Wi-Fi “{hotspot}” from a phone"
+    },
+    "connecting": {
+      "when": "Over a dashboard, Home Assistant not connected: no Wi-Fi for 20 s, the hotspot not on yet",
+      "text": "No Wi-Fi. Its set-up hotspot comes on within 2 minutes"
+    },
+    "off_on": {
+      "when": "Over a dashboard: the set-up window closed on a tablet with its key that had no Wi-Fi",
+      "text": "No Wi-Fi. Turn the tablet off and on, then join “{hotspot}” from a phone"
+    }
+  }
+}

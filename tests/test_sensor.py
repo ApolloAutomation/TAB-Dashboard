@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from homeassistant.const import EntityCategory
-from homeassistant.core import EventBus, HomeAssistant
+from homeassistant.core import EventBus, HomeAssistant, State
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
@@ -15,11 +15,12 @@ from homeassistant.helpers.translation import async_get_translations
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
+    mock_restore_cache,
 )
 
 from custom_components.apollo_tab.const import DOMAIN
 
-from .conftest import AddTablet, setup_integration
+from .conftest import AddTablet, MakeTablet, setup_integration, until
 
 UNIQUE_ID = "aa:bb:cc:dd:ee:01_dashboard_engine"
 
@@ -49,7 +50,8 @@ async def test_sensor_for_existing_tablet(
 
     state = hass.states.get(entity_id)
     assert state.state == "not_installed"
-    assert state.attributes["options"] == ["not_installed"]
+    assert state.attributes["options"] == ["not_installed", "ready", "update_needed"]
+    assert state.attributes["engine_version"] is None
     assert state.attributes["friendly_name"] == "Kitchen Tablet Dashboard engine"
 
 
@@ -263,7 +265,13 @@ async def test_two_esphome_entries_with_same_mac(
     duplicate = add_tablet(duplicate_entry)
     await hass.async_block_till_done()
 
-    entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
+    entries = [
+        entry
+        for entry in er.async_entries_for_config_entry(
+            entity_registry, config_entry.entry_id
+        )
+        if entry.domain == "sensor"
+    ]
     assert len(entries) == 1
     assert "does not generate unique IDs" not in caplog.text
 
@@ -336,7 +344,7 @@ async def test_two_tablets(
         "sensor.kitchen_tablet_dashboard_engine",
     ]
     entries = er.async_entries_for_config_entry(entity_registry, config_entry.entry_id)
-    assert {entry.unique_id for entry in entries} == {
+    assert {entry.unique_id for entry in entries if entry.domain == "sensor"} == {
         "aa:bb:cc:dd:ee:01_dashboard_engine",
         "aa:bb:cc:dd:ee:02_dashboard_engine",
     }
@@ -462,13 +470,14 @@ async def test_stale_reconcile_after_reload_adds_nothing(
     def spy(self, event_type, listener, *args, **kwargs):
         if event_type == dr.EVENT_DEVICE_REGISTRY_UPDATED and getattr(
             listener, "__module__", ""
-        ).endswith("apollo_tab.sensor"):
+        ).endswith("apollo_tab.tablets"):
             captured.append(listener)
         return real_listen(self, event_type, listener, *args, **kwargs)
 
     with patch.object(EventBus, "async_listen", spy):
         await setup_integration(hass, config_entry)
-    assert len(captured) == 1
+    # One reconcile listener for the sensors and one for the selects.
+    assert len(captured) == 2
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -476,7 +485,60 @@ async def test_stale_reconcile_after_reload_adds_nothing(
     await setup_integration(hass, config_entry)
 
     caplog.clear()
-    captured[0](None)  # the old setup's listener, as if its event arrived late
+    for listener in captured:
+        listener(None)  # the old setup's listener, as if its event arrived late
     await hass.async_block_till_done()
 
     assert "does not generate unique IDs" not in caplog.text
+
+
+async def test_offline_after_restart_keeps_the_last_state(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    add_tablet: AddTablet,
+) -> None:
+    """A restart with the tablet offline does not read "Not installed"."""
+    mock_restore_cache(
+        hass,
+        (
+            State(
+                "sensor.kitchen_tablet_dashboard_engine",
+                "ready",
+                {"engine_version": "0.1.0"},
+            ),
+        ),
+    )
+    add_tablet()
+    await setup_integration(hass, config_entry)
+    state = hass.states.get("sensor.kitchen_tablet_dashboard_engine")
+    assert state.state == "ready"
+    assert state.attributes["engine_version"] == "0.1.0"
+
+
+@pytest.mark.parametrize(
+    ("restored", "engine"),
+    [("ready", False), ("not_installed", True), ("garbage", True)],
+)
+async def test_what_the_tablet_says_replaces_the_last_state(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    restored: str,
+    engine: bool,
+) -> None:
+    """Once the tablet is reached, its own answer counts."""
+    mock_restore_cache(
+        hass, (State("sensor.kitchen_tablet_dashboard_engine", restored, {}),)
+    )
+    tablet = make_tablet()
+    tablet.has_engine = engine
+    await setup_integration(hass, config_entry)
+    wanted = "ready" if engine else "not_installed"
+    await until(
+        hass,
+        lambda: (
+            hass.states.get("sensor.kitchen_tablet_dashboard_engine").state == wanted
+        ),
+    )
+    state = hass.states.get("sensor.kitchen_tablet_dashboard_engine")
+    assert state.attributes["engine_version"] == ("0.1.0" if engine else None)

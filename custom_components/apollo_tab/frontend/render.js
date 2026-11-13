@@ -11,6 +11,12 @@ import {
   linePoints,
   mapRect,
   resolveBound,
+  TABLET_ELLIPSIS,
+  TABLET_MISSING_GLYPH,
+  tabletCharWidths,
+  tabletFit,
+  tabletLineHeight,
+  tabletText,
   toNumber,
 } from "./logic.js";
 
@@ -23,6 +29,7 @@ const COLOR_TOKENS = [
   "tx",
   "tx2",
   "acc",
+  "accf",
   "acc2",
   "acct",
   "card2",
@@ -34,6 +41,49 @@ const COLOR_TOKENS = [
 ];
 
 const NUMBER_TOKENS = ["r", "r2", "bw"];
+
+// The image widget's icon sizes on the tablet (contract 4.7), and the glyph
+// it draws for a value that is not an icon.
+const TABLET_IMAGE_ICON_SIZES = [72, 48, 28, 24];
+const TABLET_IMAGE_PLACEHOLDER = "mdi:image-outline";
+
+// The tablet's font (contract 4.7), for the tablet previews.
+const TABLET_FONT_FAMILY = "Apollo TAB-1 Montserrat";
+let tabletFontLoading = false;
+let tabletFontReady = false;
+// Texts drawn before the font was there, to be drawn again once it is.
+const tabletFontWaiting = new Map();
+
+export function loadTabletFont() {
+  if (tabletFontLoading || typeof FontFace !== "function" || typeof document === "undefined" || !document.fonts) {
+    return;
+  }
+  tabletFontLoading = true;
+  try {
+    const url = new URL("./fonts/Montserrat-Medium.ttf", import.meta.url).href;
+    const face = new FontFace(TABLET_FONT_FAMILY, `url("${url}")`, { weight: "100 900", style: "normal" });
+    document.fonts.add(face);
+    face
+      .load()
+      .then(() => {
+        tabletFontReady = true;
+        const again = [...tabletFontWaiting.values()];
+        tabletFontWaiting.clear();
+        for (const draw of again) {
+          draw();
+        }
+      })
+      .catch(() => tabletFontWaiting.clear());
+  } catch (_error) {
+    // The preview then keeps Home Assistant's font.
+  }
+}
+
+// The largest tablet size of the image icon that fits min(w, h) / 2.
+export function tabletImageIconSize(width, height) {
+  const room = Math.min(width, height) / 2;
+  return TABLET_IMAGE_ICON_SIZES.find((size) => size <= room) ?? TABLET_IMAGE_ICON_SIZES.at(-1);
+}
 
 function html(tag, className) {
   const result = document.createElement(tag);
@@ -93,6 +143,15 @@ function localRect(rect, origin, sx, sy) {
     sx,
     sy,
   );
+}
+
+// What displayValue gives for no value, so a widget can be dimmed.
+const NO_VALUE = Symbol("no value");
+
+// A switch, slider, thermostat, chart or image without a value is drawn at
+// 40% and does not react to touch, as on the tablet (contract 4.7).
+function markNoValue(element, bound, state, feedback) {
+  element.classList.toggle("at-none", displayValue(bound, state, feedback, NO_VALUE) === NO_VALUE);
 }
 
 function displayValue(bound, state, feedback, fallback = "–") {
@@ -213,7 +272,82 @@ export function applyTokens(element, tokens = {}) {
   }
 }
 
-function makeHeader(card, normalized, sx, sy, scale, patches) {
+// The width of one character in the tablet's font at a text size, or null
+// while that cannot be measured (the font is not loaded, or no canvas).
+const tabletMeasures = new Map();
+function tabletAdvance(px) {
+  if (!tabletFontReady || typeof document === "undefined") {
+    return null;
+  }
+  let measure = tabletMeasures.get(px);
+  if (measure === undefined) {
+    measure = null;
+    try {
+      const context = document.createElement("canvas").getContext?.("2d");
+      if (context) {
+        context.font = `500 ${px}px "${TABLET_FONT_FAMILY}"`;
+        const known = new Map();
+        measure = (ch) => {
+          let width = known.get(ch);
+          if (width === undefined) {
+            width = context.measureText(ch).width;
+            known.set(ch, width);
+          }
+          return width;
+        };
+      }
+    } catch (_error) {
+      measure = null;
+    }
+    tabletMeasures.set(px, measure);
+  }
+  return measure;
+}
+
+// Puts one line of text into its element. In the tablet preview the line is
+// cut where the tablet cuts it (logic.js tabletFit: whole-pixel widths, in
+// tablet pixels whatever the preview's size), and a character the tablet
+// lacks is the tablet's box: a line high and as wide as the room the tablet
+// gives it (half a line plus 2 px), because LVGL draws that box's 1 px
+// border across the whole room. `px` and `width` are the tablet's text size
+// and box width; `ellipsis` is what ends a cut line. Until the tablet's font
+// can be measured, the browser cuts the line itself.
+function setLineText(element, value, options, px, width, scale, ellipsis = TABLET_ELLIPSIS) {
+  const text = String(value);
+  if (!options?.tablet) {
+    element.textContent = text;
+    return;
+  }
+  const advance = tabletAdvance(px);
+  if (!advance) {
+    element.textContent = tabletText(text);
+    if (tabletFontLoading && !tabletFontReady) {
+      tabletFontWaiting.set(element, () => setLineText(element, value, options, px, width, scale, ellipsis));
+    }
+    return;
+  }
+  const line = tabletFit(text, width, px, advance, ellipsis);
+  element.classList.add("at-fitted");
+  // Each character in a box of the tablet's whole-pixel width, so the line
+  // is exactly as wide as on the tablet and its end is never cut off.
+  const nodes = [];
+  for (const [ch, chWidth] of tabletCharWidths(line, px, advance)) {
+    if (ch === TABLET_MISSING_GLYPH) {
+      const box = html("span", "at-nobox");
+      box.style.width = `${chWidth * scale}px`;
+      box.style.height = `${tabletLineHeight(px) * scale}px`;
+      nodes.push(box);
+      continue;
+    }
+    const glyph = html("span", "at-ch");
+    glyph.textContent = ch;
+    glyph.style.width = `${chWidth * scale}px`;
+    nodes.push(glyph);
+  }
+  element.replaceChildren(...nodes);
+}
+
+function makeHeader(card, normalized, sx, sy, scale, options, patches) {
   if (!normalized.header?.r) {
     return;
   }
@@ -234,11 +368,12 @@ function makeHeader(card, normalized, sx, sy, scale, patches) {
   card.append(header);
 
   patches.push((state) => {
-    title.textContent = String(displayValue(normalized.header.title, state, null));
+    const room = normalized.header.r[2] - (icon ? 32 : 0);
+    setLineText(title, displayValue(normalized.header.title, state, null), options, 16, room, scale);
   });
 }
 
-function makeLabel(card, widget, rect, scale, patches) {
+function makeLabel(card, widget, rect, scale, options, patches) {
   const label = html("div", `at-label at-label-${widget.size || "m"}`);
   setRect(label, rect);
   const fontSize = widget.size === "l" ? 34 : widget.size === "s" ? 14 : 18;
@@ -249,7 +384,7 @@ function makeLabel(card, widget, rect, scale, patches) {
   card.append(label);
 
   patches.push((state) => {
-    text.textContent = String(displayValue(widget.text, state, null));
+    setLineText(text, displayValue(widget.text, state, null), options, fontSize, widget.r?.[2] ?? 0, scale);
   });
 }
 
@@ -281,7 +416,11 @@ function makeButton(card, widget, rect, scale, options, patches) {
   card.append(button);
   patches.push((state) => {
     const value = widget.text === undefined ? "" : displayValue(widget.text, state, null);
-    text.textContent = String(value);
+    // The tablet's room for a button's words: 6 px each side, and beside an
+    // icon (not below one) the icon and 6 px more.
+    const [, , wide = 0, high = 0] = Array.isArray(widget.r) ? widget.r : [];
+    const beside = icon && high < 64;
+    setLineText(text, value, options, 15, wide - 12 - (beside ? 30 : 0), scale);
     button.setAttribute("aria-label", String(value || widget.icon || ""));
     const feedback = feedbackFor(state, widget);
     button.title = waitingTitle(widget, feedback);
@@ -321,6 +460,7 @@ function makeSwitch(card, widget, rect, scale, options, patches) {
   patches.push((state) => {
     const feedback = feedbackFor(state, widget);
     const value = displayValue(widget.value, state, feedback);
+    markNoValue(button, widget.value, state, feedback);
     const on = isOn(value);
     button.classList.toggle("on", on);
     button.classList.toggle(
@@ -434,6 +574,9 @@ function makeSlider(card, widget, rect, scale, options, patches) {
       ? dragValue
       : toNumber(displayValue(widget.value, state, feedback), min);
     const amount = fraction(value, min, max);
+    if (!dragging) {
+      markNoValue(slider, widget.value, state, feedback);
+    }
     fill.style.width = `${amount * 100}%`;
     knob.style.left = `${amount * 100}%`;
     slider.setAttribute("aria-valuemin", String(min));
@@ -468,10 +611,60 @@ export function thermostatFit(text, size, stroke) {
   return { fontSize, maxWidth, innerDiameter };
 }
 
+// The thermostat value's size on the tablet (contract 4.7). First the
+// largest of 48, 34, 20, 18 and 14 that is not above thermostatFit; 48 only
+// for text of 0123456789.,- (the tablet's digits font), so the "–" for no
+// value is 34 at most. thermostatFit counts 0.62 em a digit, but
+// Montserrat's digits are up to 0.67 em, so the text can still be wider
+// than its box: then the next smaller size, until it fits or the size is
+// 14, the only size that is ever cut. side is min(w, h) in tablet pixels.
+// advanceFor(px) gives the width of one character of the tablet's font at
+// px (whole pixels are taken, as the tablet adds them), or null while it
+// cannot be measured; without it the size stays at the first pick. The
+// same rule as the engine's thermostat_font.
+const TABLET_THERMOSTAT_SIZES = [48, 34, 20, 18, 14];
+
+export function tabletThermostatSize(text, side, advanceFor = null) {
+  const value = String(text);
+  const fit = thermostatFit(value, side, Math.max(8, side / 14)).fontSize;
+  const digits = /^[0-9.,-]*$/.test(value);
+  let index = TABLET_THERMOSTAT_SIZES.findIndex((size) => size <= fit && (digits || size < 48));
+  if (index < 0) {
+    index = TABLET_THERMOSTAT_SIZES.length - 1;
+  }
+  const room = tabletThermostatTextWidth(side);
+  while (index < TABLET_THERMOSTAT_SIZES.length - 1) {
+    const px = TABLET_THERMOSTAT_SIZES[index];
+    const advance = advanceFor?.(px);
+    if (!advance) {
+      break;
+    }
+    let drawn = 0;
+    for (const [, width] of tabletCharWidths(tabletText(value), px, advance)) {
+      drawn += width;
+    }
+    if (drawn <= room) {
+      break;
+    }
+    index += 1;
+  }
+  return TABLET_THERMOSTAT_SIZES[index];
+}
+
+// The width of the box the tablet draws the thermostat value in, in whole
+// pixels: thermostatFit's maxWidth, cut to an integer. The same sum in the
+// same order as the engine's thermostat_text_width, so both round alike.
+export function tabletThermostatTextWidth(side) {
+  const stroke = Math.max(8, side / 14);
+  return Math.trunc((0.8 * 2 * (72 - stroke / 2) * side) / 200);
+}
+
 function makeThermostat(card, widget, rect, scale, options, patches) {
   const wrap = html("div", "at-thermostat");
   setRect(wrap, rect);
   const size = Math.min(rect[2], rect[3]);
+  // The same side in tablet pixels, as the tablet takes it: min(w, h).
+  const side = Math.min(widget.r[2], widget.r[3]);
   const viewSize = 200;
 
   const graphic = svg("svg");
@@ -535,6 +728,22 @@ function makeThermostat(card, widget, rect, scale, options, patches) {
   }
 
   let lastText;
+  // The tablet preview draws the value as the tablet does: at the size
+  // tabletThermostatSize steps down to, cut with "…" only at 14 px. Until
+  // the tablet's font can be measured the first pick stands; once it is
+  // there the size is worked out again, as it may step down.
+  const drawTabletValue = (value) => {
+    const px = tabletThermostatSize(value, side, tabletAdvance);
+    text.style.fontSize = `${px * scale}px`;
+    setLineText(textSpan, value, options, px, tabletThermostatTextWidth(side), scale);
+    if (tabletFontLoading && !tabletFontReady) {
+      tabletFontWaiting.set(textSpan, () => {
+        if (lastText === value) {
+          drawTabletValue(value);
+        }
+      });
+    }
+  };
   card.append(wrap);
   patches.push((state) => {
     wrap.__state = state;
@@ -542,6 +751,7 @@ function makeThermostat(card, widget, rect, scale, options, patches) {
     const min = toNumber(resolveBound(widget.min, state.values), 0);
     const max = toNumber(resolveBound(widget.max, state.values), 100);
     const value = toNumber(displayValue(widget.value, state, feedback), NaN);
+    markNoValue(wrap, widget.value, state, feedback);
     let nextText;
     if (Number.isFinite(value)) {
       const amount = fraction(value, min, max);
@@ -551,17 +761,21 @@ function makeThermostat(card, widget, rect, scale, options, patches) {
       valueArc.removeAttribute("d");
       nextText = "–";
     }
-    // Fitting forces a layout, so it runs only when the text changes. The
-    // estimate stands when the card is not laid out yet (width 0).
     if (nextText !== lastText) {
       lastText = nextText;
-      textSpan.textContent = nextText;
-      const fit = thermostatFit(nextText, size, stroke);
-      text.style.fontSize = `${Number(fit.fontSize)}px`;
-      const measured = textSpan.getBoundingClientRect().width;
-      if (measured > 0 && measured > fit.maxWidth) {
-        text.style.fontSize =
-          `${Number(fit.fontSize * fit.maxWidth / measured)}px`;
+      if (options.tablet) {
+        drawTabletValue(nextText);
+      } else {
+        // The editor fits the value. Fitting forces a layout, so it runs
+        // only when the text changes; the estimate stands when the card is
+        // not laid out yet (width 0).
+        textSpan.textContent = nextText;
+        const fit = thermostatFit(nextText, size, stroke);
+        text.style.fontSize = `${Number(fit.fontSize)}px`;
+        const measured = textSpan.getBoundingClientRect().width;
+        if (measured > 0 && measured > fit.maxWidth) {
+          text.style.fontSize = `${Number((fit.fontSize * fit.maxWidth) / measured)}px`;
+        }
       }
     }
     wrap.title = waitingTitle(widget, feedback);
@@ -574,18 +788,23 @@ function makeChart(card, widget, rect, scale, patches) {
   graphic.setAttribute("viewBox", `0 0 ${rect[2]} ${rect[3]}`);
   setRect(graphic, rect);
 
+  // A 1 px line that fills pixel row h - 2, one pixel above the bottom, as
+  // the tablet draws it (contract 4.7): centred half a pixel into that row,
+  // one tablet pixel thick, so it is one sharp row and not two soft ones.
   const baseline = svg("line");
   baseline.setAttribute("class", "at-chart-baseline");
   baseline.setAttribute("x1", "0");
   baseline.setAttribute("x2", String(rect[2]));
-  baseline.setAttribute("y1", String(rect[3] - scale));
-  baseline.setAttribute("y2", String(rect[3] - scale));
+  baseline.setAttribute("y1", String(rect[3] - 1.5 * scale));
+  baseline.setAttribute("y2", String(rect[3] - 1.5 * scale));
+  baseline.setAttribute("stroke-width", String(scale));
   graphic.append(baseline);
   card.append(graphic);
 
   patches.push((state) => {
     [...graphic.querySelectorAll(".at-chart-data")].forEach((item) => item.remove());
     const raw = displayValue(widget.value, state, null, []);
+    markNoValue(graphic, widget.value, state, null);
     const values = Array.isArray(raw) ? raw : [];
 
     if (widget.kind === "bars") {
@@ -614,7 +833,7 @@ function makeChart(card, widget, rect, scale, patches) {
   });
 }
 
-function makeImage(card, widget, rect, scale, patches, timers) {
+function makeImage(card, widget, rect, scale, options, patches, timers) {
   const box = html("div", "at-image");
   setRect(box, rect);
   card.append(box);
@@ -634,6 +853,14 @@ function makeImage(card, widget, rect, scale, patches, timers) {
     box.replaceChildren();
     clearInterval(refreshTimer);
     refreshTimer = null;
+
+    if (options.tablet) {
+      // The tablet draws icons only; anything else gets the placeholder.
+      const icon = iconElement(isIcon(value) ? value : TABLET_IMAGE_PLACEHOLDER);
+      sizeIcon(icon, tabletImageIconSize(rect[2] / scale, rect[3] / scale) * scale);
+      box.append(icon);
+      return;
+    }
 
     if (isIcon(value)) {
       const icon = iconElement(value);
@@ -663,9 +890,8 @@ function makeImage(card, widget, rect, scale, patches, timers) {
 
   patches.push((state) => {
     drawValue(displayValue(widget.value, state, null, null));
+    markNoValue(box, widget.value, state, null);
   });
-
-  void scale;
 }
 
 export function renderCard(host, compiled, state, options = {}) {
@@ -682,10 +908,15 @@ export function renderCard(host, compiled, state, options = {}) {
   card.style.setProperty("--at-f", String(scale));
   setRect(card, [0, 0, normalized.width * sx, normalized.height * sy]);
   host.append(card);
+  // Child rectangles are absolute (contract 4.3): the border does not move
+  // them. Absolute children start inside the border, so they go in a layer
+  // that starts at the card's outer edge.
+  const body = html("div", "at-card-body");
+  card.append(body);
 
   const patches = [];
   const timers = [];
-  makeHeader(card, normalized, sx, sy, scale, patches);
+  makeHeader(body, normalized, sx, sy, scale, options, patches);
 
   for (const widget of normalized.widgets) {
     if (!Array.isArray(widget.r)) {
@@ -694,19 +925,19 @@ export function renderCard(host, compiled, state, options = {}) {
     const rect = localRect(widget.r, normalized.origin, sx, sy);
 
     if (widget.t === "label") {
-      makeLabel(card, widget, rect, scale, patches);
+      makeLabel(body, widget, rect, scale, options, patches);
     } else if (widget.t === "button") {
-      makeButton(card, widget, rect, scale, options, patches);
+      makeButton(body, widget, rect, scale, options, patches);
     } else if (widget.t === "switch") {
-      makeSwitch(card, widget, rect, scale, options, patches);
+      makeSwitch(body, widget, rect, scale, options, patches);
     } else if (widget.t === "slider") {
-      makeSlider(card, widget, rect, scale, options, patches);
+      makeSlider(body, widget, rect, scale, options, patches);
     } else if (widget.t === "thermostat") {
-      makeThermostat(card, widget, rect, scale, options, patches);
+      makeThermostat(body, widget, rect, scale, options, patches);
     } else if (widget.t === "chart") {
-      makeChart(card, widget, rect, scale, patches);
+      makeChart(body, widget, rect, scale, patches);
     } else if (widget.t === "image") {
-      makeImage(card, widget, rect, scale, patches, timers);
+      makeImage(body, widget, rect, scale, options, patches, timers);
     }
   }
 
@@ -727,7 +958,7 @@ export function renderCard(host, compiled, state, options = {}) {
   return { update };
 }
 
-function drawHeading(host, heading, sx, sy, tokens) {
+function drawHeading(host, heading, sx, sy, tokens, options) {
   const item = html("div", "at-heading");
   setRect(item, mapRect(heading.r, sx, sy));
   applyTokens(item, tokens);
@@ -737,7 +968,7 @@ function drawHeading(host, heading, sx, sy, tokens) {
     item.append(icon);
   }
   const text = html("span", "at-text");
-  text.textContent = heading.text;
+  setLineText(text, heading.text ?? "", options, 20, heading.r[2] - (icon ? 32 : 0), Math.min(sx, sy));
   item.append(text);
   host.append(item);
 }
@@ -760,6 +991,11 @@ export function renderPage(host, layout, pageIndex, state, options = {}) {
   setRect(wall, [0, 0, width, height]);
   applyTokens(wall, layout.theme || {});
   wall.style.setProperty("--at-f", String(Math.min(sx, sy)));
+  if (options.tablet) {
+    // The tablet preview: the tablet's font and its image placeholder.
+    loadTabletFont();
+    wall.classList.add("at-tablet");
+  }
   host.append(wall);
 
   const nav = html("div", "at-nav");
@@ -789,7 +1025,7 @@ export function renderPage(host, layout, pageIndex, state, options = {}) {
   const cleanup = [];
   for (const item of page.w || []) {
     if (item.t === "heading") {
-      drawHeading(wall, item, sx, sy, layout.theme || {});
+      drawHeading(wall, item, sx, sy, layout.theme || {}, options);
       continue;
     }
     if (item.t !== "card") {
@@ -817,6 +1053,7 @@ export function renderPage(host, layout, pageIndex, state, options = {}) {
         sy,
         origin: [item.r[0], item.r[1]],
         interactive: Boolean(options.interactive),
+        tablet: Boolean(options.tablet),
         onTap: options.onTap,
         onChange: options.onChange,
       },

@@ -1,0 +1,43 @@
+name: Home Assistant beta
+
+# The tablet link uses ESPHome internals that are not a public API. This job
+# runs the link and sender tests against the newest Home Assistant release,
+# betas included, so a change there shows up before it reaches users.
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  link:
+    name: Tablet link on the Home Assistant beta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: Install the newest Home Assistant test package, betas included
+        run: pip install --pre --upgrade pytest-homeassistant-custom-component
+      # What ESPHome's RuntimeEntryData needs, followed through the
+      # integrations it imports and depends on (see test.yml).
+      - name: Install what the ESPHome integration needs
+        run: |
+          pip freeze > "$RUNNER_TEMP/installed.txt"
+          python .github/scripts/esphome_requirements.py > "$RUNNER_TEMP/esphome.txt"
+          cat "$RUNNER_TEMP/esphome.txt"
+          pip install -c "$RUNNER_TEMP/installed.txt" -r "$RUNNER_TEMP/esphome.txt"
+      - name: Everything is there, with the aioesphomeapi Home Assistant pins
+        run: python .github/scripts/esphome_requirements.py --check
+      - run: pip show homeassistant aioesphomeapi
+      - name: The ESPHome internals the link uses still import
+        run: python -c "from homeassistant.components.esphome.entry_data import RuntimeEntryData"
+      - run: pytest -rs tests/test_tablet_link.py tests/test_sender.py tests/test_tablet_input.py
+        env:
+          APOLLO_TAB_NEED_ESPHOME: "1"

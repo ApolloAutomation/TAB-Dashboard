@@ -1,0 +1,148 @@
+{
+  "about": [
+    "The websocket messages about tablets, as the integration sends them.",
+    "tests/test_tablet_shapes.py checks the integration against this file.",
+    "tests/frontend/tablet-shapes.test.mjs checks the panel's stand-in Home",
+    "Assistant (tests/harness/mock-hass.js) and the panel's word lists.",
+    "Change this file, the integration and the stand-in together."
+  ],
+  "rules": [
+    "A Tablet has exactly the keys of 'tablet', each with its type, pattern and list of values.",
+    "'reason' is '' unless 'reasons' lists the status; then it is one of those reasons.",
+    "'retry' is false unless the status is 'failed', and false for a reason in 'no_retry'.",
+    "'short_name' is 'name' without a trailing 'strip' text (any case); a trailing 'tag' stays.",
+    "'model' is the device's model, 'TAB-1' when the device has none.",
+    "A tablet with status 'no_dashboard' has 'dashboard' null.",
+    "A tablet no admin approved yet has 'approved' false and status 'new', and only it has that status. It shows nothing: 'dashboard' null, 'paired' false, 'input' 'not_paired'. 'suggested' is what it showed before it lost its approval, or null.",
+    "An approved tablet has 'suggested' null.",
+    "Tablet lists are sorted by name in lower case, then MAC, comparing code points. MACs are unique.",
+    "Dashboards are sorted by title in lower case, then url_path, comparing code points.",
+    "'shown_on' lists, sorted, the MACs of the tablets whose 'dashboard' is that url_path.",
+    "'tablets' counts the approved tablets; 'sent_to_tablets' is true when one of them is 'on_tablet'.",
+    "Assigning a dashboard to a tablet that is not approved approves it only with 'approve' true, which only the panel's \"Turn on with this dashboard\" sends; without it the answer is the error 'not_approved' (the commands are admin only). An approved tablet switches with or without 'approve'.",
+    "'reauth' is what Home Assistant waits for from an admin, under Settings > Repairs, before ESPHome connects to the tablet again: one of 'reauths' ('erased': confirm that the tablet was erased; 'key': it asks for a key), or null. 'reauth_name' is the name Repairs gives it (\"Authentication expired for <reauth_name>\"), null exactly when 'reauth' is null.",
+    "The panel treats a reason it does not know by 'retry'."
+  ],
+  "tablet": {
+    "mac": { "type": "string", "pattern": "^[0-9a-f]{2}(:[0-9a-f]{2}){5}$" },
+    "device_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "name": { "type": "string", "pattern": "^\\S(.*\\S)?$" },
+    "short_name": { "type": "string", "pattern": "^\\S(.*\\S)?$" },
+    "model": { "type": "string", "pattern": "^\\S(.*\\S)?$" },
+    "dashboard": { "type": ["string", "null"], "pattern": "^\\S+$" },
+    "status": { "type": "string", "values": "statuses" },
+    "reason": { "type": "string" },
+    "retry": { "type": "boolean" },
+    "engine": { "type": "string" },
+    "paired": { "type": "boolean" },
+    "input": { "type": "string", "values": "inputs" },
+    "entity_id": { "type": ["string", "null"], "pattern": "^select\\.[a-z0-9_]+$" },
+    "approved": { "type": "boolean" },
+    "suggested": { "type": ["string", "null"], "pattern": "^\\S+$" },
+    "reauth": { "type": ["string", "null"], "values": "reauths" },
+    "reauth_name": { "type": ["string", "null"], "pattern": "^\\S(.*\\S)?$" }
+  },
+  "statuses": ["new", "no_dashboard", "offline", "no_engine", "unsupported", "sending", "on_tablet", "failed"],
+  "inputs": ["ok", "needs_encryption", "not_paired"],
+  "reauths": ["erased", "key"],
+  "reasons": {
+    "unsupported": ["tablet_old", "tablet_new", "ha_version"],
+    "failed": [
+      "needs_encryption",
+      "bad_key",
+      "order",
+      "size",
+      "too_big",
+      "memory",
+      "auth",
+      "incomplete",
+      "hash",
+      "parse",
+      "version",
+      "limits",
+      "build",
+      "replaced",
+      "timeout",
+      "unreadable",
+      "offline",
+      "no_engine",
+      "bad_response",
+      "failed"
+    ]
+  },
+  "no_retry": ["too_big", "limits", "version", "parse", "unreadable"],
+  "short_name": { "strip": " tablet", "tag": " \\([0-9a-f]{4}\\)$" },
+  "dashboard": {
+    "url_path": { "type": "string", "pattern": "^\\S+$" },
+    "title": { "type": "string" },
+    "mode": { "type": "string", "values": "modes" },
+    "theme": { "type": "string" },
+    "pages": { "type": "integer" },
+    "warnings": { "type": "integer" },
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "shown_on": { "type": "array", "items": "mac" }
+  },
+  "modes": ["storage", "yaml"],
+  "commands": {
+    "apollo_tab/tablets": {
+      "send": [],
+      "result": { "tablets": "tablet_list" }
+    },
+    "apollo_tab/tablets/subscribe": {
+      "send": [],
+      "result": null,
+      "events": {
+        "tablets": { "type": "tablets", "tablets": "tablet_list" },
+        "not_loaded": { "type": "not_loaded" }
+      }
+    },
+    "apollo_tab/tablet/assign": {
+      "send": ["mac", "url_path"],
+      "optional": { "approve": "boolean" },
+      "result": { "tablet": "tablet" },
+      "errors": {
+        "not_found": "This tablet is not known",
+        "not_approved": "This tablet is new. Pick a dashboard for it on the Home screen, then press \"Turn on with this dashboard\".",
+        "unknown_dashboard": "This dashboard does not exist"
+      }
+    },
+    "apollo_tab/tablet/pair": {
+      "send": ["mac"],
+      "result": { "tablet": "tablet" },
+      "errors": {
+        "not_found": "This tablet is not known",
+        "not_approved": "This tablet is new. Pick a dashboard for it on the Home screen, then press \"Turn on with this dashboard\"."
+      }
+    },
+    "apollo_tab/dashboards": {
+      "send": [],
+      "result": {
+        "dashboards": "dashboard_list",
+        "unreadable": "dashboard_list",
+        "tablets": "integer",
+        "sent_to_tablets": "boolean"
+      }
+    }
+  },
+  "removed": ["apollo_tab/tablet/update"],
+  "unknown_command": "unknown_command",
+  "example": {
+    "mac": "aa:bb:cc:dd:ee:01",
+    "device_id": "0123456789abcdef0123456789abcdef",
+    "name": "Kitchen tablet",
+    "short_name": "Kitchen",
+    "model": "TAB-1",
+    "dashboard": "tab-home",
+    "status": "on_tablet",
+    "reason": "",
+    "retry": false,
+    "engine": "0.1.0",
+    "paired": true,
+    "input": "ok",
+    "entity_id": "select.kitchen_tablet_dashboard",
+    "approved": true,
+    "suggested": null,
+    "reauth": null,
+    "reauth_name": null
+  }
+}

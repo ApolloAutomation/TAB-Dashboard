@@ -9,9 +9,14 @@ from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 
+from .assignments import (
+    APPROVAL_NEEDED,
+    ApprovalNeeded,
+    async_show_dashboard,
+    dashboard_order,
+)
 from .const import DOMAIN
 from .live import CallError, CardSubscription, async_call_output, json_safe
-from .tablets import async_get_tablets
 
 if TYPE_CHECKING:
     from . import ApolloTabData
@@ -20,6 +25,14 @@ _LOGGER = logging.getLogger(__name__)
 
 # Card subscriptions per websocket connection.
 MAX_CARD_SUBSCRIPTIONS = 100
+
+# The answer to a change of a tablet that waits for an admin, other than the
+# panel's "Turn on with this dashboard", and to pairing such a tablet. It
+# quotes the button and ends in a full stop, as the panel's own texts do.
+NOT_APPROVED = (
+    "This tablet is new. Pick a dashboard for it on the Home screen, "
+    'then press "Turn on with this dashboard".'
+)
 
 
 def _loaded_data(
@@ -238,29 +251,165 @@ async def websocket_card_call(
 async def websocket_dashboards(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """List the TAB-1 dashboards and the tablet count."""
+    """List the TAB-1 dashboards in the one order, with the tablets on each."""
     if (data := _loaded_data(hass, connection, msg["id"])) is None:
         return
-    dashboards = [
-        {
-            "url_path": url_path,
-            "title": stored["title"],
-            "mode": stored["mode"],
-            "theme": stored["theme"],
-            "pages": len(stored["layout"]["pages"]),
-            "warnings": len(stored["warnings"]),
-            "hash": stored["layout"]["hash"],
-        }
-        for url_path, stored in sorted(data.manager.layouts.items())
-    ]
+    sender = data.sender
+    dashboards = []
+    for item in dashboard_order(data.manager):
+        url_path = item["url_path"]
+        stored = data.manager.layouts[url_path]
+        dashboards.append(
+            {
+                "url_path": url_path,
+                "title": stored["title"],
+                "mode": stored["mode"],
+                "theme": stored["theme"],
+                "pages": len(stored["layout"]["pages"]),
+                "warnings": len(stored["warnings"]),
+                "hash": stored["layout"]["hash"],
+                "shown_on": [
+                    mac
+                    for mac in data.assignments.shown_on(url_path)
+                    if mac in sender.sessions and sender.sessions[mac].approved
+                ],
+            }
+        )
     connection.send_result(
         msg["id"],
         {
             "dashboards": dashboards,
-            "tablets": len(async_get_tablets(hass)),
-            "sent_to_tablets": False,
+            # Dashboards that tablets show but that cannot be read right
+            # now, with the last title Home Assistant has for each.
+            "unreadable": data.assignments.unreadable_dashboards(),
+            # Tablets that wait for an admin show nothing and are not counted.
+            "tablets": sum(1 for s in sender.sessions.values() if s.approved),
+            "sent_to_tablets": sender.any_on_tablet(),
         },
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({probatio.Required("type"): "apollo_tab/tablets"})
+@websocket_api.async_response
+async def websocket_tablets(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """List the tablets with what each one shows and its status."""
+    if (data := _loaded_data(hass, connection, msg["id"])) is None:
+        return
+    connection.send_result(msg["id"], {"tablets": data.sender.tablets_json()})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {probatio.Required("type"): "apollo_tab/tablets/subscribe"}
+)
+@websocket_api.async_response
+async def websocket_tablets_subscribe(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Send the tablet list at once and again after every change.
+
+    A last not_loaded event follows when the integration is unloaded.
+    """
+    if (data := _loaded_data(hass, connection, msg["id"])) is None:
+        return
+
+    @callback
+    def forward() -> None:
+        """Send the whole tablet list as an event."""
+        connection.send_message(
+            websocket_api.event_message(
+                msg["id"], {"type": "tablets", "tablets": data.sender.tablets_json()}
+            )
+        )
+
+    subscription = _ListenerSubscription(
+        data, connection, msg["id"], data.sender.async_listen(forward)
+    )
+    connection.subscriptions[msg["id"]] = subscription.async_stop
+    connection.send_result(msg["id"])
+    forward()
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        probatio.Required("type"): "apollo_tab/tablet/assign",
+        probatio.Required("mac"): str,
+        probatio.Required("url_path"): str,
+        # Sent only by the panel's "Turn on with this dashboard".
+        probatio.Optional("approve", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def websocket_tablet_assign(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Choose the dashboard a tablet shows; sending starts at once.
+
+    For a new tablet, with approve true, this is the admin's approval: from
+    now on Home Assistant trusts it, pairs it and sends it its dashboard.
+    Without approve a new tablet is refused, so a screen that still shows
+    it as turned on (the editor's "Show this dashboard", a turned-on row's
+    list) never turns it on without the button and the check of its name.
+    """
+    if (data := _loaded_data(hass, connection, msg["id"])) is None:
+        return
+    session = data.sender.session_for(msg["mac"])
+    if session is None:
+        connection.send_error(msg["id"], "not_found", "This tablet is not known")
+        return
+    if not session.approved and not msg["approve"]:
+        connection.send_error(msg["id"], "not_approved", NOT_APPROVED)
+        return
+    if msg["url_path"] not in data.manager.layouts:
+        connection.send_error(
+            msg["id"], "unknown_dashboard", "This dashboard does not exist"
+        )
+        return
+    try:
+        await async_show_dashboard(
+            hass,
+            data.assignments,
+            session.mac,
+            msg["url_path"],
+            session.entry_id,
+            connection.context(msg),
+        )
+    except ApprovalNeeded:
+        # An admin who is no person (the Supervisor's user, which add-ons
+        # use) asked to turn a new tablet on.
+        connection.send_error(msg["id"], "approval_needed", APPROVAL_NEEDED)
+        return
+    connection.send_result(msg["id"], {"tablet": data.sender.tablet_json(session)})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        probatio.Required("type"): "apollo_tab/tablet/pair",
+        probatio.Required("mac"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_tablet_pair(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Give a tablet a new secret, now or within a minute."""
+    if (data := _loaded_data(hass, connection, msg["id"])) is None:
+        return
+    session = data.sender.session_for(msg["mac"])
+    if session is None:
+        connection.send_error(msg["id"], "not_found", "This tablet is not known")
+        return
+    if not session.approved:
+        # A tablet no admin approved is never paired.
+        connection.send_error(msg["id"], "not_approved", NOT_APPROVED)
+        return
+    session.request_pair()
+    connection.send_result(msg["id"], {"tablet": data.sender.tablet_json(session)})
 
 
 @websocket_api.require_admin
@@ -337,7 +486,7 @@ async def websocket_layout_preview(
 async def websocket_layout_subscribe(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Send converted and removed events for the dashboards.
+    """Send converted, removed and renamed events for the dashboards.
 
     A last not_loaded event follows when the integration is unloaded.
     """
@@ -355,8 +504,10 @@ async def websocket_layout_subscribe(
                 "hash": stored["layout"]["hash"] if stored else "",
                 "warnings": len(stored["warnings"]) if stored else 0,
             }
+        elif kind in ("removed", "renamed"):
+            payload = {"type": kind, "url_path": url_path}
         else:
-            payload = {"type": "removed", "url_path": url_path}
+            return
         connection.send_message(websocket_api.event_message(msg["id"], payload))
 
     subscription = _ListenerSubscription(
@@ -368,7 +519,7 @@ async def websocket_layout_subscribe(
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    """Register the eleven commands of the websocket API."""
+    """Register the fifteen commands of the websocket API."""
     websocket_api.async_register_command(hass, websocket_strings)
     websocket_api.async_register_command(hass, websocket_library)
     websocket_api.async_register_command(hass, websocket_library_subscribe)
@@ -380,3 +531,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_layout_get)
     websocket_api.async_register_command(hass, websocket_layout_preview)
     websocket_api.async_register_command(hass, websocket_layout_subscribe)
+    websocket_api.async_register_command(hass, websocket_tablets)
+    websocket_api.async_register_command(hass, websocket_tablets_subscribe)
+    websocket_api.async_register_command(hass, websocket_tablet_assign)
+    websocket_api.async_register_command(hass, websocket_tablet_pair)

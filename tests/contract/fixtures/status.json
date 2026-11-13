@@ -1,0 +1,146 @@
+{
+ "cases": [
+  {
+   "expect": "building",
+   "name": "still_building",
+   "response": {
+    "build": "",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 1,
+    "staged": "4384f665e4dd9f62"
+   }
+  },
+  {
+   "expect": "shown",
+   "name": "shown",
+   "response": {
+    "build": "",
+    "layout": "4384f665e4dd9f62",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 1,
+    "staged": ""
+   }
+  },
+  {
+   "expect": "memory",
+   "name": "build_ran_out_of_memory",
+   "response": {
+    "build": "memory",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 1,
+    "staged": ""
+   }
+  },
+  {
+   "expect": "build",
+   "name": "build_failed",
+   "response": {
+    "build": "build",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 1,
+    "staged": ""
+   }
+  },
+  {
+   "expect": "replaced",
+   "name": "replaced_by_another_transfer",
+   "response": {
+    "build": "",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 1,
+    "staged": ""
+   }
+  },
+  {
+   "expect": "building",
+   "name": "first_layout_still_building",
+   "response": {
+    "build": "",
+    "layout": "",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 1,
+    "staged": "4384f665e4dd9f62"
+   }
+  }
+ ],
+ "knock": [
+  {
+   "expect": "hello",
+   "name": "no_session",
+   "note": "Nobody greeted the tablet on this connection.",
+   "session": false,
+   "status": null
+  },
+  {
+   "expect": "status",
+   "name": "session_read_status_first",
+   "note": "A knock never resets a session by itself, whatever its boot number.",
+   "session": true,
+   "status": null
+  },
+  {
+   "expect": "ignore",
+   "name": "session_live_spoofed_knock",
+   "note": "Any ESPHome device can knock with the tablet's MAC. The tablet still has its session.",
+   "session": true,
+   "status": {
+    "build": "",
+    "layout": "4384f665e4dd9f62",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 1,
+    "staged": ""
+   }
+  },
+  {
+   "expect": "hello",
+   "name": "session_lost_on_unseen_reconnect",
+   "note": "The tablet lost its session on a reconnect HA did not see.",
+   "session": true,
+   "status": {
+    "build": "",
+    "layout": "4384f665e4dd9f62",
+    "mem": {
+     "block": 16000000,
+     "int": 60000,
+     "psram": 27000000
+    },
+    "session": 0,
+    "staged": ""
+   }
+  }
+ ],
+ "note": "tab_status responses after tab_commit(want_hash) and what HA concludes. 'building': ask again. 'shown': on the tablet. Anything else: the build ended without showing the layout. 'knock': what HA does with a knock that passed the 2 s limit (knock_step in the reference code): 'session' is whether HA has a session with the tablet on the current connection, 'status' the tab_status answer HA read for it, if any.",
+ "want_hash": "4384f665e4dd9f62"
+}

@@ -110,7 +110,8 @@ async def test_unload_ends_listener_subscriptions(
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
     assert data.subscriptions == set()
-    assert len(data.manager._listeners) == base_listeners
+    assert base_listeners == 1  # the tablet sender
+    assert data.manager._listeners == []
     ended = [await client.receive_json(), await client.receive_json()]
     assert {message["id"] for message in ended} == {library_id, layout_id}
     assert all(message["event"] == {"type": "not_loaded"} for message in ended)

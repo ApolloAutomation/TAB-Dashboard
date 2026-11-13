@@ -1,0 +1,33 @@
+{
+ "dropped": [],
+ "hash": "a9326c033e45f2f4",
+ "size": 908,
+ "slots": [
+  {
+   "d": 1,
+   "src": 1,
+   "type": "t"
+  },
+  {
+   "d": 2,
+   "src": 2,
+   "type": "b"
+  },
+  {
+   "d": 3,
+   "src": 3,
+   "type": "t"
+  },
+  {
+   "d": 4,
+   "src": 4,
+   "type": "t"
+  },
+  {
+   "d": 5,
+   "src": 5,
+   "type": "t"
+  }
+ ],
+ "source_hash": "a1ddd4381b7aa1e5"
+}

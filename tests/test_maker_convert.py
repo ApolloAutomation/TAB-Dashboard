@@ -279,8 +279,9 @@ def test_non_tab_card_left_out_with_warning(components, themes):
     """A plain Home Assistant card is left out with not_tab_element."""
     config = make_dashboard([{"cards": [{"type": "tile", "entity": "light.kitchen"}]}])
     result = convert(config, components, themes)
-    assert result["layout"]["pages"] == []
-    assert result["layout"]["nav"] == []
+    # The card is left out; its page stays, empty.
+    assert [page["w"] for page in result["layout"]["pages"]] == [[]]
+    assert result["layout"]["nav"] == [{"page": "view-0", "title": "view-0"}]
     assert result["warnings"] == [
         {
             "code": "not_tab_element",
@@ -300,7 +301,8 @@ def test_unknown_component_warning(components, themes):
         [{"cards": [tab_card("apollo/no-such-thing", params={"entity": "light.k"})]}]
     )
     result = convert(config, components, themes)
-    assert result["layout"]["pages"] == []
+    # The card is left out; its page stays, empty.
+    assert [page["w"] for page in result["layout"]["pages"]] == [[]]
     [warning] = result["warnings"]
     assert warning["code"] == "unknown_component"
     assert warning["detail"] == "apollo/no-such-thing"
@@ -313,7 +315,8 @@ def test_invalid_card_warning(components, themes):
         [{"cards": [tab_card("apollo/light-tile", params="not-a-mapping")]}]
     )
     result = convert(config, components, themes)
-    assert result["layout"]["pages"] == []
+    # The card is left out; its page stays, empty.
+    assert [page["w"] for page in result["layout"]["pages"]] == [[]]
     [warning] = result["warnings"]
     assert warning["code"] == "invalid_card"
     assert warning["detail"]
@@ -326,7 +329,7 @@ def test_unapproved_sensitive_left_out(components, themes, sensitive):
         [{"cards": [tab_card(sensitive["id"], params={"entity": "lock.vault"})]}]
     )
     denied = convert(config, all_components, themes)
-    assert denied["layout"]["pages"] == []
+    assert [page["w"] for page in denied["layout"]["pages"]] == [[]]
     [warning] = denied["warnings"]
     assert warning["code"] == "needs_approval"
     assert warning["detail"] == sensitive["id"]
@@ -563,16 +566,21 @@ def test_page_ids_titles_and_nav(components, themes):
         "view-2",
         "view-3",
         "view-3-2",
+        "view-4",
     ]
     assert pages[0]["title"] == "Home"
     assert pages[1]["title"] == "view-1"
     assert pages[3]["title"] == "view-3"
     assert pages[4]["title"] == "view-3 (2)"
+    # The view with no sections keeps an empty page and its side bar entry.
+    assert pages[5]["title"] == "view-4"
+    assert pages[5]["w"] == []
     assert [e["page"] for e in result["layout"]["nav"]] == [
         "home",
         "view-1",
         "view-2",
         "view-3",
+        "view-4",
     ]
 
 
@@ -741,6 +749,8 @@ def test_bindings_actions_keyed_by_widget_id(components, themes):
             "output": "toggle",
             "vars": {},
             "params": {"entity": "light.kitchen"},
+            "demo": False,
+            "entities": ["light.kitchen"],
         }
     }
 
@@ -963,8 +973,10 @@ def test_convert_never_raises_on_garbage(components, themes):
     assert "visibility_ignored" in codes
     assert "not_tab_element" in codes
     assert "params_incomplete" in codes
-    assert len(layout["pages"]) == 1
-    texts = [w.get("text") for w in layout["pages"][0]["w"]]
+    # The sections view whose sections are not a list keeps an empty page.
+    assert len(layout["pages"]) == 2
+    assert layout["pages"][0]["w"] == []
+    texts = [w.get("text") for w in layout["pages"][1]["w"]]
     assert "123" in texts
     assert layout["hash"]
 
@@ -1128,8 +1140,8 @@ def test_real_dashboard_keeps_heading_and_reports_other_card(components, themes)
     ]
 
 
-def test_empty_full_width_page_has_no_screen(components, themes):
-    """A new dashboard's one empty page gives no screen and no warnings."""
+def test_empty_page_stays_with_its_side_bar_entry(components, themes):
+    """A new dashboard's one empty page stays an empty page, without warnings."""
     config = make_dashboard(
         [{"type": "grid", "column_span": 3, "cards": []}],
         title="Home",
@@ -1137,10 +1149,51 @@ def test_empty_full_width_page_has_no_screen(components, themes):
         icon="mdi:home",
     )
     result = convert(config, components, themes)
-    assert result["layout"]["pages"] == []
-    assert result["layout"]["nav"] == []
+    [page] = result["layout"]["pages"]
+    assert page["id"] == "home"
+    assert page["title"] == "Home"
+    assert page["icon"] == "mdi:home"
+    assert page["w"] == []
+    assert result["layout"]["nav"] == [
+        {"page": "home", "title": "Home", "icon": "mdi:home"}
+    ]
     assert result["warnings"] == []
     assert result["sources"] == {}
+
+
+def test_empty_page_between_pages_keeps_the_order(components, themes):
+    """An empty page in the middle keeps its place on the tablet."""
+    tile = tab_card("apollo/light-tile", params={"entity": "light.a"})
+    config = {
+        "apollo_tab": {"version": 1, "theme": "midnight"},
+        "views": [
+            {
+                "type": "sections",
+                "max_columns": 3,
+                "path": "one",
+                "title": "One",
+                "sections": [{"cards": [tile]}],
+            },
+            {
+                "type": "sections",
+                "max_columns": 3,
+                "path": "two",
+                "title": "Two",
+                "sections": [{"cards": []}],
+            },
+            {
+                "type": "sections",
+                "max_columns": 3,
+                "path": "three",
+                "title": "Three",
+                "sections": [{"cards": [tile]}],
+            },
+        ],
+    }
+    result = convert(config, components, themes)
+    assert [p["id"] for p in result["layout"]["pages"]] == ["one", "two", "three"]
+    assert [e["page"] for e in result["layout"]["nav"]] == ["one", "two", "three"]
+    assert result["layout"]["pages"][1]["w"] == []
 
 
 def test_full_width_section_flows_six_units(components, themes):

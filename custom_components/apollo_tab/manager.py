@@ -43,6 +43,10 @@ class DashboardManager:
         self._sources: dict[str, dict] = {}
         self._quiet_until: dict[str, float] = {}
         self._event_driven: set[str] = set()
+        # True once the first conversion of every dashboard has finished.
+        # Nothing is reassigned or sent to a tablet before that.
+        self.ready = False
+        self._ready_listeners: list[Callable[[], None]] = []
 
     async def async_start(self) -> None:
         """Listen for dashboard and library changes and convert at start."""
@@ -64,7 +68,61 @@ class DashboardManager:
 
     async def _async_started(self, hass: HomeAssistant) -> None:
         """Convert all dashboards once Home Assistant has started."""
-        await self.async_convert_all()
+        try:
+            await self.async_convert_all()
+        finally:
+            self.ready = True
+            for listener in list(self._ready_listeners):
+                listener()
+
+    @callback
+    def async_when_ready(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Run listener once the first conversion has finished; return a remover.
+
+        The listener runs at once when the manager is ready already.
+        """
+        if self.ready:
+            listener()
+            return lambda: None
+        self._ready_listeners.append(listener)
+
+        def _remove() -> None:
+            """Remove the listener if it has not run."""
+            if listener in self._ready_listeners:
+                self._ready_listeners.remove(listener)
+
+        return _remove
+
+    async def async_probe(self, url_path: str) -> tuple[str, dict | None]:
+        """Load a dashboard to learn whether it is gone, other, or unreadable.
+
+        The lovelace_updated event that a YAML load may fire is ignored like
+        the one of the manager's own loads.
+        """
+        self._loading.add(url_path)
+        try:
+            return await compat.async_probe_dashboard(self._hass, url_path)
+        finally:
+            self._loading.discard(url_path)
+
+    @callback
+    def async_refresh_titles(self) -> bool:
+        """Read every stored dashboard's title again; return whether one changed.
+
+        Renaming a dashboard fires no lovelace_updated event, so the title
+        is read again when the panels change.
+        """
+        changed = False
+        for url_path, stored in self.layouts.items():
+            info = compat.async_dashboard_info(self._hass, url_path)
+            if info is None:
+                continue
+            if stored.get("title") != info["title"]:
+                stored["title"] = info["title"]
+                changed = True
+                # The panel lists dashboards by title; tell it to read again.
+                self._notify("renamed", url_path)
+        return changed
 
     @callback
     def _handle_lovelace_updated(self, event: Event) -> None:
@@ -170,7 +228,12 @@ class DashboardManager:
         return self.layouts[url_path].get("theme", DEFAULT_THEME)
 
     def async_listen(self, listener: Callable[[str, str], None]) -> Callable[[], None]:
-        """Register a listener for layout changes and return its remover."""
+        """Register a listener for layout changes and return its remover.
+
+        The kinds are "converted", "removed" (a stored layout went away),
+        "renamed" (the title changed) and "absent" (a dashboard that has no
+        stored layout was looked at and still has none).
+        """
         self._listeners.append(listener)
 
         def _remove() -> None:
@@ -234,8 +297,14 @@ class DashboardManager:
 
     @callback
     def _drop(self, url_path: str) -> None:
-        """Remove a stored layout and tell the listeners."""
+        """Remove a stored layout and tell the listeners.
+
+        A dashboard without a stored layout gives "absent": it may be one
+        that could not be read before and is deleted now, and its tablets
+        must still move on.
+        """
         if url_path not in self.layouts:
+            self._notify("absent", url_path)
             return
         del self.layouts[url_path]
         self._async_save()

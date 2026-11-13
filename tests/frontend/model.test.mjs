@@ -542,6 +542,37 @@ test("mergeDashboards takes title, id and sidebar state from Home Assistant's li
   ]);
 });
 
+// Design 4.2: one order everywhere, (title in lower case, url_path), as
+// Home Assistant's side sorts them in Python.
+test("dashboards have one order: title in lower case, then url_path", () => {
+  const tabs = [
+    { url_path: "zeta", title: "zeta", mode: "storage" },
+    { url_path: "home-2", title: "Home", mode: "storage" },
+    { url_path: "attic", title: "Attic", mode: "storage" },
+    { url_path: "home", title: "home", mode: "storage" },
+    { url_path: "bedroom", title: "Bedroom", mode: "storage" },
+  ];
+  const expected = ["attic", "bedroom", "home", "home-2", "zeta"];
+  assert.deepStrictEqual(model.mergeDashboards(tabs, []).map((row) => row.url_path), expected);
+  assert.deepStrictEqual(model.sortDashboards(tabs).map((row) => row.url_path), expected);
+  // Titles from Home Assistant's own list decide, not the stand-in titles.
+  const renamed = model.mergeDashboards(tabs, [{ url_path: "zeta", title: "Alpha", id: "z" }]);
+  assert.equal(renamed[0].url_path, "zeta");
+  // Not the browser's language order: "Z" before "a" in lower case is "a"
+  // before "z", and characters past U+FFFF sort after every other one, as
+  // Python compares code points.
+  assert.ok(model.compareCodePoints("\u{1F600}", "�") > 0);
+  assert.ok("\u{1F600}" < "�", "JavaScript's own < puts it first, which Python does not");
+  assert.equal(model.compareCodePoints("abc", "abc"), 0);
+  assert.ok(model.compareCodePoints("ab", "abc") < 0);
+  assert.ok(model.compareCodePoints("abc", "ab") > 0);
+  assert.equal(model.compareDashboards({ title: "Home", url_path: "a" }, { title: "HOME", url_path: "a" }), 0);
+  assert.ok(model.compareDashboards({ title: "Home", url_path: "b" }, { title: "home", url_path: "a" }) > 0);
+  // A list that is not a list sorts to nothing, and the input is not changed.
+  assert.deepStrictEqual(model.sortDashboards(null), []);
+  assert.equal(tabs[0].url_path, "zeta");
+});
+
 test("mergeDashboards counts the editor's pages, not the tablet's screens", () => {
   // apollo_tab/dashboards reports screens: none for an empty page, several
   // for a page split across screens.
@@ -566,20 +597,21 @@ test("mergeDashboards counts the editor's pages, not the tablet's screens", () =
 
   const rows = model.mergeDashboards(tabs, [], configs);
 
+  // In the one order: Long, New, Real, Unreadable.
   assert.deepStrictEqual(
     rows.map((row) => [row.url_path, row.pages]),
     [
+      ["tab-3", 1],
       ["tab-1", 1],
       // "Home" and the old "Tablet preview" page: the editor shows a tab for
       // each, and the row says separately that the tablet leaves one out.
       ["tab-2", 2],
-      ["tab-3", 1],
       ["tab-4", null],
     ],
   );
-  assert.equal(rows[1].pages, model.pageList(configs["tab-2"]).length);
+  assert.equal(rows[2].pages, model.pageList(configs["tab-2"]).length);
   assert.equal(model.mergeDashboards([{ url_path: "extra", mode: "storage" }], [], configs)[0].pages, 2);
-  assert.equal(model.mergeDashboards(tabs, [])[0].pages, null);
+  assert.ok(model.mergeDashboards(tabs, []).every((row) => row.pages === null));
 });
 
 test("mergeDashboards marks YAML dashboards as not editable", () => {

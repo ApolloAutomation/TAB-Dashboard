@@ -108,3 +108,46 @@ async def test_internals_shape(
     assert callable(cfg.async_load)
     assert cfg.mode == "storage"
     assert isinstance(cfg.config, dict)
+
+
+async def test_yaml_dashboard_file_deleted_while_running(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    tmp_path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A YAML file removed after its first load is unreadable, not an error.
+
+    Home Assistant reads the file time of a cached YAML dashboard outside its
+    own error handling, so the removed file raises FileNotFoundError.
+    """
+    from homeassistant.components.lovelace.dashboard import LovelaceYAML
+
+    await setup_integration(hass, config_entry)
+    hass.config.config_dir = str(tmp_path)
+    path = tmp_path / "tab-yaml.yaml"
+    path.write_text("apollo_tab:\n  version: 1\nviews: []\n")
+    dashboard = LovelaceYAML(
+        hass,
+        "tab-yaml",
+        {"mode": "yaml", "filename": "tab-yaml.yaml", "title": "Yaml"},
+    )
+    hass.data[compat.LOVELACE_DATA].dashboards["tab-yaml"] = dashboard
+    assert await compat.async_probe_dashboard(hass, "tab-yaml") == (
+        compat.PROBE_OK,
+        {"apollo_tab": {"version": 1}, "views": []},
+    )
+
+    path.unlink()
+    assert await compat.async_probe_dashboard(hass, "tab-yaml") == (
+        compat.PROBE_ERROR,
+        None,
+    )
+    assert await compat.async_load_dashboard_config(hass, "tab-yaml") is None
+    warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "tab-yaml could not be read" in record.getMessage()
+    ]
+    assert len(warnings) == 1

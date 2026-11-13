@@ -3,7 +3,7 @@
 import asyncio
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -13,7 +13,7 @@ from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.components import websocket_api
 from homeassistant.components.recorder import history
 from homeassistant.components.websocket_api import ActiveConnection
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Context, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, TemplateError, Unauthorized
 from homeassistant.helpers.event import (
     TrackTemplate,
@@ -385,6 +385,86 @@ class _SharedSlot:
             self._remove = None
 
 
+class SlotTracker:
+    """Track a list of slots and report every fresh result.
+
+    Template slots share their tracker through the SlotHub. History and
+    action slots are fetched once at start and again on their interval.
+    on_result gets the slot and its value, or the exception it raised. Card
+    subscriptions and tablet sessions both use it.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        slot_hub: SlotHub,
+        slots: list[dict],
+        on_result: Callable[[dict, Any], None],
+    ) -> None:
+        """Store the slots and the result callback."""
+        self.hass = hass
+        self._hub = slot_hub
+        self._slots = slots
+        self._on_result = on_result
+        self._removers: list[Callable[[], None]] = []
+        self._stopped = False
+
+    async def async_start(self) -> None:
+        """Subscribe every slot; return after the first results arrived."""
+        first_fetches = []
+        for slot in self._slots:
+            if self._stopped:
+                return
+            if slot["kind"] == "template":
+                self._removers.append(
+                    self._hub.async_subscribe(slot, partial(self._deliver, slot))
+                )
+                continue
+            first_fetches.append(self._async_fetch(slot))
+            seconds = (
+                slot["refresh"] if slot["kind"] == "action" else HISTORY_REFRESH_SECONDS
+            )
+            self._removers.append(
+                async_track_time_interval(
+                    self.hass,
+                    partial(self._async_refresh, slot),
+                    timedelta(seconds=seconds),
+                )
+            )
+        if first_fetches:
+            await asyncio.gather(*first_fetches)
+
+    @callback
+    def async_stop(self) -> None:
+        """Remove every tracker and timer, at most once."""
+        self._stopped = True
+        while self._removers:
+            self._removers.pop()()
+
+    @callback
+    def _deliver(self, slot: dict, result: Any) -> None:
+        """Pass one result on unless the tracker was stopped."""
+        if not self._stopped:
+            self._on_result(slot, result)
+
+    async def _async_fetch(self, slot: dict) -> None:
+        """Fetch one history or action slot and pass the outcome on."""
+        try:
+            if slot["kind"] == "history":
+                result: Any = await async_fetch_history(
+                    self.hass, slot["entity"], slot["hours"]
+                )
+            else:
+                result = await async_fetch_action(self.hass, slot)
+        except HomeAssistantError as err:
+            result = err
+        self._deliver(slot, result)
+
+    async def _async_refresh(self, slot: dict, now: datetime) -> None:
+        """Fetch one slot again when its interval fires."""
+        await self._async_fetch(slot)
+
+
 class CallError(HomeAssistantError):
     """A card failure with the websocket error code from the API."""
 
@@ -546,40 +626,28 @@ class CardSubscription:
 
     async def _async_track_slots(self, generation: int, compiled: dict) -> None:
         """Start tracking every slot and send the first values event."""
-        first_fetches = []
-        for slot in compiled.get("slots", []):
-            if slot["kind"] == "template":
-                self._trackers.append(
-                    self.data.slot_hub.async_subscribe(
-                        slot, partial(self._on_template_result, generation, slot["n"])
-                    )
-                )
-                continue
-            first_fetches.append(self._async_fetch_slot(generation, slot))
-            seconds = (
-                slot["refresh"] if slot["kind"] == "action" else HISTORY_REFRESH_SECONDS
-            )
-            self._trackers.append(
-                async_track_time_interval(
-                    self.hass,
-                    partial(self._async_refresh_slot, generation, slot),
-                    timedelta(seconds=seconds),
-                )
-            )
-        if first_fetches:
-            await asyncio.gather(*first_fetches)
+        tracker = SlotTracker(
+            self.hass,
+            self.data.slot_hub,
+            compiled.get("slots", []),
+            partial(self._on_slot_result, generation),
+        )
+        self._trackers.append(tracker.async_stop)
+        await tracker.async_start()
         self._send_first_values(generation)
 
     @callback
-    def _on_template_result(self, generation: int, number: int, result: Any) -> None:
-        """Record a template slot's result and push the change."""
+    def _on_slot_result(self, generation: int, slot: dict, result: Any) -> None:
+        """Record one slot's result and push the change."""
         if generation != self._generation:
             return
         if isinstance(result, Exception):
-            self._record_error(number, result)
+            self._record_error(slot["n"], result)
         else:
-            self._record_value(number, result)
-        if self._first_sent and not self._flush_scheduled:
+            self._record_value(slot["n"], result)
+        if slot["kind"] != "template":
+            self._flush(generation)
+        elif self._first_sent and not self._flush_scheduled:
             # Each slot has its own tracker; one state change notifies them
             # one after another, so send their results in one values event.
             self._flush_scheduled = True
@@ -591,31 +659,6 @@ class CardSubscription:
         self._flush_scheduled = False
         if not self._stopped:
             self._flush(self._generation)
-
-    async def _async_fetch_slot(self, generation: int, slot: dict) -> None:
-        """Fetch one history or action slot and record the outcome."""
-        try:
-            if slot["kind"] == "history":
-                result: Any = await async_fetch_history(
-                    self.hass, slot["entity"], slot["hours"]
-                )
-            else:
-                result = await async_fetch_action(self.hass, slot)
-        except HomeAssistantError as err:
-            result = err
-        if generation != self._generation:
-            return
-        if isinstance(result, Exception):
-            self._record_error(slot["n"], result)
-        else:
-            self._record_value(slot["n"], result)
-        self._flush(generation)
-
-    async def _async_refresh_slot(
-        self, generation: int, slot: dict, now: datetime
-    ) -> None:
-        """Fetch one slot again when its interval fires."""
-        await self._async_fetch_slot(generation, slot)
 
     def _record_value(self, number: int, result: Any) -> None:
         """Store a slot's value and clear its error."""
@@ -744,13 +787,118 @@ def _needs_confirmation(
     )
 
 
+_COVER_VERBS = {
+    "open_cover": "Open",
+    "close_cover": "Close",
+    "stop_cover": "Stop",
+    "toggle": "Open or close",
+}
+
+
+def output_confirm_text(
+    hass: HomeAssistant,
+    component: dict,
+    action_ref: dict,
+    params: dict,
+    entities: Collection[str],
+) -> str | None:
+    """Return the question a tablet asks before this output, or None.
+
+    Only a garage, gate or door cover gets one, for example "Open Garage?".
+    The tablet then asks before it sends, with no round trip. It is a help,
+    not the guard: async_run_output still checks every call.
+    """
+    output = component.get("outputs", {}).get(action_ref.get("output"))
+    if not isinstance(output, dict):
+        return None
+    domain, _, service = str(output.get("action", "")).partition(".")
+    if domain != "cover":
+        return None
+    variables = {**params, **action_ref.get("vars", {}), "value": None}
+    try:
+        rendered = _render_data(hass, output.get("data") or {}, variables)
+    except CallError:
+        return None
+    entity_id = rendered.get("entity_id")
+    if not isinstance(entity_id, str) or entity_id not in entities:
+        return None
+    if not _needs_confirmation(hass, {}, domain, entity_id):
+        return None
+    state = hass.states.get(entity_id)
+    name = state.name if state is not None else entity_id
+    return f"{_COVER_VERBS.get(service, 'Move')} {name}?"
+
+
+async def async_run_output(
+    hass: HomeAssistant,
+    *,
+    component: dict,
+    action_ref: dict,
+    params: dict,
+    entities: Collection[str],
+    widget: dict,
+    event: str,
+    value: Any,
+    confirmed: bool,
+    context: Context,
+) -> None:
+    """Run one output of a compiled card. Raises CallError(code, message).
+
+    The connection-free core of a card call, used by the browser and by
+    tablets. action_ref is the card's action entry ({"output", "vars"}),
+    entities the entities the card was set up with, widget the widget that
+    was used.
+    """
+    output = component.get("outputs", {}).get(action_ref.get("output"))
+    if output is None:
+        raise CallError("unknown_widget", "The card has no such output")
+    # The library checks actions when it loads a file; check again here so a
+    # card can never reach a service outside the allow lists, such as a
+    # script.<name> service that runs a script the user did not pick.
+    if not is_allowed_action(output["action"]):
+        raise CallError("not_allowed", f"{output['action']} is not allowed")
+    value = _checked_change_value(widget, value) if event == "change" else None
+    variables = {**params, **action_ref.get("vars", {}), "value": value}
+    service_data = _render_data(hass, output["data"], variables)
+    # Rendered data may not widen the call beyond the picked entity.
+    if target_keys := TARGET_KEYS & service_data.keys():
+        raise CallError(
+            "not_allowed",
+            f"Output data may not target {', '.join(sorted(target_keys))}",
+        )
+    domain, _, service = output["action"].partition(".")
+    entity_id = service_data.get("entity_id")
+    if (
+        not isinstance(entity_id, str)
+        or entity_id not in entities
+        or entity_id.partition(".")[0] != domain
+    ):
+        raise CallError(
+            "not_allowed", f"{entity_id} is not a {domain} entity of this card"
+        )
+    if not confirmed and _needs_confirmation(hass, output, domain, entity_id):
+        raise CallError("confirm_required", f"{output['action']} needs a confirmation")
+    try:
+        await hass.services.async_call(
+            domain,
+            service,
+            service_data,
+            blocking=True,
+            context=context,
+        )
+    except Unauthorized as err:
+        raise CallError("unauthorized", str(err)) from err
+    except (HomeAssistantError, probatio.Invalid, ValueError) as err:
+        raise CallError("service_error", str(err)) from err
+
+
 async def async_call_output(
     hass: HomeAssistant,
     data: ApolloTabData,
     connection: ActiveConnection,
     msg: dict,
 ) -> None:
-    """Run a card's output. Raises CallError(code, message)."""
+    """Run a card's output for the browser. Raises CallError(code, message)."""
     component, card, compiled, _theme, _style = _compile_card(
         data, connection, msg["card"], msg.get("dashboard")
     )
@@ -770,45 +918,15 @@ async def async_call_output(
             "unknown_widget",
             f"Widget {msg['widget']} has no {msg['event']} action",
         )
-    output = component["outputs"][action_ref["output"]]
-    # The library checks actions when it loads a file; check again here so a
-    # card can never reach a service outside the allow lists, such as a
-    # script.<name> service that runs a script the user did not pick.
-    if not is_allowed_action(output["action"]):
-        raise CallError("not_allowed", f"{output['action']} is not allowed")
-    if msg["event"] == "change":
-        value = _checked_change_value(widget, msg.get("value"))
-    else:
-        value = None
-    variables = {**card["params"], **action_ref["vars"], "value": value}
-    service_data = _render_data(hass, output["data"], variables)
-    # Rendered data may not widen the call beyond the picked entity.
-    if target_keys := TARGET_KEYS & service_data.keys():
-        raise CallError(
-            "not_allowed",
-            f"Output data may not target {', '.join(sorted(target_keys))}",
-        )
-    domain, _, service = output["action"].partition(".")
-    entity_id = service_data.get("entity_id")
-    if (
-        not isinstance(entity_id, str)
-        or entity_id not in compiled["entities"]
-        or entity_id.partition(".")[0] != domain
-    ):
-        raise CallError(
-            "not_allowed", f"{entity_id} is not a {domain} entity of this card"
-        )
-    if not msg["confirmed"] and _needs_confirmation(hass, output, domain, entity_id):
-        raise CallError("confirm_required", f"{output['action']} needs a confirmation")
-    try:
-        await hass.services.async_call(
-            domain,
-            service,
-            service_data,
-            blocking=True,
-            context=connection.context(msg),
-        )
-    except Unauthorized as err:
-        raise CallError("unauthorized", str(err)) from err
-    except (HomeAssistantError, probatio.Invalid, ValueError) as err:
-        raise CallError("service_error", str(err)) from err
+    await async_run_output(
+        hass,
+        component=component,
+        action_ref=action_ref,
+        params=card["params"],
+        entities=compiled["entities"],
+        widget=widget,
+        event=msg["event"],
+        value=msg.get("value"),
+        confirmed=msg["confirmed"],
+        context=connection.context(msg),
+    )

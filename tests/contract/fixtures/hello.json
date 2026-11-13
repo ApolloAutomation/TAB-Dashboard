@@ -1,0 +1,495 @@
+{
+ "call": {
+  "auth": "0.63cb060e0ce562e88abfe4982d1bc6d8",
+  "nonce": "0123456789abcdef0123456789abcdef"
+ },
+ "cases": [
+  {
+   "expect": [
+    "send_state"
+   ],
+   "name": "up_to_date",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [
+    "send_layout",
+    "send_state"
+   ],
+   "name": "other_layout",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "0000000000000000",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [
+    "pair",
+    "hello",
+    "send_layout",
+    "send_state"
+   ],
+   "name": "empty_tablet",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "",
+    "layout": "",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": null,
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [
+    "pair",
+    "hello",
+    "send_state"
+   ],
+   "name": "tablet_was_reset",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [
+    "send_state"
+   ],
+   "name": "no_encryption",
+   "reason": "needs_encryption",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 0,
+    "engine": "0.1.0",
+    "kid": "",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": null,
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [],
+   "name": "newer_tablet_protocol",
+   "reason": "tablet_new",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     2,
+     3
+    ],
+    "session": 1
+   },
+   "status": "unsupported",
+   "stored_kid": null,
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [
+    "send_layout",
+    "send_state"
+   ],
+   "name": "tablet_without_charts",
+   "note": "Down-levelling: chart widgets are left out and the hash differs.",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want_hash": null
+  },
+  {
+   "expect": [
+    "pair",
+    "hello",
+    "send_state"
+   ],
+   "name": "paired_with_another_home_assistant",
+   "note": "The tablet holds a secret HA does not know. It refuses the session.",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "0123456789abcdef",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 0
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [
+    "pair",
+    "hello",
+    "send_state"
+   ],
+   "name": "same_kid_refused_signature",
+   "note": "The tablet reports the kid HA stored but refused the signature (session 0): the two secrets differ, so HA pairs again.",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 0
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want_hash": "a9326c033e45f2f4"
+  },
+  {
+   "expect": [],
+   "name": "older_tablet_protocol",
+   "reason": "tablet_old",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 1,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.1.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     0,
+     0
+    ],
+    "session": 1
+   },
+   "status": "unsupported",
+   "stored_kid": null,
+   "want_hash": "a9326c033e45f2f4"
+  }
+ ],
+ "mac": "aabbccddeeff",
+ "note": "'expect' is what HA does next, in order. 'hello' means: call tab_hello again, because pairing ends the session. The tablet side: with the fixture secret stored, tab_hello(call.nonce, call.auth) must answer session 1, and any other auth session 0.",
+ "secret_hex": "6465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283"
+}

@@ -13,6 +13,7 @@ from .tablets import async_get_tablets
 
 if TYPE_CHECKING:
     from . import ApolloTabData
+    from .sender import TabletSender
 
 REDACTED = "**REDACTED**"
 WARNING_KEYS = ("code", "view", "section", "card", "page")
@@ -23,13 +24,18 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return the tablets, the library and the dashboards.
 
-    The output holds no full MAC address. A tablet with its default name ends
-    in the last three MAC bytes, put there by the firmware's
-    name_add_mac_suffix option. That part of the name is left in, as ESPHome's
-    own diagnostics do. User-written dashboard text is redacted, because
-    diagnostics get pasted into public issues.
+    The output holds no full MAC address and no pairing secret. A tablet
+    with its default name ends in the last three MAC bytes, put there by
+    the firmware's name_add_mac_suffix option. That part of the name is
+    left in, as ESPHome's own diagnostics do, so nothing else in the file
+    may be worked out from the MAC: Home Assistant adds the integration's
+    repair issues, and a waiting tablet's issue id holds its random device
+    id (sender.new_tablet_issue_id). User-written dashboard text is
+    redacted, because diagnostics get pasted into public issues.
     """
     entity_registry = er.async_get(hass)
+    data = getattr(entry, "runtime_data", None)
+    sender = data.sender if data is not None else None
     tablets: list[dict[str, Any]] = []
     for mac, device in async_get_tablets(hass).items():
         esphome_entry = hass.config_entries.async_get_entry(device.config_entry_id)
@@ -48,16 +54,45 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "engine_entity_id": entity_id,
                 "engine_status": state.state if state else None,
+                **_sender_diagnostics(sender, mac),
             }
         )
     tablets.sort(key=lambda tablet: tablet["device_id"])
-    data = getattr(entry, "runtime_data", None)
     return {
         "tablet_count": len(tablets),
         "tablets": tablets,
-        "sent_to_tablets": False,
+        "sent_to_tablets": sender.any_on_tablet() if sender is not None else False,
+        "unknown_inputs": sender.unknown_inputs if sender is not None else 0,
         "library": _library_diagnostics(data),
         "dashboards": _dashboards_diagnostics(data),
+    }
+
+
+def _sender_diagnostics(sender: TabletSender | None, mac: str) -> dict[str, Any]:
+    """Return what the sender knows about one tablet, without its secret."""
+    session = sender.session_for(mac) if sender is not None else None
+    if session is None:
+        return {
+            "approved": False,
+            "dashboard": None,
+            "status": None,
+            "reason": "",
+            "retry": False,
+            "engine": "",
+            "paired": False,
+            "input": None,
+            "dropped_inputs": {},
+        }
+    return {
+        "approved": session.approved,
+        "dashboard": session.dashboard,
+        "status": session.status,
+        "reason": session.reason,
+        "retry": session.retry,
+        "engine": session.engine,
+        "paired": session.paired,
+        "input": session.input,
+        "dropped_inputs": dict(sorted(session.dropped.items())),
     }
 
 

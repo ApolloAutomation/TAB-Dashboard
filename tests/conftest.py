@@ -11,7 +11,13 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
+from custom_components.apollo_tab import sender
+from custom_components.apollo_tab.assignments import STORE_KEY, STORE_VERSION
 from custom_components.apollo_tab.const import DOMAIN
+from custom_components.apollo_tab.sender import LINK_FACTORY
+from custom_components.apollo_tab.tablet_link import MemoryTabletLink
+
+from .fake_tablet import FakeTablet
 
 type AddTablet = Callable[..., dr.DeviceEntry]
 type WriteComponent = Callable[[str, str], Path]
@@ -55,9 +61,53 @@ def esphome_entry(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
+def approve_earlier(
+    hass: HomeAssistant, hass_storage: dict[str, Any], mac: str, entry_id: str
+) -> None:
+    """Record that an admin approved a tablet before the test began.
+
+    Written to the stored file when the integration is not loaded, or into
+    the loaded integration's records (before the device registry change
+    reaches it).
+    """
+    mac = mac.lower()
+    loaded = hass.config_entries.async_loaded_entries(DOMAIN)
+    if loaded:
+        tablets = loaded[0].runtime_data.assignments._tablets
+    else:
+        stored = hass_storage.setdefault(
+            STORE_KEY,
+            {"version": STORE_VERSION, "key": STORE_KEY, "data": {"tablets": {}}},
+        )
+        tablets = stored["data"].setdefault("tablets", {})
+    record = tablets.setdefault(mac, {"dashboard": None, "secret": None, "kid": None})
+    record.update(approved=True, entry_id=entry_id)
+
+
+def has_record(hass: HomeAssistant, hass_storage: dict[str, Any], mac: str) -> bool:
+    """Return whether the integration holds a record for this MAC."""
+    mac = mac.lower()
+    loaded = hass.config_entries.async_loaded_entries(DOMAIN)
+    if loaded:
+        return loaded[0].runtime_data.assignments.get(mac) is not None
+    stored = hass_storage.get(STORE_KEY, {}).get("data", {}).get("tablets", {})
+    return mac in stored
+
+
 @pytest.fixture
-def add_tablet(hass: HomeAssistant, device_registry: dr.DeviceRegistry) -> AddTablet:
-    """Return a function that registers a device the way ESPHome does."""
+def add_tablet(
+    hass: HomeAssistant,
+    device_registry: dr.DeviceRegistry,
+    hass_storage: dict[str, Any],
+) -> AddTablet:
+    """Return a function that registers a device the way ESPHome does.
+
+    approved: True records that an admin approved the tablet under this
+    ESPHome entry before the test began; False leaves it new, so it waits
+    for an admin. None (the default) approves a MAC the integration holds
+    no record for, and leaves a known MAC as it is: a tablet added again
+    under another entry then has to be approved again.
+    """
 
     def _add_tablet(
         entry: MockConfigEntry | None = None,
@@ -66,10 +116,15 @@ def add_tablet(hass: HomeAssistant, device_registry: dr.DeviceRegistry) -> AddTa
         name: str = "Kitchen Tablet",
         manufacturer: str = "ApolloAutomation",
         model: str = "TAB-1",
+        approved: bool | None = None,
     ) -> dr.DeviceEntry:
         if entry is None:
             entry = MockConfigEntry(domain="esphome", title=name)
             entry.add_to_hass(hass)
+        if approved is None:
+            approved = not has_record(hass, hass_storage, mac)
+        if approved:
+            approve_earlier(hass, hass_storage, mac, entry.entry_id)
         return device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             connections={(dr.CONNECTION_NETWORK_MAC, mac)},
@@ -149,5 +204,110 @@ async def tab_dashboard(
         assert response["success"], response
         await hass.async_block_till_done()
         return client
+
+    return _save
+
+
+# ------------------------------------------------------------------ tablets
+
+type MakeTablet = Callable[..., FakeTablet]
+type SaveTabDashboard = Callable[..., Awaitable[None]]
+
+# How long a test waits for the sender to reach a state.
+UNTIL_TIMEOUT = 5
+
+
+async def until(hass: HomeAssistant, condition: Callable[[], Any]) -> None:
+    """Wait until condition() is true, letting tasks and short timers run.
+
+    The sender's own tasks are background tasks, which can wait on a held
+    build, so this does not wait for them to end.
+    """
+    async with asyncio.timeout(UNTIL_TIMEOUT):
+        while True:
+            await hass.async_block_till_done()
+            if condition():
+                return
+            await asyncio.sleep(0.005)
+
+
+@pytest.fixture
+def fast_sender(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shorten the sender's waits so the tests run in real time."""
+    monkeypatch.setattr(sender, "DEBOUNCE_S", 0.02)
+    monkeypatch.setattr(sender, "DEBOUNCE_MAX_S", 0.06)
+    monkeypatch.setattr(sender, "STATUS_POLL_S", (0.005, 0.005, 0.01))
+    monkeypatch.setattr(sender, "STATUS_POLL_LIMIT_S", 2.0)
+    monkeypatch.setattr(sender, "VALUE_BATCH_S", 0.01)
+    monkeypatch.setattr(sender, "SET_RETRY_S", 0.02)
+
+
+@pytest.fixture
+def memory_link(hass: HomeAssistant, fast_sender: None) -> MemoryTabletLink:
+    """Make the integration reach simulated tablets instead of ESPHome."""
+    link = MemoryTabletLink(hass)
+    hass.data[LINK_FACTORY] = lambda _hass: link
+    return link
+
+
+@pytest.fixture
+def make_tablet(
+    hass: HomeAssistant, memory_link: MemoryTabletLink, add_tablet: AddTablet
+) -> MakeTablet:
+    """Return a function that registers a tablet and plugs in its simulation."""
+
+    def _make(
+        *,
+        mac: str = "AA:BB:CC:DD:EE:01",
+        name: str = "Kitchen Tablet",
+        entry: MockConfigEntry | None = None,
+        approved: bool | None = None,
+        **kwargs: Any,
+    ) -> FakeTablet:
+        """Register the device and connect a FakeTablet for it."""
+        add_tablet(entry, mac=mac, name=name, approved=approved)
+        tablet = FakeTablet(hass, mac.lower(), **kwargs)
+        memory_link.async_add(mac.lower(), tablet)
+        return tablet
+
+    return _make
+
+
+@pytest.fixture
+async def save_tab_dashboard(
+    hass: HomeAssistant, hass_ws_client: ClientSessionGenerator
+) -> SaveTabDashboard:
+    """Return a function that creates or saves a TAB-1 dashboard by url_path.
+
+    The integration must be set up before the function is used.
+    """
+    clients: list[Any] = []
+    created: set[str] = set()
+
+    async def _save(url_path: str, config: dict, title: str | None = None) -> None:
+        """Create the dashboard on first use, then save its config."""
+        if not clients:
+            clients.append(await hass_ws_client(hass))
+        client = clients[0]
+        if url_path not in created:
+            await client.send_json_auto_id(
+                {
+                    "type": "lovelace/dashboards/create",
+                    "url_path": url_path,
+                    "title": title or url_path,
+                    "mode": "storage",
+                    "require_admin": False,
+                    "show_in_sidebar": True,
+                }
+            )
+            response = await client.receive_json()
+            assert response["success"], response
+            created.add(url_path)
+        await client.send_json_auto_id(
+            {"type": "lovelace/config/save", "url_path": url_path, "config": config}
+        )
+        response = await client.receive_json()
+        assert response["success"], response
+        await hass.async_block_till_done()
 
     return _save

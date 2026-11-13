@@ -95,6 +95,102 @@ export function fraction(value, min, max) {
   return Math.min(1, Math.max(0, (toNumber(value, low) - low) / (high - low)));
 }
 
+// The characters the tablet's text sizes hold: contract.json
+// fonts.text_glyphs, as [first, last] code points. The tablet draws an empty
+// box for any other character, so the tablet preview does too.
+export const TABLET_TEXT_GLYPHS = [
+  [0x20, 0x7e],
+  [0xa0, 0x17f],
+  [0x2013, 0x2014],
+  [0x2018, 0x2019],
+  [0x201c, 0x201d],
+  [0x2022, 0x2022],
+  [0x2026, 0x2026],
+  [0x20ac, 0x20ac],
+];
+export const TABLET_MISSING_GLYPH = "\u25a1";
+
+// The text as the tablet draws it: each character it has no glyph for
+// becomes a box. Control characters are left alone.
+export function tabletText(text) {
+  let out = "";
+  for (const ch of String(text ?? "")) {
+    const cp = ch.codePointAt(0);
+    const known = cp < 0x20 || TABLET_TEXT_GLYPHS.some(([lo, hi]) => cp >= lo && cp <= hi);
+    out += known ? ch : TABLET_MISSING_GLYPH;
+  }
+  return out;
+}
+
+// The tablet's line height for a text size: Montserrat's ascender (968) and
+// descender (251) of 1000 units.
+export function tabletLineHeight(px) {
+  return Math.round(px * 1.219);
+}
+
+// The room the tablet gives a character it has no glyph for: a box half a
+// line wide and a line high, then 2 px.
+export function tabletBoxAdvance(px) {
+  return Math.floor(tabletLineHeight(px) / 2) + 2;
+}
+
+// The whole-pixel width the tablet gives one character of a fitted line.
+function tabletCharWidth(ch, px, advance) {
+  return ch === TABLET_MISSING_GLYPH ? tabletBoxAdvance(px) : Math.round(advance(ch));
+}
+
+// Where the tablet puts each character of a line tabletFit gave: [char,
+// whole-pixel width] in tablet pixels. Drawing each character in a box of
+// that width places it where the tablet does, so the line is never wider
+// than the sum tabletFit checked; a browser's own fractional widths and
+// kerning can make it a few pixels wider.
+export function tabletCharWidths(line, px, advance) {
+  return [...String(line ?? "")].map((ch) => [ch, tabletCharWidth(ch, px, advance)]);
+}
+
+// One line of text as the tablet draws it in a box `width` px wide at text
+// size `px`: boxes for characters it lacks, spaces for control characters,
+// and when the line is too wide, the longest start that fits together with
+// the ellipsis. The tablet adds up whole-pixel widths, one per character,
+// so this does too: advance(ch) is the width of one character the tablet
+// has, and it is rounded here. A browser's own cut adds fractions and can
+// end one character earlier or later. The ellipsis is "\u2026", or "..." in a
+// font without that character, as the tablet's set_text picks it. Every
+// text size has "\u2026"; the thermostat's 48 px digits font (only
+// 0123456789.,-) does not, but a thermostat value is never cut at 48 px: it
+// steps down a size first (contract 4.7, render.js tabletThermostatSize).
+export const TABLET_ELLIPSIS = "\u2026";
+export const TABLET_DIGITS_ELLIPSIS = "...";
+
+export function tabletFit(text, width, px, advance, ellipsis = TABLET_ELLIPSIS) {
+  const chars = [...tabletText(text)].map((ch) => (ch.codePointAt(0) < 0x20 ? " " : ch));
+  const widthOf = (ch) => tabletCharWidth(ch, px, advance);
+  if (!(width > 0)) {
+    return chars.join("");
+  }
+  let total = 0;
+  for (const ch of chars) {
+    total += widthOf(ch);
+  }
+  if (total <= width) {
+    return chars.join("");
+  }
+  let dots = 0;
+  for (const ch of ellipsis) {
+    dots += widthOf(ch);
+  }
+  let keep = 0;
+  let used = 0;
+  while (keep < chars.length && used + widthOf(chars[keep]) + dots <= width) {
+    used += widthOf(chars[keep]);
+    keep += 1;
+  }
+  while (keep > 0 && chars[keep - 1] === " ") {
+    keep -= 1;
+  }
+  return `${chars.slice(0, keep).join("")}${ellipsis}`;
+}
+
 export function mapRect(rect, sx, sy) {
   return [
     rect[0] * sx,

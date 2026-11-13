@@ -3,8 +3,8 @@
 A Home Assistant integration for the Apollo TAB-1 wall tablet.
 
 **Status: pre-release.** You can build, preview and check TAB-1 dashboards in
-Home Assistant. **Layouts are not sent to tablets yet**, because no TAB-1
-firmware includes the dashboard engine.
+Home Assistant and choose which dashboard each tablet shows. A tablet shows
+its dashboard once its software has the dashboard engine.
 
 ## What it does today
 
@@ -30,17 +30,32 @@ firmware includes the dashboard engine.
 - Loads community cards from `<config>/apollo_tab/components/` (see
   "Advanced" in the panel).
 - Works out what each tablet screen of every TAB-1 dashboard will show and
-  keeps it, ready for when tablets can receive it. You can see it in the
-  diagnostics download.
+  sends it to the tablets that show that dashboard, again after every
+  change. You can see it in the diagnostics download.
 - Finds every TAB-1 that is already set up through the ESPHome integration.
   Tablets you add, remove or rename later are picked up without a restart.
-- Adds a diagnostic sensor named "Dashboard engine" to each tablet's device.
-  It always reads "Not installed", because no TAB-1 firmware includes the
-  dashboard engine yet.
+- Each tablet shows one TAB-1 dashboard. Admins choose it in the panel's
+  "Tablets" box or with the "Dashboard" control on the tablet's device page;
+  automations can use the "Show dashboard" action. See
+  [docs/tablets.md](docs/tablets.md).
+- A tablet it sees for the first time gets nothing until an admin turns it
+  on with its first dashboard, because any ESPHome device can say it is a
+  TAB-1. The panel marks it "New", says which six characters its name on
+  its screen ends in (check them before you turn it on), links to its
+  device page, and Home Assistant lists it under Repairs. A tablet added to
+  ESPHome again needs an admin again. Automations cannot turn on a new
+  tablet, nor can add-ons that use their own access to Home Assistant. An
+  add-on set up with an admin's long-lived access token acts as that admin
+  and can.
+- Taps on the tablet control devices with the same rules as the browser,
+  when the tablet's ESPHome connection is encrypted.
+- Adds a diagnostic sensor named "Dashboard engine" to each tablet's device:
+  "Not installed", "Ready" or "Update needed".
 
 ## What it does not do yet
 
-- It does not send anything to a tablet or change what a tablet displays.
+- Pictures (camera snapshots, media artwork, people) show as a placeholder
+  on the tablet.
 - It has no ready-made or automatic dashboards.
 - It does not import existing dashboards.
 - It has no drag and drop: cards are moved with "Move earlier" and "Move
@@ -56,6 +71,8 @@ firmware includes the dashboard engine.
   the "Dashboard engine" sensor need at least one TAB-1 set up through the
   ESPHome integration. The integration recognises tablets by the firmware's
   ESPHome project name, `ApolloAutomation.TAB-1`.
+- Showing a dashboard on a tablet needs tablet software with the dashboard
+  engine. Taps on the tablet also need ESPHome encryption for that tablet.
 
 ## Installation
 
@@ -77,8 +94,8 @@ To install by hand, copy `custom_components/apollo_tab` into the
 2. Search for "Apollo TAB Dashboard" and confirm.
 
 There is nothing to configure. The "TAB-1" panel appears in the sidebar. If
-you have a tablet, open its device page to see its "Dashboard engine" sensor
-under Diagnostic.
+you have a tablet, its device page has a "Dashboard" control under
+Configuration and a "Dashboard engine" sensor under Diagnostic.
 
 A browser tab that was already open when you added the integration shows the
 TAB-1 panel after a reload.
@@ -108,7 +125,10 @@ to bottom; a page that holds more than fits is split into several screens;
 pages do not scroll; a screen can show at most 4 graphs, 4 dials and 4
 left-to-right colour fades.
 
-The dashboards are not sent to tablets yet.
+To choose which dashboard a tablet shows, pick it under "Shows" next to the
+tablet on the panel's Home screen. For a new tablet, pick its first
+dashboard and then press "Turn on with this dashboard". See
+[docs/tablets.md](docs/tablets.md) for automations and the status words.
 
 If you made a dashboard with version 0.2.0: open it from the TAB-1 panel.
 Cards that were added in Home Assistant's own editor and the old "Tablet
@@ -175,8 +195,10 @@ What a card file can and cannot do:
   that entity's own domain, from a fixed list of domains.
 - It cannot express `homeassistant.*` services, `script.<name>` shortcuts,
   notifications, shell commands or REST calls.
-- Its actions run as the logged-in user, so it can never do more than that
-  user may.
+- In a browser its actions run as the logged-in user, so it can never do
+  more than that user may. A tablet has no logged-in user: anyone at the
+  tablet can use the cards on it, within the other rules here (see
+  [docs/tablets.md](docs/tablets.md)).
 - Its templates run only in Home Assistant's sandboxed template engine, and
   their syntax is checked when the file loads.
 - Its files are read with a safe YAML loader, so `!include`, `!secret`,
@@ -192,13 +214,16 @@ Locks and alarms have extra rules. Every action on a `lock` or
 card file from your folder that controls either one stays switched off until
 an administrator allows it under Advanced in the TAB-1 panel. Editing the
 file withdraws that permission. Garage, gate and door covers ask for
-confirmation on every action, whatever the card file says.
+confirmation on every action, whatever the card file says. The same rules
+hold for taps on a tablet.
 
 ## Removing
 
 Delete the integration from Settings > Devices & services. This removes the
-"Dashboard engine" sensors and the TAB-1 panel. Your tablets and their ESPHome
-entities are not touched.
+"Dashboard" controls, the "Dashboard engine" sensors and the TAB-1 panel.
+Every tablet it turned on and can reach goes back to its waiting screen, and
+the saved choice of dashboard for each tablet is deleted. Your tablets and their ESPHome
+entities are not touched otherwise.
 
 Dashboards you created stay in Home Assistant. Their TAB-1 cards show an error
 until the integration is back.
@@ -210,6 +235,12 @@ whenever it changes and stores the result; the diagnostics download includes
 it. The editor's picture of the tablet is drawn from the same conversion of
 the unsaved draft (`apollo_tab/layout/preview`).
 
+Tablets are reached through the ESPHome integration's own connection, with
+the device actions of the TAB-1 dashboard engine. The wire format is fixed by
+the copy of the shared contract in `custom_components/apollo_tab/contract/`;
+`tests/contract/` holds the fixtures that the code must reproduce byte for
+byte. `tests/fake_tablet.py` is a tablet simulator used by the tests.
+
 Tests need Python 3.14.
 
     python3.14 -m venv .venv
@@ -218,6 +249,27 @@ Tests need Python 3.14.
     .venv/bin/ruff format --check .
     .venv/bin/pytest
     node --test "tests/frontend/*.test.mjs"
+
+The tablet link tests need `aioesphomeapi`. One of them uses ESPHome's own
+`RuntimeEntryData`, which needs the requirements of Home Assistant's
+`esphome` and `usb` integrations and of the integrations they import and
+depend on (`assist_satellite` brings `hassil`, for one); they are not in
+`requirements_test.txt`. Without them that test is skipped and says which
+module is missing. To install them at the versions the installed Home
+Assistant pins, without changing anything already installed:
+
+    .venv/bin/pip freeze > installed.txt
+    .venv/bin/python -B .github/scripts/esphome_requirements.py > esphome.txt
+    .venv/bin/pip install -c installed.txt -r esphome.txt
+    .venv/bin/python -B .github/scripts/esphome_requirements.py --check
+
+The CI workflows do the same and set `APOLLO_TAB_NEED_ESPHOME=1`, which makes
+the test fail instead of skipping.
+
+`tests/harness/tablet-shapes.json` describes every websocket message about
+tablets. `tests/test_tablet_shapes.py` checks the integration against it and
+`tests/frontend/tablet-shapes.test.mjs` checks the panel's mock, so the two
+cannot drift apart.
 
 `requirements_test.txt` is a lock file with hashes, generated from
 `requirements_test.in` (`uv` is installed by the test requirements). Refresh
@@ -232,8 +284,12 @@ mock and a small local server that runs the real layout converter:
 
 Then open `http://127.0.0.1:8765/tests/harness/index.html?view=panel`.
 Options: `ha=dark` or `ha=light` (Home Assistant theme), `seed=none`,
-`seed=sample` or `seed=real` (which dashboards exist), `route=/edit/tab-1`
-(which screen opens) and `community=1` (adds a card from "your folder").
+`seed=sample` or `seed=real` (which dashboards exist), `night=1` (adds a
+second dashboard, "Night"), `tablets=three`, `tablets=no-engine`,
+`tablets=new` (one tablet on, one new) or `tablets=all` (mock tablets; `all`
+has one for every status),
+`route=/edit/tab-1` (which screen opens) and `community=1` (adds a card from
+"your folder").
 The older views `cards`, `states` and `preview` still work and take a
 `theme`: `midnight`, `daylight`, `warm`, `soft`, `mono` or `glass`.
 

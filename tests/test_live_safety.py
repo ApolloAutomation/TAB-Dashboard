@@ -360,6 +360,39 @@ async def test_target_keys_are_refused(
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    ("action", "data"),
+    [
+        # Rendered data that names an entity the card was not set up with.
+        ("light.turn_on", {"entity_id": "light.secret"}),
+        # The card's own entity, but the action is in another domain.
+        ("switch.turn_on", {"entity_id": "{{ entity }}"}),
+    ],
+)
+async def test_call_reaches_only_the_cards_own_entity(
+    hass, config_entry, user_components, hass_ws_client, action, data
+) -> None:
+    """A browser call may only reach the card's entity, in the action's domain."""
+    user_components("toggle.yaml", TOGGLE_COMPONENT)
+    hass.states.async_set("light.kitchen", "off")
+    hass.states.async_set("light.secret", "off")
+    await setup_integration(hass, config_entry)
+    lights = async_mock_service(hass, "light", "turn_on")
+    switches = async_mock_service(hass, "switch", "turn_on")
+    client = await hass_ws_client(hass)
+    await _approve(client, "me/toggle")
+    output = config_entry.runtime_data.library.components["me/toggle"]["outputs"][
+        "switch_on"
+    ]
+    output["action"] = action
+    output["data"] = data
+    result = await _call_card(client, TOGGLE_CARD)
+    assert not result["success"]
+    assert result["error"]["code"] == "not_allowed"
+    assert lights == []
+    assert switches == []
+
+
 async def test_service_data_templates_are_limited(
     hass, config_entry, user_components, hass_ws_client
 ) -> None:

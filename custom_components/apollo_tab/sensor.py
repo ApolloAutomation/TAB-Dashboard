@@ -1,16 +1,27 @@
 """Dashboard engine status sensor, one per tablet."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN
-from .tablets import async_get_tablets
+from .sender import (
+    ENGINE_NOT_INSTALLED,
+    ENGINE_STATES,
+    SIGNAL_TABLETS_UPDATED,
+    TabletSender,
+)
+from .tablets import async_track_tablet_entities
 
-ENGINE_NOT_INSTALLED = "not_installed"
+if TYPE_CHECKING:
+    from . import ApolloTabConfigEntry
 
 
 def engine_unique_id(mac: str) -> str:
@@ -20,97 +31,88 @@ def engine_unique_id(mac: str) -> str:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ApolloTabConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Add a sensor for each tablet and follow device registry changes."""
-    entity_registry = er.async_get(hass)
-    # Unique IDs of the sensors this platform has added. A unique ID holds the
-    # MAC, so a tablet keeps one sensor even if its device ID changes.
-    added: set[str] = set()
-    unloaded = False
-
-    @callback
-    def mark_unloaded() -> None:
-        """Block deferred reconciles from adding entities after unload."""
-        nonlocal unloaded
-        unloaded = True
-
-    entry.async_on_unload(mark_unloaded)
-
-    @callback
-    def reconcile() -> None:
-        """Make the added sensors match the tablets in the device registry."""
-        tablets = async_get_tablets(hass)
-        wanted = {engine_unique_id(mac): device for mac, device in tablets.items()}
-
-        for unique_id in added - wanted.keys():
-            entity_id = entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
-            if entity_id is not None:
-                entity_registry.async_remove(entity_id)
-            added.discard(unique_id)
-
-        # A deferred call can run after this setup was unloaded, even when the
-        # entry has been set up again since.
-        can_add = not unloaded
-        for unique_id, device in wanted.items():
-            if unique_id not in added:
-                if can_add:
-                    added.add(unique_id)
-                    async_add_entities([DashboardEngineSensor(device, unique_id)])
-                continue
-            entity_id = entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
-            if entity_id is None:
-                # Adding is asynchronous, so the registry entry can lag behind.
-                continue
-            registered = entity_registry.async_get(entity_id)
-            if registered is not None and registered.device_id != device.id:
-                # The tablet was registered again under another device ID.
-                entity_registry.async_update_entity(entity_id, device_id=device.id)
-
-    @callback
-    def device_registry_updated(
-        event: Event[dr.EventDeviceRegistryUpdatedData],
-    ) -> None:
-        """Reconcile after the entity registry has handled the same change.
-
-        When a device is removed, the entity registry detaches the sensor from
-        it within the same event, and the entity must process that update
-        before its registry entry is touched. So every action is deferred.
-        """
-        hass.loop.call_soon(reconcile)
-
-    # Drop sensors of tablets that were removed while the integration was not
-    # loaded.
-    current = {engine_unique_id(mac) for mac in async_get_tablets(hass)}
-    for registered in er.async_entries_for_config_entry(
-        entity_registry, entry.entry_id
-    ):
-        if registered.domain == "sensor" and registered.unique_id not in current:
-            entity_registry.async_remove(registered.entity_id)
-
-    reconcile()
-
-    entry.async_on_unload(
-        hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, device_registry_updated)
+    sender = entry.runtime_data.sender
+    async_track_tablet_entities(
+        hass,
+        entry,
+        "sensor",
+        engine_unique_id,
+        lambda mac, device, unique_id: DashboardEngineSensor(
+            sender, mac, device, unique_id
+        ),
+        async_add_entities,
     )
 
 
-class DashboardEngineSensor(SensorEntity):
-    """Whether the tablet's firmware includes the dashboard engine.
+class DashboardEngineSensor(SensorEntity, RestoreEntity):
+    """Whether the tablet's firmware has the dashboard engine HA can talk to.
 
-    No firmware includes it yet, so the state is always "not_installed".
+    not_installed: no engine found. ready: the engine speaks HA's protocol.
+    update_needed: the engine and HA have no protocol version in common.
+    The last known state stays while the tablet is offline, also across a
+    restart of Home Assistant: until the tablet has answered again, the
+    state from before the restart is shown. A tablet never reached shows
+    not_installed.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_has_entity_name = True
-    _attr_native_value = ENGINE_NOT_INSTALLED
-    _attr_options = [ENGINE_NOT_INSTALLED]
+    _attr_options = ENGINE_STATES
     _attr_should_poll = False
     _attr_translation_key = "dashboard_engine"
 
-    def __init__(self, device: dr.DeviceEntry, unique_id: str) -> None:
+    def __init__(
+        self, sender: TabletSender, mac: str, device: dr.DeviceEntry, unique_id: str
+    ) -> None:
         """Attach the sensor to the tablet's existing ESPHome device."""
+        self._sender = sender
+        self._mac = mac
         self._attr_unique_id = unique_id
         self.device_entry = device
+        # (state, engine version) from before a restart.
+        self._restored: tuple[str, str | None] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Take the state from before a restart, then follow the tablet."""
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ENGINE_STATES:
+            version = last.attributes.get("engine_version")
+            self._restored = (
+                last.state,
+                version if isinstance(version, str) and version else None,
+            )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, SIGNAL_TABLETS_UPDATED, self._async_tablets_updated
+            )
+        )
+
+    @callback
+    def _async_tablets_updated(self) -> None:
+        """Write the new state."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> str:
+        """Return the engine state."""
+        session = self._sender.session_for(self._mac)
+        if session is not None and session.engine_known:
+            return session.engine_state
+        if self._restored is not None:
+            return self._restored[0]
+        return ENGINE_NOT_INSTALLED
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the engine version the tablet reported, or None."""
+        session = self._sender.session_for(self._mac)
+        if session is not None and session.engine_known:
+            return {"engine_version": session.engine or None}
+        if self._restored is not None:
+            return {"engine_version": self._restored[1]}
+        return {"engine_version": None}

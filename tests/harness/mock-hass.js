@@ -217,8 +217,129 @@ function fail(code, message = code) {
   return Object.assign(new Error(message), { code });
 }
 
+// The integration's answer to a change for a tablet no admin turned on
+// (tests/harness/tablet-shapes.json).
+const NOT_APPROVED =
+  'This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard".';
+
+// A second dashboard for the tablet steps: "Night", with one empty page.
+const NIGHT_CONFIG = {
+  apollo_tab: { version: 1, theme: "warm" },
+  views: [
+    {
+      type: "sections",
+      title: "Night",
+      path: "night",
+      icon: "mdi:bed",
+      max_columns: 3,
+      sections: [{ type: "grid", column_span: 3, cards: [] }],
+    },
+  ],
+};
+
+// The stand-in tablets, in the shapes of tests/harness/tablet-shapes.json
+// (tests/frontend/tablet-shapes.test.mjs checks them). `prefer` lists the
+// dashboards a tablet shows when they exist; without one it gets the first
+// dashboard, as Home Assistant gives the first one to an approved tablet
+// that has none. A tablet with `dashboard: null` has none. `forced` fixes
+// the status, for showing every status at once. `engine` is "" while the
+// tablet has no dashboard software, as the integration sends it.
+// `approved: false` is a new tablet that waits for an admin to pick its
+// first dashboard; `suggested` is what it showed before it was adopted
+// again. Until it is approved it shows nothing and is not paired.
+// `reauth` ("erased" or "key") is what Home Assistant waits for from an
+// admin in Repairs before it connects again, under `reauth_name` (the
+// tablet's name there, its own name when not given).
+function tabletEntry(n, name, changes = {}) {
+  const mac = `aa:bb:cc:dd:ee:${n.toString(16).padStart(2, "0")}`;
+  return {
+    mac,
+    device_id: n.toString(16).padStart(32, "0"),
+    name,
+    short_name: name.replace(/ tablet$/i, ""),
+    model: "TAB-1",
+    prefer: [],
+    online: true,
+    engine: "0.1.0",
+    paired: true,
+    input: "ok",
+    entity_id: `select.${name.toLowerCase().replaceAll(" ", "_")}_dashboard`,
+    forced: null,
+    approved: true,
+    suggested: null,
+    reauth: null,
+    reauth_name: null,
+    ...changes,
+  };
+}
+
+const NEW_TABLET = { approved: false, dashboard: null };
+
+const BEDROOM_NO_ENGINE = { prefer: ["tab-1"], engine: "", paired: false, input: "not_paired" };
+
+// Compares like Python's sorted(): by code point.
+function byCodePoint(a, b) {
+  const left = [...String(a)];
+  const right = [...String(b)];
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    const step = left[index].codePointAt(0) - right[index].codePointAt(0);
+    if (step) {
+      return step;
+    }
+  }
+  return left.length - right.length;
+}
+
+const TABLET_SETS = {
+  none: () => [],
+  three: () => [
+    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"] }),
+    tabletEntry(2, "Hallway tablet", { prefer: ["night"], online: false }),
+    tabletEntry(3, "Bedroom tablet", BEDROOM_NO_ENGINE),
+  ],
+  "no-engine": () => [tabletEntry(3, "Bedroom tablet", BEDROOM_NO_ENGINE)],
+  // An approved tablet and a new one that waits for an admin.
+  new: () => [
+    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"] }),
+    tabletEntry(14, "Porch tablet", NEW_TABLET),
+  ],
+  // Two new tablets, one under the other, and an approved one.
+  "two-new": () => [
+    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"] }),
+    tabletEntry(14, "Porch tablet", NEW_TABLET),
+    tabletEntry(15, "Patio tablet", NEW_TABLET),
+  ],
+  // One tablet for every status and reason, both notes about taps, and an
+  // erased tablet that Home Assistant waits for an admin's answer about.
+  all: () => [
+    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"] }),
+    tabletEntry(2, "Hallway tablet", { prefer: ["tab-1"], online: false }),
+    tabletEntry(3, "Bedroom tablet", BEDROOM_NO_ENGINE),
+    tabletEntry(4, "Office tablet", { forced: { status: "unsupported", reason: "tablet_old", retry: false } }),
+    tabletEntry(5, "Garage tablet", { forced: { status: "unsupported", reason: "ha_version", retry: false } }),
+    tabletEntry(6, "Porch tablet", { forced: { status: "failed", reason: "timeout", retry: true } }),
+    tabletEntry(7, "Attic tablet", { forced: { status: "failed", reason: "too_big", retry: false } }),
+    tabletEntry(8, "Cellar tablet", { forced: { status: "failed", reason: "unreadable", retry: false } }),
+    tabletEntry(9, "Study tablet", { forced: { status: "failed", reason: "parse", retry: false } }),
+    tabletEntry(10, "Nursery tablet", { forced: { status: "sending", reason: "", retry: false } }),
+    tabletEntry(11, "Den tablet", { paired: false, input: "needs_encryption" }),
+    tabletEntry(12, "Loft tablet", { paired: false, input: "not_paired" }),
+    tabletEntry(13, "Guest tablet", { dashboard: null, forced: { status: "no_dashboard", reason: "", retry: false } }),
+    tabletEntry(14, "Shed tablet", { ...NEW_TABLET, suggested: "tab-1" }),
+    tabletEntry(16, "Pantry tablet", {
+      prefer: ["tab-1"],
+      online: false,
+      reauth: "erased",
+      reauth_name: "Apollo TAB-1 ddee10",
+    }),
+  ],
+};
+
 // options.seed: "none", "sample" (default) or "real" (uses options.realConfig).
 // options.community adds a lock card from the user's folder to the library.
+// options.night adds the "Night" dashboard. options.tablets: "none"
+// (default), "three", "no-engine", "new", "two-new" or "all" (see
+// TABLET_SETS).
 export function createMockHass(fixtures, options = {}) {
   defineStandIns();
 
@@ -236,6 +357,8 @@ export function createMockHass(fixtures, options = {}) {
   let saveDelay = 0;
   let lostAnswers = 0;
   const failing = new Map();
+  // Commands answered only after a while: {type: milliseconds}.
+  const slow = new Map();
   // down: the connection is lost. waiting: commands sent meanwhile.
   // underWay: commands sent and not answered yet.
   const connection = { down: false, waiting: [], underWay: new Set() };
@@ -259,6 +382,9 @@ export function createMockHass(fixtures, options = {}) {
   } else if (seed === "real") {
     addDashboard("tab-1", "TAB-1", options.realConfig, true);
   }
+  if (options.night) {
+    addDashboard("night", "Night", NIGHT_CONFIG, false);
+  }
 
   const emit = (type, event) => {
     for (const record of [...listeners]) {
@@ -269,6 +395,155 @@ export function createMockHass(fixtures, options = {}) {
   };
 
   const emitLayout = (event) => emit("apollo_tab/layout/subscribe", event);
+
+  // ---- tablets, like the integration's assignment and sender ----
+
+  const isTabConfig = (config) =>
+    Boolean(config?.apollo_tab && typeof config.apollo_tab === "object" && !Array.isArray(config.apollo_tab));
+
+  // The TAB-1 dashboards in the integration's one order:
+  // (title in lower case, url_path).
+  const tabOrder = () =>
+    [...dashboards.values()]
+      .filter((dashboard) => isTabConfig(dashboard.config))
+      .map((dashboard) => [String(dashboard.title || "").toLowerCase(), dashboard.url_path, dashboard])
+      .sort((a, b) => byCodePoint(a[0], b[0]) || byCodePoint(a[1], b[1]))
+      .map((entry) => entry[2]);
+
+  const isTab = (urlPath) => isTabConfig(dashboards.get(urlPath)?.config);
+
+  const tablets = (TABLET_SETS[options.tablets] || TABLET_SETS.none)();
+  for (const tablet of tablets) {
+    if (tablet.dashboard === undefined && tablet.approved) {
+      tablet.dashboard = tablet.prefer.find(isTab) || tabOrder()[0]?.url_path || null;
+    }
+    tablet.sending = false;
+  }
+  // holdSends keeps every send at "sending" until finishSends.
+  const sends = { delay: 700, hold: false };
+
+  // Like the integration: what the connection says comes first, so an
+  // offline tablet reads "offline" whether or not it has a dashboard.
+  const statusOf = (tablet) => {
+    // A new tablet reads "new", whatever else is true of it.
+    if (!tablet.approved) {
+      return { status: "new", reason: "", retry: false };
+    }
+    if (tablet.forced) {
+      return tablet.forced;
+    }
+    if (!tablet.online) {
+      return { status: "offline", reason: "", retry: false };
+    }
+    if (!tablet.engine) {
+      return { status: "no_engine", reason: "", retry: false };
+    }
+    if (!tablet.dashboard) {
+      return { status: "no_dashboard", reason: "", retry: false };
+    }
+    return { status: tablet.sending ? "sending" : "on_tablet", reason: "", retry: false };
+  };
+
+  const publicTablet = (tablet) => ({
+    mac: tablet.mac,
+    device_id: tablet.device_id,
+    name: tablet.name,
+    short_name: tablet.short_name,
+    model: tablet.model,
+    dashboard: tablet.approved ? tablet.dashboard : null,
+    ...statusOf(tablet),
+    engine: tablet.engine,
+    paired: tablet.approved && tablet.paired,
+    input: tablet.approved ? tablet.input : "not_paired",
+    entity_id: tablet.entity_id,
+    approved: tablet.approved,
+    suggested: !tablet.approved && isTab(tablet.suggested) ? tablet.suggested : null,
+    reauth: tablet.reauth || null,
+    reauth_name: tablet.reauth ? tablet.reauth_name || tablet.name : null,
+  });
+
+  // The tablets an admin turned on; only they show and count.
+  const approvedTablets = () => tablets.filter((tablet) => tablet.approved);
+
+  // Sorted like the integration: name in lower case, then MAC.
+  const tabletList = () =>
+    tablets
+      .map(publicTablet)
+      .sort((a, b) => byCodePoint(a.name.toLowerCase(), b.name.toLowerCase()) || byCodePoint(a.mac, b.mac));
+
+  const emitTablets = () =>
+    queueMicrotask(() => emit("apollo_tab/tablets/subscribe", { type: "tablets", tablets: tabletList() }));
+
+  const finishSend = (tablet) => {
+    tablet.sending = false;
+    tablet.timer = null;
+    emitTablets();
+  };
+
+  // Sends the tablet's dashboard: "sending" until the stand-in tablet has
+  // built it, then "on_tablet". Offline tablets and tablets without the
+  // dashboard software keep the choice for later.
+  const send = (tablet) => {
+    clearTimeout(tablet.timer);
+    tablet.timer = null;
+    tablet.sending = Boolean(tablet.approved && tablet.dashboard && tablet.online && tablet.engine && !tablet.forced);
+    if (tablet.sending && !sends.hold) {
+      tablet.timer = setTimeout(() => finishSend(tablet), sends.delay);
+    }
+  };
+
+  // Either form of the MAC, in any case, as the integration takes it.
+  const macHex = (mac) => String(mac).toLowerCase().replace(/[^0-9a-f]/g, "");
+  const tabletByMac = (mac) => {
+    const tablet = tablets.find((entry) => macHex(entry.mac) === macHex(mac));
+    if (!tablet) {
+      throw fail("not_found", "This tablet is not known");
+    }
+    return tablet;
+  };
+
+  // The first TAB-1 dashboard made goes to every approved tablet that has
+  // none. A new tablet waits for an admin.
+  const giveToOrphans = () => {
+    const first = tabOrder()[0]?.url_path || null;
+    if (!first) {
+      return;
+    }
+    let changed = false;
+    for (const tablet of approvedTablets()) {
+      if (!tablet.dashboard && !tablet.forced) {
+        tablet.dashboard = first;
+        send(tablet);
+        changed = true;
+      }
+    }
+    if (changed) {
+      emitTablets();
+    }
+  };
+
+  // A deleted dashboard's approved tablets move to the first one left, or
+  // to none. A new tablet loses it as its suggestion.
+  const moveFrom = (urlPath) => {
+    const next = tabOrder().find((dashboard) => dashboard.url_path !== urlPath)?.url_path || null;
+    let changed = false;
+    for (const tablet of tablets) {
+      if (!tablet.approved && tablet.suggested === urlPath) {
+        tablet.suggested = null;
+        changed = true;
+      }
+    }
+    for (const tablet of approvedTablets()) {
+      if (tablet.dashboard === urlPath) {
+        tablet.dashboard = next;
+        send(tablet);
+        changed = true;
+      }
+    }
+    if (changed) {
+      emitTablets();
+    }
+  };
 
   const itemOf = (dashboard) => {
     const { config: _config, ...item } = dashboard;
@@ -281,6 +556,7 @@ export function createMockHass(fixtures, options = {}) {
   // connection is down at the time.
   const store = (urlPath, config, announce = true) => {
     const dashboard = dashboards.get(urlPath);
+    const wasTab = isTabConfig(dashboard.config);
     dashboard.config = structuredClone(config);
     if (!announce) {
       return;
@@ -288,6 +564,17 @@ export function createMockHass(fixtures, options = {}) {
     queueMicrotask(() =>
       emitLayout({ type: "converted", url_path: urlPath, hash: String(++counter), warnings: 0 }),
     );
+    // The tablets that show it get the new version.
+    const showing = approvedTablets().filter((tablet) => tablet.dashboard === urlPath);
+    for (const tablet of showing) {
+      send(tablet);
+    }
+    if (showing.length) {
+      emitTablets();
+    }
+    if (!wasTab && isTabConfig(dashboard.config)) {
+      giveToOrphans();
+    }
   };
 
   // Listeners for the connection's own events, such as "ready".
@@ -295,14 +582,12 @@ export function createMockHass(fixtures, options = {}) {
 
   // Like the integration, "pages" is the number of screens in the converted
   // layout: a page with no cards gives none, a long page gives several.
+  // In the one order, like the integration.
   const tabDashboards = async () => {
     const list = [];
-    for (const dashboard of dashboards.values()) {
+    for (const dashboard of tabOrder()) {
       const config = dashboard.config;
-      const settings = config?.apollo_tab;
-      if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
-        continue;
-      }
+      const settings = config.apollo_tab;
       const converted = await preview(config);
       list.push({
         url_path: dashboard.url_path,
@@ -312,9 +597,21 @@ export function createMockHass(fixtures, options = {}) {
         pages: converted.layout.pages.length,
         warnings: converted.warnings.length,
         hash: converted.layout.hash,
+        shown_on: approvedTablets()
+          .filter((tablet) => tablet.dashboard === dashboard.url_path)
+          .map((tablet) => tablet.mac)
+          .sort(byCodePoint),
       });
     }
-    return { dashboards: list, tablets: 0, sent_to_tablets: false };
+    const states = tabletList().filter((tablet) => tablet.approved);
+    return {
+      dashboards: list,
+      // The stand-in has no dashboard that cannot be read.
+      unreadable: [],
+      // New tablets show nothing and are not counted.
+      tablets: states.length,
+      sent_to_tablets: states.some((tablet) => tablet.status === "on_tablet"),
+    };
   };
 
   const preview = async (config) => {
@@ -369,6 +666,9 @@ export function createMockHass(fixtures, options = {}) {
         failing.set(message.type, failures - 1);
         throw fail("error", "Fixture error");
       }
+      if (slow.get(message.type) > 0) {
+        await new Promise((resolve) => setTimeout(resolve, slow.get(message.type)));
+      }
 
       switch (message.type) {
         case "apollo_tab/strings":
@@ -396,6 +696,35 @@ export function createMockHass(fixtures, options = {}) {
           return preview(message.config);
         case "apollo_tab/card/call":
           return { ok: true };
+        case "apollo_tab/tablets":
+          return { tablets: tabletList() };
+        case "apollo_tab/tablet/assign": {
+          const tablet = tabletByMac(message.mac);
+          // Only "Turn on with this dashboard" sends approve: a plain
+          // assign never turns a new tablet on.
+          if (!tablet.approved && message.approve !== true) {
+            throw fail("not_approved", NOT_APPROVED);
+          }
+          if (!isTab(message.url_path)) {
+            throw fail("unknown_dashboard", "This dashboard does not exist");
+          }
+          // The admin's explicit act turns a new tablet on.
+          if (!tablet.approved || tablet.dashboard !== message.url_path) {
+            tablet.approved = true;
+            tablet.suggested = null;
+            tablet.dashboard = message.url_path;
+            send(tablet);
+            emitTablets();
+          }
+          return { tablet: publicTablet(tablet) };
+        }
+        case "apollo_tab/tablet/pair": {
+          const tablet = tabletByMac(message.mac);
+          if (!tablet.approved) {
+            throw fail("not_approved", NOT_APPROVED);
+          }
+          return { tablet: publicTablet(tablet) };
+        }
         case "lovelace/dashboards/list":
           return [...dashboards.values()].map(itemOf);
         case "lovelace/dashboards/create": {
@@ -429,6 +758,7 @@ export function createMockHass(fixtures, options = {}) {
           }
           dashboards.delete(dashboard.url_path);
           queueMicrotask(() => emitLayout({ type: "removed", url_path: dashboard.url_path }));
+          moveFrom(dashboard.url_path);
           return null;
         }
         case "lovelace/config": {
@@ -459,13 +789,22 @@ export function createMockHass(fixtures, options = {}) {
           return null;
         }
         default:
-          throw fail("unsupported", `Unsupported command: ${message.type}`);
+          // Home Assistant's answer to a command nobody registered.
+          throw fail("unknown_command", "Unknown command.");
       }
     },
     connection: {
       async subscribeMessage(callback, message) {
         const record = { callback, message };
         listeners.add(record);
+
+        if (message.type === "apollo_tab/tablets/subscribe") {
+          queueMicrotask(() => {
+            if (listeners.has(record)) {
+              callback({ type: "tablets", tablets: tabletList() });
+            }
+          });
+        }
 
         if (message.type === "apollo_tab/card/subscribe") {
           queueMicrotask(() => {
@@ -565,6 +904,11 @@ export function createMockHass(fixtures, options = {}) {
     failCalls(type, count) {
       failing.set(type, Math.max(0, Number(count) || 0));
     },
+    // Every later command of one type is answered after `ms` milliseconds
+    // (0: at once again), as on a slow connection.
+    slowCalls(type, ms) {
+      slow.set(type, Math.max(0, Number(ms) || 0));
+    },
     // Every later lovelace/config/save answers after `ms` milliseconds.
     slowSaves(ms) {
       saveDelay = Math.max(0, Number(ms) || 0);
@@ -584,6 +928,49 @@ export function createMockHass(fixtures, options = {}) {
     getDashboard(urlPath) {
       const dashboard = dashboards.get(urlPath);
       return dashboard ? itemOf(dashboard) : null;
+    },
+    // The tablets as the integration would send them.
+    getTablets() {
+      return tabletList();
+    },
+    // Changes a stand-in tablet, for example {online: false} or
+    // {engine: "0.1.0"}; a tablet that comes online or gets the dashboard
+    // software is sent its dashboard. quiet: true changes it without a
+    // send and without telling the panel, as a change whose event has not
+    // arrived yet; emitTablets() tells it later.
+    setTablet(mac, changes, { quiet = false } = {}) {
+      const tablet = tabletByMac(mac);
+      Object.assign(tablet, changes);
+      if (quiet) {
+        return;
+      }
+      send(tablet);
+      emitTablets();
+    },
+    // Sends the tablet list to the panel, as Home Assistant does on a change.
+    emitTablets() {
+      emitTablets();
+    },
+    // Sends stay at "sending" until finishSends.
+    holdSends() {
+      sends.hold = true;
+    },
+    finishSends() {
+      sends.hold = false;
+      for (const tablet of tablets) {
+        if (tablet.sending) {
+          finishSend(tablet);
+        }
+      }
+    },
+    // How long the stand-in tablets take to build a dashboard.
+    sendDelay(ms) {
+      sends.delay = Math.max(0, Number(ms) || 0);
+    },
+    // The integration is unloaded (or reloaded): the tablet subscriptions
+    // get their last event, as from Home Assistant.
+    unloadIntegration() {
+      emit("apollo_tab/tablets/subscribe", { type: "not_loaded" });
     },
   };
 

@@ -415,6 +415,7 @@ export function nextDashboardTitle(titles, base) {
 // The "pages" of apollo_tab/dashboards are not used: they count the tablet's
 // screens, so an empty page gives none and a long page gives several. A
 // dashboard whose config is not known gets pages: null.
+// The rows come in the one dashboard order (compareDashboards).
 export function mergeDashboards(tabList, haList, configs = {}) {
   const tabs = Array.isArray(tabList) ? tabList : [];
   const dashboards = Array.isArray(haList) ? haList : [];
@@ -430,7 +431,7 @@ export function mergeDashboards(tabList, haList, configs = {}) {
     }
   }
 
-  return tabs.map((tab) => {
+  const rows = tabs.map((tab) => {
     const safeTab = isPlainObject(tab) ? tab : {};
     const dashboard = byPath.get(safeTab.url_path);
     const id = isPlainObject(dashboard)
@@ -456,6 +457,46 @@ export function mergeDashboards(tabList, haList, configs = {}) {
       editable: safeTab.mode === "storage" && typeof id === "string",
     };
   });
+  return sortDashboards(rows);
+}
+
+// Compares two strings code point by code point, as Python compares str.
+// (JavaScript's own < compares UTF-16 units, which puts a few characters in
+// another order.)
+export function compareCodePoints(a, b) {
+  const left = String(a);
+  const right = String(b);
+  let i = 0;
+  let j = 0;
+  while (i < left.length && j < right.length) {
+    const x = left.codePointAt(i);
+    const y = right.codePointAt(j);
+    if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+    i += x > 0xffff ? 2 : 1;
+    j += y > 0xffff ? 2 : 1;
+  }
+  return (i < left.length ? 1 : 0) - (j < right.length ? 1 : 0);
+}
+
+function orderTitle(row) {
+  return typeof row?.title === "string" ? row.title : "";
+}
+
+// The one order of dashboards everywhere: Home's list, each tablet's
+// "Shows" list, and the dashboard a new tablet or a deleted dashboard's
+// tablets get. By title in lower case, then by url_path, the same as Home
+// Assistant's side sorts them: (title.lower(), url_path).
+export function compareDashboards(a, b) {
+  return (
+    compareCodePoints(orderTitle(a).toLowerCase(), orderTitle(b).toLowerCase())
+    || compareCodePoints(String(a?.url_path ?? ""), String(b?.url_path ?? ""))
+  );
+}
+
+export function sortDashboards(list) {
+  return (Array.isArray(list) ? [...list] : []).sort(compareDashboards);
 }
 
 export function isGridSection(section) {

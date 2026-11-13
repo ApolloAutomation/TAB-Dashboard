@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -14,7 +14,9 @@ from pytest_homeassistant_custom_component.common import (
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 from custom_components.apollo_tab.live import (
+    CallError,
     async_fetch_history,
+    async_run_output,
     decimate,
     jsonable,
 )
@@ -592,3 +594,50 @@ async def test_call_refuses_script_service_by_name(
     assert response["error"]["code"] == "not_allowed"
     assert not secret_calls
     assert not turn_on_calls
+
+
+@pytest.mark.parametrize("domain", ["lock", "alarm_control_panel"])
+async def test_lock_and_alarm_ask_first_whatever_the_feedback(
+    hass: HomeAssistant, domain: str
+) -> None:
+    """A lock or alarm output asks for the yes even when it says pulse.
+
+    The library already rejects such a file (every lock and alarm action
+    must confirm), so this is the second check at the moment of the call,
+    for the browser and for tablets alike.
+    """
+    service = "unlock" if domain == "lock" else "alarm_disarm"
+    entity_id = f"{domain}.front_door"
+    hass.states.async_set(entity_id, "locked")
+    calls = async_mock_service(hass, domain, service)
+    component = {
+        "outputs": {
+            "open": {
+                "action": f"{domain}.{service}",
+                "data": {"entity_id": "{{ entity }}"},
+                "feedback": "pulse",
+            }
+        }
+    }
+
+    async def run(confirmed: bool) -> None:
+        await async_run_output(
+            hass,
+            component=component,
+            action_ref={"output": "open"},
+            params={"entity": entity_id},
+            entities=[entity_id],
+            widget={"id": 1, "t": "button"},
+            event="tap",
+            value=None,
+            confirmed=confirmed,
+            context=Context(),
+        )
+
+    with pytest.raises(CallError) as err:
+        await run(False)
+    assert err.value.code == "confirm_required"
+    assert calls == []
+    await run(True)
+    assert len(calls) == 1
+    assert calls[0].data == {"entity_id": entity_id}

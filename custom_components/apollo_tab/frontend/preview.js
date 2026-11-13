@@ -1,4 +1,4 @@
-import { getConnection, loadStrings, onLayoutChanged, t } from "./api.js";
+import { getConnection, loadStrings, onLayoutChanged, onTabletsChanged, t } from "./api.js";
 import {
   dashboardFromPath,
   warningBoxKind,
@@ -7,6 +7,7 @@ import {
 } from "./logic.js";
 import { renderPage } from "./render.js";
 import { previewStyles, rendererStyles } from "./styles.js";
+import { captionLines } from "./tablets.js";
 
 function addStyle(root, css) {
   const style = document.createElement("style");
@@ -50,6 +51,9 @@ export class ApolloTabPreview extends HTMLElement {
     this._resizeObserver = null;
     this._startRun = 0;
     this._started = false;
+    // The tablets (null until known), for the same lines the editor shows.
+    this._tablets = null;
+    this._stopTablets = null;
   }
 
   setConfig(config) {
@@ -106,6 +110,8 @@ export class ApolloTabPreview extends HTMLElement {
     this._startRun += 1;
     this._stop?.();
     this._stop = null;
+    this._stopTablets?.();
+    this._stopTablets = null;
     clearInterval(this._timer);
     this._timer = null;
     this._resizeObserver?.disconnect();
@@ -147,6 +153,12 @@ export class ApolloTabPreview extends HTMLElement {
       },
       () => this._load(),
     );
+    // Only administrators get the tablets, as they get the layout; for
+    // anyone else this ends quietly.
+    this._stopTablets = onTabletsChanged(this._conn, (tablets) => {
+      this._tablets = tablets;
+      this._fillLines();
+    });
 
     this._timer = setInterval(() => {
       if (document.visibilityState === "visible") {
@@ -202,7 +214,12 @@ export class ApolloTabPreview extends HTMLElement {
       return;
     }
 
-    this.shadowRoot.append(node("p", "notice", t("preview.not_sent")));
+    // Which tablets show this dashboard and how it is going there, the same
+    // lines as in the editor.
+    const lines = node("div", "notice tablet-lines");
+    lines.dataset.test = "tablet-lines";
+    this.shadowRoot.append(lines);
+    this._fillLines();
 
     const heading = node("div", "preview-heading");
     heading.append(
@@ -256,6 +273,25 @@ export class ApolloTabPreview extends HTMLElement {
     }
   }
 
+  _fillLines() {
+    const box = this.shadowRoot.querySelector(".tablet-lines");
+    if (!box) {
+      return;
+    }
+    const lines = Array.isArray(this._tablets)
+      ? captionLines(this._tablets, this._dashboard, t)
+      : [];
+    box.hidden = !lines.length;
+    box.replaceChildren(
+      ...lines.map((line) => {
+        const item = node("p", "tablet-line", line.text);
+        item.dataset.test = "tablet-line";
+        item.dataset.kind = line.kind;
+        return item;
+      }),
+    );
+  }
+
   _strings() {
     const result = {};
     for (const warning of this._data?.warnings || []) {
@@ -290,6 +326,7 @@ export class ApolloTabPreview extends HTMLElement {
         sx: scale,
         sy: scale,
         interactive: false,
+        tablet: true,
       },
     );
 

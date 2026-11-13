@@ -180,9 +180,6 @@ def _convert_view(vi: int, view: object, env: dict, used_bases: set[str]) -> lis
         for span, items in _convert_section(vi, si, section, env):
             if items:
                 parts.append((span, items))
-    if not parts:
-        return []
-    placed = paginate([(span, _height(items, span)) for span, items in parts])
     base = _page_base(view, vi, used_bases)
     title = view.get("title")
     if not (isinstance(title, str) and title):
@@ -190,6 +187,14 @@ def _convert_view(vi: int, view: object, env: dict, used_bases: set[str]) -> lis
     icon = view.get("icon")
     if not (isinstance(icon, str) and _ICON.match(icon)):
         icon = None
+    if not parts:
+        # A page with no cards stays, with its side bar entry, so the tablet
+        # has the same pages as the editor.
+        page: dict[str, Any] = {"id": base, "title": title, "view": vi, "items": []}
+        if icon:
+            page["icon"] = icon
+        return [page]
+    placed = paginate([(span, _height(items, span)) for span, items in parts])
     by_page: dict[int, list] = {}
     for part, (page_index, section_col, band_row) in zip(parts, placed, strict=True):
         by_page.setdefault(page_index, []).append((part, section_col, band_row))
@@ -628,8 +633,18 @@ def _renumber(value: object, ctx: dict) -> object:
 
 
 def _bind_actions(item: dict, widget_ids: dict[int, int], actions_out: dict) -> None:
-    """Copy the card's actions into bindings, keyed by the new widget ids."""
-    for key, action in (item["compiled"].get("actions") or {}).items():
+    """Copy the card's actions into bindings, keyed by the new widget ids.
+
+    Each entry also carries the card's demo flag and its entities, so a tap
+    from a tablet is checked like a call from the browser, which gets both
+    from compiling the card.
+    """
+    compiled = item["compiled"]
+    demo = bool(compiled.get("demo"))
+    entities = [
+        entity for entity in compiled.get("entities") or [] if isinstance(entity, str)
+    ]
+    for key, action in (compiled.get("actions") or {}).items():
         if not isinstance(action, dict):
             continue
         index, _, kind = str(key).partition(":")
@@ -642,4 +657,6 @@ def _bind_actions(item: dict, widget_ids: dict[int, int], actions_out: dict) -> 
             "output": action.get("output"),
             "vars": action.get("vars") or {},
             "params": item["params"],
+            "demo": demo,
+            "entities": list(entities),
         }

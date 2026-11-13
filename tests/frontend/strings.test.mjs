@@ -180,7 +180,60 @@ test("the card guide link opens the guide, which starts with cards", () => {
   assert.equal(title, "# Writing a card");
   assert.match(opening, /^A card for the TAB-1 tablet is a small YAML file\./);
   assert.ok(opening.indexOf("card") < opening.indexOf("Component"), opening);
-  assert.match(opening, /Dashboards are not sent to tablets yet/);
+});
+
+// Dashboards now reach the tablets, so no text in the panel may still say
+// they do not.
+test("no text says dashboards are not sent to tablets", () => {
+  const strings = readStrings();
+  for (const key of ["home.not_sent", "home.tablets_none", "home.tablets_some", "editor.tablet_note", "preview.not_sent"]) {
+    assert.equal(Object.hasOwn(strings, key), false, `${key} is still in the strings`);
+  }
+  const offenders = Object.entries(strings)
+    .filter(([, value]) => /not sent to tablets|not been released/i.test(value))
+    .map(([key]) => key);
+  assert.deepEqual(offenders, []);
+  for (const name of fs.readdirSync(frontend).filter((file) => file.endsWith(".js"))) {
+    const source = fs.readFileSync(path.join(frontend, name), "utf8");
+    assert.ok(!/not sent to tablets/i.test(source), `${name} still says dashboards are not sent`);
+  }
+});
+
+// The tablet texts are read by people who never set up ESPHome by hand:
+// no names of Home Assistant's insides, and "tablet software" rather than
+// firmware. Only two lines name ESPHome, as the place to go in Home
+// Assistant: the encryption hint, where the setting is, and the steps for
+// a key, which press Reload under Settings > Devices & services > ESPHome.
+test("the tablet texts avoid jargon", () => {
+  const strings = readStrings();
+  const jargon = /\b(entity|entities|integration|ESPHome|hash|engine|firmware|url_path|MAC|select|sensor|Lovelace|payload|websocket)\b/i;
+  const keys = Object.keys(strings).filter((key) => key.startsWith("tablets.") || key.startsWith("editor.on_tablet_"));
+  assert.ok(keys.length >= 45, `only ${keys.length} tablet texts`);
+  const plain = (key) => strings[key].replace(/\{[^}]*\}/g, "");
+  const named = new Set(["tablets.needs_encryption", "tablets.reauth_key"]);
+  const offenders = keys.filter((key) => !named.has(key)).filter((key) => jargon.test(plain(key)));
+  assert.deepEqual(offenders, []);
+  // Where ESPHome is named, it is a place to go, never a word for the tablet.
+  assert.match(strings["tablets.reauth_key"], /Settings > Devices & services > ESPHome, open the tablet's menu/);
+  assert.equal(plain("tablets.reauth_key").replace("Settings > Devices & services > ESPHome", "").match(jargon), null);
+  // The line that helps an admin tell which device a new tablet is: an
+  // instruction, with the six characters the tablet's own screen shows.
+  assert.equal(
+    strings["tablets.device_line"],
+    "Before you turn it on, check that the name on the tablet's screen ends in {mac}.",
+  );
+  assert.equal(
+    strings["tablets.device_before"],
+    "If it still shows {dashboard}, its old dashboard, its name is not on its screen. Check that it shows {dashboard} and that its values no longer change.",
+  );
+  assert.match(strings["tablets.needs_encryption"], /in ESPHome\.$/);
+  assert.ok(!/\b(firmware|engine|integration)\b/i.test(strings["tablets.needs_encryption"]));
+  // The design's own sentences, word for word.
+  assert.equal(strings["tablets.none"], "No TAB-1 tablet found in Home Assistant yet. Power the tablet on. If it asks for Wi-Fi, join \"Apollo TAB1 Hotspot\" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here. You can still build dashboards.");
+  assert.equal(strings["tablets.make_first"], "Make a dashboard first.");
+  assert.equal(strings["editor.on_tablet_helper"], "To show something else on a tablet, pick it for that tablet on the Home screen.");
+  assert.equal(strings["editor.on_tablet_none"], "No tablets yet.");
+  assert.equal(strings["editor.on_tablet_nowhere"], "Not shown on a tablet yet");
 });
 
 test("no string uses the old jargon", () => {
