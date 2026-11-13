@@ -70,7 +70,7 @@ any user could put other content on a tablet or blank it.
 
 | Event | Data | Purpose |
 |---|---|---|
-| `esphome.tab1_hello` | `d: "1|<mac>|<boot>"` | The knock: "I am connected and nobody greeted me." |
+| `esphome.tab1_hello` | `d: "1\|<mac>\|<boot>"` | The knock: "I am connected and nobody greeted me." |
 | `esphome.tab1_input` | `d: <payload>`, `s: <signature>` | One touch. See section 7. |
 
 Knock rules. Every knock is a bus event that the recorder stores, so they are
@@ -529,7 +529,7 @@ session and answers. Errors: `needs_encryption` (the tablet has no API key),
 | `tab_hello` | empty |
 | `tab_commit` | the `hash` argument |
 | `tab_set` | the `data` argument, byte for byte |
-| `tab_ack` | `<n of the ack>|<1 or 0>|<code>` |
+| `tab_ack` | `<n of the ack>\|<1 or 0>\|<code>` |
 | `tab_clear` | empty |
 
 Tablet rules (`fixtures/auth.json`, `check_auth` in the reference code):
