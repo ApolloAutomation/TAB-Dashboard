@@ -991,6 +991,11 @@ export function buildDashboardSettings(ctx) {
     });
     themeField.append(el("span", "helper", t("settings.theme_helper")));
     block.append(themeField);
+    // Which tablets show this dashboard, under the theme (ctx.shownOn is
+    // drawn and kept up to date by the editor).
+    if (ctx.shownOn) {
+      block.append(ctx.shownOn);
+    }
 
     const sidebarAlert = el("p", "alert");
     sidebarAlert.setAttribute("role", "alert");
@@ -1019,6 +1024,10 @@ export function buildDashboardSettings(ctx) {
     const field = el("div", "field");
     field.append(el("span", "field-label", t("settings.theme")), el("span", null, theme?.name || ctx.themeId || ""));
     block.append(field);
+    // A dashboard kept in a file can still be shown on a tablet.
+    if (ctx.shownOn) {
+      block.append(ctx.shownOn);
+    }
   } else {
     const deleteAlert = el("p", "alert");
     deleteAlert.setAttribute("role", "alert");

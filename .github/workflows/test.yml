@@ -25,7 +25,28 @@ jobs:
         with:
           node-version: "24"
       - run: pip install --require-hashes -r requirements_test.txt
+      # The tablet link test with ESPHome's real RuntimeEntryData needs what
+      # Home Assistant's esphome and usb integrations need, including what
+      # the integrations they import and depend on need (assist_satellite
+      # brings hassil, for one). They are not in the test requirements, so
+      # install the versions the installed Home Assistant pins, without
+      # changing anything already installed. The beta job does the same.
+      - name: Install what the ESPHome integration needs
+        run: |
+          pip freeze > "$RUNNER_TEMP/installed.txt"
+          python .github/scripts/esphome_requirements.py > "$RUNNER_TEMP/esphome.txt"
+          cat "$RUNNER_TEMP/esphome.txt"
+          pip install -c "$RUNNER_TEMP/installed.txt" -r "$RUNNER_TEMP/esphome.txt"
+      - name: Everything is there, with the aioesphomeapi Home Assistant pins
+        run: python .github/scripts/esphome_requirements.py --check
+      - run: pip show homeassistant aioesphomeapi
+      - name: The ESPHome internals the link uses import
+        run: python -c "from homeassistant.components.esphome.entry_data import RuntimeEntryData"
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest
+      # With APOLLO_TAB_NEED_ESPHOME set, the ESPHome link tests fail
+      # instead of skipping when ESPHome cannot be imported.
+      - run: pytest -rs
+        env:
+          APOLLO_TAB_NEED_ESPHOME: "1"
       - run: node --test "tests/frontend/*.test.mjs"

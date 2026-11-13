@@ -3,9 +3,10 @@
 A card for the TAB-1 tablet is a small YAML file. It says what the card
 shows and which devices it controls, and builds the card from the tablet's
 own drawing parts. In this guide that file is called a Component, and the
-drawing parts are called Types. Dashboards are not sent to tablets yet, so
-today a card you write draws on the Home Assistant dashboard and in the
-TAB-1 panel's picture of the tablet only.
+drawing parts are called Types. A card you write draws on the Home
+Assistant dashboard, in the TAB-1 panel's picture of the tablet, and on every
+tablet that shows the dashboard (see [tablets.md](tablets.md)). Taps on the
+tablet follow the same rules as clicks in a browser.
 
 Put your files in `<config>/apollo_tab/components/` (one folder, no
 sub-folders), then press "Look for new cards" under Advanced in the TAB-1

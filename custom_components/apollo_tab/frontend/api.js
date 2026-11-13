@@ -84,7 +84,10 @@ export function getCachedLibrary() {
 // opens its subscriptions again by itself and fires "ready", without the
 // events from the time in between. With afterReconnect, onRestored runs
 // then too.
-function keepSubscribed(conn, type, onEvent, onRestored, { afterReconnect = false } = {}) {
+//
+// A subscribe that fails for another reason, such as a user who is not an
+// administrator, is not tried again; onError hears about it.
+function keepSubscribed(conn, type, onEvent, onRestored, { afterReconnect = false, onError = null } = {}) {
   let active = true;
   let unsubscribe = null;
   let timer = null;
@@ -158,9 +161,14 @@ function keepSubscribed(conn, type, onEvent, onRestored, { afterReconnect = fals
         }
       })
       .catch((error) => {
+        if (!active || current !== attempt) {
+          return;
+        }
         // Other failures, such as a user who is not an administrator, are final.
-        if (active && current === attempt && error?.code === "not_loaded") {
+        if (error?.code === "not_loaded") {
           retry();
+        } else {
+          onError?.(error);
         }
       });
   };
@@ -463,4 +471,140 @@ export function callCard(conn, card, widget, event, value, confirmed = false) {
 // Converts a config that is not saved; resolves to {layout, warnings, values, sources}.
 export function previewLayout(conn, config) {
   return conn.sendMessagePromise({ type: "apollo_tab/layout/preview", config });
+}
+
+// ---- tablets --------------------------------------------------------------
+
+// One subscription to the tablet list per connection, shared by Home, the
+// editor and the preview card: {listeners, tablets, error, stop, closeTimer}.
+// A newcomer gets the last list at once.
+const tabletWatches = new Map();
+
+function tabletList(value) {
+  return Array.isArray(value) ? value.filter((tablet) => tablet && typeof tablet.mac === "string") : [];
+}
+
+function tellTablets(watch) {
+  for (const entry of [...watch.listeners]) {
+    entry.listener(watch.tablets);
+  }
+}
+
+function startTabletWatch(conn, watch) {
+  watch.error = null;
+  watch.stop = keepSubscribed(
+    conn,
+    "apollo_tab/tablets/subscribe",
+    (event) => {
+      if (event?.type !== "tablets") {
+        return;
+      }
+      watch.tablets = tabletList(event.tablets);
+      tellTablets(watch);
+    },
+    null,
+    {
+      onError: (error) => {
+        watch.error = error;
+        const stop = watch.stop;
+        watch.stop = null;
+        stop?.();
+        for (const entry of [...watch.listeners]) {
+          entry.onError?.(error);
+        }
+      },
+    },
+  );
+}
+
+// Calls listener with the whole tablet list, now if it is known and again
+// on every change. The subscription is opened again by itself after the
+// integration was reloaded; onError hears about a final failure. Returns a
+// function that stops listening.
+export function onTabletsChanged(conn, listener, { onError = null } = {}) {
+  let watch = tabletWatches.get(conn);
+  if (!watch) {
+    watch = { listeners: new Set(), tablets: null, error: null, stop: null, closeTimer: null };
+    tabletWatches.set(conn, watch);
+  }
+  clearTimeout(watch.closeTimer);
+  watch.closeTimer = null;
+  const entry = { listener, onError };
+  watch.listeners.add(entry);
+  if (!watch.stop) {
+    // The first listener, or the first since a final failure.
+    startTabletWatch(conn, watch);
+  } else if (watch.tablets) {
+    listener(watch.tablets);
+  }
+
+  let active = true;
+  return () => {
+    if (!active) {
+      return;
+    }
+    active = false;
+    watch.listeners.delete(entry);
+    if (watch.listeners.size) {
+      return;
+    }
+    // Moving from Home to the editor drops one listener and adds another;
+    // the subscription stays open for that moment.
+    watch.closeTimer = setTimeout(() => {
+      watch.closeTimer = null;
+      if (watch.listeners.size) {
+        return;
+      }
+      const stop = watch.stop;
+      watch.stop = null;
+      stop?.();
+      if (tabletWatches.get(conn) === watch) {
+        tabletWatches.delete(conn);
+      }
+    }, 1000);
+  };
+}
+
+// A change made here was answered with the tablet as it is now; everyone
+// listening sees it before the next list arrives.
+function applyTablet(conn, tablet) {
+  const watch = tabletWatches.get(conn);
+  if (!watch?.tablets || !tablet || typeof tablet.mac !== "string") {
+    return;
+  }
+  const index = watch.tablets.findIndex((entry) => entry.mac === tablet.mac);
+  if (index < 0) {
+    return;
+  }
+  watch.tablets = watch.tablets.map((entry, at) => (at === index ? tablet : entry));
+  tellTablets(watch);
+}
+
+export async function listTablets(conn) {
+  const result = await conn.sendMessagePromise({ type: "apollo_tab/tablets" });
+  return tabletList(result?.tablets);
+}
+
+// Shows the dashboard at urlPath on the tablet; resolves to the tablet.
+// Only the panel's "Turn on with this dashboard" passes approve: Home
+// Assistant refuses a new tablet without it, so no other control (a stale
+// list, the editor's "Show this dashboard") can turn a tablet on by chance.
+export async function assignTablet(conn, mac, urlPath, { approve = false } = {}) {
+  const message = { type: "apollo_tab/tablet/assign", mac, url_path: urlPath };
+  if (approve) {
+    message.approve = true;
+  }
+  const result = await conn.sendMessagePromise(message);
+  const tablet = result?.tablet ?? null;
+  applyTablet(conn, tablet);
+  return tablet;
+}
+
+// Asks Home Assistant to set the tablet up for taps again, now or within a
+// minute; resolves to the tablet.
+export async function pairTablet(conn, mac) {
+  const result = await conn.sendMessagePromise({ type: "apollo_tab/tablet/pair", mac });
+  const tablet = result?.tablet ?? null;
+  applyTablet(conn, tablet);
+  return tablet;
 }

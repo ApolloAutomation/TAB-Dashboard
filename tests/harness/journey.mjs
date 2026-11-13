@@ -25,6 +25,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const GROUP_ORDER = ["lights", "climate", "media", "security", "sensors", "rooms", "more"];
 const NOT_SHOWN = "Not shown on the tablet";
+// The tablet's own words, from the shared contract (CONTRACT.md section 11).
+const SCREENS = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/contract/screens.json"), "utf8"));
 
 const SETUPS = [
   { name: "desktop-light", device: "desktop", ha: "light", width: 1280, height: 800, mobile: false },
@@ -465,7 +467,23 @@ export class Browser {
     const [chromePort, browserPath] = await waitForChild(chrome, "Chrome", async () => {
       try {
         const [first, second] = fs.readFileSync(portFile, "utf8").split("\n");
-        return Number(first) && second ? [Number(first), second.trim()] : null;
+        if (Number(first) && second) {
+          return [Number(first), second.trim()];
+        }
+      } catch {
+        // No file yet, or none at all: see below.
+      }
+      if (!debugPort) {
+        return null;
+      }
+      // Newer Chrome writes that file only when it picks the port itself.
+      // A named port was free before this Chrome started (checked above) and
+      // waitForChild stops when this Chrome dies, so what answers there now
+      // is this run's Chrome.
+      try {
+        const version = await (await fetch(`http://127.0.0.1:${debugPort}/json/version`)).json();
+        const socket = version.webSocketDebuggerUrl;
+        return socket ? [debugPort, new URL(socket).pathname] : null;
       } catch {
         return null;
       }
@@ -672,7 +690,7 @@ export class Run {
   }
 
   async key(key) {
-    const codes = { Tab: 9, Enter: 13, Escape: 27, Delete: 46, Backspace: 8 };
+    const codes = { Tab: 9, Enter: 13, Escape: 27, Delete: 46, Backspace: 8, ArrowUp: 38, ArrowDown: 40 };
     const event = { key, code: key, windowsVirtualKeyCode: codes[key] || 0 };
     await this.browser.send("Input.dispatchKeyEvent", {
       type: "keyDown",
@@ -759,6 +777,84 @@ export class Run {
 
 function step(n, name, run, { desktopOnly = false } = {}) {
   return { n, name, run, desktopOnly };
+}
+
+// The stand-in tablets of mock-hass.js ("three", "no-engine", "new" and
+// "two-new").
+const KITCHEN = "aa:bb:cc:dd:ee:01";
+const HALLWAY = "aa:bb:cc:dd:ee:02";
+const BEDROOM = "aa:bb:cc:dd:ee:03";
+// The new tablet of the "new" set, which waits for an admin.
+const PORCH = "aa:bb:cc:dd:ee:0e";
+// The tablet of the "all" set that is not set up for taps yet.
+const LOFT = "aa:bb:cc:dd:ee:0c";
+// The second new tablet of the "two-new" set, listed above the porch one.
+const PATIO = "aa:bb:cc:dd:ee:0f";
+// The status of a new tablet while there are dashboards to pick.
+const NEW_STATUS = 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".';
+// For how long Turn on ignores presses after the rows moved (tablets.js).
+const TURN_ON_SETTLE_MS = 700;
+const tabletRow = (mac) => `[data-test="tablet-row"][data-mac="${mac}"]`;
+const tabletStatus = (mac) => `${tabletRow(mac)} [data-test="tablet-status"]`;
+const tabletShows = (mac) => `${tabletRow(mac)} [data-test="tablet-shows"]`;
+const shownOnLine = (urlPath) => `[data-test="dashboard-row"][data-url-path="${urlPath}"] [data-test="row-shown-on"]`;
+
+function uiString(r, key) {
+  return r.eval(`__apolloFixtures.strings[${JSON.stringify(key)}]`);
+}
+
+async function waitText(r, selector, words, what, timeout = 10000) {
+  try {
+    await r.waitFor(`__j.text(${JSON.stringify(selector)}) === ${JSON.stringify(words)}`, what, timeout);
+  } catch (error) {
+    throw new Error(`${error.message}; it reads "${await r.text(selector)}"`);
+  }
+}
+
+// Picks a dashboard in a tablet's "Shows" list, as choosing it does.
+function pickShows(r, mac, urlPath) {
+  return r.eval(`(() => { const field = __j.find(${JSON.stringify(tabletShows(mac))}); field.focus();
+    field.value = ${JSON.stringify(urlPath)}; field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+}
+
+// On a phone, keyboard focus moves from `before` to `link` with Tab, and
+// the link's focus ring stays off the words above it in its paragraph.
+async function checkRingClear(r, before, link) {
+  await r.eval(`(() => { const node = __j.find(${JSON.stringify(before)}); node.scrollIntoView({ block: "center" }); node.focus(); return true; })()`);
+  await r.key("Tab");
+  const ring = await r.eval(`(() => {
+    const link = __j.find(${JSON.stringify(link)});
+    const style = getComputedStyle(link);
+    const reach = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    let text = link.previousSibling;
+    while (text && !(text.nodeType === 3 && text.textContent.trim())) text = text.previousSibling;
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const bottom = Math.max(...[...range.getClientRects()].map((rect) => rect.bottom));
+    return { focused: __j.active() === link, visible: link.matches(":focus-visible"), outline: style.outlineStyle,
+      ringTop: Math.round((link.getBoundingClientRect().top - reach) * 10) / 10, textBottom: Math.round(bottom * 10) / 10 }; })()`);
+  check(
+    ring.focused && ring.visible && ring.outline !== "none" && ring.ringTop >= ring.textBottom,
+    `the focus ring of ${link} covers the words above it: ${JSON.stringify(ring)}`,
+  );
+  return ring;
+}
+
+// The lines that say which tablets show the dashboard, as on screen.
+function captionTexts(r) {
+  return r.eval(`__j.all('[data-test="tablet-line"]').filter((line) => __j.visible(line)).map((line) => line.textContent)`);
+}
+
+async function waitCaption(r, lines, what) {
+  const expected = JSON.stringify(lines);
+  try {
+    await r.waitFor(
+      `JSON.stringify(__j.all('[data-test="tablet-line"]').filter((line) => __j.visible(line)).map((line) => line.textContent)) === ${JSON.stringify(expected)}`,
+      what,
+    );
+  } catch (error) {
+    throw new Error(`${error.message}; the lines read ${JSON.stringify(await captionTexts(r))}`);
+  }
 }
 
 const CREATED_CARD = {
@@ -1380,8 +1476,8 @@ function chains(realConfig) {
       await checkTextContrast(r, ['[data-test="edit"]', '[data-test="create"]']);
       return r.shot("12-home-list");
     }),
-    // A new dashboard has one empty page, which gives the tablet no screen.
-    // Home counts the pages the editor shows, not the tablet's screens.
+    // A new dashboard has one empty page. The tablet still gets one screen for
+    // it, with its side bar entry, so it never shows a blank wall.
     step("28", "new-dashboard-pages", async (r) => {
       await r.click('[data-test="create"]');
       await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the second dashboard's empty editor");
@@ -1391,7 +1487,7 @@ function chains(realConfig) {
       await r.waitFor(`${home} && __j.find('${row}')`, "Home with both dashboards");
       const screens = await r.eval(`__apolloMockHass.callWS({ type: "apollo_tab/dashboards" })
         .then((result) => result.dashboards.find((entry) => entry.url_path === "tab-1-2").pages)`);
-      check(screens === 0, `the stand-in reports ${screens} tablet screens for an empty page`);
+      check(screens === 1, `the stand-in reports ${screens} tablet screens for one empty page`);
       const text = await r.text(row);
       check(text.includes("Pages: 1"), `the new dashboard's row reads ${text}`);
       check((await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]')).includes("Pages: 2"), "first row changed");
@@ -2535,7 +2631,7 @@ function chains(realConfig) {
       await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
       await r.waitFor(`__j.find('[data-test="row-not-shown"]')`, "the not-shown line");
       const line = await r.text('[data-test="row-not-shown"]');
-      check(line === "1 card and 1 page are not shown on the tablet.", `the row reads "${line}"`);
+      check(line === "1 card and 1 page are left out on tablets.", `the row reads "${line}"`);
       const shot = await r.shot("52-home-not-shown");
       await r.eval(`(async () => {
         __apolloMockHass.addDashboard("all-shown", "All shown", ${JSON.stringify(SECOND_CONFIG)});
@@ -3206,7 +3302,7 @@ function chains(realConfig) {
       const row = await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]');
       const pages = Number(/Pages: (\d+)/.exec(row)?.[1]);
       check(pages === 2, `the row reads ${row}`);
-      check(row.includes("1 card and 1 page are not shown on the tablet."), `the row reads ${row}`);
+      check(row.includes("1 card and 1 page are left out on tablets."), `the row reads ${row}`);
       const shot = await r.shot("70-home-pages-agree");
       await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
       await r.waitFor(`__j.find('[data-test="list-row"][data-shown="false"]')`, "the editor");
@@ -3834,6 +3930,1091 @@ function chains(realConfig) {
     }),
   ];
 
+  // The Tablets box on Home: three stand-in tablets, a "Night" dashboard
+  // beside TAB-1, and the dashboard each one shows changed from Home.
+  const threeTablets = { seed: "sample", night: "1", tablets: "three" };
+  const tabletsHome = [
+    step("92", "tablets-on-home", async (r) => {
+      await r.open(
+        threeTablets,
+        `${home} && __j.count('[data-test="tablet-row"]') === 3 && __j.count('[data-test="dashboard-row"]') === 2`,
+      );
+      const names = await r.eval(`__j.all('[data-test="tablet-row"]').map((row) => row.querySelector(".tablet-name").textContent)`);
+      check(
+        JSON.stringify(names) === JSON.stringify(["Bedroom tablet", "Hallway tablet", "Kitchen tablet"]),
+        `the tablets read ${JSON.stringify(names)}`,
+      );
+      await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
+      check((await r.text(tabletStatus(HALLWAY))) === "Offline", `the hallway tablet reads "${await r.text(tabletStatus(HALLWAY))}"`);
+      check(
+        (await r.text(tabletStatus(BEDROOM))) === "Waiting for tablet software",
+        `the bedroom tablet reads "${await r.text(tabletStatus(BEDROOM))}"`,
+      );
+      check(
+        (await r.text(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === (await uiString(r, "tablets.no_engine_help")),
+        "the bedroom tablet has no helper line about the tablet software",
+      );
+      const shows = await r.eval(`[${JSON.stringify([KITCHEN, HALLWAY, BEDROOM])}].flat().map((mac) =>
+        __j.find('[data-test="tablet-row"][data-mac="' + mac + '"] [data-test="tablet-shows"]').value)`);
+      check(JSON.stringify(shows) === JSON.stringify(["tab-1", "night", "tab-1"]), `the tablets show ${JSON.stringify(shows)}`);
+      // A screen reader names each list with its tablet.
+      await r.browser.send("Accessibility.enable");
+      const { nodes } = await r.browser.send("Accessibility.getFullAXTree");
+      await r.browser.send("Accessibility.disable");
+      const listNames = nodes
+        .filter((node) => !node.ignored && node.role?.value === "combobox")
+        .map((node) => String(node.name?.value ?? ""));
+      check(
+        JSON.stringify(listNames) === JSON.stringify(["Bedroom tablet Shows", "Hallway tablet Shows", "Kitchen tablet Shows"]),
+        `the Shows lists are named ${JSON.stringify(listNames)}`,
+      );
+      // One order everywhere: title in lower case, then address.
+      const choices = await r.eval(`[...__j.find(${JSON.stringify(tabletShows(KITCHEN))}).options].map((option) => option.textContent)`);
+      check(JSON.stringify(choices) === JSON.stringify(["Night", "TAB-1"]), `the Shows list holds ${JSON.stringify(choices)}`);
+      const rows = await r.eval(`__j.all('[data-test="dashboard-row"]').map((row) => row.dataset.urlPath)`);
+      check(JSON.stringify(rows) === JSON.stringify(["night", "tab-1"]), `the dashboards are listed as ${JSON.stringify(rows)}`);
+      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom, Kitchen", "the Shown on line of TAB-1");
+      await waitText(r, shownOnLine("night"), "Shown on: Hallway", "the Shown on line of Night");
+      // The box sits above "Your dashboards" and has no tick boxes: locks,
+      // alarms and garage doors need no switch per tablet.
+      const above = await r.eval(`__j.find('[data-test="tablets"]').getBoundingClientRect().bottom <=
+        __j.find('[data-test="dashboard-row"]').getBoundingClientRect().top`);
+      check(above, "the Tablets box is not above the dashboards");
+      check((await r.count('[data-test="tablet-row"] input[type="checkbox"]')) === 0, "a tablet row has a tick box");
+      const words = await r.text('[data-test="home"]');
+      check(!/not sent to tablets/i.test(words), "Home still says dashboards are not sent to tablets");
+      await checkTextContrast(r, [
+        tabletStatus(KITCHEN),
+        tabletStatus(HALLWAY),
+        tabletShows(KITCHEN),
+        `${tabletRow(BEDROOM)} [data-test="tablet-help"]`,
+        `${tabletRow(KITCHEN)} .tablet-name`,
+        shownOnLine("tab-1"),
+      ]);
+      return r.shot("92-tablets-on-home");
+    }),
+    step("93", "shows-sending-then-on", async (r) => {
+      await r.eval(`__apolloMockHass.holdSends(); window.__shows = __j.find(${JSON.stringify(tabletShows(KITCHEN))}); true`);
+      await pickShows(r, KITCHEN, "night");
+      await waitText(r, tabletStatus(KITCHEN), "Sending…", "Sending… after picking Night");
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 1 && calls[0].mac === KITCHEN && calls[0].url_path === "night",
+        `the change sent ${JSON.stringify(calls)}`,
+      );
+      const tone = await r.eval(`__j.find(${JSON.stringify(tabletStatus(KITCHEN))}).dataset.tone`);
+      check(tone === "busy", `while sending the status tone is ${tone}`);
+      // The list was changed in place: the same element, still with focus.
+      const same = await r.eval(`__j.find(${JSON.stringify(tabletShows(KITCHEN))}) === window.__shows && __j.active() === window.__shows
+        && window.__shows.value === "night"`);
+      check(same, "the Shows list was drawn again or lost focus");
+      await waitText(r, shownOnLine("night"), "Shown on: Hallway, Kitchen", "the Night row to name the kitchen tablet");
+      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom", "the TAB-1 row to drop the kitchen tablet");
+      const shot = await r.screen("93-tablet-sending");
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      await waitText(r, tabletStatus(KITCHEN), "On the tablet", "On the tablet once the tablet has it");
+      check(
+        (await r.eval(`__j.find(${JSON.stringify(tabletStatus(KITCHEN))}).dataset.tone`)) === "ok",
+        "the status tone is not ok on the tablet",
+      );
+
+      // An offline tablet keeps the choice and gets it when it is back.
+      await pickShows(r, HALLWAY, "tab-1");
+      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom, Hallway", "the TAB-1 row to name the hallway tablet");
+      check((await r.text(tabletStatus(HALLWAY))) === "Offline", "the offline tablet no longer reads Offline");
+      await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(HALLWAY)}, { online: true }); true`);
+      await waitText(r, tabletStatus(HALLWAY), "Sending…", "Sending… once the hallway tablet is back");
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      await waitText(r, tabletStatus(HALLWAY), "On the tablet", "On the tablet for the hallway tablet");
+
+      // A change Home Assistant refuses says so and puts the choice back.
+      await r.eval(`__apolloMockHass.failCalls("apollo_tab/tablet/assign", 1); true`);
+      await pickShows(r, BEDROOM, "night");
+      await r.waitFor(`__j.find('${tabletRow(BEDROOM)} [data-test="tablet-error"]')`, "the line about the failed change");
+      await r.waitFor(`__j.find(${JSON.stringify(tabletShows(BEDROOM))}).value === "tab-1"`, "the choice to go back to TAB-1");
+      await checkTextContrast(r, [`${tabletRow(BEDROOM)} [data-test="tablet-error"]`, tabletStatus(KITCHEN)]);
+      await r.shot("93-tablets-after-changes");
+      // Trying again works and clears the line.
+      await pickShows(r, BEDROOM, "night");
+      await r.waitFor(`!__j.find('${tabletRow(BEDROOM)} [data-test="tablet-error"]')`, "the line about the failure to go");
+      await waitText(r, shownOnLine("night"), "Shown on: Bedroom, Kitchen", "the Night row to name the bedroom tablet");
+      return shot;
+    }),
+  ];
+
+  // The editor: the lines above the tablet picture, the "Shown on" block in
+  // the dashboard's settings, and the delete question that names tablets.
+  const tabletsEditor = [
+    step("94", "editor-caption", async (r) => {
+      await r.open({ ...threeTablets, route: "/edit/tab-1" }, `(${editorReady}) && __j.count('[data-test="tablet-line"]') === 2`);
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "a line per tablet");
+      const words = await r.eval(`__j.designer().shadowRoot.textContent`);
+      check(!/not sent to tablets/i.test(words), "the editor still says dashboards are not sent to tablets");
+      // The lines follow the tablets as they change.
+      await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(KITCHEN)}, { online: false }); true`);
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "Kitchen tablet is offline"], "the offline line");
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(KITCHEN)}, { online: true }); true`);
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "Sending to Kitchen tablet…"], "the sending line");
+      await r.eval(`__j.find('[data-test="tablet-lines"]').scrollIntoView({ block: "center" }); true`);
+      await checkTextContrast(r, ['[data-test="tablet-line"][data-kind="tablet"]']);
+      const shot = await r.screen("94-editor-caption");
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the line once sent");
+      return shot;
+    }),
+    step("95", "settings-shown-on", async (r) => {
+      await r.waitFor(`__j.find('[data-test="shown-on"]') && __j.count('[data-test="shown-on-row"]') === 3`, "the Shown on block");
+      await r.eval(`__j.find('[data-test="shown-on"]').scrollIntoView({ block: "center" }); true`);
+      const rows = await r.eval(`__j.all('[data-test="shown-on-row"]').map((row) =>
+        [row.dataset.here, row.querySelector(".shown-on-text").innerText.replace(/\\s+/g, " ").trim(), Boolean(row.querySelector('[data-test="show-here"]'))])`);
+      const expected = [
+        ["true", "Bedroom tablet shows this dashboard", false],
+        ["false", "Hallway tablet shows Night", true],
+        ["true", "Kitchen tablet shows this dashboard", false],
+      ];
+      check(JSON.stringify(rows) === JSON.stringify(expected), `the Shown on block reads ${JSON.stringify(rows)}`);
+      const name = await r.text('[data-test="automation-name"]');
+      check(/Name for automations/.test(name) && /tab-1/.test(name), `the name for automations reads "${name}"`);
+      check(
+        (await r.text('[data-test="shown-on"] .helper')) === (await uiString(r, "editor.on_tablet_helper")),
+        "no helper line under the tablets",
+      );
+      const problems = await r.eval(`__j.overflowProblems(__j.find('[data-test="side"]'))`);
+      check(problems.length === 0, `the settings: ${problems.join("; ")}`);
+      await checkTextContrast(r, [
+        `[data-test="show-here"][data-mac="${HALLWAY}"]`,
+        '[data-test="shown-on-row"] .small',
+        '[data-test="automation-name"] code',
+        '[data-test="shown-on"] .helper',
+      ]);
+      const before = await r.shot("95-settings-shown-on");
+
+      await r.click(`[data-test="show-here"][data-mac="${HALLWAY}"]`);
+      await r.waitFor(`__j.find('[data-test="shown-on-row"][data-mac="${HALLWAY}"]')?.dataset.here === "true"`, "the hallway tablet to show it");
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 1 && calls[0].mac === HALLWAY && calls[0].url_path === "tab-1",
+        `Show this dashboard sent ${JSON.stringify(calls)}`,
+      );
+      check((await r.count('[data-test="show-here"]')) === 0, "a Show this dashboard button is left");
+      // The pressed button is gone; focus waits on the block's heading.
+      const focus = await r.eval(`__j.active()?.dataset?.focus || __j.describe(__j.active())`);
+      check(focus === "shown-on-heading", `after Show this dashboard focus is on ${focus}`);
+      await waitCaption(
+        r,
+        ["Waiting for tablet software (Bedroom tablet)", "Hallway tablet is offline", "On Kitchen tablet"],
+        "the caption to add the hallway tablet",
+      );
+      await r.shot("95-settings-tablet-moved");
+      return before;
+    }),
+    step("96", "delete-names-tablets", async (r) => {
+      await r.click('[data-test="dashboard-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]') && __j.find('[data-test="confirm-more"]')`, "the question");
+      const more = await r.text('[data-test="confirm-more"]');
+      check(
+        more === "Bedroom tablet, Hallway tablet and Kitchen tablet show this dashboard. They will switch to Night.",
+        `the question says "${more}"`,
+      );
+      const described = await r.eval(`__j.find('dialog[data-test="confirm"]').getAttribute("aria-describedby") || ""`);
+      check(described.split(" ").includes("confirm-more"), `the dialog is described by "${described}"`);
+      await checkTextContrast(r, ['[data-test="confirm-more"]']);
+      const shot = await r.screen("96-delete-names-tablets");
+      await r.click('[data-test="confirm-ok"]');
+      await r.waitFor(`${home} && __j.count('[data-test="dashboard-row"]') === 1 && __j.count('[data-test="tablet-row"]') === 3`, "Home without TAB-1");
+      await r.waitFor(
+        `[${JSON.stringify([KITCHEN, HALLWAY, BEDROOM])}].flat().every((mac) =>
+          __j.find('[data-test="tablet-row"][data-mac="' + mac + '"] [data-test="tablet-shows"]')?.value === "night")`,
+        "every tablet to show Night",
+      );
+      await waitText(r, shownOnLine("night"), "Shown on: Bedroom, Hallway, Kitchen", "the Night row to name all three");
+      await r.shot("96-after-delete");
+      return shot;
+    }),
+    step("97", "no-dashboards-then-first", async (r) => {
+      await r.click('[data-test="dashboard-row"][data-url-path="night"] [data-test="edit"]');
+      await r.waitFor(editorReady, "the Night editor");
+      await r.click('[data-test="dashboard-delete"]');
+      await r.waitFor(`__j.find('[data-test="confirm-more"]')`, "the question");
+      const more = await r.text('[data-test="confirm-more"]');
+      check(
+        more === "Bedroom tablet, Hallway tablet and Kitchen tablet show this dashboard. They will have nothing to show.",
+        `the question says "${more}"`,
+      );
+      await r.click('[data-test="confirm-ok"]');
+      await r.waitFor(
+        `${home} && __j.count('[data-test="dashboard-row"]') === 0 && __j.count('[data-test="tablet-make-first"]') === 3`,
+        "Home with no dashboards",
+      );
+      check((await r.count('[data-test="tablet-shows"]')) === 0, "a Shows list is left with nothing to pick");
+      check((await r.text('[data-test="tablet-make-first"]')) === "Make a dashboard first.", "no Make a dashboard first.");
+      await waitText(r, tabletStatus(KITCHEN), "Nothing to show yet", "the kitchen tablet to have nothing to show");
+      await checkTextContrast(r, ['[data-test="tablet-make-first"]', tabletStatus(KITCHEN)]);
+      const shot = await r.shot("97-no-dashboards");
+      // The first dashboard made goes to every tablet.
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard");
+      await r.waitSaved("the new dashboard");
+      await waitCaption(
+        r,
+        ["Waiting for tablet software (Bedroom tablet)", "Hallway tablet is offline", "On Kitchen tablet"],
+        "the new dashboard on the tablets",
+      );
+      await r.shot("97-first-dashboard-on-tablets");
+      return shot;
+    }),
+  ];
+
+  // No tablets at all: Home and the editor say so plainly.
+  const tabletsNone = [
+    step("98", "no-tablets", async (r) => {
+      await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="tablets-none"]') && __j.find('[data-test="dashboard-row"]')`);
+      check(
+        (await r.text('[data-test="tablets-none"]')) === "No TAB-1 tablet found in Home Assistant yet. Power the tablet on. If it asks for Wi-Fi, join \"Apollo TAB1 Hotspot\" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here. You can still build dashboards.",
+        `the Tablets box says "${await r.text('[data-test="tablets-none"]')}"`,
+      );
+      check((await r.count('[data-test="row-shown-on"]')) === 0, "a dashboard says where it is shown");
+      check((await r.count('[data-test="tablets-add"]')) === 0, "a line about another tablet with none there");
+      await checkTextContrast(r, ['[data-test="tablets-none"]']);
+      const shot = await r.shot("98-no-tablets-home");
+      await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="shown-on-none"]')`, "the editor");
+      await waitCaption(r, ["Not shown on a tablet yet"], "the caption");
+      check((await r.text('[data-test="shown-on-none"]')) === "No tablets yet.", "no No tablets yet.");
+      check(/tab-1/.test(await r.text('[data-test="automation-name"]')), "no name for automations");
+      await r.eval(`__j.find('[data-test="shown-on"]').scrollIntoView({ block: "center" }); true`);
+      await checkTextContrast(r, ['[data-test="tablet-line"]', '[data-test="shown-on-none"]']);
+      await r.shot("98-no-tablets-editor");
+      return shot;
+    }),
+  ];
+
+  // A tablet whose software cannot show dashboards yet: the choice is kept
+  // and sent once it can.
+  const tabletsNoEngine = [
+    step("99", "tablet-without-engine", async (r) => {
+      await r.open({ seed: "sample", tablets: "no-engine" }, `${home} && __j.count('[data-test="tablet-row"]') === 1`);
+      await waitText(r, tabletStatus(BEDROOM), "Waiting for tablet software", "the status");
+      const help = await uiString(r, "tablets.no_engine_help");
+      check((await r.text(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === help, "no helper line");
+      check(
+        (await r.text(`${tabletRow(BEDROOM)} [data-test="tablet-help-saved"]`)) === (await uiString(r, "tablets.no_engine_saved")),
+        "no line that the choice is kept",
+      );
+      check((await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-input"]`)) === 0, "a line about taps before the dashboard is there");
+      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom", "the Shown on line");
+      await checkTextContrast(r, [tabletStatus(BEDROOM), `${tabletRow(BEDROOM)} [data-test="tablet-help"]`]);
+      const shot = await r.shot("99-tablet-without-engine");
+      await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(BEDROOM)}, { engine: "0.1.0" }); true`);
+      await waitText(r, tabletStatus(BEDROOM), "Sending…", "Sending… once the software is there");
+      check((await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === 0, "the helper line stays");
+      await waitText(
+        r,
+        `${tabletRow(BEDROOM)} [data-test="tablet-input"]`,
+        await uiString(r, "tablets.not_paired"),
+        "the line that taps wait for set-up",
+      );
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      await waitText(r, tabletStatus(BEDROOM), "On the tablet", "On the tablet");
+      await r.shot("99-tablet-software-arrived");
+      // With no dashboard at all there is no choice to keep.
+      await r.open({ seed: "none", tablets: "no-engine" }, `${home} && __j.count('[data-test="tablet-row"]') === 1`);
+      await waitText(r, tabletStatus(BEDROOM), "Waiting for tablet software", "the status without dashboards");
+      check((await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === 1, "no helper line without dashboards");
+      check(
+        (await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-help-saved"]`)) === 0,
+        "a line that a choice is kept, without any dashboard",
+      );
+      return shot;
+    }),
+  ];
+
+  // Every status and both lines about taps at once: the words fit on a
+  // phone and stay readable.
+  const tabletsAll = [
+    step("100", "every-tablet-status", async (r) => {
+      await r.open({ seed: "sample", tablets: "all" }, `${home} && __j.count('[data-test="tablet-row"]') === 15`);
+      // The new tablet comes first, then the others by name.
+      const expected = {
+        "Shed tablet": 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".',
+        "Attic tablet": "This dashboard is too big for the tablet",
+        "Bedroom tablet": "Waiting for tablet software",
+        "Cellar tablet": "This dashboard cannot be read",
+        "Den tablet": "On the tablet",
+        "Garage tablet": "Update Apollo TAB Dashboard in Home Assistant",
+        "Guest tablet": "Nothing to show yet",
+        "Hallway tablet": "Offline",
+        "Kitchen tablet": "On the tablet",
+        "Loft tablet": "On the tablet",
+        "Nursery tablet": "Sending…",
+        "Office tablet": "Needs newer tablet software",
+        "Pantry tablet": "Waiting for you in Repairs",
+        "Porch tablet": "Could not send. Trying again.",
+        "Study tablet": "The tablet cannot show this dashboard",
+      };
+      const read = await r.eval(`Object.fromEntries(__j.all('[data-test="tablet-row"]').map((row) =>
+        [row.querySelector(".tablet-name").textContent, row.querySelector('[data-test="tablet-status"]').innerText]))`);
+      check(JSON.stringify(read) === JSON.stringify(expected), `the statuses read ${JSON.stringify(read)}`);
+      // "Shows" comes before the status: beside it on a wide screen, above it
+      // on a phone.
+      const order = await r.eval(`__j.all('[data-test="tablet-row"]').filter((row) =>
+        row.querySelector(".tablet-shows") && row.querySelector('[data-test="tablet-status"]').textContent).map((row) => {
+          const a = row.querySelector(".tablet-shows").getBoundingClientRect();
+          const b = row.querySelector('[data-test="tablet-status"]').getBoundingClientRect();
+          return [row.querySelector(".tablet-name").textContent, a.bottom <= b.top + 1 || a.right <= b.left + 1];
+        }).filter(([, first]) => !first).map(([name]) => name)`);
+      check(order.length === 0, `the status comes before "Shows" for ${JSON.stringify(order)}`);
+      const notes = await r.eval(`__j.all('[data-test="tablet-input"]').map((line) =>
+        [line.closest('[data-test="tablet-row"]').querySelector(".tablet-name").textContent, line.textContent])`);
+      check(
+        JSON.stringify(notes) ===
+          JSON.stringify([
+            ["Den tablet", await uiString(r, "tablets.needs_encryption")],
+            ["Loft tablet", await uiString(r, "tablets.not_paired")],
+          ]),
+        `the lines about taps: ${JSON.stringify(notes)}`,
+      );
+      // Round 9: an offline row says what to check, and the way back onto a
+      // changed Wi-Fi; a row that waits for an answer in Repairs
+      // says that instead, on an amber band.
+      const nextSteps = await r.eval(`__j.all('[data-test="tablet-offline-help"], [data-test="tablet-reauth"]').map((line) =>
+        [line.closest('[data-test="tablet-row"]').querySelector(".tablet-name").textContent, line.dataset.test, line.textContent])`);
+      const erasedWords = (await uiString(r, "tablets.reauth_erased")).replace("{name}", "Apollo TAB-1 ddee10");
+      check(
+        JSON.stringify(nextSteps) ===
+          JSON.stringify([
+            ["Hallway tablet", "tablet-offline-help", await uiString(r, "tablets.offline_help")],
+            ["Pantry tablet", "tablet-reauth", `${erasedWords} Open Repairs`],
+          ]),
+        `the next steps of the rows that are not connected: ${JSON.stringify(nextSteps)}`,
+      );
+      const band = await r.eval(`(() => { const status = __j.all('[data-test="tablet-row"]')
+        .find((row) => row.querySelector(".tablet-name").textContent === "Pantry tablet")
+        .querySelector('[data-test="tablet-status"]');
+        const style = getComputedStyle(status);
+        const quiet = getComputedStyle(__j.find('[data-test="tablet-status"][data-tone="quiet"]'));
+        return { tone: status.dataset.tone, border: style.borderTopStyle, edge: style.borderTopColor,
+          background: style.backgroundColor, plain: quiet.backgroundColor,
+          dot: getComputedStyle(status, "::before").backgroundColor }; })()`);
+      check(
+        band.tone === "attention" && band.border === "solid" && band.background !== band.plain && band.edge === band.dot,
+        `the status of a tablet that waits in Repairs: ${JSON.stringify(band)}`,
+      );
+      const guest = await r.eval(`(() => { const field = __j.all('[data-test="tablet-row"]')
+        .find((row) => row.querySelector(".tablet-name").textContent === "Guest tablet")
+        .querySelector('[data-test="tablet-shows"]');
+        return { value: field.value, first: field.options[0].textContent, disabled: field.options[0].disabled }; })()`);
+      check(
+        guest.value === "" && guest.first === "Pick a dashboard" && guest.disabled,
+        `the guest tablet's list: ${JSON.stringify(guest)}`,
+      );
+      // The new tablet's list starts empty and names what it showed before.
+      const shed = await r.eval(`(() => { const row = __j.all('[data-test="tablet-row"]')[0];
+        const field = row.querySelector('[data-test="tablet-shows"]');
+        return { isNew: row.dataset.new, mark: row.querySelector('[data-test="tablet-new"]')?.textContent,
+          device: row.querySelector('[data-test="tablet-device"]')?.textContent,
+          before: row.querySelector('[data-test="tablet-device-before"]')?.textContent,
+          value: field.value, options: [...field.options].map((option) => option.textContent),
+          turnOn: row.querySelector('[data-test="tablet-turn-on"]')?.disabled,
+          note: row.querySelector('[data-test="tablet-approve-note"]')?.textContent,
+          waiting: row.querySelector('[data-test="tablet-waiting-note"]')?.textContent }; })()`);
+      check(
+        JSON.stringify(shed) ===
+          JSON.stringify({
+            isNew: "true",
+            mark: "New",
+            device: "Before you turn it on, check that the name on the tablet's screen ends in ddee0e. Open device page",
+            before: "If it still shows TAB-1, its old dashboard, its name is not on its screen. Check that it shows TAB-1 and that its values no longer change.",
+            value: "",
+            options: ["Pick a dashboard", "TAB-1 (shown before)"],
+            turnOn: true,
+            note: await uiString(r, "tablets.approve_note"),
+            waiting: await uiString(r, "tablets.waiting_note"),
+          }),
+        `the shed tablet's row: ${JSON.stringify(shed)}`,
+      );
+      // Only a new tablet's row says which device it is.
+      check((await r.count('[data-test="tablet-device"]')) === 1, "a device line on a tablet that is turned on");
+      await checkTextContrast(r, [
+        '[data-test="tablet-status"][data-tone="new"]',
+        '[data-test="tablet-new"]',
+        '[data-test="tablet-device"]',
+        '[data-test="tablet-device-page"]',
+        '[data-test="tablet-device-before"]',
+        '[data-test="tablet-approve-note"]',
+        '[data-test="tablet-waiting-note"]',
+        '[data-test="tablet-status"][data-tone="problem"]',
+        '[data-test="tablet-status"][data-tone="busy"]',
+        '[data-test="tablet-status"][data-tone="quiet"]',
+        '[data-test="tablet-status"][data-tone="attention"]',
+        '[data-test="tablet-input"]',
+        '[data-test="tablet-offline-help"]',
+        '[data-test="tablet-reauth"]',
+      ]);
+      return r.shot("100-every-tablet-status");
+    }),
+  ];
+
+  // The tablet preview card on a Home Assistant dashboard shows the same
+  // lines as the editor.
+  const tabletsPreview = [
+    step("101", "preview-lines", async (r) => {
+      await r.open(threeTablets, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      await r.eval(`(() => { __apolloPanel.style.display = "none";
+        const preview = document.createElement("apollo-tab-preview");
+        preview.hass = __apolloMockHass;
+        preview.dashboard = "tab-1";
+        document.body.append(preview);
+        return true; })()`);
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the preview's lines");
+      const words = await r.eval(`document.querySelector("apollo-tab-preview").shadowRoot.textContent`);
+      check(!/not sent to tablets/i.test(words), "the preview still says dashboards are not sent to tablets");
+      await checkTextContrast(r, ['[data-test="tablet-line"]']);
+      return r.shot("101-preview-lines");
+    }),
+  ];
+
+  // A new tablet waits for an admin: it is listed first, marked "New",
+  // shows nothing and is left out of what the dashboards say. Picking its
+  // first dashboard turns it on.
+  const newTablet = { seed: "sample", night: "1", tablets: "new" };
+  const tabletsNew = [
+    step("102", "new-tablet-waits", async (r) => {
+      await r.open(newTablet, `${home} && __j.count('[data-test="tablet-row"]') === 2 && __j.count('[data-test="dashboard-row"]') === 2`);
+      const rows = await r.eval(`__j.all('[data-test="tablet-row"]').map((row) =>
+        [row.dataset.mac, row.dataset.new, row.querySelector(".tablet-name").textContent,
+         row.querySelector('[data-test="tablet-new"]')?.textContent ?? null])`);
+      check(
+        JSON.stringify(rows) ===
+          JSON.stringify([
+            [PORCH, "true", "Porch tablet", "New"],
+            [KITCHEN, "false", "Kitchen tablet", null],
+          ]),
+        `the tablets read ${JSON.stringify(rows)}`,
+      );
+      await waitText(r, tabletStatus(PORCH), NEW_STATUS, "the new tablet's status");
+      const tone = await r.eval(`__j.find(${JSON.stringify(tabletStatus(PORCH))}).dataset.tone`);
+      check(tone === "new", `the new tablet's tone is ${tone}`);
+      check(
+        (await r.text(`${tabletRow(PORCH)} [data-test="tablet-approve-note"]`)) === "Only turn on tablets you own.",
+        "no line about turning on only tablets you own",
+      );
+      check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-input"]`)) === 0, "a line about taps on a new tablet");
+      check((await r.count(`${tabletRow(KITCHEN)} [data-test="tablet-approve-note"]`)) === 0, "the approved tablet has the note");
+      // What tells which device it is, since its name comes from the device.
+      // textContent: on a phone the link has a line of its own.
+      const device = await r.eval(`__j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-device"]`)}).textContent`);
+      check(
+        device === "Before you turn it on, check that the name on the tablet's screen ends in ddee0e. Open device page",
+        `the device line reads "${device}"`,
+      );
+      // It never showed a dashboard, so nothing says its screen hides its name.
+      check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-device-before"]`)) === 0, "a line about an old dashboard");
+      const link = await r.eval(`(() => { const link = __j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-device-page"]`)});
+        return { href: link.getAttribute("href"), named: link.getAttribute("aria-labelledby").split(" ")
+          .map((id) => __apolloPanel.shadowRoot.getElementById(id).textContent).join(" ") }; })()`);
+      check(
+        link.href === "/config/devices/device/0000000000000000000000000000000e" && link.named === "Open device page Porch tablet",
+        `the device page link: ${JSON.stringify(link)}`,
+      );
+      check((await r.count(`${tabletRow(KITCHEN)} [data-test="tablet-device"]`)) === 0, "the approved tablet has a device line");
+      check(
+        (await r.text(`${tabletRow(PORCH)} [data-test="tablet-waiting-note"]`)) === (await uiString(r, "tablets.waiting_note")),
+        "no line that the tablet keeps its screen until it is turned on",
+      );
+      const turnOn = await r.eval(`(() => { const button = __j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-turn-on"]`)});
+        return button && { text: button.textContent, disabled: button.disabled }; })()`);
+      check(
+        JSON.stringify(turnOn) === JSON.stringify({ text: "Turn on with this dashboard", disabled: true }),
+        `before a pick the button is ${JSON.stringify(turnOn)}`,
+      );
+      const list = await r.eval(`(() => { const field = __j.find(${JSON.stringify(tabletShows(PORCH))});
+        return { value: field.value, options: [...field.options].map((option) => [option.textContent, option.disabled]) }; })()`);
+      check(
+        JSON.stringify(list) ===
+          JSON.stringify({
+            value: "",
+            options: [
+              ["Pick a dashboard", true],
+              ["Night", false],
+              ["TAB-1", false],
+            ],
+          }),
+        `the new tablet's list: ${JSON.stringify(list)}`,
+      );
+      // It shows nothing, so the dashboards do not name it.
+      await waitText(r, shownOnLine("tab-1"), "Shown on: Kitchen", "the Shown on line of TAB-1");
+      check((await r.count(shownOnLine("night"))) === 0, "Night says it is shown somewhere");
+      check((await r.calls("apollo_tab/tablet/assign")).length === 0, "something was assigned");
+      check((await r.calls("apollo_tab/tablet/pair")).length === 0, "something was paired");
+      // With tablets there, a short line under them says how to add another.
+      const add = await r.eval(`(() => { const line = __j.find('[data-test="tablets-add"]');
+        const rows = __j.all('[data-test="tablet-row"]');
+        return line && { text: line.textContent, last: line.parentNode.lastElementChild === line,
+          below: line.getBoundingClientRect().top >= rows[rows.length - 1].getBoundingClientRect().bottom }; })()`);
+      check(
+        JSON.stringify(add) === JSON.stringify({ text: await uiString(r, "tablets.add_another"), last: true, below: true }),
+        `the line about another tablet: ${JSON.stringify(add)}`,
+      );
+      await checkTextContrast(r, [
+        '[data-test="tablets-add"]',
+        tabletStatus(PORCH),
+        `${tabletRow(PORCH)} [data-test="tablet-new"]`,
+        `${tabletRow(PORCH)} [data-test="tablet-device"]`,
+        `${tabletRow(PORCH)} [data-test="tablet-device-page"]`,
+        `${tabletRow(PORCH)} [data-test="tablet-approve-note"]`,
+        `${tabletRow(PORCH)} [data-test="tablet-waiting-note"]`,
+        `${tabletRow(PORCH)} .tablet-name`,
+        tabletShows(PORCH),
+      ]);
+      return r.shot("102-new-tablet-waits");
+    }),
+    step("103", "new-tablet-in-editor", async (r) => {
+      await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="shown-on"]') && __j.find('[data-test="shown-on-new"]')`, "the editor");
+      await waitCaption(r, ["On Kitchen tablet"], "the caption without the new tablet");
+      const rows = await r.eval(`__j.all('[data-test="shown-on-row"]').map((row) => row.dataset.mac)`);
+      check(JSON.stringify(rows) === JSON.stringify([KITCHEN]), `the Shown on block lists ${JSON.stringify(rows)}`);
+      check(
+        (await r.text('[data-test="shown-on-new"]')) ===
+          'A new tablet is waiting. On the Home screen, pick a dashboard for it, then press "Turn on with this dashboard".',
+        `the Shown on block says "${await r.text('[data-test="shown-on-new"]')}"`,
+      );
+      check((await r.count(`[data-test="show-here"][data-mac="${PORCH}"]`)) === 0, "the new tablet can be turned on from the editor");
+      check((await r.count('[data-test="shown-on-none"]')) === 0, "the editor says there are no tablets");
+      await r.eval(`__j.find('[data-test="shown-on"]').scrollIntoView({ block: "center" }); true`);
+      await checkTextContrast(r, ['[data-test="shown-on-new"]']);
+      return r.shot("103-new-tablet-in-editor");
+    }),
+    step("104", "approve-new-tablet", async (r) => {
+      await r.open(newTablet, `${home} && __j.count('[data-test="tablet-row"]') === 2`);
+      await r.eval(`__apolloMockHass.holdSends(); true`);
+      const turnOn = `${tabletRow(PORCH)} [data-test="tablet-turn-on"]`;
+      // Moving through the list with the keyboard only chooses: real arrow
+      // keys, and the change event they fire in some browsers.
+      await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).focus(); true`);
+      await r.key("ArrowDown");
+      await r.key("ArrowDown");
+      await r.key("ArrowUp");
+      await r.key("Escape");
+      await pickShows(r, PORCH, "tab-1");
+      await pickShows(r, PORCH, "night");
+      await sleep(200);
+      check((await r.calls("apollo_tab/tablet/assign")).length === 0, "a pick in the list turned the tablet on");
+      check((await r.eval(`__j.find(${JSON.stringify(tabletRow(PORCH))}).dataset.new`)) === "true", "the tablet is no longer new");
+      await waitText(r, tabletStatus(PORCH), NEW_STATUS, "the status of a tablet still new");
+      const chosen = await r.eval(`({ value: __j.find(${JSON.stringify(tabletShows(PORCH))}).value,
+        disabled: __j.find(${JSON.stringify(turnOn)}).disabled })`);
+      check(chosen.value === "night" && chosen.disabled === false, `after the pick: ${JSON.stringify(chosen)}`);
+      // The picked dashboard stays picked when the tablet list comes again.
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, {}); true`);
+      await sleep(100);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "night", "the pick was lost");
+      await checkTextContrast(r, [turnOn]);
+      await r.screen("104-new-tablet-picked");
+      // The button turns it on, here pressed with the keyboard. It alone
+      // sends approve.
+      await r.eval(`__j.find(${JSON.stringify(turnOn)}).focus(); true`);
+      await r.key("Enter");
+      await r.waitFor(`__j.find(${JSON.stringify(tabletRow(PORCH))})?.dataset.new === "false"`, "the new tablet to be turned on");
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 1 && calls[0].mac === PORCH && calls[0].url_path === "night" && calls[0].approve === true,
+        `the button sent ${JSON.stringify(calls)}`,
+      );
+      await waitText(r, tabletStatus(PORCH), "Sending…", "Sending… once it is turned on");
+      check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-new"]`)) === 0, "the New mark stays");
+      check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-approve-note"]`)) === 0, "the note stays");
+      check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-turn-on"]`)) === 0, "the button stays");
+      check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-device"]`)) === 0, "the device line stays");
+      // The row was built again in the same place, and the tablet's name
+      // takes focus: not its list, where an arrow key would now switch it.
+      const focus = await r.eval(`__j.active() === __j.find(${JSON.stringify(`${tabletRow(PORCH)} .tablet-name`)})`);
+      check(focus, `after turning it on focus is on ${await r.eval(`__j.describe(__j.active())`)}`);
+      await r.key("ArrowDown");
+      await r.key("ArrowDown");
+      await sleep(200);
+      check((await r.calls("apollo_tab/tablet/assign")).length === 1, "an arrow key after turning it on switched the tablet");
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "night", "an arrow key changed its list");
+      const order = await r.eval(`__j.all('[data-test="tablet-row"]').map((row) => row.dataset.mac)`);
+      check(JSON.stringify(order) === JSON.stringify([PORCH, KITCHEN]), `the tablets are in the order ${JSON.stringify(order)}`);
+      await waitText(r, shownOnLine("night"), "Shown on: Porch", "the Night row to name the porch tablet");
+      const shot = await r.screen("104-new-tablet-sending");
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      await waitText(r, tabletStatus(PORCH), "On the tablet", "On the tablet");
+      check(
+        (await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "night",
+        "the list does not show Night",
+      );
+      await checkTextContrast(r, [tabletStatus(PORCH), shownOnLine("night")]);
+      await r.shot("104-new-tablet-on");
+      // Once on, a change of its list switches it at once, as for any tablet.
+      await pickShows(r, PORCH, "tab-1");
+      await r.waitFor(`__apolloMockHass.calls.filter((call) => call.type === "apollo_tab/tablet/assign").length === 2`, "the switch");
+      const switched = (await r.calls("apollo_tab/tablet/assign"))[1];
+      check(switched.url_path === "tab-1" && !("approve" in switched), `the switch sent ${JSON.stringify(switched)}`);
+      return shot;
+    }),
+  ];
+
+  // A tablet whose set-up for taps has not worked for a while gets a "Set
+  // up again" button. The page's clock is moved on instead of waiting.
+  const tabletsPairAgain = [
+    step("105", "set-up-again", async (r) => {
+      await r.open({ seed: "sample", tablets: "all" }, `${home} && __j.count('[data-test="tablet-row"]') === 15`);
+      const loft = (test) => `${tabletRow(LOFT)} [data-test="${test}"]`;
+      await waitText(r, loft("tablet-input"), await uiString(r, "tablets.not_paired"), "the line that taps wait for set-up");
+      check((await r.count('[data-test="tablet-pair"]')) === 0, "Set up again is offered at once");
+      await r.eval(`(() => { const now = Date.now.bind(Date); window.__realNow = now;
+        Date.now = () => now() + 91 * 1000;
+        __apolloMockHass.setTablet(${JSON.stringify(LOFT)}, {}); return true; })()`);
+      await r.waitFor(`__j.count('[data-test="tablet-pair"]') === 1`, "Set up again after a while");
+      check((await r.count(loft("tablet-pair"))) === 1, "Set up again is on another tablet's row");
+      check((await r.text(loft("tablet-pair"))) === "Set up again", "the button's words");
+      const named = await r.eval(`__j.find(${JSON.stringify(loft("tablet-pair"))}).getAttribute("aria-labelledby").split(" ")
+        .map((id) => __apolloPanel.shadowRoot.getElementById(id).textContent).join(" ")`);
+      check(named === "Set up again Loft tablet", `the button is named "${named}"`);
+      await r.click(loft("tablet-pair"));
+      await waitText(r, loft("tablet-pair-asked"), await uiString(r, "tablets.pair_asked"), "the line that it was asked");
+      const calls = await r.calls("apollo_tab/tablet/pair");
+      check(calls.length === 1 && calls[0].mac === LOFT, `the button sent ${JSON.stringify(calls)}`);
+      const focus = await r.eval(`__j.active() === __j.find(${JSON.stringify(loft("tablet-pair"))})`);
+      check(focus, `after the press focus is on ${await r.eval(`__j.describe(__j.active())`)}`);
+      await checkTextContrast(r, [loft("tablet-pair"), loft("tablet-pair-asked")]);
+      const shot = await r.shot("105-set-up-again");
+      // A refusal is said under the button.
+      await r.eval(`__apolloMockHass.failCalls("apollo_tab/tablet/pair", 1); true`);
+      await r.click(loft("tablet-pair"));
+      await waitText(r, loft("tablet-pair-error"), "It could not be set up again: Fixture error", "the failure");
+      check((await r.count(loft("tablet-pair-asked"))) === 0, "the line that it was asked stays after a failure");
+      await checkTextContrast(r, [loft("tablet-pair-error")]);
+      await r.shot("105-set-up-again-failed");
+      // Once it is set up, the line, the button and the failure go.
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(LOFT)}, { paired: true, input: "ok" }); true`);
+      await r.waitFor(`__j.count(${JSON.stringify(`${tabletRow(LOFT)} .tablet-notes > *`)}) === 0`, "the notes to go once it is set up");
+      await r.eval(`Date.now = window.__realNow; true`);
+      return shot;
+    }),
+  ];
+
+  // What keeps a new tablet from being turned on by mistake: with nothing
+  // to pick the status asks for none, a pick goes when it is no choice any
+  // more, a second press while the first is on its way sends nothing, and
+  // the device page opens inside Home Assistant without loading the page.
+  const tabletsNewGuards = [
+    step("106", "new-tablet-guards", async (r) => {
+      await r.open({ seed: "none", tablets: "new" }, `${home} && __j.count('[data-test="tablet-row"]') === 2`);
+      await waitText(
+        r,
+        tabletStatus(PORCH),
+        'New tablet. Make a dashboard, then pick it and press "Turn on with this dashboard".',
+        "the status with nothing to pick",
+      );
+      check(
+        (await r.text(`${tabletRow(PORCH)} [data-test="tablet-make-first"]`)) === "Make a dashboard first.",
+        "no Make a dashboard first. beside the new tablet",
+      );
+      check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-turn-on"]`)) === 0, "a Turn on button with nothing to pick");
+      await checkTextContrast(r, [tabletStatus(PORCH)]);
+
+      await r.open(newTablet, `${home} && __j.count('[data-test="tablet-row"]') === 2 && __j.count('[data-test="dashboard-row"]') === 2`);
+      const turnOn = `${tabletRow(PORCH)} [data-test="tablet-turn-on"]`;
+      const enabled = `__j.find(${JSON.stringify(turnOn)})?.disabled === false`;
+      const isNew = (value) => `__j.find(${JSON.stringify(tabletRow(PORCH))})?.dataset.new === "${value}"`;
+      const row = () =>
+        r.eval(`(() => { const field = __j.find(${JSON.stringify(tabletShows(PORCH))});
+          const button = __j.find(${JSON.stringify(turnOn)});
+          return { value: field ? field.value : null, disabled: button ? button.disabled : null }; })()`);
+
+      // A picked dashboard that is deleted is no choice any more.
+      await pickShows(r, PORCH, "night");
+      await r.waitFor(enabled, "Turn on after the pick");
+      await r.eval(`__apolloMockHass.answerWS({ type: "lovelace/dashboards/delete",
+        dashboard_id: __apolloMockHass.getDashboard("night").id }); true`);
+      await r.waitFor(
+        `__j.count('[data-test="dashboard-row"]') === 1 &&
+          ![...__j.find(${JSON.stringify(tabletShows(PORCH))}).options].some((option) => option.value === "night")`,
+        "Night to leave the list",
+      );
+      await sleep(100);
+      const deleted = await row();
+      check(deleted.value === "" && deleted.disabled === true, `after the picked dashboard was deleted: ${JSON.stringify(deleted)}`);
+
+      // Turned on somewhere else, then new again (added to ESPHome again):
+      // the pick made before is not picked again.
+      await pickShows(r, PORCH, "tab-1");
+      await r.waitFor(enabled, "Turn on after the pick");
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, { approved: true, dashboard: "tab-1" }); true`);
+      await r.waitFor(isNew("false"), "the tablet to be turned on somewhere else");
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, { approved: false }); true`);
+      await r.waitFor(isNew("true"), "the tablet to be new again");
+      await sleep(100);
+      const again = await row();
+      check(again.value === "" && again.disabled === true, `new again: ${JSON.stringify(again)}`);
+      check((await r.calls("apollo_tab/tablet/assign")).length === 0, "something was assigned");
+      // The rows just moved: Turn on waits a moment before it takes a press.
+      await sleep(TURN_ON_SETTLE_MS + 100);
+
+      // A second press while the first is on its way sends nothing more.
+      await pickShows(r, PORCH, "tab-1");
+      await r.waitFor(enabled, "Turn on after the pick");
+      await r.eval(`__apolloMockHass.slowCalls("apollo_tab/tablet/assign", 1500); true`);
+      await r.click(turnOn);
+      await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the first press");
+      check(await r.eval(isNew("true")), "the tablet was turned on before the answer");
+      await r.click(turnOn);
+      await r.eval(`__j.find(${JSON.stringify(turnOn)})?.click(); true`);
+      await r.waitFor(isNew("false"), "the tablet to be turned on");
+      await r.eval(`__apolloMockHass.slowCalls("apollo_tab/tablet/assign", 0); true`);
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(calls.length === 1 && calls[0].mac === PORCH && calls[0].url_path === "tab-1", `the presses sent ${JSON.stringify(calls)}`);
+      const shot = await r.shot("106-new-tablet-guards");
+
+      // The device page link moves inside Home Assistant, as its own links
+      // do: no new page load. On a phone it is a 44 px high touch target.
+      await r.open(newTablet, `${home} && __j.count('[data-test="tablet-row"]') === 2`);
+      const link = `${tabletRow(PORCH)} [data-test="tablet-device-page"]`;
+      if (r.setup.device === "phone") {
+        const size = await r.eval(`(() => { const box = __j.find(${JSON.stringify(link)}).getBoundingClientRect();
+          return { width: box.width, height: box.height }; })()`);
+        check(size.width >= 44 && size.height >= 44, `the device page link is ${size.width} x ${size.height} px`);
+        await checkRingClear(r, `${tabletRow(PORCH)} .tablet-name`, link);
+      }
+      await r.eval(`window.__stayed = true; window.__moves = [];
+        window.addEventListener("location-changed", () => window.__moves.push(location.pathname)); true`);
+      await r.click(link);
+      await sleep(300);
+      const page = "/config/devices/device/0000000000000000000000000000000e";
+      const moved = await r.eval(`({ stayed: window.__stayed === true, path: location.pathname, moves: window.__moves ?? null })`);
+      check(
+        JSON.stringify(moved) === JSON.stringify({ stayed: true, path: page, moves: [page] }),
+        `after the device page link: ${JSON.stringify(moved)}`,
+      );
+      return shot;
+    }),
+  ];
+
+  // Turning tablets on, design 10.9: a double click turns on one tablet,
+  // a list from before a tablet became new cannot turn it on, and an
+  // erased tablet's row says that Home Assistant waits in Repairs.
+  const twoNew = { seed: "sample", night: "1", tablets: "two-new" };
+  const tabletsTurnOn = [
+    step("107", "turn-on-double-click", async (r) => {
+      await r.open(twoNew, `${home} && __j.count('[data-test="tablet-row"]') === 3 && __j.count('[data-test="dashboard-row"]') === 2`);
+      await r.eval(`__apolloMockHass.holdSends(); true`);
+      const order = () => r.eval(`__j.all('[data-test="tablet-row"]').map((row) => row.dataset.mac)`);
+      const listed = [PATIO, PORCH, KITCHEN];
+      check(JSON.stringify(await order()) === JSON.stringify(listed), `the tablets are in the order ${JSON.stringify(await order())}`);
+      const turnOn = (mac) => `${tabletRow(mac)} [data-test="tablet-turn-on"]`;
+      const isNew = (mac) => r.eval(`__j.find(${JSON.stringify(tabletRow(mac))})?.dataset.new`);
+      // How a tablet's button looks, and how long ago it last moved; gone
+      // once the tablet is on.
+      const lookOf = (mac) => `(() => { const button = __j.find(${JSON.stringify(turnOn(mac))});
+        if (!button) return { gone: true };
+        return { late: performance.now() - __apolloPanel._turnOnMovedAt.get(${JSON.stringify(mac)}),
+          settling: button.hasAttribute("data-settling"), aria: button.getAttribute("aria-disabled"),
+          opacity: getComputedStyle(button).opacity, disabled: button.disabled }; })()`;
+      // One press of a real double click: the first has clickCount 1, the
+      // second clickCount 2.
+      const press = async ({ x, y }, clickCount) => {
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount });
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount });
+      };
+      await pickShows(r, PATIO, "night");
+      await pickShows(r, PORCH, "tab-1");
+      await r.waitFor(
+        `__j.find(${JSON.stringify(turnOn(PATIO))})?.disabled === false && __j.find(${JSON.stringify(turnOn(PORCH))})?.disabled === false`,
+        "both buttons after the picks",
+      );
+      // A pick moves no row, so the first press is taken at once.
+      const first = await r.eval(`__j.target(${JSON.stringify(turnOn(PATIO))})`);
+      check(first && !first.error, first?.error || "no patio button");
+      await press(first, 1);
+      await r.waitFor(`__j.find(${JSON.stringify(tabletRow(PATIO))})?.dataset.new === "false"`, "the patio tablet to be turned on", 2000);
+      // Its row lost its button and notes, so the rows under it moved up:
+      // the second press of the double click lands on the porch tablet's
+      // button, which is ignored for a moment and looks disabled meanwhile.
+      const second = await r.eval(`__j.target(${JSON.stringify(turnOn(PORCH))})`);
+      check(second && !second.error, second?.error || "no porch button");
+      await press(second, 2);
+      const pressed = await r.eval(lookOf(PORCH));
+      check(
+        pressed.late < TURN_ON_SETTLE_MS - 150,
+        `the second press came ${Math.round(pressed.late)} ms after the porch button moved, too late to tell`,
+      );
+      check(
+        pressed.settling && pressed.aria === "true" && pressed.opacity === "0.55" && pressed.disabled === false,
+        `while it ignores presses the porch button is ${JSON.stringify(pressed)}`,
+      );
+      // A press without the mouse at that moment is ignored too.
+      await r.eval(`__j.find(${JSON.stringify(turnOn(PORCH))})?.click(); true`);
+      await sleep(200);
+      let calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 1 && calls[0].mac === PATIO && calls[0].url_path === "night" && calls[0].approve === true,
+        `the double click sent ${JSON.stringify(calls)}`,
+      );
+      check((await isNew(PORCH)) === "true", "the second press turned the porch tablet on");
+      // The patio tablet kept its place at the top.
+      check(JSON.stringify(await order()) === JSON.stringify(listed), `after turning it on: ${JSON.stringify(await order())}`);
+      await waitText(r, tabletStatus(PATIO), "Sending…", "the patio tablet to be sending");
+      await waitText(r, tabletStatus(PORCH), NEW_STATUS, "the porch tablet to be still new");
+      const shot = await r.shot("107-turn-on-double-click");
+      // A moment later the porch tablet's button looks as before.
+      await sleep(TURN_ON_SETTLE_MS + 100);
+      const settled = await r.eval(lookOf(PORCH));
+      check(
+        !settled.settling && settled.aria === null && settled.opacity === "1",
+        `a moment later the porch button is ${JSON.stringify(settled)}`,
+      );
+      // A line that comes in the patio tablet's row, above it, moves the
+      // porch tablet's button: a press right then is ignored, and shown.
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PATIO)}, { paired: false, input: "not_paired" }); true`);
+      await r.waitFor(`__j.find(${JSON.stringify(`${tabletRow(PATIO)} [data-test="tablet-input"]`)})`, "the patio tablet's line");
+      await r.click(turnOn(PORCH));
+      const pushed = await r.eval(lookOf(PORCH));
+      check(
+        pushed.late < TURN_ON_SETTLE_MS && pushed.settling && pushed.aria === "true" && pushed.opacity === "0.55",
+        `right after it moved the porch button is ${JSON.stringify(pushed)}`,
+      );
+      await sleep(200);
+      check((await r.calls("apollo_tab/tablet/assign")).length === 1, "a press right after the porch button moved was taken");
+      // A move the panel made no change for (here a style, as when the
+      // window gets narrower and words wrap) counts too: at the press itself,
+      // before the page draws again, and as soon as the box changes size.
+      await sleep(TURN_ON_SETTLE_MS + 100);
+      const patioRow = JSON.stringify(tabletRow(PATIO));
+      const unseen = await r.eval(`(() => { __j.find(${patioRow}).style.paddingBottom = "40px";
+        __j.find(${JSON.stringify(turnOn(PORCH))}).click(); return ${lookOf(PORCH)}; })()`);
+      check(unseen.late < 100 && unseen.settling, `a press right after a move the panel made no change for: ${JSON.stringify(unseen)}`);
+      await sleep(200);
+      check((await r.calls("apollo_tab/tablet/assign")).length === 1, "a press right after an unseen move was taken");
+      await sleep(TURN_ON_SETTLE_MS + 100);
+      const watched = await r.eval(`(async () => { __j.find(${patioRow}).style.paddingBottom = "";
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return ${lookOf(PORCH)}; })()`);
+      check(watched.late < TURN_ON_SETTLE_MS && watched.settling, `after a move without a press: ${JSON.stringify(watched)}`);
+      // Words that change in another row without moving the button hold
+      // nothing back: a press right after the patio tablet's status changed
+      // is taken.
+      await sleep(TURN_ON_SETTLE_MS + 100);
+      await r.eval(`(() => {
+        const status = __j.find(${JSON.stringify(tabletStatus(PATIO))});
+        window.__statusAt = null;
+        window.__pressAt = null;
+        new MutationObserver(() => {
+          if (window.__statusAt === null && status.textContent === "On the tablet") window.__statusAt = performance.now();
+        }).observe(status, { childList: true, characterData: true, subtree: true });
+        __apolloPanel.shadowRoot.addEventListener("click", (event) => {
+          if (window.__pressAt === null && event.target.closest?.('[data-test="tablet-turn-on"]')) window.__pressAt = performance.now();
+        }, true);
+        return true; })()`);
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      await waitText(r, tabletStatus(PATIO), "On the tablet", "the patio tablet to show its dashboard");
+      await r.click(turnOn(PORCH));
+      await r.waitFor(`__j.find(${JSON.stringify(tabletRow(PORCH))})?.dataset.new === "false"`, "the porch tablet to be turned on");
+      const gap = await r.eval(`window.__pressAt - window.__statusAt`);
+      check(gap >= 0 && gap < TURN_ON_SETTLE_MS, `the press came ${Math.round(gap)} ms after the patio tablet's status changed`);
+      calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 2 && calls[1].mac === PORCH && calls[1].url_path === "tab-1" && calls[1].approve === true,
+        `the later press sent ${JSON.stringify(calls)}`,
+      );
+      check(JSON.stringify(await order()) === JSON.stringify(listed), `after the second tablet: ${JSON.stringify(await order())}`);
+      const focus = await r.eval(`__j.active() === __j.find(${JSON.stringify(`${tabletRow(PORCH)} .tablet-name`)})`);
+      check(focus, `after turning it on focus is on ${await r.eval(`__j.describe(__j.active())`)}`);
+      // Home drawn again after another screen lists them as usual.
+      await r.click('[data-test="open-advanced"]');
+      await r.waitFor(`__j.find('[data-test="advanced"]')`, "the Advanced screen");
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.count('[data-test="tablet-row"]') === 3`, "Home again");
+      check(
+        JSON.stringify(await order()) === JSON.stringify([KITCHEN, PATIO, PORCH]),
+        `back on Home the tablets are in the order ${JSON.stringify(await order())}`,
+      );
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      return shot;
+    }),
+    // The tablet became new (added to ESPHome again) a moment before the
+    // panel heard of it: a change of its list from the old screen is
+    // refused, and it stays new.
+    step("108", "stale-switch-refused", async (r) => {
+      await r.open(newTablet, `${home} && __j.count('[data-test="tablet-row"]') === 2 && __j.count('[data-test="dashboard-row"]') === 2`);
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(KITCHEN)}, { approved: false, suggested: "tab-1" }, { quiet: true }); true`);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletRow(KITCHEN))}).dataset.new`)) === "false", "the panel heard of it");
+      await pickShows(r, KITCHEN, "night");
+      const error = `${tabletRow(KITCHEN)} [data-test="tablet-error"]`;
+      await waitText(
+        r,
+        error,
+        'That change could not be saved: This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard".',
+        "the refusal",
+      );
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 1 && calls[0].mac === KITCHEN && calls[0].url_path === "night" && !("approve" in calls[0]),
+        `the list sent ${JSON.stringify(calls)}`,
+      );
+      const kitchen = await r.eval(`__apolloMockHass.getTablets().find((tablet) => tablet.mac === ${JSON.stringify(KITCHEN)})`);
+      check(kitchen.approved === false && kitchen.dashboard === null, `the tablet was turned on: ${JSON.stringify(kitchen)}`);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(KITCHEN))}).value`)) === "tab-1", "the list kept the refused pick");
+      // Then the panel hears that it is new; it keeps its place.
+      await r.eval(`__apolloMockHass.emitTablets(); true`);
+      await r.waitFor(`__j.find(${JSON.stringify(tabletRow(KITCHEN))})?.dataset.new === "true"`, "the tablet to read new");
+      await waitText(r, tabletStatus(KITCHEN), NEW_STATUS, "the status of the tablet that is new again");
+      const order = await r.eval(`__j.all('[data-test="tablet-row"]').map((row) => row.dataset.mac)`);
+      check(JSON.stringify(order) === JSON.stringify([PORCH, KITCHEN]), `the tablets are in the order ${JSON.stringify(order)}`);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(KITCHEN))}).value`)) === "", "the new tablet has a pick");
+      await checkTextContrast(r, [error]);
+      return r.shot("108-stale-switch-refused");
+    }),
+    // After a hold-to-erase Home Assistant waits for an admin to confirm in
+    // Repairs. The row says so in plain words and links there.
+    step("109", "erased-tablet-repairs", async (r) => {
+      await r.open({ seed: "sample", night: "1", tablets: "three" }, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      const line = `${tabletRow(HALLWAY)} [data-test="tablet-reauth"]`;
+      const link = `${tabletRow(HALLWAY)} [data-test="tablet-repairs"]`;
+      const help = `${tabletRow(HALLWAY)} [data-test="tablet-offline-help"]`;
+      check((await r.count('[data-test="tablet-reauth"]')) === 0, "a line about Repairs before anything waits");
+      // Offline, before Home Assistant asks anything: what to check, in a
+      // quiet grey, and the way back onto a changed Wi-Fi.
+      await waitText(r, tabletStatus(HALLWAY), "Offline", "the offline tablet's status");
+      check((await r.text(help)) === (await uiString(r, "tablets.offline_help")), "the offline tablet's next step");
+      check((await r.count('[data-test="tablet-offline-help"]')) === 1, "the offline line is on another row too");
+      const quiet = await r.eval(`__j.find(${JSON.stringify(tabletStatus(HALLWAY))}).dataset.tone`);
+      check(quiet === "quiet", `the offline tablet's tone is ${quiet}`);
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(HALLWAY)}, { reauth: "erased", reauth_name: "Apollo TAB-1 ddee02" }); true`);
+      const words = (key) =>
+        r.eval(`__apolloFixtures.strings[${JSON.stringify(key)}].replace("{name}", "Apollo TAB-1 ddee02")`);
+      const erased = await words("tablets.reauth_erased");
+      check(erased.includes('"Authentication expired for Apollo TAB-1 ddee02"'), `the words: ${erased}`);
+      await r.waitFor(`__j.count(${JSON.stringify(line)}) === 1`, "the line about Repairs");
+      const read = () => r.eval(`__j.find(${JSON.stringify(line)}).textContent`);
+      check((await read()) === `${erased} Open Repairs`, `the line reads "${await read()}"`);
+      // Round 9: the status stands out: it says where the admin is needed,
+      // on an amber band, not a grey "Offline". The check comes first in the
+      // line, and it is short.
+      await waitText(r, tabletStatus(HALLWAY), "Waiting for you in Repairs", "the erased tablet's status");
+      const status = await r.eval(`(() => { const status = __j.find(${JSON.stringify(tabletStatus(HALLWAY))});
+        const style = getComputedStyle(status);
+        return { tone: status.dataset.tone, border: style.borderTopStyle, background: style.backgroundColor,
+          card: getComputedStyle(__j.find('[data-test="tablets"]')).backgroundColor }; })()`);
+      check(
+        status.tone === "attention" && status.border === "solid" && status.background !== status.card,
+        `the erased tablet's status looks ${JSON.stringify(status)}`,
+      );
+      // Round 10: the check is the tablet's own screen, before the yes.
+      // Round 11: the screen an erased tablet shows, from the contract.
+      check(
+        erased.startsWith(
+          `Only if you erased this tablet and its screen says "${SCREENS.waiting.erased.headline}" ("${SCREENS.waiting.add.headline}" after a USB erase): confirm`,
+        ),
+        `the check is not first: ${erased}`,
+      );
+      check(erased.split(/\s+/).length <= 52, `the line has ${erased.split(/\s+/).length} words`);
+      check((await r.count(help)) === 0, "the offline line stays while Home Assistant waits in Repairs");
+      check((await r.count('[data-test="tablet-reauth"]')) === 1, "the line is on another row too");
+      const about = await r.eval(`(() => { const link = __j.find(${JSON.stringify(link)});
+        return { href: link.getAttribute("href"), named: link.getAttribute("aria-labelledby").split(" ")
+          .map((id) => __apolloPanel.shadowRoot.getElementById(id).textContent).join(" ") }; })()`);
+      check(
+        about.href === "/config/repairs" && about.named === "Open Repairs Hallway tablet",
+        `the Repairs link: ${JSON.stringify(about)}`,
+      );
+      if (r.setup.device === "phone") {
+        const size = await r.eval(`(() => { const box = __j.find(${JSON.stringify(link)}).getBoundingClientRect();
+          return { width: box.width, height: box.height }; })()`);
+        check(size.width >= 44 && size.height >= 44, `the Repairs link is ${size.width} x ${size.height} px`);
+        await checkRingClear(r, tabletShows(HALLWAY), link);
+        await r.screen("109-repairs-link-focus");
+      }
+      await r.eval(`__j.find(${JSON.stringify(line)}).scrollIntoView({ block: "center" }); true`);
+      await checkTextContrast(r, [line, link, tabletStatus(HALLWAY)]);
+      const shot = await r.screen("109-erased-tablet-repairs");
+      // Home Assistant asks for a key instead.
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(HALLWAY)}, { reauth: "key" }); true`);
+      const key = await words("tablets.reauth_key");
+      await r.waitFor(`__j.find(${JSON.stringify(line)})?.textContent === ${JSON.stringify(`${key} Open Repairs`)}`, "the line about a key");
+      check((await r.text(tabletStatus(HALLWAY))) === "Waiting for you in Repairs", "the status while it asks for a key");
+      // The link opens Repairs inside Home Assistant, without a page load.
+      await r.eval(`window.__stayed = true; window.__moves = [];
+        window.addEventListener("location-changed", () => window.__moves.push(location.pathname)); true`);
+      await r.click(link);
+      await sleep(300);
+      const moved = await r.eval(`({ stayed: window.__stayed === true, path: location.pathname, moves: window.__moves ?? null })`);
+      check(
+        JSON.stringify(moved) === JSON.stringify({ stayed: true, path: "/config/repairs", moves: ["/config/repairs"] }),
+        `after the Repairs link: ${JSON.stringify(moved)}`,
+      );
+      // Confirmed: the line goes.
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(HALLWAY)}, { reauth: null }); true`);
+      await r.waitFor(`__j.count('[data-test="tablet-reauth"]') === 0`, "the line to go once confirmed");
+      return shot;
+    }),
+    // Round 9: with two Turn on buttons, a line that comes in the lower
+    // tablet's row moves only that tablet's button. The button above did
+    // not move, so a press on it right then is taken at once, while the
+    // moved one waits.
+    step("110", "turn-on-only-the-moved-waits", async (r) => {
+      await r.open(twoNew, `${home} && __j.count('[data-test="tablet-row"]') === 3 && __j.count('[data-test="dashboard-row"]') === 2`);
+      await r.eval(`__apolloMockHass.holdSends(); true`);
+      const order = await r.eval(`__j.all('[data-test="tablet-row"]').map((row) => row.dataset.mac)`);
+      check(JSON.stringify(order) === JSON.stringify([PATIO, PORCH, KITCHEN]), `the tablets are in the order ${JSON.stringify(order)}`);
+      const turnOn = (mac) => `${tabletRow(mac)} [data-test="tablet-turn-on"]`;
+      await pickShows(r, PATIO, "night");
+      await pickShows(r, PORCH, "tab-1");
+      await r.waitFor(
+        `__j.find(${JSON.stringify(turnOn(PATIO))})?.disabled === false && __j.find(${JSON.stringify(turnOn(PORCH))})?.disabled === false`,
+        "both buttons after the picks",
+      );
+      // Nothing moved since the rows came; let any wait from before end.
+      await sleep(TURN_ON_SETTLE_MS + 100);
+      // Each button's place, whether it waits, and when it last moved.
+      const looks = `(() => Object.fromEntries([${JSON.stringify(PATIO)}, ${JSON.stringify(PORCH)}].map((mac) => {
+        const button = __j.find('[data-test="tablet-row"][data-mac="' + mac + '"] [data-test="tablet-turn-on"]');
+        const box = button.getBoundingClientRect();
+        const moved = __apolloPanel._turnOnMovedAt.get(mac);
+        return [mac, { top: Math.round(box.top - __apolloPanel.getBoundingClientRect().top), settling: button.hasAttribute("data-settling"),
+          aria: button.getAttribute("aria-disabled"), moved: moved === undefined ? null : moved }];
+      })))()`;
+      const before = await r.eval(looks);
+      check(!before[PATIO].settling && !before[PORCH].settling, `before the line both buttons take presses: ${JSON.stringify(before)}`);
+      // Note when the patio button is pressed.
+      await r.eval(`(() => { window.__pressAt = null;
+        __apolloPanel.shadowRoot.addEventListener("click", (event) => {
+          if (window.__pressAt === null && event.target.closest?.('[data-mac="${PATIO}"] [data-test="tablet-turn-on"]')) window.__pressAt = performance.now();
+        }, true);
+        return true; })()`);
+      // Home Assistant now waits in Repairs for the porch tablet, the lower
+      // one: its row gets the line above its button.
+      await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, { reauth: "erased", reauth_name: "Apollo TAB-1 ddee0e" }); true`);
+      await r.waitFor(`__j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-reauth"]`)})`, "the porch tablet's line");
+      const after = await r.eval(looks);
+      check(after[PORCH].top > before[PORCH].top && after[PORCH].settling && after[PORCH].aria === "true", `the porch button: ${JSON.stringify(after[PORCH])}`);
+      check(
+        after[PATIO].top === before[PATIO].top && !after[PATIO].settling && after[PATIO].aria === null && after[PATIO].moved === before[PATIO].moved,
+        `the patio button did not move, yet it is ${JSON.stringify(after[PATIO])}`,
+      );
+      // A press on the patio button right then turns that tablet on.
+      await r.click(turnOn(PATIO));
+      await r.waitFor(`__j.find(${JSON.stringify(tabletRow(PATIO))})?.dataset.new === "false"`, "the patio tablet to be turned on", 2000);
+      // Measured from when the porch button moved for the line (it moves
+      // again once the patio row loses its button).
+      const gap = (await r.eval(`window.__pressAt`)) - after[PORCH].moved;
+      check(gap >= 0 && gap < TURN_ON_SETTLE_MS, `the press came ${Math.round(gap)} ms after the porch button moved, too late to tell`);
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 1 && calls[0].mac === PATIO && calls[0].url_path === "night" && calls[0].approve === true,
+        `the press on the button that did not move sent ${JSON.stringify(calls)}`,
+      );
+      check((await r.eval(`__j.find(${JSON.stringify(tabletRow(PORCH))})?.dataset.new`)) === "true", "the porch tablet was turned on");
+      const shot = await r.shot("110-turn-on-only-the-moved-waits");
+      await r.eval(`__apolloMockHass.finishSends(); true`);
+      return shot;
+    }),
+  ];
+
   return [
     first,
     real,
@@ -3873,6 +5054,16 @@ function chains(realConfig) {
     moving,
     narrowTabs,
     shortcuts,
+    tabletsHome,
+    tabletsEditor,
+    tabletsNone,
+    tabletsNoEngine,
+    tabletsAll,
+    tabletsPreview,
+    tabletsNew,
+    tabletsPairAgain,
+    tabletsNewGuards,
+    tabletsTurnOn,
   ];
 }
 

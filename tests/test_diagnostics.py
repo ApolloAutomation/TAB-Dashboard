@@ -36,6 +36,20 @@ TAB_CONFIG = {
 }
 
 
+# What the sender reports for a tablet whose ESPHome entry is not loaded.
+OFFLINE = {
+    "approved": True,
+    "dashboard": None,
+    "status": "offline",
+    "reason": "",
+    "retry": False,
+    "engine": "",
+    "paired": False,
+    "input": "not_paired",
+    "dropped_inputs": {},
+}
+
+
 async def test_diagnostics_two_tablets_exact_payload(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
@@ -72,6 +86,7 @@ async def test_diagnostics_two_tablets_exact_payload(
             "esphome_entry_state": "not_loaded",
             "engine_entity_id": "sensor.kitchen_tablet_dashboard_engine",
             "engine_status": "not_installed",
+            **OFFLINE,
         },
         {
             "device_id": bedroom.id,
@@ -81,6 +96,7 @@ async def test_diagnostics_two_tablets_exact_payload(
             "esphome_entry_state": "not_loaded",
             "engine_entity_id": "sensor.bedroom_tablet_dashboard_engine",
             "engine_status": None,
+            **OFFLINE,
         },
     ]
     tablets.sort(key=lambda tablet: tablet["device_id"])
@@ -88,6 +104,7 @@ async def test_diagnostics_two_tablets_exact_payload(
         "tablet_count": 2,
         "tablets": tablets,
         "sent_to_tablets": False,
+        "unknown_inputs": 0,
         "library": {"components": components, "errors": []},
         "dashboards": [],
     }

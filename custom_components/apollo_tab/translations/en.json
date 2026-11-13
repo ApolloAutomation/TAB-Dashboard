@@ -2,16 +2,68 @@
   "config": {
     "step": {
       "user": {
-        "description": "Adds a TAB-1 panel to the sidebar, where you build dashboards for the Apollo TAB-1 tablet and see what the tablet will show. It also finds the TAB-1 tablets that are already set up through ESPHome. Dashboards are not sent to tablets yet. There is nothing to configure."
+        "description": "Adds a TAB-1 panel to the sidebar, where you build dashboards for the Apollo TAB-1 tablet and choose which dashboard each tablet shows. It also finds the TAB-1 tablets that are already set up through ESPHome. There is nothing to configure."
       }
     }
   },
   "entity": {
+    "select": {
+      "dashboard": {
+        "name": "Dashboard"
+      }
+    },
     "sensor": {
       "dashboard_engine": {
         "name": "Dashboard engine",
         "state": {
-          "not_installed": "Not installed"
+          "not_installed": "Not installed",
+          "ready": "Ready",
+          "update_needed": "Update needed"
+        },
+        "state_attributes": {
+          "engine_version": {
+            "name": "Engine version"
+          }
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "approval_needed": {
+      "message": "An admin must turn this tablet on first: in the TAB-1 panel, pick a dashboard for it, then press \"Turn on with this dashboard\"."
+    },
+    "not_loaded": {
+      "message": "Apollo TAB Dashboard is not loaded"
+    },
+    "unknown_dashboard": {
+      "message": "This dashboard does not exist"
+    },
+    "unknown_tablet": {
+      "message": "This tablet is not known"
+    }
+  },
+  "issues": {
+    "esphome_internals": {
+      "title": "Dashboards cannot reach the tablets",
+      "description": "This version of Home Assistant changed how ESPHome devices are reached, so Apollo TAB Dashboard cannot send dashboards to the TAB-1 tablets. Update Apollo TAB Dashboard."
+    },
+    "new_tablet": {
+      "title": "New TAB-1 tablet found: {name}",
+      "description": "New TAB-1 tablet found: {name}. Open TAB-1 in the sidebar, pick a dashboard for it and press \"Turn on with this dashboard\". If you do not know this device, remove it from ESPHome."
+    }
+  },
+  "services": {
+    "show_dashboard": {
+      "name": "Show dashboard",
+      "description": "Shows a dashboard on a TAB-1 tablet. Only admins and automations can use it. A new tablet must first be turned on by an admin: in the TAB-1 panel, pick a dashboard for it, then press \"Turn on with this dashboard\". An admin can also turn it on with this action.",
+      "fields": {
+        "device_id": {
+          "name": "Tablet",
+          "description": "The TAB-1 tablet."
+        },
+        "dashboard": {
+          "name": "Dashboard",
+          "description": "The dashboard's \"Name for automations\", shown in the editor under \"This dashboard\", for example tab-home."
         }
       }
     }

@@ -1,0 +1,303 @@
+{
+ "proto": 1,
+ "dl_version": 1,
+ "limits": {
+  "chunk_bytes": 16000,
+  "max_layout_bytes": 262144,
+  "max_set_bytes": 12000,
+  "max_text_bytes": 255,
+  "max_list": 120,
+  "max_number": 1000000000,
+  "max_pages": 20,
+  "max_nav": 8,
+  "max_slots": 1024,
+  "max_widgets": 2048,
+  "max_input_payload": 200
+ },
+ "caps_defaults": {
+  "w": [
+   "heading",
+   "card",
+   "label",
+   "button",
+   "switch",
+   "slider",
+   "thermostat",
+   "chart",
+   "image"
+  ],
+  "icons": 1,
+  "screen": [
+   1280,
+   800
+  ],
+  "max_layout": 262144,
+  "max_chunk": 16000,
+  "max_slots": 1024,
+  "max_widgets": 2048
+ },
+ "fonts": {
+  "text_px": [
+   14,
+   15,
+   16,
+   18,
+   20,
+   34
+  ],
+  "digits_px": [
+   48
+  ],
+  "digits_glyphs": "0123456789.,-",
+  "icon_px": [
+   24,
+   28,
+   48,
+   72
+  ],
+  "text_glyphs": [
+   [
+    32,
+    126
+   ],
+   [
+    160,
+    383
+   ],
+   [
+    8211,
+    8212
+   ],
+   [
+    8216,
+    8217
+   ],
+   [
+    8220,
+    8221
+   ],
+   [
+    8226,
+    8226
+   ],
+   [
+    8230,
+    8230
+   ],
+   [
+    8364,
+    8364
+   ]
+  ]
+ },
+ "knock": {
+  "first_s": 3,
+  "repeats": 5,
+  "max_s": 300
+ },
+ "timing": {
+  "call_timeout_s": 10,
+  "status_poll_s": [
+   0.15,
+   0.3,
+   0.5
+  ],
+  "status_poll_limit_s": 20,
+  "ack_timeout_s": 4,
+  "progress_timeout_s": 30,
+  "retry_s": [
+   5,
+   15,
+   60,
+   300
+  ],
+  "repair_once_per_s": 60
+ },
+ "widget_kinds": [
+  "heading",
+  "card",
+  "label",
+  "button",
+  "switch",
+  "slider",
+  "thermostat",
+  "chart",
+  "image"
+ ],
+ "slot_types": {
+  "t": "text",
+  "b": "bool as 0 or 1",
+  "n": "number",
+  "l": "list of numbers",
+  "i": "icon code point, 0 for the placeholder"
+ },
+ "policies": [
+  "optimistic",
+  "pulse",
+  "progress",
+  "confirm"
+ ],
+ "label_sizes": [
+  "s",
+  "m",
+  "l"
+ ],
+ "chart_kinds": [
+  "line",
+  "bars"
+ ],
+ "theme_colours": [
+  "wall",
+  "card",
+  "card_pr",
+  "card2",
+  "card2_pr",
+  "line",
+  "tx",
+  "tx2",
+  "acc",
+  "accf",
+  "accf_pr",
+  "acct",
+  "acc2",
+  "onbg",
+  "onbg_pr",
+  "ontx",
+  "ion"
+ ],
+ "style_colours": [
+  "bg",
+  "bg2",
+  "tx",
+  "tx2",
+  "acc",
+  "acc2",
+  "acct",
+  "card2",
+  "line",
+  "onbg",
+  "ontx"
+ ],
+ "actions": {
+  "tab_hello": {
+   "args": {
+    "nonce": "string",
+    "auth": "string"
+   },
+   "response": "only"
+  },
+  "tab_status": {
+   "args": {},
+   "response": "only"
+  },
+  "tab_pair": {
+   "args": {
+    "nonce": "string",
+    "wrapped": "string",
+    "kid": "string"
+   },
+   "response": "status"
+  },
+  "tab_layout": {
+   "args": {
+    "hash": "string",
+    "seq": "int",
+    "total": "int",
+    "size": "int",
+    "data": "string"
+   },
+   "response": "status"
+  },
+  "tab_commit": {
+   "args": {
+    "hash": "string",
+    "auth": "string"
+   },
+   "response": "status"
+  },
+  "tab_set": {
+   "args": {
+    "data": "string",
+    "auth": "string"
+   },
+   "response": "status"
+  },
+  "tab_ack": {
+   "args": {
+    "n": "int",
+    "ok": "bool",
+    "code": "string",
+    "auth": "string"
+   },
+   "response": "none"
+  },
+  "tab_clear": {
+   "args": {
+    "auth": "string"
+   },
+   "response": "status"
+  }
+ },
+ "events": {
+  "esphome.tab1_hello": {
+   "d": "1|<mac>|<boot>"
+  },
+  "esphome.tab1_input": {
+   "d": "<payload>",
+   "s": "<signature>"
+  }
+ },
+ "errors": {
+  "tab_pair": [
+   "needs_encryption",
+   "bad_key"
+  ],
+  "tab_layout": [
+   "order",
+   "size",
+   "too_big",
+   "memory"
+  ],
+  "tab_commit": [
+   "auth",
+   "incomplete",
+   "hash",
+   "parse",
+   "version",
+   "limits",
+   "memory"
+  ],
+  "tab_set": [
+   "auth",
+   "hash",
+   "parse"
+  ],
+  "tab_clear": [
+   "auth"
+  ]
+ },
+ "build_codes": [
+  "",
+  "memory",
+  "build"
+ ],
+ "deterministic_errors": [
+  "too_big",
+  "limits",
+  "version",
+  "parse"
+ ],
+ "ack_codes": [
+  "",
+  "confirm",
+  "denied",
+  "failed",
+  "stale",
+  "busy"
+ ],
+ "labels": {
+  "kid": "apollo-tab1 kid v1",
+  "wrap": "apollo-tab1 wrap v1",
+  "call": "apollo-tab1 call v1"
+ }
+}

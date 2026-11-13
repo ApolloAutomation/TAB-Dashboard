@@ -245,6 +245,7 @@ async def test_dashboards_lists_only_tab_dashboards(
     assert dashboard["theme"] == "midnight"
     assert dashboard["pages"] == 1
     assert dashboard["warnings"] == 0
+    assert dashboard["shown_on"] == []
     await client.send_json_auto_id(
         {"type": "apollo_tab/layout/get", "url_path": "tab-1"}
     )
@@ -331,6 +332,10 @@ async def test_every_admin_command_requires_admin(
         {"type": "apollo_tab/layout/get", "url_path": "tab-1"},
         {"type": "apollo_tab/layout/preview", "config": {}},
         {"type": "apollo_tab/layout/subscribe"},
+        {"type": "apollo_tab/tablets"},
+        {"type": "apollo_tab/tablets/subscribe"},
+        {"type": "apollo_tab/tablet/assign", "mac": "aa", "url_path": "tab-1"},
+        {"type": "apollo_tab/tablet/pair", "mac": "aa"},
     ]
     for command in commands:
         await client.send_json_auto_id(command)
@@ -491,6 +496,10 @@ async def test_commands_report_not_loaded(
         {"type": "apollo_tab/layout/get", "url_path": "tab-1"},
         {"type": "apollo_tab/layout/preview", "config": {}},
         {"type": "apollo_tab/layout/subscribe"},
+        {"type": "apollo_tab/tablets"},
+        {"type": "apollo_tab/tablets/subscribe"},
+        {"type": "apollo_tab/tablet/assign", "mac": "aa", "url_path": "tab-1"},
+        {"type": "apollo_tab/tablet/pair", "mac": "aa"},
     ]
     for command in commands:
         await client.send_json_auto_id(command)
@@ -606,7 +615,7 @@ async def test_layout_preview_leaves_out_a_card_that_is_not_allowed(
     assert (warning["view"], warning["section"], warning["card"]) == (0, 0, 0)
     assert warning["detail"] == "me/vault"
     assert result["sources"] == {}
-    assert result["layout"]["pages"] == []
+    assert [page["w"] for page in result["layout"]["pages"]] == [[]]
     await client.send_json_auto_id(
         {
             "type": "apollo_tab/library/approve",

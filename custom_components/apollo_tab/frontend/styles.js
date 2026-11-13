@@ -299,9 +299,6 @@ ${controls}
   font-size: 18px;
   font-weight: 500;
 }
-.notice {
-  border-left: 4px solid var(--primary-color, #f5b547);
-}
 .steps {
   display: grid;
   gap: 6px;
@@ -359,6 +356,182 @@ ${controls}
   gap: 6px;
   margin: 0;
   padding-left: 20px;
+}
+/* The Tablets box: name, "Shows" and status side by side when there is
+   room, one under the other when there is not. */
+.tablets {
+  container-type: inline-size;
+}
+.tablet-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-areas:
+    "name shows status"
+    ". notes notes";
+  align-items: center;
+  gap: 4px 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--divider-color, #39414d);
+}
+.tablet-title {
+  grid-area: name;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.tablet-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+/* After "Turn on with this dashboard" the tablet's name takes focus; the
+   ring shows only when the press came from the keyboard. */
+.tablet-name:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Under a new tablet's name: what to check on its screen and its device
+   page, on lines of their own. */
+.tablet-device {
+  flex: 1 0 100%;
+}
+/* On a phone the device page link is a 44 px high touch target on a line
+   of its own, so the words above keep their spacing. Its focus ring
+   reaches 5 px outside it (3 px wide, 2 px away), so 6 px of space above
+   and below keep the ring off the words. */
+@media (max-width: 700px), (pointer: coarse) {
+  .tablet-device-page {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 44px;
+    margin: 6px 0;
+  }
+}
+.tablet-shows {
+  grid-area: shows;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+.tablet-shows .field-label {
+  flex: 0 0 auto;
+  font-weight: 500;
+}
+.tablet-shows select {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+.tablet-status {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 500;
+}
+/* A dot beside the words: green on the tablet, amber while sending, red
+   for a problem, the accent for a new tablet, grey otherwise. The words
+   carry the meaning. */
+.tablet-status::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--secondary-text-color, #9aa0a8);
+}
+.tablet-status[data-tone="ok"]::before {
+  background: var(--success-color, #43a047);
+}
+.tablet-status[data-tone="busy"]::before {
+  background: var(--warning-color, #ffa600);
+}
+.tablet-status[data-tone="problem"]::before {
+  background: var(--error-color, #db4437);
+}
+.tablet-status[data-tone="new"]::before {
+  background: var(--primary-color, #f5b547);
+}
+/* Home Assistant waits for an admin's answer in Repairs: the words sit on
+   an amber band with an amber edge, so the row stands out from every
+   other status. The words keep the text colour, readable in both themes. */
+.tablet-status[data-tone="attention"] {
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 10px 2px 8px;
+  border: 1px solid var(--warning-color, #ffa600);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning-color, #ffa600) 16%, var(--card-background-color, #181c23));
+}
+.tablet-status[data-tone="attention"]::before {
+  background: var(--warning-color, #ffa600);
+}
+/* "New" beside a tablet nobody turned on yet: the accent marks it, the
+   words keep the text colour so they stay readable in both themes. */
+.tag-new {
+  border-color: var(--primary-color, #f5b547);
+  background: color-mix(in srgb, var(--primary-color, #f5b547) 14%, var(--card-background-color, #181c23));
+}
+.tablet-status:empty::before {
+  display: none;
+}
+.tablet-notes {
+  grid-area: notes;
+  display: grid;
+  gap: 6px;
+}
+.tablet-notes:empty {
+  display: none;
+}
+/* "Set up again" sits under its line, and "Turn on with this dashboard"
+   under the list, each as wide as its words. */
+.tablet-notes .tablet-pair,
+.tablet-notes .tablet-turn-on {
+  justify-self: start;
+}
+/* A "Turn on with this dashboard" button that moved a moment ago (a row
+   above it changed) takes no press yet, and looks disabled until it does. */
+.tablet-turn-on[data-settling] {
+  cursor: default;
+  opacity: 0.55;
+}
+/* What Home Assistant waits for before it connects to the tablet again,
+   with the way to Repairs right after the words. */
+.tablet-reauth {
+  margin: 0;
+}
+.tablet-repairs {
+  white-space: nowrap;
+}
+/* On a phone the Repairs link is a 44 px high touch target on a line of
+   its own, with 6 px above and below for its focus ring, as the device
+   page link. */
+@media (max-width: 700px), (pointer: coarse) {
+  .tablet-repairs {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 44px;
+    margin: 6px 0;
+  }
+}
+@container (max-width: 620px) {
+  .tablet-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "name"
+      "shows"
+      "status"
+      "notes";
+  }
 }
 @media (max-width: 700px) {
   .panel-header {
@@ -541,6 +714,63 @@ export const formStyles = `
 }
 .note-line.problem {
   border-left-color: var(--error-color, #db4437);
+}
+/* The tablets that show the dashboard, under its theme. */
+.shown-on {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.shown-on-heading {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.shown-on-heading:focus:not(:focus-visible) {
+  outline: none;
+}
+.shown-on-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.shown-on-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--divider-color, #39414d);
+  border-radius: 10px;
+}
+.shown-on-text {
+  display: grid;
+  flex: 1 1 140px;
+  gap: 2px;
+  min-width: 0;
+}
+.shown-on-name {
+  font-weight: 500;
+}
+.automation-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+}
+.automation-name code {
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--secondary-background-color, rgba(127, 127, 127, 0.14));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  user-select: all;
 }
 `;
 
@@ -755,6 +985,14 @@ ${controls}
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+}
+/* Which tablets show the dashboard, one line each, under the heading. */
+.tablet-lines {
+  display: grid;
+  gap: 2px;
+}
+.tablet-line {
+  margin: 0;
 }
 .stage {
   position: relative;
@@ -1292,6 +1530,11 @@ p {
   margin: 0 0 20px;
   color: var(--primary-text-color, #e8eaed);
 }
+/* A second paragraph, such as the tablets a deleted dashboard leaves,
+   stays close to the first. */
+p:has(+ p) {
+  margin-bottom: 12px;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -1332,6 +1575,14 @@ export const previewStyles = `
   padding: 12px;
   border: 1px solid var(--divider-color);
   border-radius: 10px;
+}
+.tablet-lines {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.tablet-line {
+  margin: 0;
 }
 .preview-heading {
   display: flex;
@@ -1410,6 +1661,12 @@ export const rendererStyles = `
   border-radius: var(--at-r, 16px);
   background: var(--at-bg, #181C23);
   color: var(--at-tx, #E8EAED);
+}
+/* Child rectangles are absolute (contract 4.3): this layer starts at the
+   card's outer edge, so the border does not move the children. */
+.at-card-body {
+  position: absolute;
+  inset: calc(-1 * var(--at-bw, 0px));
 }
 .at-card[data-gradient="v"] {
   background: linear-gradient(to bottom, var(--at-bg), var(--at-bg2));
@@ -1491,7 +1748,7 @@ export const rendererStyles = `
   flex-direction: column;
 }
 .at-button.active {
-  background: var(--at-acc);
+  background: var(--at-accf, var(--at-acc));
   color: var(--at-acct);
 }
 .at-button.busy,
@@ -1589,7 +1846,6 @@ export const rendererStyles = `
 }
 .at-chart-baseline {
   stroke: var(--at-line);
-  stroke-width: 1;
 }
 .at-chart-line {
   fill: none;
@@ -1645,6 +1901,40 @@ export const rendererStyles = `
 .at-layout-card {
   position: absolute;
   overflow: hidden;
+}
+/* No value: 40% and no touch, as on the tablet (contract 4.7). */
+.at-none {
+  opacity: 0.4;
+  pointer-events: none;
+}
+/* The tablet previews use the tablet's one font and weight (contract 4.7). */
+.at-tablet,
+.at-tablet .at-card,
+.at-tablet .at-heading,
+.at-tablet .at-nav {
+  font-family: "Apollo TAB-1 Montserrat", var(--ha-font-family-body, Roboto, system-ui, sans-serif);
+}
+.at-tablet * {
+  font-weight: 500;
+  font-synthesis: none;
+}
+/* A line the preview has cut where the tablet cuts it: the browser must not
+   cut it again. Each character sits in a box of the tablet's whole-pixel
+   width, without kerning, as the tablet places its glyphs. */
+.at-tablet .at-fitted {
+  text-overflow: clip;
+  font-kerning: none;
+}
+.at-tablet .at-ch {
+  display: inline-block;
+  white-space: pre;
+}
+/* The tablet's box for a character its font does not have. */
+.at-nobox {
+  display: inline-block;
+  box-sizing: border-box;
+  border: 1px solid currentColor;
+  vertical-align: middle;
 }
 /* A card whose switch is on, drawn the way the tablet draws it. */
 .at-card.is-on .at-header ha-icon {

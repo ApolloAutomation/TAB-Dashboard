@@ -1,0 +1,15 @@
+show_dashboard:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          filter:
+            - integration: esphome
+              manufacturer: ApolloAutomation
+              model: TAB-1
+    dashboard:
+      required: true
+      example: tab-home
+      selector:
+        text:

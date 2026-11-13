@@ -1,0 +1,49 @@
+{
+  "note": "Dashboard option texts. assignments.option_labels (Python) and dashboardLabels in frontend/tablets.js (JavaScript) must give the same 'expect' for each 'rows'. Titles are compared ignoring case.",
+  "cases": [
+    {
+      "name": "equal_titles",
+      "rows": [
+        {"url_path": "home", "title": "Home"},
+        {"url_path": "home-2", "title": "Home"},
+        {"url_path": "bed", "title": "Bedroom"}
+      ],
+      "expect": {"home": "Home (home)", "home-2": "Home (home-2)", "bed": "Bedroom"}
+    },
+    {
+      "name": "titles_equal_ignoring_case",
+      "rows": [
+        {"url_path": "home", "title": "home"},
+        {"url_path": "home-2", "title": "Home"},
+        {"url_path": "night", "title": "Night"}
+      ],
+      "expect": {"home": "home (home)", "home-2": "Home (home-2)", "night": "Night"}
+    },
+    {
+      "name": "title_equals_another_text",
+      "rows": [
+        {"url_path": "home-a", "title": "Home"},
+        {"url_path": "home-b", "title": "Home"},
+        {"url_path": "x-c", "title": "Home (home-a)"}
+      ],
+      "expect": {"home-a": "Home (home-a)", "home-b": "Home (home-b)", "x-c": "Home (home-a) (x-c)"}
+    },
+    {
+      "name": "title_equals_another_text_in_other_case",
+      "rows": [
+        {"url_path": "home-a", "title": "Home"},
+        {"url_path": "home-b", "title": "HOME"},
+        {"url_path": "x-c", "title": "home (HOME-A)"}
+      ],
+      "expect": {"home-a": "Home (home-a)", "home-b": "HOME (home-b)", "x-c": "home (HOME-A) (x-c)"}
+    },
+    {
+      "name": "all_different",
+      "rows": [
+        {"url_path": "a-1", "title": "Kitchen"},
+        {"url_path": "b-1", "title": "Kitchen (b-2)"}
+      ],
+      "expect": {"a-1": "Kitchen", "b-1": "Kitchen (b-2)"}
+    }
+  ]
+}

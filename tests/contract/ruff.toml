@@ -1,0 +1,4 @@
+# A copy of the shared TAB-1 contract. Its reference code stays exactly as the
+# contract has it, so this repository does not lint or format it.
+extend = "../../pyproject.toml"
+extend-exclude = ["reference"]

@@ -220,3 +220,109 @@ test("warningPlace reports the page and the card", () => {
   assert.equal(logic.warningPlace({ view: 1, section: 0, card: null }), "Page 2");
   assert.equal(logic.warningPlace({ view: null, section: null, card: null }), "");
 });
+
+test("tabletText draws a box for each character the tablet font lacks", () => {
+  const box = logic.TABLET_MISSING_GLYPH;
+  assert.equal(logic.tabletText("Café 21.5°C – €3 “ok” …"), "Café 21.5°C – €3 “ok” …");
+  assert.equal(logic.tabletText("Łódź Œuvre"), "Łódź Œuvre");
+  assert.equal(logic.tabletText("Ψ"), box);
+  assert.equal(logic.tabletText("Привет"), box.repeat(6));
+  assert.equal(logic.tabletText("日本"), box.repeat(2));
+  // One box per code point, also for an emoji outside the BMP.
+  assert.equal(logic.tabletText("a😀b"), `a${box}b`);
+  assert.equal(logic.tabletText(""), "");
+  assert.equal(logic.tabletText(null), "");
+  assert.equal(logic.tabletText(42), "42");
+});
+
+test("the tablet preview's glyphs are the contract's fonts.text_glyphs", async () => {
+  const fs = await import("node:fs");
+  const url = new URL("../../custom_components/apollo_tab/contract/contract.json", import.meta.url);
+  const contract = JSON.parse(fs.readFileSync(url, "utf8"));
+  assert.deepEqual(logic.TABLET_TEXT_GLYPHS, contract.fonts.text_glyphs);
+});
+
+test("tabletFit cuts a line where the tablet cuts it", () => {
+  // Every character 10.4 px wide in the browser: the tablet counts 10 each.
+  const advance = () => 10.4;
+  // 15 characters are 150 px on the tablet and fit a 152 px box; the browser's
+  // own sum (156 px) would have cut the line.
+  assert.equal(logic.tabletFit("Front door: loc", 152, 18, advance), "Front door: loc");
+  // Too wide: the longest start that fits with the "…" (also 10 px).
+  assert.equal(logic.tabletFit("Front door: locked", 152, 18, advance), "Front door: lo…");
+  assert.equal(logic.tabletFit("Front door: locked", 180, 18, advance), "Front door: locked");
+  // Exactly full is not cut.
+  assert.equal(logic.tabletFit("abcde", 50, 18, advance), "abcde");
+  assert.equal(logic.tabletFit("abcdef", 50, 18, advance), "abcd…");
+  // Spaces before the "…" go.
+  assert.equal(logic.tabletFit("abc   defgh", 70, 18, advance), "abc…");
+  // Nothing fits: only the "…".
+  assert.equal(logic.tabletFit("abcdef", 5, 18, advance), "…");
+  // No width: no cut. Control characters are spaces.
+  assert.equal(logic.tabletFit("a\tb", 0, 18, advance), "a b");
+  assert.equal(logic.tabletFit("", 100, 18, advance), "");
+  assert.equal(logic.tabletFit(null, 100, 18, advance), "");
+});
+
+test("tabletFit ends a cut line with three dots in a font without the ellipsis", () => {
+  // The thermostat's 48 px digits font has no "…": the tablet's set_text
+  // ends the line with "..." and counts all three dots.
+  const widths = { 4: 32.2, 0: 31.6, ".": 12.9 };
+  const advance = (ch) => widths[ch];
+  assert.equal(logic.TABLET_DIGITS_ELLIPSIS, "...");
+  assert.equal(logic.TABLET_ELLIPSIS, "…");
+  // 4040 is 128 px in a 125 px box: "40" (64) and "..." (39) fit, "404..." not.
+  assert.equal(logic.tabletFit("4040", 125, 48, advance, "..."), "40...");
+  assert.equal(logic.tabletFit("4040", 128, 48, advance, "..."), "4040");
+  // The dots count as three characters: 64 + 39 = 103 fits 103, not 102.
+  assert.equal(logic.tabletFit("40404", 103, 48, advance, "..."), "40...");
+  assert.equal(logic.tabletFit("40404", 102, 48, advance, "..."), "4...");
+});
+
+test("a fitted line is drawn no wider than its box", () => {
+  // Browser widths with fractions, as Montserrat has; the tablet rounds each.
+  const widths = { " ": 4.9, ":": 4.3, "\u2026": 13.6, l: 4.6, o: 10.9, c: 9.7, k: 9.4, e: 10.2, d: 11.3 };
+  const advance = (ch) => widths[ch] ?? 10.6;
+  for (const [text, box] of [
+    ["Front door: locked", 152],
+    ["Sam: not_home", 144],
+    ["Küche Κουζίνα", 100],
+    ["abc", 300],
+  ]) {
+    for (let width = 20; width <= box; width += 1) {
+      const line = logic.tabletFit(text, width, 18, advance);
+      const placed = logic.tabletCharWidths(line, 18, advance);
+      assert.equal(placed.map(([ch]) => ch).join(""), line);
+      for (const [, w] of placed) {
+        assert.ok(Number.isInteger(w), `${text} at ${width}: a width of ${w}`);
+      }
+      const drawn = placed.reduce((sum, [, w]) => sum + w, 0);
+      assert.ok(drawn <= width, `${JSON.stringify(line)} is ${drawn} px in a ${width} px box`);
+    }
+  }
+  // The browser's own sum would be wider than the box: the reason for it.
+  const line = logic.tabletFit("Front door: locked", 152, 18, () => 10.4);
+  assert.equal(line, "Front door: lo\u2026");
+  assert.equal(logic.tabletCharWidths(line, 18, () => 10.4).reduce((sum, [, w]) => sum + w, 0), 150);
+  assert.ok(line.length * 10.4 > 152);
+  assert.deepEqual(logic.tabletCharWidths(logic.TABLET_MISSING_GLYPH, 18, () => 1), [[logic.TABLET_MISSING_GLYPH, 13]]);
+  assert.deepEqual(logic.tabletCharWidths(null, 18, () => 1), []);
+});
+
+test("tabletFit gives a missing character the tablet's box width", () => {
+  // At 18 px a line is 22 px high: the box is 11 wide and takes 13.
+  assert.equal(logic.tabletLineHeight(18), 22);
+  assert.equal(logic.tabletBoxAdvance(18), 13);
+  assert.equal(logic.tabletBoxAdvance(34), 22);
+  const box = logic.TABLET_MISSING_GLYPH;
+  const asked = [];
+  const advance = (ch) => {
+    asked.push(ch);
+    return 10;
+  };
+  // Two boxes (26 px) and "ab" (20 px) fit 46 px, not 45.
+  assert.equal(logic.tabletFit("aΩb😀", 46, 18, advance), `a${box}b${box}`);
+  assert.equal(logic.tabletFit("aΩb😀", 45, 18, advance), `a${box}b…`);
+  // The box is never measured in the browser's font.
+  assert.ok(!asked.includes(box) && !asked.includes("Ω"));
+});

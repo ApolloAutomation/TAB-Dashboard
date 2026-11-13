@@ -1,0 +1,225 @@
+{
+ "cases": [
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|1|4384f665e4dd9f62|3|t|0|",
+    "s": "f84b24d91458d01dcf7a3d441127cd0e"
+   },
+   "expect": "ok",
+   "name": "tap_switch",
+   "widget_rect": [
+    116,
+    176,
+    152,
+    40
+   ]
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|2|4384f665e4dd9f62|10|c|0|42",
+    "s": "6072187755cb1448791d6eda9e54661a"
+   },
+   "expect": "ok",
+   "name": "change_slider",
+   "widget_rect": [
+    116,
+    368,
+    344,
+    40
+   ]
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|3|4384f665e4dd9f62|10|c|0|42.5",
+    "s": "16ea69be88a8f8a77f286dd8562dae30"
+   },
+   "expect": "ok",
+   "name": "change_fraction"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|4|4384f665e4dd9f62|53|t|1|",
+    "s": "71fe04886202ecec46f27f2d6d076a7d"
+   },
+   "expect": "ok",
+   "name": "confirmed_lock",
+   "widget_rect": [
+    116,
+    120,
+    72,
+    96
+   ]
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": "00000000000000000000000000000000"
+   },
+   "expect": "bad_signature",
+   "name": "bad_signature"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": "d5a3da362609a4e8415947d9cb9fe184"
+   },
+   "expect": "bad_signature",
+   "name": "signature_of_other_payload"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": "336edf30431413cc8cbfa48a113e17d2"
+   },
+   "expect": "bad_signature",
+   "name": "signed_with_other_secret"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": null
+   },
+   "expect": "malformed",
+   "name": "unsigned"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|4|4384f665e4dd9f62|3|t|0|",
+    "s": "c6d5bbdee8befd6c7330c68bb153b17e"
+   },
+   "expect": "replay",
+   "name": "replay_same_counter"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|1|4384f665e4dd9f62|3|t|0|",
+    "s": "f84b24d91458d01dcf7a3d441127cd0e"
+   },
+   "expect": "replay",
+   "name": "replay_old_counter"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|ffffffffffffffffffffffffffffffff|9|4384f665e4dd9f62|3|t|0|",
+    "s": "a88a0f234902cb09d62dff3c92512650"
+   },
+   "expect": "stale_session",
+   "name": "old_session"
+  },
+  {
+   "data": {
+    "d": "1|112233445566|0123456789abcdef0123456789abcdef|9|4384f665e4dd9f62|3|t|0|",
+    "s": "706a0cdffdcb9582fc0f8f0e73ba3996"
+   },
+   "expect": "wrong_tablet",
+   "name": "other_tablet"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|9|0000000000000000|3|t|0|",
+    "s": "b79d80b9dcd02941052dd75f12be0588"
+   },
+   "expect": "stale_layout",
+   "name": "other_layout"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0||1",
+    "s": "5c2752d1ca0767afea4c0c38c699a278"
+   },
+   "expect": "malformed",
+   "name": "wrong_field_count"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|10|4384f665e4dd9f62|3|t|0|1",
+    "s": "c9747b434eda0331fb7a1ac2b275393a"
+   },
+   "expect": "malformed",
+   "name": "tap_with_value"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|10|4384f665e4dd9f62|10|c|0|",
+    "s": "59a3ab071dd95c86bdd7c5450ec53a15"
+   },
+   "expect": "malformed",
+   "name": "change_without_number"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|10|4384f665e4dd9f62|3|x|0|",
+    "s": "060977b863e65a386faeda448fd66e6e"
+   },
+   "expect": "malformed",
+   "name": "unknown_event"
+  },
+  {
+   "data": {
+    "d": "2|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": "10d7758a5cf8564fe73c1abadb48388d"
+   },
+   "expect": "version",
+   "name": "version_2"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|10|4384f665e4dd9f62|3|t|0|",
+    "s": "313e912ea85bbb68300fceb6b09f5f9e"
+   },
+   "expect": "ok",
+   "name": "after_bad_ones_counter_goes_on"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": "éééééééééééééééééééééééééééééééé"
+   },
+   "expect": "malformed",
+   "name": "signature_not_ascii"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": "A288A6188CA679CF1D4D53F9541D5845"
+   },
+   "expect": "malformed",
+   "name": "signature_upper_case"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|t|0|",
+    "s": "a288a6188ca679cf1d4d53f9541d584"
+   },
+   "expect": "malformed",
+   "name": "signature_too_short"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|5|4384f665e4dd9f62|3|é|0|",
+    "s": "5f7f8d034e7735a0cf7b5f26ed0c08a5"
+   },
+   "expect": "malformed",
+   "name": "payload_not_ascii"
+  },
+  {
+   "data": {
+    "d": "1|aabbccddeeff|0123456789abcdef0123456789abcdef|11|1111111111111111|3|t|0|",
+    "s": "1477fa0e152f639fa48a15984b58ecfd"
+   },
+   "expect": "ok",
+   "kept": [
+    "4384f665e4dd9f62",
+    "1111111111111111"
+   ],
+   "name": "previous_layout_until_the_switch",
+   "note": "While a new layout is being built the old one is still on screen. HA keeps the old bindings until tab_status confirms the switch."
+  }
+ ],
+ "hash": "4384f665e4dd9f62",
+ "layout": "layout_all_cards",
+ "mac": "aabbccddeeff",
+ "nonce": "0123456789abcdef0123456789abcdef",
+ "note": "Feed the cases in order to one tablet session. last_counter starts at 0 and moves to the event's counter on 'ok' and on 'stale_layout'. The hashes HA keeps bindings for are 'kept' of the case, or just 'hash'. 'ok' cases with widget_rect are also what the tablet must produce when that rectangle is pressed with the same secret, nonce and counter.",
+ "secret_hex": "6465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283"
+}
