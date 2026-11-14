@@ -83,6 +83,15 @@ def _read_themes() -> dict[str, dict]:
     return themes
 
 
+def _read_status() -> dict[str, Any]:
+    """Read the built-in status colours (good, warn, bad, info) per theme."""
+    data = _read_json(_BUILTIN_DIR / "status.json")
+    if not isinstance(data, dict):
+        _LOGGER.error("Built-in status.json is missing or not an object")
+        return {}
+    return data
+
+
 def _read_strings() -> dict[str, str]:
     """Read the built-in UI strings."""
     data = _read_json(_BUILTIN_DIR / "strings.json")
@@ -307,6 +316,7 @@ class Library:
         self.components: dict[str, dict] = {}
         self.errors: list[dict] = []
         self.themes: dict[str, dict] = {}
+        self.status: dict[str, Any] = {}
         self.strings: dict[str, str] = {}
         self.user_dir: str = hass.config.path(DOMAIN, "components")
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.approvals")
@@ -353,6 +363,7 @@ class Library:
         self.components = components
         self.errors = errors
         self.themes = result["themes"]
+        self.status = result["status"]
         self.strings = result["strings"]
         self._notify()
 
@@ -396,6 +407,7 @@ class Library:
     def _load_files(self) -> dict[str, Any]:
         """Read, validate and check all files; runs in the executor."""
         themes = _read_themes()
+        status = _read_status()
         strings = _read_strings()
         files: list[tuple[Path, str]] = [
             (path, "builtin") for path in _builtin_component_files()
@@ -421,6 +433,7 @@ class Library:
         candidates = _drop_unknown_v1(candidates, errors)
         return {
             "themes": themes,
+            "status": status,
             "strings": strings,
             "candidates": candidates,
             "errors": errors,
@@ -620,5 +633,6 @@ class Library:
             "components": components,
             "errors": self.errors,
             "themes": list(self.themes.values()),
+            "status": self.status,
             "components_path": self.user_dir,
         }

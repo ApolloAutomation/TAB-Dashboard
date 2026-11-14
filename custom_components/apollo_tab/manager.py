@@ -224,6 +224,7 @@ class DashboardManager:
         facts = self.facts.facts_for(named)
         approved = self.library.approved_ids()
         themes = self.library.themes
+        status = self.library.status
         try:
             result = convert_dashboard(
                 config,
@@ -232,6 +233,7 @@ class DashboardManager:
                 approved=approved,
                 facts=facts,
                 icons=self.icons,
+                status=status,
             )
         except Exception:
             _LOGGER.exception("Conversion of dashboard %s failed", url_path)
@@ -240,6 +242,7 @@ class DashboardManager:
             "config": config,
             "components": components,
             "themes": themes,
+            "status": status,
             "approved": approved,
             "facts": facts,
         }
@@ -297,6 +300,7 @@ class DashboardManager:
                 dl=2,
                 icons=self.icons,
                 caps=caps,
+                status=made_from.get("status"),
             )
         except Exception:
             _LOGGER.exception(
@@ -366,6 +370,7 @@ class DashboardManager:
             facts=self.facts.facts_for(dashboard_facts(config, components)),
             dl=dl,
             icons=self.icons,
+            status=self.library.status,
         )
         return {
             "layout": result["layout"],

@@ -95,8 +95,32 @@ DETAIL_TTL_S = 60
 # What a version 1 tablet shows for a card it cannot draw (C.6, rule 3).
 UPDATE_NOTE = "Update this tablet to show this card"
 
-THEME_IDS = ("midnight", "daylight", "warm", "soft", "mono", "glass")
+THEME_IDS = (
+    "midnight",
+    "daylight",
+    "warm",
+    "soft",
+    "mono",
+    "glass",
+    "graphite",
+    "nord",
+    "forest",
+    "ocean",
+    "night",
+    "paper",
+    "sand",
+    "rose",
+    "contrast",
+)
 DEFAULT_THEME = "midnight"
+# Card looks (section E.1 of the cards spec). The first word of each is the
+# theme's own look, which changes nothing.
+SURFACES = ("card", "outline", "plain")
+CORNERS = {"theme": None, "square": 4, "round": 16, "soft": 28}
+BORDERS = {"theme": None, "none": 0, "thin": 1, "bold": 2}
+# The border width of the surface "outline".
+OUTLINE_BW = 2
+STATUS_ROLES = ("good", "warn", "bad", "info")
 
 # Regex sources; each is compiled where it is used.
 ICON_RE = r"^mdi:[a-z0-9-]+$"

@@ -1,0 +1,3 @@
+{"dark":  {"good": "#4CC38A", "warn": "#F5B547", "bad": "#FF6B5E", "info": "#6CB4FF"},
+ "light": {"good": "#1E8E5A", "warn": "#B86E00", "bad": "#C6392C", "info": "#1F6FD1"},
+ "themes": {"night": {"good": "#388C64", "warn": "#AF8235", "bad": "#B64E45", "info": "#4F81B6"}}}

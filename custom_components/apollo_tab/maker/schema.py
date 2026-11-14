@@ -6,7 +6,9 @@ from .const import (
     ACTION_RE,
     ALLOWED_ACTION_DOMAINS,
     ALLOWED_DOMAIN_SERVICES,
+    BORDERS,
     COLOR_RE,
+    CORNERS,
     DATA_KEY_RE,
     DEFAULT_THEME,
     DOMAIN_RE,
@@ -17,6 +19,7 @@ from .const import (
     FOR_EACH_MAX,
     ICON_RE,
     ID_RE,
+    LIT_LOOKS,
     LOCAL_ACTIONS,
     MAX_DATA_KEYS,
     MAX_INPUTS,
@@ -30,6 +33,7 @@ from .const import (
     RESERVED_NAMES,
     SENSITIVE_DOMAINS,
     SIZE_RE,
+    SURFACES,
     TARGET_KEYS,
     THEME_IDS,
     VAR_RE,
@@ -87,7 +91,18 @@ _LAYOUT_KEYS = {
     "image": {"type", "value", "on_tap", "confirm", "side", "for_each", "as"},
 }
 
-_STYLE_KEYS = {"theme", "color", "gradient", "transparency", "accent"}
+_STYLE_KEYS = {
+    "theme",
+    "color",
+    "gradient",
+    "transparency",
+    "accent",
+    "lit",
+    "tint",
+    "surface",
+    "corners",
+    "border",
+}
 
 
 def _is_template(value: object) -> bool:
@@ -1007,20 +1022,44 @@ def validate_style(raw: object) -> dict:
         out["transparency"] = transparency
     if "accent" in style:
         out["accent"] = _validate_colour(style["accent"], "style.accent")
+    if "lit" in style:
+        if not isinstance(style["lit"], str) or style["lit"] not in LIT_LOOKS:
+            raise MakerError("bad_value", "style.lit", f"expected one of {LIT_LOOKS}")
+        out["lit"] = style["lit"]
+    if "tint" in style:
+        if not isinstance(style["tint"], bool):
+            raise MakerError("bad_value", "style.tint", "expected true or false")
+        out["tint"] = style["tint"]
+    # The theme's own look (the first word) is the same as no key: not kept.
+    for key, words in (
+        ("surface", SURFACES),
+        ("corners", tuple(CORNERS)),
+        ("border", tuple(BORDERS)),
+    ):
+        if key not in style:
+            continue
+        word = style[key]
+        if not isinstance(word, str) or word not in words:
+            raise MakerError("bad_value", f"style.{key}", f"expected one of {words}")
+        if word != words[0]:
+            out[key] = word
     return out
 
 
 def validate_dashboard_options(raw: object) -> dict:
     """Validate the apollo_tab block of a dashboard configuration."""
     options = _as_mapping(raw, "apollo_tab")
-    _reject_unknown_keys(options, {"version", "theme"}, "apollo_tab")
+    _reject_unknown_keys(options, {"version", "theme", "accent"}, "apollo_tab")
     version = options.get("version", 1)
     if isinstance(version, bool) or version != 1:
         raise MakerError("bad_value", "apollo_tab.version", "version must be 1")
     theme = options.get("theme", DEFAULT_THEME)
-    if theme not in THEME_IDS:
+    if not isinstance(theme, str) or theme not in THEME_IDS:
         raise MakerError("bad_value", "apollo_tab.theme", f"unknown theme {theme!r}")
-    return {"version": 1, "theme": theme}
+    out = {"version": 1, "theme": theme}
+    if "accent" in options:
+        out["accent"] = _validate_colour(options["accent"], "apollo_tab.accent")
+    return out
 
 
 def is_tab_dashboard(config: object) -> bool:

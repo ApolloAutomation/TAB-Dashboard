@@ -490,17 +490,27 @@ def _hold(hold: Any, page_index: dict[str, int]) -> dict | None:
     return None
 
 
+def _radius_const(value: Any) -> int:
+    """Compile a radius or border width; anything but a whole number is an error."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContractError("bad_value", repr(value))
+    return value
+
+
 def _theme2(theme_in: dict, keys_only: bool) -> dict[str, Any]:
-    """Compile a theme entry. keys_only: only the keys it has (a page theme)."""
+    """Compile a theme entry. keys_only: only the keys it has (a page theme).
+
+    A colour, radius or width the contract does not take is an error.
+    """
     theme: dict[str, Any] = {}
     if not keys_only or "dark" in theme_in:
         theme["dark"] = 1 if theme_in.get("dark") else 0
     for key in THEME_COLOURS:
         if not keys_only or key in theme_in:
-            theme[key] = colour(theme_in.get(key, "#000000"))
+            theme[key] = _colour_const(theme_in.get(key, "#000000"))
     for key in RADII:
         if not keys_only or key in theme_in:
-            theme[key] = int(theme_in.get(key, 0))
+            theme[key] = _radius_const(theme_in.get(key, 0))
     return theme
 
 
@@ -509,10 +519,10 @@ def _style2(style: dict) -> dict[str, Any]:
     compiled: dict[str, Any] = {}
     for key in STYLE_COLOURS + STYLE_COLOURS_V2:
         if key in style:
-            compiled[key] = colour(style[key])
+            compiled[key] = _colour_const(style[key])
     for key in RADII:
         if key in style:
-            compiled[key] = int(style[key])
+            compiled[key] = _radius_const(style[key])
     if style.get("gd") in ("h", "v"):
         compiled["gd"] = 1 if style["gd"] == "h" else 0
     return compiled

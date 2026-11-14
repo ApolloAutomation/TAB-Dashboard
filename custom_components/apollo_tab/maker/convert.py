@@ -41,7 +41,7 @@ from .geometry import (
     place_section,
 )
 from .schema import validate_card_config, validate_dashboard_options
-from .style import resolve_style
+from .style import paints, resolve_style, status_for, with_accent
 
 _ICON = re.compile(ICON_RE)
 _PATH = re.compile(r"^[a-z0-9_-]{1,32}$")
@@ -79,6 +79,7 @@ def convert_dashboard(
     dl: int = 1,
     icons: dict | None = None,
     caps: Mapping[str, Any] | None = None,
+    status: Mapping[str, Any] | None = None,
 ) -> dict:
     """Return {"layout", "bindings", "warnings", "sources", "simpler"}.
 
@@ -94,7 +95,9 @@ def convert_dashboard(
     icons is the contract's icons.json: version 1 forms keep only icons of
     level 1 (none without it), and a layout v2 is fitted to caps (a
     tablet's, else what engine 0.2.0 answers) by leaving out detail pages
-    and then cards (C.4). Without icons nothing is fitted.
+    and then cards (C.4). Without icons nothing is fitted. status is the
+    library's status.json: the colours a card's roles good, warn, bad and
+    info take on its theme (without it, those of a dark theme).
     """
     if not isinstance(config, dict):
         config = {}
@@ -103,6 +106,8 @@ def convert_dashboard(
     options = _options(config, warnings)
     theme_id = options.get("theme", DEFAULT_THEME)
     theme = themes.get(theme_id) or themes.get(DEFAULT_THEME) or {}
+    if "accent" in options and theme:
+        theme = with_accent(theme, options["accent"])
     pages: list[dict] = []
     nav: list[dict] = []
     details: list[dict] = []
@@ -118,6 +123,7 @@ def convert_dashboard(
             "theme_id": theme_id,
             "theme": theme,
             "wall": theme.get("wall", "#000000"),
+            "status": status,
             "warnings": warnings,
             "dl": dl,
             "level1": _level1(icons),
@@ -468,7 +474,11 @@ def _convert_view(vi: int, view: object, env: dict, used_bases: set[str]) -> lis
 
 
 def _page_theme(view: dict, env: dict) -> dict | None:
-    """Return the theme entry a view names for its pages (layout v2 only)."""
+    """Return the theme entry a view names for its pages (layout v2 only).
+
+    A view that names the dashboard's own theme gets it with the
+    dashboard's accent.
+    """
     if env["dl"] != 2:
         return None
     options = view.get("apollo_tab")
@@ -476,6 +486,8 @@ def _page_theme(view: dict, env: dict) -> dict | None:
     entry = env["themes"].get(theme_id) if isinstance(theme_id, str) else None
     if not isinstance(entry, dict):
         return None
+    if theme_id == env["theme_id"]:
+        entry = env["theme"]
     return {"id": theme_id, **entry}
 
 
@@ -659,8 +671,8 @@ def _convert_card(
         warnings.append(_warning("visibility_ignored", vi, si, ci))
     style = card_config.get("style") or {}
     resolved = None
-    if style:
-        resolved = resolve_style(_element_theme(style, env), style, env["wall"])
+    if paints(style):
+        resolved = resolve_style(_element_theme(style, env), style, _page_wall(env))
     return {
         "kind": "card",
         "cols": columns,
@@ -678,7 +690,8 @@ def _convert_card(
 def _element_theme(style: dict, env: dict) -> dict:
     """Return the theme entry a card's style is resolved against.
 
-    The style's own theme, else the page's (layout v2), else the dashboard's.
+    The style's own theme, else the page's (layout v2), else the dashboard's
+    (with the dashboard's accent).
     """
     themes = env["themes"]
     page_theme = env.get("page_theme")
@@ -688,7 +701,28 @@ def _element_theme(style: dict, env: dict) -> dict:
             return named
     elif page_theme is not None:
         return {key: value for key, value in page_theme.items() if key != "id"}
-    return themes.get(env["theme_id"]) or {}
+    return env["theme"]
+
+
+def _element_status(style: dict, env: dict) -> dict:
+    """Return the status colours of the theme a card's style is resolved against."""
+    page_theme = env.get("page_theme")
+    if "theme" in style and env["themes"].get(style["theme"]):
+        theme_id = style["theme"]
+    elif "theme" not in style and page_theme is not None:
+        theme_id = page_theme["id"]
+    else:
+        theme_id = env["theme_id"]
+    dark = bool(_element_theme(style, env).get("dark"))
+    return status_for(env.get("status"), theme_id, dark)
+
+
+def _page_wall(env: dict) -> str:
+    """Return the wall of the page being made: its own theme's, else the layout's."""
+    page_theme = env.get("page_theme")
+    if page_theme is not None and isinstance(page_theme.get("wall"), str):
+        return page_theme["wall"]
+    return env["wall"]
 
 
 def _card_size(
@@ -729,8 +763,8 @@ def _convert_card2(
     cfg = {**cfg, "columns": columns, "rows": rows}
     style = cfg.get("style") or {}
     element = _element_theme(style, env)
-    resolved = resolve_style(element, style, env["wall"]) if style else None
-    roles = role_table({**element, **(resolved or {})})
+    resolved = resolve_style(element, style, _page_wall(env)) if paints(style) else None
+    roles = role_table({**element, **(resolved or {})}, _element_status(style, env))
     item: dict[str, Any] = {
         "kind": "card",
         "cols": columns,
