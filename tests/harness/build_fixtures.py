@@ -52,7 +52,7 @@ def load_components():
 
 
 def _schema1(components):
-    """Return the schema 1 cards; the panel draws no schema 2 card yet."""
+    """Return the schema 1 cards, whose example cards are in `cards`."""
     return {
         component_id: component
         for component_id, component in components.items()
@@ -60,11 +60,25 @@ def _schema1(components):
     }
 
 
+def _replaced(components):
+    """Return the ids of the cards a built-in card replaces (`legacy`)."""
+    return {
+        replaced_id
+        for component in components.values()
+        for replaced_id in component.get("replaces", [])
+    }
+
+
 def _library(components, theme_entries):
-    """Build the library object the panel would receive."""
+    """Build the library object the panel would receive.
+
+    Every bundled card, as Library.as_dict gives it: the form data of C.7
+    and the picker's group and search words.
+    """
     picker = read_picker()
+    replaced = _replaced(components)
     ordered = sorted(
-        _schema1(components).values(),
+        components.values(),
         key=lambda comp: (comp.get("source") != "builtin", comp.get("name", "")),
     )
     entries = [
@@ -75,15 +89,10 @@ def _library(components, theme_entries):
             "description": component.get("description", ""),
             "icon": component.get("icon"),
             "version": component.get("version", "1.0.0"),
-            "size": list(component.get("size", [1, 1])),
-            "grid": {
-                "columns": component["size"][0] * 6,
-                "rows": component["size"][1] * 3,
-            },
             "source": "builtin",
             "sensitive": bool(component.get("sensitive")),
             "approved": True,
-            "params": component.get("params", {}),
+            **form_entry(component, component["id"] in replaced),
             **picker_fields(component, picker),
         }
         for component in ordered
@@ -246,17 +255,14 @@ def _sample_dashboard():
 
 
 def _cards_v2(components):
-    """Return each schema 2 card as the editor will need it (packages I7, I8).
+    """Return each schema 2 card as the editor needs it (packages I7, I8).
 
     Per card: its static form data (C.7) and, per variant, the example card
-    the editor draws before a device is picked, compiled for layout v2, with
-    the values of its slots. Nothing here is drawn by the panel yet.
+    the stand-in Home Assistant answers card/subscribe with (the picker's
+    tiles, the browser card), compiled for layout v2, with the values of its
+    slots.
     """
-    replaced = {
-        replaced_id
-        for component in components.values()
-        for replaced_id in component.get("replaces", [])
-    }
+    replaced = _replaced(components)
     picker = read_picker()
     env = renderer()
     entries = []
@@ -316,8 +322,8 @@ def build() -> dict:
     library = _library(components, theme_entries)
     env = renderer()
     cards = []
-    for entry in library["components"]:
-        component = components[entry["id"]]
+    for component in sorted(_schema1(components).values(), key=lambda c: c["name"]):
+        entry = {"id": component["id"]}
         card_config = {"type": "custom:apollo-tab-card", "component": entry["id"]}
         validated = validate_card_config(component, card_config)
         compiled = compile_card(component, validated)

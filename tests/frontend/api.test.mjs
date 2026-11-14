@@ -2,6 +2,7 @@ import test, { mock } from "node:test";
 import assert from "node:assert";
 import {
   callCard,
+  cardFacts,
   onLayoutChanged,
   onLibraryChanged,
   previewLayout,
@@ -896,4 +897,22 @@ test("subscribeCard asks for the detail copy apart from the card", async () => {
     detail: true,
   });
   await flush();
+});
+
+test("cardFacts asks what a card's devices can do and gives null when it cannot be told", async () => {
+  const sent = [];
+  const answer = { can: { brightness: true }, has: { entity: true } };
+  const conn = (reply) => ({
+    sendMessagePromise(message) {
+      sent.push(message);
+      return reply();
+    },
+  });
+  assert.deepEqual(await cardFacts(conn(() => Promise.resolve(answer)), "apollo/light", { entity: "light.a" }), answer);
+  assert.deepEqual(sent[0], { type: "apollo_tab/card/facts", component: "apollo/light", params: { entity: "light.a" } });
+  await cardFacts(conn(() => Promise.resolve(answer)), "apollo/light", undefined);
+  assert.deepEqual(sent[1].params, {});
+  const failed = Object.assign(new Error("Unknown command."), { code: "unknown_command" });
+  assert.equal(await cardFacts(conn(() => Promise.reject(failed)), "apollo/light", {}), null);
+  assert.equal(await cardFacts(conn(() => Promise.resolve({ can: {} })), "apollo/light", {}), null);
 });

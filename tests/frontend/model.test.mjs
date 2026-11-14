@@ -3157,3 +3157,331 @@ test("followItem picks the same copy of a card that appears twice", () => {
   const fewer = model.removeItem(config, [0, 1, 2]);
   assert.deepStrictEqual(model.followItem(config, fewer, [0, 1, 3]), [0, 1, 2]);
 });
+
+// ---- schema 2 cards: the form data and the picker's rules (I8, C.7) ----
+
+const harnessFixtures = JSON.parse(
+  fs.readFileSync(path.resolve(here, "../harness/fixtures.json"), "utf8"),
+);
+const v2 = (id) => {
+  const entry = harnessFixtures.cards_v2.find((card) => card.id === id);
+  return { id, name: entry.name, icon: entry.icon, source: "builtin", ...entry.form };
+};
+const LIGHT = v2("apollo/light");
+const lampFacts = (can) => {
+  const facts = { toggle: true, icon: "mdi:lightbulb", kind: null, min_kelvin: 2000, max_kelvin: 6500, effect_list: [], ...can };
+  return { can: { ...facts, entity: { ...facts } }, has: { entity: true } };
+};
+const COLOUR_LAMP = lampFacts({ brightness: true, colour: true, temperature: true, effects: true, effect_list: ["Rainbow", "Candle", "Fire", "Party", "Storm"] });
+const ONOFF_LAMP = lampFacts({ brightness: false, colour: false, temperature: false, effects: false });
+const lightCard = (extra = {}) => ({
+  type: model.CARD_TYPE,
+  component: "apollo/light",
+  params: { entity: "light.kitchen" },
+  grid_options: { columns: 6, rows: 3 },
+  ...extra,
+});
+const onePage = (cards, span = 3) => ({ views: [{ title: "Home", sections: [{ type: "grid", column_span: span, cards }] }] });
+const rowOf = (form, name) => form.rows.find((row) => row.name === name);
+
+test("updateCard writes a card's options and named size, and takes them out", () => {
+  const config = onePage([lightCard()]);
+  const next = model.updateCard(config, [0, 0, 0], { options: { colour_control: "both" }, variant: "wide" });
+  assert.deepStrictEqual(next.views[0].sections[0].cards[0].options, { colour_control: "both" });
+  assert.equal(next.views[0].sections[0].cards[0].variant, "wide");
+  const back = model.updateCard(next, [0, 0, 0], { options: undefined, variant: undefined });
+  assert.equal("options" in back.views[0].sections[0].cards[0], false);
+  assert.equal("variant" in back.views[0].sections[0].cards[0], false);
+  const empty = model.updateCard(next, [0, 0, 0], { options: {} });
+  assert.equal("options" in empty.views[0].sections[0].cards[0], false);
+});
+
+test("an older card is not offered in the grid, the search or for a removed card's devices", () => {
+  const tile = { ...components[0], legacy: true };
+  const offered = { components: [tile, LIGHT, components[1]] };
+  const ids = (groups) => groups.flatMap((group) => group.cards.map((card) => card.id));
+  assert.deepStrictEqual(ids(model.pickerGroups(offered)), ["apollo/light", "apollo/thermostat"]);
+  assert.deepStrictEqual(ids(model.pickerGroups(offered, "light")), ["apollo/light"]);
+  assert.deepStrictEqual(model.offeredCards(offered).map((card) => card.id), ["apollo/light", "apollo/thermostat"]);
+  assert.deepStrictEqual(
+    model.offeredCards(offered).filter((card) => model.fitsDevices(card, ["light.kitchen"])).map((card) => card.id),
+    ["apollo/light"],
+  );
+  assert.equal(model.isOffered(components[0]), true);
+  assert.equal(model.isOffered(null), false);
+});
+
+test("an older card is offered the built-in card that replaces it, never a card from the folder", () => {
+  const tile = { ...components[0], legacy: true };
+  const mine = { ...LIGHT, id: "me/light", source: "user", replaces: ["apollo/light-tile"] };
+  assert.equal(model.newerCard({ components: [tile, mine] }, tile), null);
+  assert.equal(model.newerCard({ components: [mine, tile, LIGHT] }, tile).id, "apollo/light");
+  // An older built-in card is never offered in place of another older one.
+  const slider = { ...components[0], id: "apollo/light-slider", legacy: true, replaces: ["apollo/light-tile"] };
+  assert.equal(model.newerCard({ components: [slider, tile] }, tile), null);
+  assert.equal(model.newerCard({ components: [slider, LIGHT] }, tile).id, "apollo/light");
+  // A card that is not older is offered nothing.
+  assert.equal(model.newerCard({ components: [LIGHT] }, components[0]), null);
+});
+
+test("the swap keeps device, name, look and place and takes the closest named size", () => {
+  const style = { theme: "ocean", lit: "outline" };
+  const old = { type: model.CARD_TYPE, component: "apollo/light-tile", params: { entity: "light.kitchen" }, title: "Lamp", style, grid_options: { columns: 6, rows: 3 } };
+  const slider = { type: model.CARD_TYPE, component: "apollo/light-slider", params: { entity: "light.bedroom" }, grid_options: { columns: 12, rows: 3 } };
+  const config = onePage([{ type: "heading", heading: "Top" }, old, slider]);
+  const swapped = model.swapCard(config, [0, 0, 1], LIGHT);
+  const card = swapped.views[0].sections[0].cards[1];
+  assert.deepStrictEqual(card, {
+    type: model.CARD_TYPE,
+    component: "apollo/light",
+    params: { entity: "light.kitchen" },
+    title: "Lamp",
+    style,
+    variant: "tile",
+    grid_options: { columns: 6, rows: 3 },
+  });
+  assert.equal(swapped.views[0].sections[0].cards[0].type, "heading");
+  const wide = model.swapCard(config, [0, 0, 2], LIGHT).views[0].sections[0].cards[2];
+  assert.equal(wide.variant, "wide");
+  assert.deepStrictEqual(wide.grid_options, { columns: 12, rows: 3 });
+  assert.deepStrictEqual(wide.params, { entity: "light.bedroom" });
+  // A device the new card does not take is not kept.
+  const odd = onePage([{ ...old, params: { entity: "switch.fan" } }]);
+  assert.equal("params" in model.swapCard(odd, [0, 0, 0], LIGHT).views[0].sections[0].cards[0], false);
+  // The older card's own settings mean nothing to the new card: they go.
+  const kept = onePage([{ ...slider, options: { show_brightness: false }, variant: "huge" }]);
+  const fresh = model.swapCard(kept, [0, 0, 0], LIGHT).views[0].sections[0].cards[0];
+  assert.equal("options" in fresh, false);
+  assert.equal(fresh.variant, "wide");
+});
+
+test("a named size sets the card's size on the grid, as wide as its section lets it", () => {
+  const config = onePage([lightCard()]);
+  const large = model.setVariant(config, [0, 0, 0], LIGHT, "large").views[0].sections[0].cards[0];
+  assert.equal(large.variant, "large");
+  assert.deepStrictEqual(large.grid_options, { columns: 12, rows: 6 });
+  // The controls page is no size.
+  assert.equal("variant" in model.setVariant(config, [0, 0, 0], LIGHT, "full").views[0].sections[0].cards[0], false);
+  const narrow = { ...LIGHT, variants: [...LIGHT.variants, { id: "huge", name: "Huge", grid: [24, 6], picker: true }] };
+  const half = model.setVariant(onePage([lightCard()], 1), [0, 0, 0], narrow, "huge");
+  assert.deepStrictEqual(half.views[0].sections[0].cards[0].grid_options, { columns: 12, rows: 6 });
+});
+
+test("the size a card shows: picked, else the largest that fits, else the smallest", () => {
+  assert.equal(model.activeVariant(lightCard({ variant: "wide" }), LIGHT), "wide");
+  assert.equal(model.activeVariant(lightCard({ grid_options: { columns: 12, rows: 6 } }), LIGHT), "large");
+  assert.equal(model.activeVariant(lightCard({ grid_options: { columns: 12, rows: 3 } }), LIGHT), "wide");
+  assert.equal(model.activeVariant(lightCard({ grid_options: { columns: 3, rows: 2 } }), LIGHT), "tile");
+  assert.equal(model.activeVariant(lightCard({ grid_options: undefined }), LIGHT), "tile");
+  // A size the device cannot use is not shown; the first size that can is.
+  const sizes = [
+    { id: "tile", grid: [6, 3], offered: true },
+    { id: "large", grid: [12, 6], offered: false },
+  ];
+  assert.equal(model.activeVariant(lightCard({ variant: "large" }), LIGHT, sizes), "tile");
+  assert.equal(model.activeVariant(lightCard({ grid_options: { columns: 12, rows: 6 } }), LIGHT, sizes), "tile");
+});
+
+test("the form of the Light card for a colour lamp", () => {
+  const form = model.cardForm(LIGHT, lightCard(), COLOUR_LAMP);
+  assert.equal(form.known, true);
+  assert.deepStrictEqual(form.notes, []);
+  assert.ok(form.rows.every((row) => row.usable), "a row is greyed for a lamp that can do everything");
+  assert.equal(rowOf(form, "colour_control").value, "bar");
+  // Favourite colours are drawn only while Colour shows them.
+  assert.equal(rowOf(form, "favourites").shown, false);
+  const dots = model.cardForm(LIGHT, lightCard({ options: { colour_control: "dots" } }), COLOUR_LAMP);
+  assert.equal(rowOf(dots, "favourites").shown, true);
+  // The effects the lamp reports, the first four chosen.
+  assert.deepStrictEqual(rowOf(form, "effects_shown").value, ["Rainbow", "Candle", "Fire", "Party"]);
+  assert.deepStrictEqual(rowOf(form, "effects_shown").listed, COLOUR_LAMP.can.effect_list);
+  assert.deepStrictEqual(form.sizes.map((size) => size.id), ["tile", "wide", "large"]);
+  assert.equal(form.variant, "tile");
+  assert.deepStrictEqual(form.tap.choices.map((choice) => choice.value), ["toggle", "detail", "page", "none"]);
+  assert.equal(form.tap.value, "toggle");
+  assert.equal(form.hold, true);
+  assert.equal(form.lit, "fill");
+  assert.equal(form.tint, true);
+  assert.equal(form.icon, null);
+});
+
+test("the form of the Light card for an on/off lamp greys what it cannot do, with the reason", () => {
+  const form = model.cardForm(LIGHT, lightCard({ options: { show_brightness: true, colour_control: "both" } }), ONOFF_LAMP);
+  assert.deepStrictEqual(form.notes, ["This light only turns on and off."]);
+  const brightness = rowOf(form, "show_brightness");
+  assert.deepStrictEqual([brightness.shown, brightness.usable, brightness.value, brightness.reason], [true, false, false, "This light cannot be dimmed"]);
+  const colour = rowOf(form, "colour_control");
+  assert.deepStrictEqual([colour.usable, colour.value, colour.reason], [false, "none", "This light has no colour"]);
+  assert.equal(rowOf(form, "show_saturation").reason, "This light has no colour");
+  assert.equal(rowOf(form, "show_saturation").usable, false);
+  // No reason in the file: the form gives its general line.
+  const bare = { ...LIGHT, options: LIGHT.options.map((option) => ({ ...option, needs_text: "" })) };
+  const general = rowOf(model.cardForm(bare, lightCard(), ONOFF_LAMP), "show_saturation");
+  assert.deepStrictEqual([general.usable, general.reason], [false, ""]);
+  // What follows an option the lamp cannot use is not drawn.
+  assert.equal(rowOf(form, "bar_on_tile").shown, false);
+  assert.equal(rowOf(form, "favourites").shown, false);
+});
+
+test("until the device's facts are known nothing is greyed and no note shows", () => {
+  for (const facts of [null, { can: {}, has: { entity: false } }]) {
+    const form = model.cardForm(LIGHT, lightCard({ params: {} }), facts);
+    assert.equal(form.known, false);
+    assert.ok(form.rows.every((row) => row.usable));
+    assert.deepStrictEqual(form.notes, []);
+    assert.equal(rowOf(form, "effects_shown").known, false);
+  }
+});
+
+test("a stored choice the device no longer reports falls back to the default", () => {
+  const card = lightCard({ options: { effects_shown: ["Rainbow", "Gone"] } });
+  assert.deepStrictEqual(rowOf(model.cardForm(LIGHT, card, COLOUR_LAMP), "effects_shown").value, ["Rainbow", "Candle", "Fire", "Party"]);
+  const kept = lightCard({ options: { effects_shown: ["Storm"] } });
+  assert.deepStrictEqual(rowOf(model.cardForm(LIGHT, kept, COLOUR_LAMP), "effects_shown").value, ["Storm"]);
+});
+
+test("a tap choice the device cannot do is not offered, and a stored one says so", () => {
+  const card = { ...LIGHT, tap: { default: "toggle", choices: [...LIGHT.tap.choices, { value: "dim", label: "Dims it", needs: "can.brightness" }] } };
+  const onoff = model.cardForm(card, lightCard({ options: { tap: "dim" } }), ONOFF_LAMP);
+  assert.equal(onoff.tap.choices.some((choice) => choice.value === "dim"), false);
+  assert.deepStrictEqual([onoff.tap.value, onoff.tap.dropped], ["toggle", true]);
+  const colour = model.cardForm(card, lightCard({ options: { tap: "dim" } }), COLOUR_LAMP);
+  assert.deepStrictEqual([colour.tap.value, colour.tap.dropped], ["dim", false]);
+});
+
+test("a size the device cannot use is not offered, with its reason", () => {
+  const card = {
+    ...LIGHT,
+    variants: LIGHT.variants.map((variant) => (variant.id === "large"
+      ? { ...variant, needs: "can.brightness", needs_text: "Only for a light that dims" }
+      : variant)),
+  };
+  const large = model.cardForm(card, lightCard(), ONOFF_LAMP).sizes.find((size) => size.id === "large");
+  assert.deepStrictEqual([large.offered, large.reason], [false, "Only for a light that dims"]);
+  assert.equal(model.cardForm(card, lightCard(), COLOUR_LAMP).sizes.find((size) => size.id === "large").offered, true);
+});
+
+test("an option is stored only while it differs from its default", () => {
+  const config = onePage([lightCard()]);
+  const both = model.setOption(config, [0, 0, 0], "colour_control", "both", "bar");
+  assert.deepStrictEqual(both.views[0].sections[0].cards[0].options, { colour_control: "both" });
+  const back = model.setOption(both, [0, 0, 0], "colour_control", "bar", "bar");
+  assert.equal("options" in back.views[0].sections[0].cards[0], false);
+  const list = model.setOption(config, [0, 0, 0], "favourites", ["#FF453A"], ["#FF453A", "2700K"]);
+  assert.deepStrictEqual(list.views[0].sections[0].cards[0].options, { favourites: ["#FF453A"] });
+});
+
+test("the colour rows of the form keep the card's other looks", () => {
+  assert.deepStrictEqual(
+    model.mergeStyle({ theme: "ocean", lit: "icon", tint: false, color: "#112233" }, { theme: "dusk" }),
+    { lit: "icon", tint: false, theme: "dusk" },
+  );
+  assert.equal(model.mergeStyle({ theme: "ocean" }, undefined), undefined);
+  const config = onePage([lightCard({ style: { lit: "icon" } })]);
+  assert.deepStrictEqual(model.setStyleKey(config, [0, 0, 0], "tint", false).views[0].sections[0].cards[0].style, { lit: "icon", tint: false });
+  assert.equal("style" in model.setStyleKey(config, [0, 0, 0], "lit", undefined).views[0].sections[0].cards[0], false);
+});
+
+test("factNames reads facts as the converter does", () => {
+  const room = { params: { temperature: { kind: "entity" }, lights: { kind: "entity", multiple: true }, page: { kind: "page" } } };
+  const names = model.factNames(room, {
+    can: { icon: "mdi:thermometer", temperature: { kind: "temperature" }, lights: [{ colour: false, brightness: true }, { colour: true, brightness: true }] },
+    has: { temperature: true, lights: true, page: false },
+  });
+  assert.deepStrictEqual(names, {
+    "can.icon": "mdi:thermometer",
+    "can.temperature.kind": "temperature",
+    "can.lights.brightness": true,
+    "can.lights.colour": true,
+    "has.temperature": true,
+    "has.lights": true,
+    "has.page": false,
+    "tablet.v2": true,
+  });
+});
+
+test("the picker adds a card at once only for one required device", () => {
+  const spec = (extra) => ({ kind: "entity", domain: "light", ...extra });
+  assert.equal(model.singleEntityParam({ params: { entity: spec(), extra: spec({ optional: true }) } }), "entity");
+  assert.equal(model.singleEntityParam({ params: { entity: spec(), max: { kind: "number", default: 100 } } }), "entity");
+  assert.equal(model.singleEntityParam({ params: { entity: spec(), max: { kind: "number" } } }), null);
+  assert.equal(model.singleEntityParam({ params: { entity: spec({ multiple: true }) } }), null);
+  assert.equal(model.singleEntityParam({ params: { a: spec(), b: spec() } }), null);
+  assert.equal(model.singleEntityParam(LIGHT), "entity");
+});
+
+test("device fields of several kinds or any kind list the devices they take", () => {
+  const hass = { states: { "scene.movie": {}, "script.night": {}, "light.kitchen": {} } };
+  const choices = (spec) => model.entityChoices(hass, spec).map((choice) => choice.entity_id);
+  assert.deepStrictEqual(choices({ kind: "entity", domains: ["scene", "script"] }), ["scene.movie", "script.night"]);
+  assert.deepStrictEqual(choices({ kind: "entity", domains: [] }), ["light.kitchen", "scene.movie", "script.night"]);
+  assert.deepStrictEqual(choices({ kind: "entity", domain: "light" }), ["light.kitchen"]);
+  assert.deepStrictEqual(model.paramFields(v2("apollo/scenes")).map((field) => field.domains), [["scene", "script"]]);
+  assert.equal(model.fitsDevices(v2("apollo/scenes"), ["script.night"]), true);
+});
+
+test("a card's named size is one of its own sizes, not an unusual one", () => {
+  const small = { ...LIGHT, variants: [{ id: "small", name: "Small", grid: [6, 2], picker: true }] };
+  assert.equal(model.cardSize({ grid_options: { columns: 6, rows: 2 } }, small).exact, true);
+  assert.equal(model.cardSize({ grid_options: { columns: 6, rows: 2 } }, components[0]).exact, false);
+});
+
+test("a card for several kinds of device is grouped by its first kind", () => {
+  assert.equal(model.groupOf(v2("apollo/scenes")), "lights");
+  assert.equal(model.groupOf(v2("apollo/reading")), "more");
+});
+
+test("a stored value that does not fit its option counts as not stored", () => {
+  const effects = rowOf(LIGHT_FORM_OVER(), "effects_shown");
+  // Three effects stored where the file allows two: the default shows.
+  assert.deepStrictEqual(effects.value, ["Rainbow"]);
+  const bad = model.cardForm(LIGHT, lightCard({ options: { colour_control: "rainbow", show_white: "yes" } }), COLOUR_LAMP);
+  assert.equal(rowOf(bad, "colour_control").value, "bar");
+  assert.equal(rowOf(bad, "show_white").value, true);
+  const option = (extra) => ({ name: "x", type: "choice", multiple: true, max: 2, choices: [{ value: "a" }, { value: "b" }, { value: "c" }], ...extra });
+  assert.equal(model.optionValueFits(option(), ["a", "b"]), true);
+  assert.equal(model.optionValueFits(option(), ["a", "b", "c"]), false);
+  assert.equal(model.optionValueFits(option(), ["a", "a"]), false);
+  assert.equal(model.optionValueFits(option(), ["d"]), false);
+  assert.equal(model.optionValueFits({ type: "colours", max: 2 }, ["#FF0000", "#00FF00", "#0000FF"]), false);
+  assert.equal(model.optionValueFits({ type: "number", min: 0, max: 9 }, 10), false);
+  assert.equal(model.optionValueFits({ type: "text", max: 3 }, "four"), false);
+  assert.equal(model.optionValueFits({ type: "toggle" }, false), true);
+});
+
+function LIGHT_FORM_OVER() {
+  const narrow = { ...LIGHT, options: LIGHT.options.map((option) => (option.name === "effects_shown" ? { ...option, max: 2, default_first: 1 } : option)) };
+  return model.cardForm(narrow, lightCard({ options: { effects_shown: ["Storm", "Rainbow", "Candle"] } }), COLOUR_LAMP);
+}
+
+test("a change takes out options the file does not have and values that do not fit", () => {
+  const stored = { bogus: 5, tap: "detail", hold: false, colour_control: "rainbow", show_white: false, effects_shown: ["Nope", "Rainbow"] };
+  const config = onePage([lightCard({ options: stored })]);
+  const card = (next) => next.views[0].sections[0].cards[0];
+  // Without the facts a device list is not judged.
+  assert.deepStrictEqual(card(model.pruneOptions(config, [0, 0, 0], LIGHT)).options, {
+    tap: "detail",
+    hold: false,
+    show_white: false,
+    effects_shown: ["Nope", "Rainbow"],
+  });
+  assert.deepStrictEqual(card(model.pruneOptions(config, [0, 0, 0], LIGHT, COLOUR_LAMP)).options, {
+    tap: "detail",
+    hold: false,
+    show_white: false,
+  });
+  // Nothing to take out: the same config comes back.
+  const clean = onePage([lightCard({ options: { show_white: false } })]);
+  assert.equal(model.pruneOptions(clean, [0, 0, 0], LIGHT, COLOUR_LAMP), clean);
+  const gone = model.pruneOptions(onePage([lightCard({ options: { bogus: 1 } })]), [0, 0, 0], LIGHT);
+  assert.equal("options" in card(gone), false);
+});
+
+test("Show the device's colour is greyed for a lamp with no colour and one white", () => {
+  assert.equal(model.cardForm(LIGHT, lightCard(), COLOUR_LAMP).tintUsable, true);
+  assert.equal(model.cardForm(LIGHT, lightCard(), ONOFF_LAMP).tintUsable, false);
+  const warm = lampFacts({ brightness: true, colour: false, temperature: true, effects: false });
+  assert.equal(model.cardForm(LIGHT, lightCard(), warm).tintUsable, true);
+  // Before the facts are in nothing is greyed.
+  assert.equal(model.cardForm(LIGHT, lightCard(), null).tintUsable, true);
+});

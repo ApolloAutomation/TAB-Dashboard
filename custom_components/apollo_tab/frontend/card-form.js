@@ -5,6 +5,7 @@ import {
   accentText,
   formToStyle,
   isIcon,
+  kelvinRgb,
   parseCssColour,
   styleToForm,
   switchKnob,
@@ -15,8 +16,13 @@ import {
   MAX_UNITS_WIDE,
   PAGE_ICONS,
   PAGE_ICON_NAMES,
+  UNIT_COLUMNS,
+  UNIT_ROWS,
+  activeVariant,
+  cardForm,
   cardSize,
   entityChoices,
+  optionDefault,
   pageChoices,
   paramFields,
   styleDefaults,
@@ -119,6 +125,11 @@ export function formFields(component) {
   const entities = fields.filter((field) => field.kind === "entity");
   return fields.map((field) => {
     if (field.kind !== "entity") {
+      return field;
+    }
+    // A field for several kinds of device, or any kind, asks with the card
+    // file's own words when it has them.
+    if (!field.domain && field.label) {
       return field;
     }
     const question = whichLabel(field.domain);
@@ -285,7 +296,10 @@ function colourInput({ label, rgb, focus, onInput }) {
 // Move page right on the last page) cannot hold focus, so the control its
 // data-focus-alt names gets it, or else the nearest control that can take
 // it; focus then never drops to the page, where the next Tab would start
-// again from the top. Returns whether a control got focus.
+// again from the top. A control that is gone hands its focus to the one
+// whose data-focus-takes starts its name (a folded list's Change button
+// takes it for every choice in the list). Returns whether a control got
+// focus.
 export function restoreFocus(container, key) {
   if (!key) {
     return false;
@@ -293,7 +307,9 @@ export function restoreFocus(container, key) {
   const nodes = [...container.querySelectorAll("[data-focus]")];
   const target = nodes.find((node) => node.dataset.focus === key);
   if (!target) {
-    return false;
+    const heir = nodes.find((node) => node.dataset.focusTakes && key.startsWith(node.dataset.focusTakes) && !node.disabled);
+    heir?.focus();
+    return Boolean(heir);
   }
   if (!target.disabled) {
     target.focus();
@@ -658,6 +674,9 @@ function positionBlock({ canEarlier, canLater, onMove, pages, onMoveToPage }) {
 // dragging, which are saved as one undo step.
 export function buildCardForm(ctx) {
   const { card, component, readOnly } = ctx;
+  if (component.schema === 2) {
+    return buildCardForm2(ctx);
+  }
   const form = el("div", "form-block");
   form.append(itemHeading(component.name));
   if (component.description) {
@@ -666,6 +685,9 @@ export function buildCardForm(ctx) {
   form.append(el("div", "item-notes"));
   if (readOnly) {
     return form;
+  }
+  if (ctx.newer) {
+    form.append(newerCardNotice(ctx));
   }
 
   const fields = formFields(component);
@@ -711,19 +733,62 @@ export function buildCardForm(ctx) {
   return form;
 }
 
-function sizeBlock(ctx) {
+// The cards whose Width and Height steps were opened, so they stay open
+// while the form is drawn again or the card moves.
+const fineTuneOpen = new Set();
+
+// Size. A card with named sizes (cards spec C.7) shows them as the main
+// control; Width and Height wait behind "Fine-tune the size" until the
+// card's size differs from the size marked. `form` is the schema 2 form.
+function sizeBlock(ctx, form = null) {
   const block = el("div", "form-block");
   let size = cardSize(ctx.card, ctx.component);
+  // The card as the steps leave it, for the named sizes: the steps drop
+  // the picked size (designer.js onResize), so the size follows the grid.
+  let card = ctx.card;
+  const named = form && form.sizes.length > 1;
+  // The card by its kind and devices, which stay the same when it moves.
+  const openKey = `${ctx.component.id}|${JSON.stringify(ctx.card.params ?? {})}`;
 
   const resize = (w, h) => {
     const width = Math.min(ctx.maxWide, Math.max(1, w));
     const height = Math.min(MAX_UNITS_HIGH, Math.max(1, h));
     size = { w: width, h: height, exact: true };
+    card = { ...card, variant: undefined, grid_options: { ...card.grid_options, columns: width * UNIT_COLUMNS, rows: height * UNIT_ROWS } };
     ctx.onResize(width, height);
     redraw(block, draw);
   };
 
   const draw = () => {
+    block.append(el("h3", null, t("form.size")));
+    let shown = null;
+    let tuned = false;
+    if (named) {
+      sizeChips(form, ctx)(block, card);
+      const id = activeVariant(card, ctx.component, form.sizes);
+      shown = form.sizes.find((entry) => entry.id === id) || null;
+      tuned = Boolean(shown)
+        && (!size.exact || size.w * UNIT_COLUMNS !== shown.grid[0] || size.h * UNIT_ROWS !== shown.grid[1]);
+      if (!tuned && !fineTuneOpen.has(openKey)) {
+        block.append(
+          makeButton(t("form.size_fine"), {
+            kind: "text",
+            test: "size-fine-tune",
+            focus: "size-fine-tune",
+            onClick: () => {
+              fineTuneOpen.add(openKey);
+              redraw(block, draw);
+              restoreFocus(block, "wider");
+            },
+          }),
+        );
+        return;
+      }
+    }
+    // Once shown, the steps stay while this card is edited.
+    if (named) {
+      fineTuneOpen.add(openKey);
+    }
     const value = el("p", "size-value", t("form.size_value", { w: size.w, h: size.h }));
     value.setAttribute("aria-live", "polite");
     const width = el("div", "stepper");
@@ -777,20 +842,35 @@ function sizeBlock(ctx) {
         onClick: () => resize(size.w, size.h + 1),
       }),
     );
-    const own = Array.isArray(ctx.component.size) ? ctx.component.size : [1, 1];
-    block.append(el("h3", null, t("form.size")), value, width);
+    block.append(value, width);
     if (columns) {
       block.append(columns);
     }
-    block.append(
-      height,
-      makeButton(t("form.size_reset"), {
-        kind: "text",
-        test: "size-reset",
-        focus: "size-reset",
-        onClick: () => resize(Number(own[0]) || 1, Number(own[1]) || 1),
-      }),
-    );
+    block.append(height);
+    if (named) {
+      // Back to the size marked, shown only while the card differs from it.
+      if (tuned) {
+        block.append(
+          makeButton(t("form.size_back", { size: shown.name }), {
+            kind: "text",
+            test: "size-reset",
+            focus: "size-reset",
+            onClick: () => ctx.onVariant(shown.id),
+          }),
+        );
+      }
+      block.append(el("p", "helper", t("form.size_fits")));
+    } else {
+      const own = Array.isArray(ctx.component.size) ? ctx.component.size : [1, 1];
+      block.append(
+        makeButton(t("form.size_reset"), {
+          kind: "text",
+          test: "size-reset",
+          focus: "size-reset",
+          onClick: () => resize(Number(own[0]) || 1, Number(own[1]) || 1),
+        }),
+      );
+    }
     if (!size.exact) {
       block.append(el("p", "helper", t("form.size_odd")));
     }
@@ -817,6 +897,8 @@ function lookBlock(ctx) {
 
   const draw = () => {
     block.append(el("h3", null, t("form.look")));
+    // A schema 2 card's own look rows come first (C.7).
+    ctx.lookRows?.(block);
     const { field: themeField } = select({
       label: t("form.theme"),
       options: [["", t("form.theme_dashboard")], ...themes.map((theme) => [theme.id, theme.name])],
@@ -1168,4 +1250,737 @@ export function buildDashboardSettings(ctx) {
     );
   }
   return block;
+}
+
+// ---- the form of a schema 2 card (cards spec C.7) ----
+
+// "A newer card does this: Light." on an older card, with the button that
+// swaps it.
+function newerCardNotice(ctx) {
+  const notice = el("div", "newer-card");
+  notice.dataset.test = "newer-card";
+  notice.append(
+    el("p", null, t("form.newer", { card: ctx.newer.name })),
+    el("p", "helper", t("form.newer_helper")),
+    makeButton(t("form.newer_go"), {
+      test: "swap-card",
+      focus: "swap-card",
+      onClick: ctx.onSwap,
+    }),
+  );
+  return notice;
+}
+
+// The heading of one part of the form: Device, Size, What it shows,
+// Controls, Look.
+function partHeading(text) {
+  return el("h3", null, text);
+}
+
+// The line under a row the device cannot use: the file's reason, else the
+// general one.
+function reasonText(row) {
+  const reason = row.reason || t("form.needs_general");
+  // A file's reason is written without a full stop.
+  return /[.!?]$/.test(reason) ? reason : `${reason}.`;
+}
+
+// The reason on its own line, with a mark, so what this device cannot do
+// reads at once. The row's control names it as its description.
+function reasonLine(node, text) {
+  const line = el("p", "reason-line");
+  line.id = uid("reason");
+  line.dataset.test = "option-reason";
+  line.append(icon("mdi:information-outline"), el("span", null, text));
+  node.append(line);
+  const controls = [];
+  const walk = (parent) => {
+    for (const child of parent.children || []) {
+      if (["input", "select", "button"].includes(child.localName)) {
+        controls.push(child);
+      }
+      walk(child);
+    }
+  };
+  walk(node);
+  for (const control of controls) {
+    const before = control.getAttribute("aria-describedby");
+    control.setAttribute("aria-describedby", before ? `${before} ${line.id}` : line.id);
+  }
+}
+
+// The option names a `when` term reads ("show_brightness",
+// "!bar_on_tile", "colour_control=dots|both"); facts ("can.colour") are not
+// options.
+function whenOptions(row) {
+  const terms = Array.isArray(row.option.when) ? row.option.when : [];
+  return terms
+    .filter((term) => typeof term === "string")
+    .map((term) => term.replace(/^!/, "").split(/!?=/)[0])
+    .filter((name) => name && !name.includes("."));
+}
+
+// One row of the form for one option, with its label and help line; a row
+// the device cannot use is drawn switched off and greyed, with the reason.
+// A row that only shows when another option is on sits indented under it.
+function optionRow(row, ctx, names = []) {
+  const { option } = row;
+  const focus = `option:${row.name}`;
+  const disabled = !row.usable;
+  const help = option.help || "";
+  const change = (value, continuous = false) => ctx.onOption(row.name, value, row.fallback, continuous);
+  let node;
+  switch (option.type) {
+    case "toggle": {
+      const { field, helper } = switchRow({
+        label: option.label,
+        help,
+        checked: row.value === true,
+        disabled,
+        focus,
+        onChange: (checked) => change(checked),
+      });
+      node = el("div", "option-switch");
+      node.append(field);
+      if (helper) {
+        node.append(helper);
+      }
+      break;
+    }
+    case "choice":
+      node = option.multiple === true ? tickList(row, ctx, help, focus, disabled, change) : choiceList(row, help, focus, disabled, change);
+      break;
+    case "colours":
+      node = swatchRow(row, help, focus, disabled, change);
+      break;
+    case "text": {
+      const { field, input } = textInput({
+        label: option.label,
+        value: typeof row.value === "string" ? row.value : "",
+        maxLength: Number(option.max) || 40,
+        focus,
+        helper: help,
+        onInput: (text) => change(text, true),
+      });
+      input.disabled = disabled;
+      node = field;
+      break;
+    }
+    case "number":
+      node = numberOption(row, help, focus, disabled, change);
+      break;
+    case "colour":
+      node = colourOption(row, help, focus, disabled, change);
+      break;
+    case "icon":
+      node = iconChoice({
+        label: option.label,
+        value: row.value,
+        focus,
+        disabled,
+        help,
+        onChange: (name) => change(name),
+      });
+      break;
+    default:
+      return null;
+  }
+  if (disabled) {
+    reasonLine(node, reasonText(row));
+  }
+  node.dataset.test = "option-row";
+  node.dataset.option = row.name;
+  node.dataset.usable = String(row.usable);
+  node.classList.add("option-row");
+  node.classList.toggle("unusable", disabled);
+  node.classList.toggle("option-dependent", whenOptions(row).some((name) => names.includes(name)));
+  return node;
+}
+
+function choiceList(row, help, focus, disabled, change) {
+  const { option } = row;
+  const choices = Array.isArray(option.choices) ? option.choices : row.listed.map((value) => ({ value, label: value }));
+  // A greyed list shows a dash, not the value it counts as ("Off"), which
+  // would read like a choice the person made.
+  const options = disabled
+    ? [["", "\u2013"]]
+    : choices.map((choice) => [String(choice.value), String(choice.label)]);
+  const { field, control } = select({
+    label: option.label,
+    options,
+    value: disabled || row.value === null || row.value === undefined ? "" : String(row.value),
+    focus,
+    onChange: (value) => change(value),
+  });
+  control.disabled = disabled;
+  if (help) {
+    field.append(el("span", "helper", help));
+  }
+  return field;
+}
+
+// A multiple choice: the file's choices or what the device reports, as a
+// list of switches, at most `max` on.
+function tickList(row, ctx, help, focus, disabled, change) {
+  const { option } = row;
+  const wrap = el("div", "field tick-list");
+  const labelId = uid("ticks");
+  const label = el("span", "field-label", option.label);
+  label.id = labelId;
+  wrap.append(label);
+  const choices = Array.isArray(option.choices)
+    ? option.choices.map((choice) => [choice.value, choice.label])
+    : row.listed.map((value) => [value, value]);
+  const chosen = Array.isArray(row.value) ? row.value : [];
+  const max = Number(option.max) || 8;
+  if (!row.known) {
+    wrap.append(el("span", "helper", t("form.choose_device_first")));
+    return wrap;
+  }
+  if (!choices.length) {
+    // A greyed list says why on its own line; its help line stays.
+    if (!disabled || help) {
+      wrap.append(el("span", "helper", disabled ? help : t("form.list_empty")));
+    }
+    return wrap;
+  }
+  const list = el("div", "ticks");
+  list.setAttribute("role", "group");
+  list.setAttribute("aria-labelledby", labelId);
+  choices.forEach(([value, text], index) => {
+    const on = chosen.includes(value);
+    const { field } = switchRow({
+      label: String(text),
+      checked: on,
+      disabled: disabled || (!on && chosen.length >= max),
+      focus: `${focus}:${index}`,
+      onChange: (checked) => {
+        // Kept in the order the device or the file lists them.
+        const next = choices.map(([entry]) => entry).filter((entry) => (entry === value ? checked : chosen.includes(entry)));
+        change(next);
+      },
+    });
+    list.append(field);
+  });
+  wrap.append(list, el("span", "helper", [t("form.chosen_of", { count: chosen.length, max }), help].filter(Boolean).join(" ")));
+  return wrap;
+}
+
+const KELVIN_RE = /^(\d{4,5})K$/;
+
+function swatchHex(entry) {
+  const kelvin = typeof entry === "string" ? KELVIN_RE.exec(entry) : null;
+  if (kelvin) {
+    return rgbToHex(kelvinRgb(Number(kelvin[1])));
+  }
+  return typeof entry === "string" && /^#[0-9A-Fa-f]{6}$/.test(entry) ? entry.toLowerCase() : "#ffffff";
+}
+
+// A list of colours: a row of swatches, each one a colour well that can be
+// changed, then Add and Remove. A white of some warmth ("2700K") is a
+// swatch too; changing it makes it a colour.
+function swatchRow(row, help, focus, disabled, change) {
+  const { option } = row;
+  const wrap = el("div", "field swatch-field");
+  const labelId = uid("swatches");
+  const label = el("span", "field-label", option.label);
+  label.id = labelId;
+  const list = Array.isArray(row.value) ? [...row.value] : [];
+  const max = Number(option.max) || 8;
+  const swatches = el("div", "swatches");
+  swatches.setAttribute("role", "group");
+  swatches.setAttribute("aria-labelledby", labelId);
+  list.forEach((entry, index) => {
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = swatchHex(entry);
+    input.disabled = disabled;
+    input.dataset.focus = `${focus}:${index}`;
+    input.dataset.test = "swatch";
+    const kelvin = typeof entry === "string" ? KELVIN_RE.exec(entry) : null;
+    const name = kelvin ? t("form.colour_white", { kelvin: kelvin[1] }) : t("form.colour_n", { n: index + 1 });
+    // Under 4000 K a white looks orange on the swatch, so it says warm.
+    const warm = kelvin && Number(kelvin[1]) < 4000;
+    input.setAttribute("aria-label", name);
+    input.title = name;
+    input.addEventListener("input", () => {
+      const next = [...list];
+      next[index] = input.value.toUpperCase();
+      change(next, true);
+    });
+    // A white is named under its swatch, so it does not read as an orange.
+    const swatch = el("span", "swatch");
+    swatch.append(input);
+    if (kelvin) {
+      swatch.append(el("span", "swatch-mark", t(warm ? "form.colour_warm_mark" : "form.colour_white_mark")));
+    }
+    swatches.append(swatch);
+  });
+  // Add is hidden at the most the card can show; Remove then takes its
+  // focus.
+  const full = list.length >= max;
+  const add = makeButton(t("form.colour_add"), {
+    kind: "text",
+    test: "swatch-add",
+    focus: `${focus}:add`,
+    focusAlt: `${focus}:remove`,
+    disabled: disabled || full,
+    onClick: () => change([...list, "#FFFFFF"]),
+  });
+  add.hidden = full;
+  const buttons = el("div", "row-buttons");
+  buttons.append(
+    add,
+    makeButton(t("form.colour_remove"), {
+      kind: "text",
+      test: "swatch-remove",
+      focus: `${focus}:remove`,
+      focusAlt: `${focus}:add`,
+      disabled: disabled || !list.length,
+      onClick: () => change(list.slice(0, -1)),
+    }),
+  );
+  wrap.append(label, swatches, buttons, el("span", "helper", [t("form.colour_max", { max }), help].filter(Boolean).join(" ")));
+  return wrap;
+}
+
+function numberOption(row, help, focus, disabled, change) {
+  const { option } = row;
+  const wrap = el("label", "field");
+  const input = document.createElement("input");
+  input.type = "number";
+  input.step = option.step ? String(option.step) : "any";
+  if (Number.isFinite(option.min)) {
+    input.min = String(option.min);
+  }
+  if (Number.isFinite(option.max)) {
+    input.max = String(option.max);
+  }
+  input.value = Number.isFinite(row.value) ? String(row.value) : "";
+  input.disabled = disabled;
+  input.dataset.focus = focus;
+  input.addEventListener("input", () => {
+    const raw = input.value.trim();
+    const number = Number(raw);
+    if (!raw) {
+      change(undefined, true);
+    } else if (
+      Number.isFinite(number)
+      && !(Number.isFinite(option.min) && number < option.min)
+      && !(Number.isFinite(option.max) && number > option.max)
+    ) {
+      change(number, true);
+    }
+  });
+  const words = option.unit ? `${option.label} (${option.unit})` : option.label;
+  wrap.append(el("span", "field-label", words), input);
+  if (help) {
+    wrap.append(el("span", "helper", help));
+  }
+  return wrap;
+}
+
+// The colour roles of a theme, by their plain names (C.2.3).
+const COLOUR_ROLES = {
+  accent: "form.role_accent",
+  accent2: "form.role_accent2",
+  good: "form.role_good",
+  warn: "form.role_warn",
+  bad: "form.role_bad",
+  info: "form.role_info",
+  text: "form.role_text",
+  muted: "form.role_muted",
+};
+
+// One colour: a role of the theme by name, or a colour of one's own.
+function colourOption(row, help, focus, disabled, change) {
+  const { option } = row;
+  const own = typeof row.value === "string" && row.value.startsWith("#");
+  const wrap = el("div", "field");
+  const { field, control } = select({
+    label: option.label,
+    options: [...Object.entries(COLOUR_ROLES).map(([role, key]) => [role, t(key)]), ["own", t("form.role_own")]],
+    value: own ? "own" : String(row.value || ""),
+    focus,
+    onChange: (value) => change(value === "own" ? "#FFFFFF" : value),
+  });
+  control.disabled = disabled;
+  wrap.append(field);
+  if (own) {
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = row.value.toLowerCase();
+    input.disabled = disabled;
+    input.dataset.focus = `${focus}:own`;
+    input.setAttribute("aria-label", t("form.role_own"));
+    input.addEventListener("input", () => change(input.value.toUpperCase(), true));
+    wrap.append(input);
+  }
+  if (help) {
+    wrap.append(el("span", "helper", help));
+  }
+  return wrap;
+}
+
+// The icon as one line, "Icon: The device's own", with Change, which opens
+// the grid of the icons that have plain names after "The device's own"
+// (A24). A pick draws the form again, folded, with the new icon.
+// `own` is the device's icon, shown while none is picked.
+function iconChoice({ label, value, own = null, focus, disabled = false, help = "", onChange }) {
+  const wrap = el("div", "field icon-choice");
+  let open = false;
+  const draw = () => {
+    const labelNode = el("span", "field-label", label);
+    labelNode.id = uid("icon");
+    wrap.append(labelNode);
+    if (!open) {
+      const line = el("div", "icon-current");
+      const shown = isIcon(value) ? value : own;
+      const words = isIcon(value) ? t(PAGE_ICON_NAMES[value] || "form.icon") : t("form.icon_default");
+      if (isIcon(shown)) {
+        line.append(icon(shown));
+      }
+      const change = makeButton(t("form.icon_change"), {
+        kind: "text",
+        test: "icon-change",
+        focus: `${focus}:change`,
+        ariaLabel: `${t("form.icon_change")}: ${label}`,
+        disabled,
+        onClick: () => {
+          open = true;
+          redraw(wrap, draw);
+          wrap.querySelector('[aria-pressed="true"]')?.focus();
+        },
+      });
+      change.dataset.focusTakes = `${focus}:`;
+      line.append(el("span", "icon-current-name", words), change);
+      wrap.append(line);
+    } else {
+      const grid = el("div", "icon-grid");
+      grid.setAttribute("role", "group");
+      grid.setAttribute("aria-labelledby", labelNode.id);
+      const ownButton = makeButton(t("form.icon_default"), {
+        className: "icon-default",
+        focus: `${focus}:default`,
+        focusAlt: `${focus}:change`,
+        test: "card-icon-default",
+        disabled,
+        onClick: () => onChange(undefined),
+      });
+      ownButton.setAttribute("aria-pressed", String(!isIcon(value)));
+      grid.append(ownButton);
+      for (const name of PAGE_ICONS) {
+        const plain = t(PAGE_ICON_NAMES[name]);
+        const button = makeButton(null, {
+          ariaLabel: plain,
+          focus: `${focus}:${name}`,
+          focusAlt: `${focus}:change`,
+          test: "card-icon",
+          disabled,
+          onClick: () => onChange(name),
+        });
+        button.title = plain;
+        button.dataset.icon = name;
+        button.setAttribute("aria-pressed", String(value === name));
+        button.append(icon(name));
+        grid.append(button);
+      }
+      wrap.append(grid);
+    }
+    if (help) {
+      wrap.append(el("span", "helper", help));
+    }
+  };
+  draw();
+  return wrap;
+}
+
+// The rows of one part from the card's options; a kind of option this
+// panel does not know is left out with one quiet line (A12).
+function optionRows(rows, section, ctx, names = []) {
+  const nodes = [];
+  let unknown = false;
+  for (const row of rows) {
+    if (row.option.section !== section || !row.shown) {
+      continue;
+    }
+    if (!row.supported) {
+      unknown = true;
+      continue;
+    }
+    const node = optionRow(row, ctx, names);
+    if (node) {
+      nodes.push(node);
+    }
+  }
+  if (unknown) {
+    nodes.push(el("p", "helper", t("form.option_unknown")));
+  }
+  return nodes;
+}
+
+// The named sizes as one radio group: a press picks the size, and the card
+// takes its size on the grid. The size marked is the one the picture
+// shows; a press on it puts the card back to that size after the steps
+// changed it. A size the device cannot use is not offered; its reason is
+// said under the group.
+function sizeChips(form, ctx) {
+  return (block, card) => {
+    if (form.sizes.length < 2) {
+      return;
+    }
+    const shown = activeVariant(card, ctx.component, form.sizes);
+    const group = el("div", "segmented size-chips");
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-label", t("form.size"));
+    const name = uid("size");
+    for (const size of form.sizes) {
+      if (!size.offered) {
+        continue;
+      }
+      const label = el("label");
+      label.dataset.test = "size-chip";
+      label.dataset.variant = size.id;
+      const input = el("input");
+      input.type = "radio";
+      input.name = name;
+      input.value = size.id;
+      input.checked = shown === size.id;
+      input.dataset.focus = `size:${size.id}`;
+      const marked = input.checked;
+      input.addEventListener("change", () => ctx.onVariant(size.id));
+      // A radio already on fires no change, only a click.
+      input.addEventListener("click", () => {
+        if (marked) {
+          ctx.onVariant(size.id);
+        }
+      });
+      label.append(input, el("span", null, size.name));
+      group.append(label);
+    }
+    block.append(group);
+    for (const size of form.sizes.filter((entry) => !entry.offered)) {
+      const line = el("p", "helper", t("form.size_not_offered", { size: size.name, reason: size.reason || t("form.needs_general") }));
+      line.dataset.test = "size-not-offered";
+      block.append(line);
+    }
+  };
+}
+
+// The looks of a card while it is on (style.lit, E.1).
+const LIT_LOOKS = {
+  fill: "form.lit_fill",
+  icon: "form.lit_icon",
+  outline: "form.lit_outline",
+  none: "form.lit_none",
+};
+
+export function buildCardForm2(ctx) {
+  const { card, component, readOnly } = ctx;
+  const form = el("div", "form-block card-form-2");
+  form.append(itemHeading(component.name));
+  if (component.description) {
+    form.append(el("p", "helper", component.description));
+  }
+  form.append(el("div", "item-notes"));
+  if (readOnly) {
+    return form;
+  }
+  const state = cardForm(component, card, ctx.facts);
+  // The value the form shows when nothing is stored, for "store only what
+  // differs" (model.js::setOption).
+  for (const row of state.rows) {
+    row.fallback = row.usable ? optionDefault(row.option, row.listed) : row.value;
+  }
+
+  // The card file's notes whose `when` holds, at the top.
+  for (const text of state.notes) {
+    const note = el("p", "note-line", text);
+    note.dataset.test = "card-note";
+    form.append(note);
+  }
+
+  // Device
+  const fields = formFields(component);
+  if (fields.length) {
+    const device = el("div", "form-block");
+    device.append(partHeading(t("form.device")));
+    for (const field of fields) {
+      device.append(
+        buildParamField({
+          hass: ctx.hass,
+          field,
+          value: card.params?.[field.name],
+          config: ctx.config,
+          compact: ctx.compact,
+          collapsed: true,
+          onChange: (value) => ctx.onParam(field.name, value, field.kind === "number"),
+        }),
+      );
+    }
+    form.append(device);
+  }
+
+  // Size: the named sizes, then the finer steps.
+  form.append(sizeBlock(ctx, state));
+
+  // The card's own rows come next, so what the card can do is in view
+  // first: what it shows, then the controls on it.
+  const optionNames = state.rows.map((entry) => entry.name);
+  const shown = optionRows(state.rows, "shows", ctx, optionNames);
+  if (shown.length) {
+    const shows = el("div", "form-block");
+    shows.dataset.part = "shows";
+    shows.append(partHeading(t("form.shows")), ...shown);
+    form.append(shows);
+  }
+  const own = optionRows(state.rows, "controls", ctx, optionNames);
+  if (own.length) {
+    const controls = el("div", "form-block");
+    controls.dataset.part = "controls";
+    controls.append(partHeading(t("form.on_card")));
+    // Some rows are drawn only on the larger sizes or on the controls page.
+    const larger = state.sizes.length > 1;
+    const detail = component.has_detail === true;
+    let note = "";
+    if (larger && detail) {
+      note = t("form.on_card_some");
+    } else if (larger) {
+      note = t("form.on_card_larger");
+    } else if (detail) {
+      note = t("form.on_card_detail");
+    }
+    if (note) {
+      const line = el("p", "helper", note);
+      line.dataset.test = "on-card-note";
+      controls.append(line);
+    }
+    controls.append(...own);
+    form.append(controls);
+  }
+
+  // Name and icon
+  const naming = el("div", "form-block");
+  naming.dataset.part = "name";
+  naming.append(partHeading(t("form.name_icon")));
+  if (state.title) {
+    const { field } = textInput({
+      label: t("form.name"),
+      value: typeof card.title === "string" ? card.title : "",
+      maxLength: 60,
+      test: "form-name",
+      helper: t("form.name_helper"),
+      onInput: (text) => ctx.onTitle(text),
+    });
+    naming.append(field);
+  }
+  if (state.icon !== undefined) {
+    naming.append(
+      iconChoice({
+        label: t("form.icon"),
+        value: state.icon,
+        own: isIcon(state.names["can.icon"]) ? state.names["can.icon"] : component.icon,
+        focus: "card-icon",
+        onChange: (name) => ctx.onStandard("icon", name),
+      }),
+    );
+  }
+  if (naming.children.length > 1) {
+    form.append(naming);
+  }
+
+  // A tap and a hold
+  const touch = el("div", "form-block");
+  touch.dataset.part = "touch";
+  touch.append(partHeading(t("form.touch")));
+  if (state.tap) {
+    const { field } = select({
+      label: t("form.tap"),
+      options: state.tap.choices.map((choice) => [choice.value, choice.label]),
+      value: state.tap.value,
+      focus: "card-tap",
+      test: "card-tap",
+      onChange: (value) => ctx.onStandard("tap", value),
+    });
+    if (state.tap.dropped) {
+      field.append(el("span", "helper", t("form.tap_not_offered")));
+    }
+    touch.append(field);
+    if (state.tap.value === "page") {
+      const pages = pageChoices(ctx.config);
+      const { field: pageField } = select({
+        label: t("form.tap_page"),
+        options: [["", t("pick.page_none")], ...pages.map((page) => [page.path, page.title || page.path])],
+        value: state.tap.page,
+        focus: "card-tap-page",
+        test: "card-tap-page",
+        onChange: (value) => ctx.onStandard("tap_page", value || undefined),
+      });
+      touch.append(pageField);
+    }
+  }
+  if (state.hold !== null) {
+    touch.append(
+      switchRow({
+        label: t("form.hold"),
+        checked: state.hold,
+        focus: "card-hold",
+        test: "card-hold",
+        onChange: (checked) => ctx.onStandard("hold", checked ? undefined : false),
+      }).field,
+    );
+  }
+  if (touch.children.length > 1) {
+    form.append(touch);
+  }
+
+  // Look: the card's own rows, then the shared ones.
+  const lookCtx = {
+    ...ctx,
+    lookRows: (block) => {
+      if (state.lit !== null) {
+        const { field } = select({
+          label: t("form.lit"),
+          options: Object.entries(LIT_LOOKS).map(([look, key]) => [look, t(key)]),
+          value: state.lit,
+          focus: "card-lit",
+          test: "card-lit",
+          onChange: (value) => ctx.onLook("lit", value === component.standard?.lit ? undefined : value),
+        });
+        field.append(el("span", "helper", t("form.lit_helper")));
+        block.append(field);
+      }
+      if (state.tint !== null) {
+        // Greyed and off for a device with no colour; what is stored stays.
+        const { field, helper } = switchRow({
+          label: t("form.tint"),
+          help: state.tintUsable ? "" : t("form.tint_no_colour"),
+          checked: state.tintUsable && state.tint,
+          disabled: !state.tintUsable,
+          focus: "card-tint",
+          test: "card-tint",
+          onChange: (checked) => ctx.onLook("tint", checked ? undefined : false),
+        });
+        const row = el("div", "option-switch option-row");
+        row.classList.toggle("unusable", !state.tintUsable);
+        row.append(field);
+        if (helper) {
+          row.append(helper);
+        }
+        block.append(row);
+      }
+      block.append(...optionRows(state.rows, "look", ctx, optionNames));
+    },
+  };
+  form.append(lookBlock(lookCtx));
+  form.append(positionBlock(ctx));
+  form.append(
+    makeButton(t("form.remove"), {
+      kind: "danger",
+      test: "remove-card",
+      focus: "remove-card",
+      onClick: ctx.onRemove,
+    }),
+  );
+  return form;
 }

@@ -1475,6 +1475,156 @@ export const formStyles = `
   overflow-wrap: anywhere;
   user-select: all;
 }
+/* The form of a schema 2 card (cards spec C.7). Plain rows; the inspector
+   of the redesign's package 4 draws them later. */
+.card-form-2 > .form-block + .form-block {
+  padding-block-start: 4px;
+  border-block-start: 1px solid var(--tab-line);
+}
+/* An option row with its help line under it, 4 px apart. */
+.option-switch {
+  display: grid;
+  gap: 0;
+}
+.option-switch > .helper {
+  margin-block-start: -8px;
+}
+/* A row the device cannot use: greyed, with its reason on its own line
+   in the text colour, after a mark. */
+.option-row.unusable .field-label,
+.option-row.unusable .check > span {
+  color: var(--tab-text-2);
+}
+.option-row .helper {
+  color: var(--tab-text-2);
+}
+.reason-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0 0;
+  color: var(--tab-text);
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
+}
+.reason-line > ha-icon {
+  --mdc-icon-size: 16px;
+  flex: 0 0 auto;
+  margin-block-start: 1px;
+  color: var(--tab-text-2);
+}
+/* A row that shows only while another option is on sits under it. */
+.option-row.option-dependent {
+  margin-inline-start: 16px;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--tab-line);
+}
+.ticks {
+  display: grid;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--tab-line);
+}
+.ticks .check {
+  min-height: 44px;
+}
+/* Round, four to a row, as the card draws its favourite colours. */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 64px);
+  align-items: start;
+  gap: 8px 4px;
+}
+.swatch {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.swatch input[type="color"] {
+  padding: 3px;
+  border-radius: 50%;
+}
+.swatch input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.swatch input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+.swatch input[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+.row-buttons > [hidden] {
+  display: none;
+}
+/* Add and Remove are text buttons; their words line up with the label. */
+.swatch-field > .row-buttons {
+  margin-inline-start: -12px;
+}
+.swatch-mark {
+  color: var(--tab-text-2);
+  font-size: var(--tab-fs-small);
+  line-height: 1;
+}
+/* The line under a part's heading sits close to it. */
+.card-form-2 .form-block > h3 + .helper {
+  margin-block-start: -8px;
+}
+/* The icon as one line: the icon, its name and Change at the end. */
+.icon-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tab-control-s);
+  --mdc-icon-size: 24px;
+}
+.icon-current-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.icon-current > button.text {
+  margin-inline-end: -12px;
+}
+/* Switch rows one after another share one 48 px pitch. A switch row
+   holds its words in the middle of 48 px, so after any other row it takes
+   back the same 12 px: every option row then starts the same distance
+   under the one before it. */
+.card-form-2 .form-block > :is(.check, .option-row) + :is(.check, .option-switch) {
+  margin-block-start: -12px;
+}
+.card-form-2 .form-block > .helper + .option-switch {
+  margin-block-start: -8px;
+}
+.size-chips {
+  flex-wrap: wrap;
+  justify-self: start;
+  max-width: 100%;
+}
+.size-chips label {
+  min-height: var(--tab-control-s);
+}
+@media (pointer: coarse) {
+  .size-chips label {
+    min-height: 40px;
+  }
+}
+.icon-grid .icon-default {
+  grid-column: span 3;
+  padding-inline: 8px;
+  font-size: var(--tab-fs-small);
+}
+.newer-card {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--tab-r-s);
+  background: color-mix(in srgb, var(--tab-info) 12%, var(--tab-surface));
+}
+.newer-card > p {
+  margin: 0;
+}
 `;
 
 // The editor is only ever made by the panel and sits in the panel's shadow

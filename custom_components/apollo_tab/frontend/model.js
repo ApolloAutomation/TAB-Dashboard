@@ -1,4 +1,4 @@
-import { cleanConfig, isIcon, warningBoxKind } from "./logic.js";
+import { cleanConfig, isIcon, termHolds, warningBoxKind, whenTruthy } from "./logic.js";
 
 export const CARD_TYPE = "custom:apollo-tab-card";
 export const PREVIEW_TYPE = "custom:apollo-tab-preview";
@@ -1203,6 +1203,9 @@ export function updateCard(config, source, changes) {
     "title",
     "style",
     "grid_options",
+    // A schema 2 card's own settings and its named size (C.2.3).
+    "options",
+    "variant",
   ]) {
     if (!Object.prototype.hasOwnProperty.call(changes, key)) {
       continue;
@@ -1215,6 +1218,9 @@ export function updateCard(config, source, changes) {
     }
   }
 
+  if (isPlainObject(card.options) && !Object.keys(card.options).length) {
+    delete card.options;
+  }
   section.cards[ci] = cleanConfig(card);
   return next;
 }
@@ -1262,9 +1268,16 @@ export function cardSize(card, component) {
 
   const rawWidth = columns / UNIT_COLUMNS;
   const rawHeight = rows / UNIT_ROWS;
-  const exact = columnsExact
+  // A named size of the card (a variant, such as Small 6 x 2) is one of its
+  // own sizes, not an unusual one.
+  const named = columnsExact && pickerVariants(component).some(
+    (variant) => variant.grid[0] === columns && variant.grid[1] === rows,
+  );
+  const exact = named || (
+    columnsExact
     && Number.isInteger(rawWidth)
-    && Number.isInteger(rawHeight);
+    && Number.isInteger(rawHeight)
+  );
 
   return {
     w: exact ? rawWidth : Math.max(1, Math.round(rawWidth)),
@@ -1711,7 +1724,8 @@ export function groupOf(component) {
   let domain = null;
   for (const spec of Object.values(params)) {
     if (isPlainObject(spec) && spec.kind === "entity") {
-      domain = spec.domain;
+      // A field for several kinds goes by its first kind.
+      domain = typeof spec.domain === "string" ? spec.domain : fieldDomains(spec)[0] ?? null;
       break;
     }
   }
@@ -1761,7 +1775,7 @@ export function pickerGroups(library, query = "", describe = null) {
   );
 
   for (const component of components) {
-    if (!isPlainObject(component)) {
+    if (!isOffered(component)) {
       continue;
     }
 
@@ -1807,6 +1821,15 @@ export function paramFields(component) {
       domain: safeSpec.kind === "entity"
         ? safeSpec.domain
         : undefined,
+      // Every kind a device field takes; [] takes any (C.7). Cards of the
+      // first schema give only `domain`.
+      domains: safeSpec.kind === "entity"
+        ? fieldDomains(safeSpec)
+        : undefined,
+      optional: safeSpec.kind === "entity"
+        ? safeSpec.optional === true
+        : undefined,
+      label: typeof safeSpec.label === "string" ? safeSpec.label : "",
       multiple: safeSpec.kind === "entity"
         ? safeSpec.multiple === true
         : undefined,
@@ -1823,22 +1846,34 @@ export function paramFields(component) {
   });
 }
 
+// The one device field a card needs, when the picker can add the card the
+// moment that device is chosen: exactly one device field is required and it
+// takes one device. Optional device fields, number fields with a default and
+// the card's options do not count (C.7, A14). Otherwise null.
 export function singleEntityParam(component) {
   const params = isPlainObject(component)
     && isPlainObject(component.params)
     ? Object.entries(component.params)
     : [];
 
-  if (params.length !== 1) {
+  const required = [];
+  for (const [name, spec] of params) {
+    if (!isPlainObject(spec)) {
+      return null;
+    }
+    if (spec.kind === "entity" && spec.optional === true) {
+      continue;
+    }
+    if (spec.kind === "number" && spec.default !== null && spec.default !== undefined) {
+      continue;
+    }
+    required.push([name, spec]);
+  }
+  if (required.length !== 1) {
     return null;
   }
-
-  const [name, spec] = params[0];
-  return isPlainObject(spec)
-    && spec.kind === "entity"
-    && spec.multiple !== true
-    ? name
-    : null;
+  const [name, spec] = required[0];
+  return spec.kind === "entity" && spec.multiple !== true ? name : null;
 }
 
 // The device fields of `component` that can take one of `entityIds`, each
@@ -1854,14 +1889,14 @@ function fittingFields(component, entityIds) {
   const fields = [];
 
   for (const [name, spec] of params) {
-    if (
-      !isPlainObject(spec)
-      || spec.kind !== "entity"
-      || typeof spec.domain !== "string"
-    ) {
+    if (!isPlainObject(spec) || spec.kind !== "entity") {
       continue;
     }
-    const fit = ids.filter((id) => id.startsWith(`${spec.domain}.`));
+    const domains = fieldDomains(spec);
+    if (!domains.length && typeof spec.domain !== "string") {
+      continue;
+    }
+    const fit = ids.filter((id) => takesDevice(spec, id));
     if (fit.length > 0) {
       fields.push([name, fit]);
     }
@@ -1913,10 +1948,6 @@ export function entityChoices(hass, spec, query = "") {
   const areas = isPlainObject(safeHass.areas)
     ? safeHass.areas
     : {};
-  const domain = isPlainObject(spec) && typeof spec.domain === "string"
-    ? spec.domain
-    : "";
-  const prefix = `${domain}.`;
   const words = String(query)
     .trim()
     .toLowerCase()
@@ -1925,7 +1956,7 @@ export function entityChoices(hass, spec, query = "") {
   const choices = [];
 
   for (const [entityId, state] of Object.entries(states)) {
-    if (!entityId.startsWith(prefix)) {
+    if (!takesDevice(spec, entityId)) {
       continue;
     }
 
@@ -2586,4 +2617,547 @@ export function devicesLeft(entityIds, params) {
   return (Array.isArray(entityIds) ? entityIds : []).filter(
     (id) => typeof id === "string" && !used.has(id),
   );
+}
+
+// ---- schema 2 cards: kinds of device, the picker's rules, the form (C.7) ----
+
+// The kinds of device a device field takes; [] takes any.
+export function fieldDomains(spec) {
+  if (!isPlainObject(spec)) {
+    return [];
+  }
+  if (Array.isArray(spec.domains)) {
+    return spec.domains.filter((domain) => typeof domain === "string");
+  }
+  return typeof spec.domain === "string" ? [spec.domain] : [];
+}
+
+// Whether a device field can take this device.
+export function takesDevice(spec, entityId) {
+  if (typeof entityId !== "string" || !ENTITY_ID_RE.test(entityId)) {
+    return false;
+  }
+  const domains = fieldDomains(spec);
+  return !domains.length || domains.includes(entityId.split(".", 1)[0]);
+}
+
+// A card the picker offers: allowed or not, but never an older card that a
+// newer built-in card replaces (`legacy`). This one rule holds for the grid,
+// the search and the cards offered for a removed card's devices.
+export function isOffered(component) {
+  return isPlainObject(component) && component.legacy !== true;
+}
+
+export function offeredCards(library) {
+  const components = isPlainObject(library) && Array.isArray(library.components)
+    ? library.components
+    : [];
+  return components.filter(isOffered);
+}
+
+// The built-in card that does what an older card did: one whose `replaces`
+// names it. Only a built-in card is ever chosen; a file from the person's
+// folder cannot claim to replace one (C.2.1).
+export function newerCard(library, component) {
+  if (!isPlainObject(component) || component.legacy !== true) {
+    return null;
+  }
+  const components = isPlainObject(library) && Array.isArray(library.components)
+    ? library.components
+    : [];
+  return components.find(
+    (entry) => isPlainObject(entry)
+      && entry.source === "builtin"
+      && entry.legacy !== true
+      && Array.isArray(entry.replaces)
+      && entry.replaces.includes(component.id),
+  ) ?? null;
+}
+
+// The card's named sizes a person can pick: every variant but its controls
+// page (`picker: false`).
+export function pickerVariants(component) {
+  const variants = isPlainObject(component) && Array.isArray(component.variants)
+    ? component.variants
+    : [];
+  return variants.filter(
+    (variant) => isPlainObject(variant)
+      && typeof variant.id === "string"
+      && variant.picker !== false
+      && Array.isArray(variant.grid)
+      && Number.isInteger(variant.grid[0])
+      && Number.isInteger(variant.grid[1]),
+  );
+}
+
+function sectionOf(config, source) {
+  const parts = sourceParts(source);
+  return parts === null ? null : sectionAt(config, parts[0], parts[1]);
+}
+
+// The grid size a named size takes in this section: as wide as the
+// section lets it be.
+function variantGrid(config, source, variant) {
+  const section = sectionOf(config, source);
+  const span = section ? sectionSpan(section) : 3;
+  return {
+    columns: Math.min(variant.grid[0], 12 * span),
+    rows: Math.min(variant.grid[1], MAX_UNITS_HIGH * UNIT_ROWS),
+  };
+}
+
+// Swaps an older card for its newer card. Kept: the devices (params of the
+// same name that the new card takes), the name on the card, the look and
+// the place; the size becomes the new card's named size closest to the old
+// card's size (A15). One change, so one undo step.
+export function swapCard(config, source, newer) {
+  const next = structuredClone(config);
+  const parts = sourceParts(source);
+  if (parts === null || parts[2] === null || !isPlainObject(newer)) {
+    return next;
+  }
+  const [vi, si, ci] = parts;
+  const section = sectionAt(next, vi, si);
+  const old = section && Array.isArray(section.cards) ? section.cards[ci] : null;
+  if (!isPlainObject(old)) {
+    return next;
+  }
+  const specs = isPlainObject(newer.params) ? newer.params : {};
+  const oldParams = isPlainObject(old.params) ? old.params : {};
+  const params = {};
+  for (const [name, value] of Object.entries(oldParams)) {
+    const spec = specs[name];
+    if (!isPlainObject(spec)) {
+      continue;
+    }
+    if (spec.kind !== "entity") {
+      params[name] = structuredClone(value);
+      continue;
+    }
+    const ids = (Array.isArray(value) ? value : [value]).filter((id) => takesDevice(spec, id));
+    if (spec.multiple === true && ids.length) {
+      params[name] = ids;
+    } else if (spec.multiple !== true && typeof value === "string" && ids.length) {
+      params[name] = value;
+    }
+  }
+  const size = cardSize(old, null);
+  const columns = isPlainObject(old.grid_options) && Number.isInteger(old.grid_options.columns)
+    ? old.grid_options.columns
+    : size.w * UNIT_COLUMNS;
+  const rows = isPlainObject(old.grid_options) && Number.isInteger(old.grid_options.rows)
+    ? old.grid_options.rows
+    : size.h * UNIT_ROWS;
+  const sizes = pickerVariants(newer);
+  let closest = null;
+  let best = Infinity;
+  for (const variant of sizes) {
+    const distance = Math.abs(variant.grid[0] - columns) + Math.abs(variant.grid[1] - rows);
+    if (distance < best) {
+      best = distance;
+      closest = variant;
+    }
+  }
+  const card = { ...old, type: CARD_TYPE, component: newer.id, params };
+  delete card.options;
+  delete card.variant;
+  if (closest) {
+    card.variant = closest.id;
+    card.grid_options = {
+      ...(isPlainObject(old.grid_options) ? old.grid_options : {}),
+      ...variantGrid(next, source, closest),
+    };
+  }
+  section.cards[ci] = cleanConfig(card);
+  return next;
+}
+
+// Picks a named size: the card stores it and takes its size on the grid.
+export function setVariant(config, source, component, variantId) {
+  const variant = pickerVariants(component).find((entry) => entry.id === variantId);
+  const current = getCard(config, source);
+  if (!variant || !isPlainObject(current)) {
+    return structuredClone(config);
+  }
+  return updateCard(config, source, {
+    variant: variant.id,
+    grid_options: {
+      ...(isPlainObject(current.grid_options) ? current.grid_options : {}),
+      ...variantGrid(config, source, variant),
+    },
+  });
+}
+
+// The style keys the card form's colour rows write; every other key of a
+// card's style (the looks of section E: lit, tint, surface, corners, border)
+// is kept when those rows change.
+const FORM_STYLE_KEYS = ["theme", "color", "gradient", "transparency", "accent"];
+
+export function mergeStyle(current, formStyle) {
+  const kept = {};
+  for (const [key, value] of Object.entries(isPlainObject(current) ? current : {})) {
+    if (!FORM_STYLE_KEYS.includes(key)) {
+      kept[key] = structuredClone(value);
+    }
+  }
+  const style = { ...kept, ...(isPlainObject(formStyle) ? formStyle : {}) };
+  return Object.keys(style).length ? style : undefined;
+}
+
+// Sets one key of a card's style; undefined takes it out.
+export function setStyleKey(config, source, key, value) {
+  const current = getCard(config, source);
+  if (!isPlainObject(current)) {
+    return structuredClone(config);
+  }
+  const style = { ...(isPlainObject(current.style) ? current.style : {}) };
+  if (value === undefined) {
+    delete style[key];
+  } else {
+    style[key] = value;
+  }
+  return updateCard(config, source, { style: Object.keys(style).length ? style : undefined });
+}
+
+// The names a `when` reads (C.2.5), from the answer of card/facts, as the
+// converter makes them (maker/compile2.py::_fact_names): the first device's
+// facts as can.<what>, each device field's as can.<param>.<what> (for
+// several devices the first value that counts), has.<param>, and
+// tablet.v2, which the editor counts as true.
+export function factNames(component, facts) {
+  const names = {};
+  const can = isPlainObject(facts) && isPlainObject(facts.can) ? facts.can : {};
+  const has = isPlainObject(facts) && isPlainObject(facts.has) ? facts.has : {};
+  const params = isPlainObject(component) && isPlainObject(component.params) ? component.params : {};
+  const entityParams = Object.keys(params).filter((name) => params[name]?.kind === "entity");
+  for (const [key, value] of Object.entries(can)) {
+    if (!entityParams.includes(key)) {
+      names[`can.${key}`] = value;
+    }
+  }
+  for (const param of entityParams) {
+    const value = can[param];
+    if (isPlainObject(value)) {
+      for (const [key, entry] of Object.entries(value)) {
+        names[`can.${param}.${key}`] = entry;
+      }
+    } else if (Array.isArray(value)) {
+      const keys = [...new Set(value.filter(isPlainObject).flatMap((entry) => Object.keys(entry)))].sort();
+      for (const key of keys) {
+        const values = value.filter(isPlainObject).map((entry) => entry[key]);
+        const held = values.filter((entry) => whenTruthy(entry));
+        names[`can.${param}.${key}`] = held.length ? held[0] : values[0];
+      }
+    }
+  }
+  for (const [param, value] of Object.entries(has)) {
+    names[`has.${param}`] = value;
+  }
+  names["tablet.v2"] = true;
+  return names;
+}
+
+// An option's value when nothing is stored: its default, or for a choice
+// from what the device reports, the first entries of that list.
+export function optionDefault(option, listed = []) {
+  if (!isPlainObject(option)) {
+    return null;
+  }
+  if (option.from) {
+    if (option.multiple === true) {
+      return listed.slice(0, Number(option.default_first) || 0);
+    }
+    return option.default_first && listed.length ? listed[0] : null;
+  }
+  const value = option.default;
+  return Array.isArray(value) ? [...value] : value ?? null;
+}
+
+// An option the device cannot use counts as off: a toggle off, a choice its
+// first choice, a list empty (C.2.3).
+export function optionOff(option) {
+  switch (option?.type) {
+    case "toggle":
+      return false;
+    case "choice":
+      if (option.multiple === true) {
+        return [];
+      }
+      if (option.from) {
+        return null;
+      }
+      return Array.isArray(option.choices) && option.choices.length ? option.choices[0].value : null;
+    case "colours":
+      return [];
+    case "text":
+      return "";
+    case "icon":
+    case "colour":
+      return null;
+    default:
+      return option?.default ?? null;
+  }
+}
+
+// The kinds of option the form can show; another kind is left out with one
+// line (A12).
+export const OPTION_TYPES = ["toggle", "choice", "colours", "text", "number", "colour", "icon"];
+
+// The standard options a card keeps in its options next to its own
+// (maker/compile2.py::_standard).
+const STANDARD_OPTIONS = ["tap", "tap_page", "hold", "icon", "ask"];
+
+// Whether a stored value fits its option, by the converter's checks
+// (maker/schema2.py::check_option_value). A value that does not fit counts
+// as not stored, so the option's default shows, as on the tablet. Entries
+// of a list from the device are checked against that list elsewhere.
+export function optionValueFits(option, value) {
+  if (!isPlainObject(option)) {
+    return false;
+  }
+  const max = Number.isInteger(option.max) ? option.max : 8;
+  const keys = Array.isArray(option.choices) ? option.choices.map((choice) => choice?.value) : null;
+  const oneChoice = (item) => typeof item === "string" && (keys === null || keys.includes(item));
+  switch (option.type) {
+    case "toggle":
+      return typeof value === "boolean";
+    case "choice":
+      if (option.multiple !== true) {
+        return oneChoice(value);
+      }
+      return Array.isArray(value)
+        && value.length <= max
+        && value.every(oneChoice)
+        && new Set(value).size === value.length;
+    case "colours":
+      return Array.isArray(value) && value.length <= max && value.every((item) => typeof item === "string");
+    case "text":
+      return typeof value === "string" && (!Number.isInteger(option.max) || value.length <= option.max);
+    case "number":
+      return typeof value === "number"
+        && Number.isFinite(value)
+        && !(Number.isFinite(option.min) && value < option.min)
+        && !(Number.isFinite(option.max) && value > option.max);
+    case "icon":
+      return value === null || isIcon(value);
+    case "colour":
+      return typeof value === "string";
+    default:
+      return true;
+  }
+}
+
+// Takes out of a card's options what its file does not have and values
+// that do not fit, so a change in the form does not keep old leftovers.
+// With the device's facts, entries a device list no longer has go too.
+export function pruneOptions(config, source, component, facts = null) {
+  const current = getCard(config, source);
+  if (!isPlainObject(current) || !isPlainObject(current.options) || !isPlainObject(component)) {
+    return config;
+  }
+  const specs = new Map(
+    (Array.isArray(component.options) ? component.options : [])
+      .filter((option) => isPlainObject(option) && typeof option.name === "string")
+      .map((option) => [option.name, option]),
+  );
+  const known = isPlainObject(facts) && Object.values(facts.has || {}).some(Boolean);
+  const names = known ? factNames(component, facts) : {};
+  const options = {};
+  for (const [name, value] of Object.entries(current.options)) {
+    const option = specs.get(name);
+    if (!option) {
+      if (STANDARD_OPTIONS.includes(name)) {
+        options[name] = value;
+      }
+      continue;
+    }
+    if (!optionValueFits(option, value)) {
+      continue;
+    }
+    if (option.from && known) {
+      const listed = Array.isArray(names[option.from]) ? names[option.from] : [];
+      if (!(Array.isArray(value) ? value : [value]).every((entry) => listed.includes(entry))) {
+        continue;
+      }
+    }
+    options[name] = value;
+  }
+  if (stableStringify(options) === stableStringify(current.options)) {
+    return config;
+  }
+  return updateCard(config, source, { options: Object.keys(options).length ? options : undefined });
+}
+
+// Whether a term holds for the form. Until the device's facts are known
+// (no device chosen yet, or the answer not in), a term on a fact or a
+// device field counts as holding, so nothing is greyed by guess.
+function formTermHolds(term, names, known) {
+  if (!known && typeof term === "string" && /^!?(can|has)\./.test(term)) {
+    return true;
+  }
+  return termHolds(term, names);
+}
+
+function formWhen(terms, names, known) {
+  return (Array.isArray(terms) ? terms : []).every((term) => formTermHolds(term, names, known));
+}
+
+// Everything the form of a schema 2 card shows, worked out from the card's
+// file (component, from the library), the stored card and the answer of
+// card/facts (null while it is not known). Per option: its value, whether
+// it is drawn (`when`), whether the device can use it (`needs`) and why not.
+export function cardForm(component, card, facts = null) {
+  const safeCard = isPlainObject(card) ? card : {};
+  const stored = isPlainObject(safeCard.options) ? safeCard.options : {};
+  const style = isPlainObject(safeCard.style) ? safeCard.style : {};
+  const known = isPlainObject(facts) && Object.values(facts.has || {}).some(Boolean);
+  const names = known ? factNames(component, facts) : { "tablet.v2": true };
+  const options = isPlainObject(component) && Array.isArray(component.options) ? component.options : [];
+
+  const rows = [];
+  for (const option of options) {
+    if (!isPlainObject(option) || typeof option.name !== "string") {
+      continue;
+    }
+    const listed = option.from && Array.isArray(names[option.from]) ? names[option.from] : [];
+    let value;
+    if (Object.hasOwn(stored, option.name) && optionValueFits(option, stored[option.name])) {
+      value = structuredClone(stored[option.name]);
+      const values = Array.isArray(value) ? value : [value];
+      if (option.from && known && !values.every((entry) => listed.includes(entry))) {
+        value = optionDefault(option, listed);
+      }
+    } else {
+      value = optionDefault(option, listed);
+    }
+    const usable = !option.needs || formTermHolds(option.needs, names, known);
+    if (!usable) {
+      value = optionOff(option);
+    }
+    rows.push({
+      option,
+      name: option.name,
+      value,
+      usable,
+      // The file's reason, else none: the form then gives the general line.
+      reason: usable ? "" : String(option.needs_text || ""),
+      listed,
+      known: !option.from || known,
+      supported: OPTION_TYPES.includes(option.type),
+    });
+  }
+  for (const row of rows) {
+    names[row.name] = row.value;
+  }
+  for (const row of rows) {
+    row.shown = formWhen(row.option.when, names, known);
+  }
+
+  const sizes = pickerVariants(component).map((variant) => {
+    const offered = !variant.needs || formTermHolds(variant.needs, names, known);
+    return {
+      id: variant.id,
+      name: String(variant.name || variant.id),
+      grid: [...variant.grid],
+      offered,
+      reason: offered ? "" : String(variant.needs_text || ""),
+    };
+  });
+
+  const tap = isPlainObject(component?.tap) && Array.isArray(component.tap.choices) ? component.tap : null;
+  let tapRow = null;
+  if (tap) {
+    const choices = tap.choices.filter(
+      (choice) => isPlainObject(choice) && (!choice.needs || formTermHolds(choice.needs, names, known)),
+    );
+    const wanted = Object.hasOwn(stored, "tap") ? stored.tap : tap.default;
+    const chosen = choices.find((choice) => choice.value === wanted);
+    tapRow = {
+      choices,
+      value: chosen ? chosen.value : tap.default,
+      // The stored choice is one this device cannot do (A25).
+      dropped: Object.hasOwn(stored, "tap") && !chosen,
+      page: typeof stored.tap_page === "string" ? stored.tap_page : "",
+    };
+  }
+
+  const standard = isPlainObject(component?.standard) ? component.standard : {};
+  const notes = (Array.isArray(component?.notes) ? component.notes : []).filter(
+    (note) => isPlainObject(note)
+      && typeof note.text === "string"
+      // A note is about the device, so it waits for the facts.
+      && known
+      && formWhen(note.when, names, known),
+  );
+
+  return {
+    known,
+    names,
+    rows,
+    sizes,
+    variant: activeVariant(safeCard, component, sizes),
+    tap: tapRow,
+    hold: standard.hold === true && component?.has_detail === true
+      ? stored.hold !== false
+      : null,
+    icon: standard.icon === true ? (isIcon(stored.icon) ? stored.icon : null) : undefined,
+    title: standard.title !== false,
+    lit: typeof standard.lit === "string"
+      ? (typeof style.lit === "string" ? style.lit : standard.lit)
+      : null,
+    tint: standard.tint === true ? style.tint !== false : null,
+    // A device known to have no colour and no warmth of white has none to
+    // show.
+    tintUsable: !(known && names["can.colour"] === false && names["can.temperature"] !== true),
+    notes: notes.map((note) => note.text),
+  };
+}
+
+// The named size a card shows (maker/compile2.py::_variant): the one the
+// person picked, else the largest that fits the card's size, else the
+// smallest. A size the device cannot use is never the one shown: a card
+// stored with one shows the first size that can.
+export function activeVariant(card, component, sizes = null) {
+  const list = sizes || pickerVariants(component).map((variant) => ({ ...variant, offered: true }));
+  const offered = list.filter((variant) => variant.offered !== false);
+  if (!offered.length) {
+    return null;
+  }
+  const storedId = isPlainObject(card) ? card.variant : undefined;
+  if (typeof storedId === "string" && list.some((variant) => variant.id === storedId)) {
+    return offered.some((variant) => variant.id === storedId) ? storedId : offered[0].id;
+  }
+  const grid = isPlainObject(card?.grid_options) ? card.grid_options : {};
+  const columns = grid.columns === "full"
+    ? 36
+    : Number.isInteger(grid.columns) ? grid.columns : offered[0].grid[0];
+  const rows = Number.isInteger(grid.rows) ? grid.rows : offered[0].grid[1];
+  const area = (variant) => variant.grid[0] * variant.grid[1];
+  const fits = offered.filter((variant) => variant.grid[0] <= columns && variant.grid[1] <= rows);
+  const pool = fits.length ? fits : offered;
+  let best = pool[0];
+  for (const variant of pool) {
+    const better = fits.length ? area(variant) > area(best) : area(variant) < area(best);
+    if (better) {
+      best = variant;
+    }
+  }
+  return best.id;
+}
+
+// Sets one of the card's options. Only what differs from the default is
+// stored (C.2.3), so a card keeps following its file's defaults.
+// fallback is the value the form shows when nothing is stored.
+export function setOption(config, source, name, value, fallback) {
+  const current = getCard(config, source);
+  if (!isPlainObject(current) || typeof name !== "string") {
+    return structuredClone(config);
+  }
+  const options = { ...(isPlainObject(current.options) ? current.options : {}) };
+  if (value === undefined || stableStringify(value) === stableStringify(fallback)) {
+    delete options[name];
+  } else {
+    options[name] = structuredClone(value);
+  }
+  return updateCard(config, source, { options: Object.keys(options).length ? options : undefined });
 }

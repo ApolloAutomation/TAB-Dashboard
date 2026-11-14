@@ -1269,3 +1269,107 @@ export function barMarks(n, mark) {
   }
   return plainBars.map((role, index) => (index < k ? role : index === k ? "acc" : "card2"));
 }
+
+// ---- `when`: whether a part or a form row of a schema 2 card is there ----
+// The twin of maker/when.py; both pass tests/fixtures/when_vectors.json.
+// `names` is one flat map: an option by its name, a fact as can.<what> or
+// can.<param>.<what>, has.<param>, and tablet.v2. A missing name is false.
+
+const WHEN_TERM = /^(!)?([a-z][a-z0-9_]*(?:\.[a-z0-9][a-z0-9_]*){0,2})(?:(=|!=)([a-z0-9_]+(?:\|[a-z0-9_]+)*))?$/;
+
+// Yes, a number that is not 0, a text that is not empty and not "none", a
+// list or a map that is not empty.
+export function whenTruthy(value) {
+  if (value === null || value === undefined || value === false) {
+    return false;
+  }
+  if (value === true) {
+    return true;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    return value !== "" && value !== "none";
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return false;
+}
+
+function whenText(value) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  return typeof value === "string" ? value : null;
+}
+
+// For a list one entry is enough; "none" also matches no value, an empty
+// text and an empty list.
+function whenEquals(value, wanted) {
+  if (wanted.includes("none") && !whenTruthy(value)) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => entry !== null && entry !== undefined && whenEquals(entry, wanted));
+  }
+  const text = whenText(value);
+  return text !== null && wanted.includes(text);
+}
+
+// One term: name, !name, name=a|b or name!=a|b. A bad shape never holds.
+export function termHolds(term, names) {
+  const match = typeof term === "string" ? WHEN_TERM.exec(term) : null;
+  if (!match) {
+    return false;
+  }
+  const [, negate, name, op, values] = match;
+  if (negate && op) {
+    return false;
+  }
+  const map = names && typeof names === "object" ? names : {};
+  const value = Object.hasOwn(map, name) ? map[name] : undefined;
+  if (!op) {
+    const held = whenTruthy(value);
+    return negate ? !held : held;
+  }
+  const held = whenEquals(value, values.split("|"));
+  return op === "=" ? held : !held;
+}
+
+// Every term of a `when` list holds. No terms: it holds.
+export function whenHolds(terms, names) {
+  return (Array.isArray(terms) ? terms : []).every((term) => termHolds(term, names));
+}
+
+// [r, g, b] of a white of that warmth: Home Assistant's own fit, as
+// maker/compile2.py::kelvin_rgb gives it.
+export function kelvinRgb(kelvin) {
+  const temp = Math.min(Math.max(Number(kelvin) || 0, 1000), 40000) / 100;
+  const clamp = (value) => Math.min(Math.max(value, 0), 255);
+  let red;
+  let green;
+  let blue;
+  if (temp <= 66) {
+    red = 255;
+    green = clamp(99.4708025861 * Math.log(temp) - 161.1195681661);
+  } else {
+    red = clamp(329.698727446 * Math.pow(temp - 60, -0.1332047592));
+    green = clamp(288.1221695283 * Math.pow(temp - 60, -0.0755148492));
+  }
+  if (temp >= 66) {
+    blue = 255;
+  } else if (temp <= 19) {
+    blue = 0;
+  } else {
+    blue = clamp(138.5177312231 * Math.log(temp - 10) - 305.0447927307);
+  }
+  return [red, green, blue].map((part) => Math.floor(part + 0.5));
+}

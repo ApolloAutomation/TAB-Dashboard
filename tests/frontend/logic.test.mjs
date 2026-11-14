@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
+import fs from "node:fs";
 import * as logic from "../../custom_components/apollo_tab/frontend/logic.js";
 
 test("isHex accepts six digit colours", () => {
@@ -552,4 +553,43 @@ test("compactCard cuts the empty band of a detail copy down to one gap", () => {
   const layout = { w: [], r: [0, 0, 10, 10] };
   assert.equal(logic.compactCard(layout), layout);
   assert.equal(logic.compactCard(null), null);
+});
+
+// ---- `when` (C.2.5): the vectors shared with maker/when.py ----
+
+const whenVectors = JSON.parse(
+  fs.readFileSync(new URL("../fixtures/when_vectors.json", import.meta.url), "utf8"),
+);
+
+test("whenHolds gives every answer of when_vectors.json", () => {
+  assert.ok(whenVectors.cases.length >= 50);
+  const wrong = [];
+  for (const entry of whenVectors.cases) {
+    const names = entry.names === "base" ? whenVectors.base : entry.names;
+    if (logic.whenHolds(entry.terms, names) !== entry.holds) {
+      wrong.push(`${JSON.stringify(entry.terms)}: ${entry.why}`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test("whenHolds reads only a map's own names", () => {
+  assert.equal(logic.termHolds("constructor", {}), false);
+  assert.equal(logic.termHolds("!constructor", {}), true);
+  // A name the map only inherits is not a fact.
+  const inherited = Object.create({ "can.dim": true, "has.effects": "on" });
+  assert.equal(logic.termHolds("can.dim", inherited), false);
+  assert.equal(logic.termHolds("has.effects=on", inherited), false);
+  // A negated comparison is a bad term, so it never holds either way.
+  assert.equal(logic.termHolds("!has.mode=heat", { "has.mode": "heat" }), false);
+  assert.equal(logic.termHolds("!has.mode=heat", { "has.mode": "cool" }), false);
+  assert.equal(logic.whenHolds(null, {}), true);
+  assert.equal(logic.whenHolds(["a"], null), false);
+});
+
+test("kelvinRgb gives Home Assistant's whites", () => {
+  // The values of maker/compile2.py::kelvin_rgb.
+  assert.deepEqual(logic.kelvinRgb(2700), [255, 167, 87]);
+  assert.deepEqual(logic.kelvinRgb(6500), [255, 254, 250]);
+  assert.deepEqual(logic.kelvinRgb(1500), [255, 108, 0]);
 });

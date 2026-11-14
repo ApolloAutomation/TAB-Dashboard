@@ -258,12 +258,27 @@ def test_the_shipped_light_is_the_light_of_d1() -> None:
     lamp's tile shows "badge, name, state" as D.1 draws it, not "0%". The
     favourites are not on Wide: eight dots need two rows, which a wide card
     does not hold (the fit test decides, D: "a row that does not fit moves
-    to the next larger variant").
+    to the next larger variant"). The form's words are added too: a help line
+    for each option and the reason of each greyed row; they change nothing
+    the tablet gets.
     """
     shipped = yaml.safe_load(
         (LIBRARY / "components" / STEP_A["apollo/light"]).read_text("utf-8")
     )
     d1 = yaml.safe_load(D1_TEXT)
+    helps = {name: spec.pop("help") for name, spec in shipped["options"].items()}
+    assert sorted(helps) == sorted(d1["options"])
+    assert all(helps.values())
+    added = {"bar_on_tile", "show_saturation", "effects_shown"}
+    reasons = {
+        name: shipped["options"][name].pop("needs_text") for name in sorted(added)
+    }
+    assert reasons == {
+        "bar_on_tile": "This light cannot be dimmed",
+        "effects_shown": "This light has no effects",
+        "show_saturation": "This light has no colour",
+    }
+    assert not any("needs_text" in d1["options"][name] for name in added)
     assert shipped.pop("notes") == [
         {"text": "This light only turns on and off.", "when": ["!can.brightness"]}
     ]

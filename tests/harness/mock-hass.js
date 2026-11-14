@@ -87,11 +87,31 @@ const STATES = [
   ["alarm_control_panel.home", "disarmed", "House alarm"],
 ];
 
+// What three lamps can do, as Home Assistant reports it: the kitchen lamp
+// shows colours and whites and has effects, the bedroom lamp only dims and
+// the living room lamp only turns on and off. The harness server reads what
+// a card can do from these (card/facts and the picture).
+const LAMP_ATTRIBUTES = {
+  "light.kitchen": {
+    supported_color_modes: ["hs", "color_temp"],
+    color_mode: "hs",
+    brightness: 173,
+    hs_color: [30, 58],
+    rgb_color: [255, 177, 107],
+    min_color_temp_kelvin: 2000,
+    max_color_temp_kelvin: 6535,
+    effect_list: ["Rainbow", "Candle", "Fire", "Party", "Storm"],
+    supported_features: 4,
+  },
+  "light.bedroom": { supported_color_modes: ["brightness"], color_mode: "brightness", brightness: 128 },
+  "light.living_room": { supported_color_modes: ["onoff"] },
+};
+
 function sampleStates() {
   return Object.fromEntries(
     STATES.map(([entityId, state, name]) => [
       entityId,
-      { entity_id: entityId, state, attributes: { friendly_name: name } },
+      { entity_id: entityId, state, attributes: { friendly_name: name, ...LAMP_ATTRIBUTES[entityId] } },
     ]),
   );
 }
@@ -682,10 +702,24 @@ export function createMockHass(fixtures, options = {}) {
     const response = await fetch(`${location.origin}/api/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config, dl }),
+      body: JSON.stringify({ config, dl, states: hass.states }),
     });
     if (!response.ok) {
       throw fail("conversion_failed", "The dashboard could not be converted");
+    }
+    return response.json();
+  };
+
+  // Like card/facts: what a card's devices can do, read by the harness
+  // server from the stand-in states.
+  const cardFacts = async (component, params) => {
+    const response = await fetch(`${location.origin}/api/facts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ component, params, states: hass.states }),
+    });
+    if (!response.ok) {
+      throw fail("not_found", "Unknown card");
     }
     return response.json();
   };
@@ -763,6 +797,8 @@ export function createMockHass(fixtures, options = {}) {
           return preview(message.config, message.dl ?? 1);
         case "apollo_tab/card/call":
           return { ok: true };
+        case "apollo_tab/card/facts":
+          return cardFacts(message.component, message.params || {});
         case "apollo_tab/tablets":
           return { tablets: tabletList() };
         case "apollo_tab/tablet/assign": {

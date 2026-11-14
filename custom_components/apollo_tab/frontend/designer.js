@@ -1,5 +1,6 @@
 import {
   assignTablet,
+  cardFacts,
   getConnection,
   loadLibrary,
   loadStrings,
@@ -46,6 +47,8 @@ import {
   historyUndo,
   maxUnitsWide,
   mergeDashboards,
+  mergeStyle,
+  newerCard,
   moveCardToPage,
   moveItem,
   movePage,
@@ -56,6 +59,7 @@ import {
   pageList,
   pageNotes,
   pageScreens,
+  pruneOptions,
   removeItem,
   removePage,
   renamePage,
@@ -63,6 +67,11 @@ import {
   sameConfig,
   SaveQueue,
   setHeadingText,
+  setOption,
+  setStyleKey,
+  setVariant,
+  stableStringify,
+  swapCard,
   setPageIcon,
   setTheme,
   sourceKey,
@@ -519,6 +528,8 @@ export class ApolloTabDesigner extends HTMLElement {
       return;
     }
     this._library = value;
+    // A changed card file can ask about other facts.
+    this._facts?.clear();
     if (this._status === "ready") {
       this._requestPreview();
       this._renderSide();
@@ -562,6 +573,7 @@ export class ApolloTabDesigner extends HTMLElement {
     // First, while the status still says whether the dashboard was deleted.
     this._releaseQueue();
     this._run += 1;
+    this._facts?.clear();
     this._started = false;
     this._status = "idle";
     this._stops.forEach((stop) => stop?.());
@@ -749,6 +761,8 @@ export class ApolloTabDesigner extends HTMLElement {
         this._conn,
         (event) => this._layoutEvent(event),
         () => {
+          // Devices may have changed while the connection was down.
+          this._facts?.clear();
           this._checkRemote();
           this._loadTabRows();
         },
@@ -2779,12 +2793,47 @@ export class ApolloTabDesigner extends HTMLElement {
 
     if (kind === "tab") {
       const component = componentOf(card, this._library);
+      const newer = newerCard(this._library, component);
+      const facts = component.schema === 2 ? this._factsFor(component, card) : null;
+      // An option change can show or hide other rows, so the form is drawn
+      // again; typing and dragging keep it as it is. A change also takes
+      // out leftovers the card's file does not have.
+      const option = (changeConfig, name, continuous) =>
+        this._commit(pruneOptions(changeConfig, source, component, facts), {
+          key: continuous ? `${key}:option:${name}` : null,
+          continuous,
+          side: !continuous,
+        });
       return buildCardForm({
         hass: this._hass,
         config: this._draft,
         card,
         component,
         readOnly,
+        facts,
+        newer,
+        onSwap: () => {
+          if (newer) {
+            this._commit(swapCard(this._draft, source, newer));
+          }
+        },
+        onOption: (name, value, fallback, continuous) =>
+          option(setOption(this._draft, source, name, value, fallback), name, continuous),
+        // The standard options: a tap, its page, a hold and the icon.
+        onStandard: (name, value) => {
+          let next = this._draft;
+          if (name === "tap") {
+            next = setOption(next, source, "tap", value, component.tap?.default);
+            if (value !== "page") {
+              next = setOption(next, source, "tap_page", undefined, undefined);
+            }
+          } else {
+            next = setOption(next, source, name, value, undefined);
+          }
+          option(next, name, false);
+        },
+        onVariant: (id) => this._commit(setVariant(this._draft, source, component, id)),
+        onLook: (look, value) => this._commit(setStyleKey(this._draft, source, look, value)),
         compact: this._compact,
         themes: this._library?.themes || [],
         dashboardTheme: this._themeId(),
@@ -2814,9 +2863,15 @@ export class ApolloTabDesigner extends HTMLElement {
             continuous: true,
             side: false,
           }),
-        onResize: (w, h) => this._commit(resizeCard(this._draft, source, w, h), { side: false }),
+        // On a card with named sizes the steps drop the picked one, so the
+        // card shows the largest of its sizes that fits, as on the tablet.
+        onResize: (w, h) => {
+          const resized = resizeCard(this._draft, source, w, h);
+          const next = component.schema === 2 ? updateCard(resized, source, { variant: undefined }) : resized;
+          this._commit(next, { side: false });
+        },
         onStyle: (style, field, continuous) =>
-          this._commit(updateCard(this._draft, source, { style }), {
+          this._commit(updateCard(this._draft, source, { style: mergeStyle(getCard(this._draft, source)?.style, style) }), {
             key: continuous ? `${key}:${field}` : null,
             continuous,
             side: false,
@@ -2851,6 +2906,41 @@ export class ApolloTabDesigner extends HTMLElement {
       device: row ? deviceText(this._hass, row.entities) : "",
       onRemove: remove,
     });
+  }
+
+  // What a schema 2 card's devices can do (card/facts), for its form. The
+  // answer is kept per card and devices; until it is in, the form greys
+  // nothing, and it is drawn again when the answer comes for the card that
+  // is still selected. Asked again whenever the devices change.
+  _factsFor(component, card) {
+    const params = card?.params && typeof card.params === "object" ? card.params : {};
+    const factsKey = `${component.id}|${stableStringify(params)}`;
+    this._facts ||= new Map();
+    if (this._facts.has(factsKey)) {
+      return this._facts.get(factsKey);
+    }
+    if (!this._conn) {
+      return null;
+    }
+    this._facts.set(factsKey, null);
+    const run = this._run;
+    cardFacts(this._conn, component.id, params).then((facts) => {
+      if (run !== this._run) {
+        return;
+      }
+      // A failed call is not kept: the next drawing of the form asks again.
+      if (!facts) {
+        this._facts.delete(factsKey);
+        return;
+      }
+      this._facts.set(factsKey, facts);
+      const selected = this._selected ? getCard(this._draft, this._selected) : null;
+      const now = selected ? componentOf(selected, this._library) : null;
+      if (now?.id === component.id && stableStringify(selected.params || {}) === stableStringify(params)) {
+        this._renderSide();
+      }
+    });
+    return null;
   }
 
   _fillSideNotes() {

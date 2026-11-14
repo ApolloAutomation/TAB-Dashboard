@@ -4,14 +4,23 @@ import {
   CARD_TYPE,
   fitsDevices,
   isAllowed,
+  offeredCards,
   paramsComplete,
   pickerGroups,
+  pickerVariants,
   presetParams,
   singleEntityParam,
 } from "./model.js";
 
 // How far ahead of the visible area example cards are created, in pixels.
 const PREVIEW_MARGIN = 200;
+
+// Settings for a card's example where its defaults draw badly with no
+// devices. The Scenes card names each button after its scene, and an
+// example scene has no name, so the example shows the icons only.
+const EXAMPLE_OPTIONS = {
+  "apollo/scenes": { show_names: false },
+};
 
 // Words a search finds a card by besides its name and description: its
 // group ("Music and TV") and what its form asks ("Which speaker or TV?").
@@ -40,6 +49,7 @@ function previewBox(component, scale, themeId, hass, observer, watchers) {
           type: CARD_TYPE,
           component: component.id,
           params: {},
+          ...(EXAMPLE_OPTIONS[component.id] ? { options: EXAMPLE_OPTIONS[component.id] } : {}),
           style: { theme: themeId },
         });
       } catch {
@@ -47,6 +57,9 @@ function previewBox(component, scale, themeId, hass, observer, watchers) {
       }
       card.hass = hass;
       box.append(card);
+      // The card keeps 56 px for itself on a dashboard; an example of a
+      // card one row high is smaller than that and would be cut off.
+      card.style.minHeight = "0";
       watchForError(card, box, component, watchers);
     };
     observer.observe(box);
@@ -89,9 +102,10 @@ export function openCardPicker({ root, hass, library, config, themeId, compact =
     dialog.setAttribute("aria-labelledby", titleId);
     const scale = compact ? 0.4 : 0.5;
     const entities = Array.isArray(devices?.entities) ? devices.entities : [];
+    // Only when some card the picker offers fits; otherwise every card is
+    // offered. An older card never counts, as it is never shown.
     const all = Array.isArray(library?.components) ? library.components : [];
-    // Only when some card fits; otherwise every card is offered.
-    let fitOnly = all.some((component) => fitsDevices(component, entities));
+    let fitOnly = offeredCards(library).some((component) => fitsDevices(component, entities));
     let query = "";
     let result = null;
     let observer = null;
@@ -245,8 +259,13 @@ export function openCardPicker({ root, hass, library, config, themeId, compact =
         if (component.description) {
           button.append(el("span", "tile-desc", component.description));
         }
+        // A card with named sizes lists them; any other gives its size.
+        const sizes = component.schema === 2 ? pickerVariants(component) : [];
         const size = Array.isArray(component.size) ? component.size : [1, 1];
-        button.append(el("span", "tile-size", t("picker.size", { w: size[0], h: size[1] })));
+        const sizeText = sizes.length > 1
+          ? t("picker.sizes", { sizes: sizes.map((variant) => String(variant.name || variant.id)).join(", ") })
+          : t("picker.size", { w: size[0], h: size[1] });
+        button.append(el("span", "tile-size", sizeText));
         if (component.source === "user") {
           button.append(el("span", "tag", t("picker.from_folder")));
         }

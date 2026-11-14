@@ -899,9 +899,14 @@ async function waitCaption(r, lines, what) {
   }
 }
 
+// The cards the picker offers: the 25 bundled cards but the four older ones
+// a newer card replaces (light tile, light with slider, scene row, sensor
+// value).
+const OFFERED_CARDS = 21;
+
 const CREATED_CARD = {
   type: "custom:apollo-tab-card",
-  component: "apollo/light-tile",
+  component: "apollo/light",
   params: { entity: "light.kitchen" },
   grid_options: { columns: 6, rows: 3 },
 };
@@ -1448,7 +1453,10 @@ function chains(realConfig) {
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
       const tiles = await r.eval(`__j.all('[data-test="tile"]').map((tile) => tile.dataset.component)`);
       const library = await r.eval(`__apolloFixtures.library.components.map((component) => component.id)`);
-      check(tiles.length === 16, `${tiles.length} tiles`);
+      // Every card but the older ones a newer card replaces (I8).
+      const offered = await r.eval(`__apolloFixtures.library.components.filter((component) => !component.legacy).map((component) => component.id)`);
+      check(tiles.length === OFFERED_CARDS && offered.length === OFFERED_CARDS, `${tiles.length} tiles`);
+      check(stable([...tiles].sort()) === stable([...offered].sort()), `the picker offers ${tiles}`);
       check(tiles.every((id) => library.includes(id)), "a tile that is not a TAB-1 card");
       const groups = await r.eval(`__j.all('[data-test="picker-group"]').map((heading) => heading.dataset.group)`);
       const order = groups.map((id) => GROUP_ORDER.indexOf(id));
@@ -1471,10 +1479,10 @@ function chains(realConfig) {
       await r.click('[data-test="picker-search"]');
       const tiles = await search("light");
       const named = await r.eval(`__apolloFixtures.library.components
-        .filter((component) => /\\blight/i.test(component.name + " " + (component.description || "")))
+        .filter((component) => !component.legacy && /\\blight/i.test(component.name + " " + (component.description || "")))
         .map((component) => component.id).sort()`);
       check(named.every((id) => tiles.includes(id)), `"light" finds ${tiles}, not every card named for lights (${named})`);
-      check(tiles.includes("apollo/scene-row"), `"light" does not find the cards in "Lights and scenes": ${tiles}`);
+      check(tiles.includes("apollo/scenes"), `"light" does not find the cards in "Lights and scenes": ${tiles}`);
       check(!tiles.includes("apollo/thermostat"), `"light" finds the thermostat: ${tiles}`);
       const shot = await r.shot("04-picker-search");
       for (const [word, card] of [
@@ -1489,18 +1497,18 @@ function chains(realConfig) {
       }
       // Not inside words: "each" does not hold "ac".
       const short = await search("ac");
-      check(!short.some((id) => ["apollo/scene-row", "community/presence-chips"].includes(id)), `"ac" finds ${short}`);
+      check(!short.some((id) => ["apollo/scenes", "community/presence-chips"].includes(id)), `"ac" finds ${short}`);
       check((await search("spotify")).length === 0, "a card matches spotify");
       const none = await r.text('[data-test="picker-none"]');
       check(none.includes('No card matches "spotify".') && none.includes("Try the name of a card or a kind of device"), `the picker says "${none}"`);
       await r.shot("04-picker-search-none");
       await r.click('[data-test="picker-clear-search"]');
-      await r.waitFor(`__j.count('[data-test="tile"]') === 16`, "every card after Show all cards");
+      await r.waitFor(`__j.count('[data-test="tile"]') === ${OFFERED_CARDS}`, "every card after Show all cards");
       check((await r.eval(`__j.find('[data-test="picker-search"]').value`)) === "", "the search is not cleared");
       return shot;
     }),
     step("05", "device-step", async (r) => {
-      await r.click('[data-test="tile"][data-component="apollo/light-tile"]');
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
       await r.waitFor(`__j.find('[data-test="entity"]')`, "the device step");
       const options = await r.eval(`__j.all('[data-test="entity"]').map((option) => option.dataset.entity).sort()`);
       const expected = await r.eval(`Object.keys(__apolloMockHass.states)
@@ -1516,7 +1524,7 @@ function chains(realConfig) {
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "one card on the canvas");
       await r.waitFor(`__j.find('[data-test="hit"][aria-pressed="true"]')`, "the card to be selected");
       const title = await r.text('[data-test="side-title"]');
-      check(title.includes("Light tile"), `side panel shows ${title}`);
+      check(title.includes("Light"), `side panel shows ${title}`);
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1")?.views?.[0]?.sections?.[0]?.cards?.length === 1`,
         "the card to be saved",
@@ -1529,7 +1537,11 @@ function chains(realConfig) {
       return r.shot("06-card-added");
     }),
     step("07", "card-styled", async (r) => {
-      // Pressed where it is, so the check below sees what the person sees.
+      // The Light card has named sizes, so Width and Height wait behind
+      // Fine-tune. Pressed where they are, so the check below sees what the
+      // person sees.
+      await r.tap('[data-test="size-fine-tune"]');
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       await r.tap('[data-test="wider"]');
       await r.waitFor(
         `(() => { const width = __j.find('[data-test="hit"]').getBoundingClientRect().width;
@@ -2497,7 +2509,7 @@ function chains(realConfig) {
 
       await r.click('[data-test="add-card"]');
       await r.waitFor(`window.__watching.size > 0`, "example cards in the picker again");
-      await r.click('[data-test="tile"][data-component="apollo/light-tile"]');
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
       await r.waitFor(`__j.find('[data-test="entity-search"]')`, "the device step");
       await sleep(200);
       check((await watching()) === 0, `${await watching()} example cards are still watched on the device step`);
@@ -2805,7 +2817,7 @@ function chains(realConfig) {
       await openSample(r);
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-      await r.click('[data-test="tile"][data-component="apollo/light-tile"]');
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
       await r.waitFor(`__j.find('[data-test="entity-search"]')`, "the device step");
       const inPicker = await r.eval(`(() => { const input = __j.find('[data-test="entity-search"]');
         return [input.placeholder, __j.placeholderContrast(input)]; })()`);
@@ -2890,8 +2902,10 @@ function chains(realConfig) {
     // "Use the whole screen" keeps the card selected so Wider works again.
     step("55", "narrow-columns-wider", async (r) => {
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
-      await r.addCard("add-card", "apollo/light-tile", "light.kitchen");
-      await r.waitFor(`__j.find('[data-test="wider"]')`, "the new card's form");
+      await r.addCard("add-card", "apollo/light", "light.kitchen");
+      await r.waitFor(`__j.find('[data-test="size-fine-tune"]')`, "the new card's form");
+      await r.click('[data-test="size-fine-tune"]');
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       check((await r.count('[data-test="size-columns"]')) === 0, "the narrow-columns note shows before Wider stops");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.find('[data-test="wider"]')?.disabled && __j.find('[data-test="size-columns"]')`, "Wider to stop with a reason");
@@ -2905,12 +2919,12 @@ function chains(realConfig) {
         "the page to use the whole screen",
       );
       await r.waitFor(`__j.find('[data-test="wider"]') && !__j.find('[data-test="wider"]').disabled`, "Wider to work again");
-      check((await r.text('[data-test="side-title"]')).includes("Light tile"), "the card is no longer selected");
+      check((await r.text('[data-test="side-title"]')).includes("Light"), "the card is no longer selected");
       check((await focused(r)) === "wider", `focus went to ${await focused(r)}, not Wider`);
       check((await r.count('[data-test="size-columns"]')) === 0, "the narrow-columns note stayed");
       await r.click('[data-test="wider"]');
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/light-tile" && card.grid_options?.columns === 18)`,
+        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/light" && card.grid_options?.columns === 18)`,
         "the card to be saved 3 wide",
       );
       await r.waitSaved("wider after using the whole screen");
@@ -3238,11 +3252,12 @@ function chains(realConfig) {
       const title = await r.text('dialog[data-test="picker"] h2');
       check(title === "Add a card for Bedroom fan", `the picker is titled "${title}"`);
       const tiles = await r.eval(`__j.all('[data-test="tile"]').map((tile) => tile.dataset.component)`);
-      check(stable(tiles) === stable(["apollo/fan"]), `the picker offers ${tiles.join(", ")}`);
+      // The fan card, and the switch card, which turns a fan on and off too.
+      check(stable([...tiles].sort()) === stable(["apollo/fan", "apollo/switch"]), `the picker offers ${tiles.join(", ")}`);
       await sleep(500);
       await r.shot("63-replace-other-card-picker");
       await r.click('[data-test="picker-show-all"]');
-      await r.waitFor(`__j.count('[data-test="tile"]') === 16`, "every card after Show all cards");
+      await r.waitFor(`__j.count('[data-test="tile"]') === ${OFFERED_CARDS}`, "every card after Show all cards");
       // The fan's card gets the fan without asking for it again.
       await r.click('[data-test="tile"][data-component="apollo/fan"]');
       await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
@@ -3870,7 +3885,7 @@ function chains(realConfig) {
       await r.waitFor(`__j.find('[data-test="toast-replace"]')`, "the removal's toast");
       check((await toastText()) === "Card removed. Add a TAB-1 card for Kitchen, Bedroom lamp, Bedroom fan.", `the toast reads "${await toastText()}"`);
 
-      const first = await pick("apollo/light-tile");
+      const first = await pick("apollo/light");
       check(first.title === "Add a card for Kitchen, Bedroom lamp, Bedroom fan", `the picker is titled "${first.title}"`);
       check(
         first.intro ===
@@ -3894,7 +3909,7 @@ function chains(realConfig) {
       const second = await pick("apollo/fan");
       check(second.title === "Add a card for Bedroom lamp, Bedroom fan", `the picker is titled "${second.title}"`);
       await r.waitFor(`__j.text('[data-test="toast"] span') === "Card added. Add a TAB-1 card for Bedroom lamp."`, "the toast for the last device");
-      const third = await pick("apollo/light-tile");
+      const third = await pick("apollo/light");
       check(third.intro === "These cards can control Bedroom lamp. The card you pick gets Bedroom lamp straight away.", `the picker says "${third.intro}"`);
       await r.waitFor(`__j.text('[data-test="toast"] span') === "Card added"`, "the toast once every device has a card");
       check((await r.count('[data-test="toast-replace"]')) === 0, "a card is still offered once every device has one");
@@ -3903,9 +3918,9 @@ function chains(realConfig) {
       check(
         stable(saved) ===
           stable([
-            ["apollo/light-tile", "light.kitchen"],
+            ["apollo/light", "light.kitchen"],
             ["apollo/fan", "fan.bedroom_main_bedroom_fan"],
-            ["apollo/light-tile", "light.bedroom"],
+            ["apollo/light", "light.bedroom"],
           ]),
         `the dashboard holds ${JSON.stringify(saved)}`,
       );
@@ -5944,7 +5959,7 @@ function chains(realConfig) {
     await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
     await r.click('[data-test="create"]');
     await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's empty editor");
-    await r.addCard("add-first-card", "apollo/light-tile", "light.kitchen");
+    await r.addCard("add-first-card", "apollo/light", "light.kitchen");
     await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the light on the picture");
     await r.waitSaved("the light added");
     await leaveEditMode(r);
@@ -6357,7 +6372,7 @@ function chains(realConfig) {
         await r.eval(`(() => { __j.active()?.blur(); __j.find(".main").scrollTop = 0; return true; })()`);
         await sleep(300);
         const fresh = await place();
-        await r.addCard("add-card", "apollo/light-tile", "light.kitchen");
+        await r.addCard("add-card", "apollo/light", "light.kitchen");
         await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode for the new card");
         await r.waitSaved("the new card");
         const added = await r.eval(`__j.designer()._selected.join(".")`);
@@ -6612,6 +6627,267 @@ function chains(realConfig) {
     }),
   ];
 
+  // The form of a schema 2 card (cards spec C.7, package I8): the Light card
+  // for a colour lamp and for an on/off lamp, and an older light card that
+  // is offered the new card.
+  const optionRows = (r) =>
+    r.eval(`__j.all('[data-test="option-row"]').filter((row) => __j.visible(row)).map((row) => ({
+      option: row.dataset.option,
+      usable: row.dataset.usable === "true",
+      text: row.innerText.replace(/\\s+/g, " ").trim(),
+    }))`);
+  // The selected card on the picture: its width and its sliders.
+  const lightPicture = (r) =>
+    r.eval(`(() => {
+      const designer = __j.designer();
+      const root = designer.shadowRoot.querySelector(".page-host").shadowRoot;
+      const card = root.querySelector(".at-card");
+      if (!card) return null;
+      const sliders = [...card.querySelectorAll(".at-slider")];
+      return {
+        w: card.getBoundingClientRect().width,
+        sliders: sliders.length,
+        tracked: sliders.filter((slider) => slider.classList.contains("tracked")).length,
+        heights: sliders.map((slider) => slider.getBoundingClientRect().height),
+      };
+    })()`);
+  const savedCard = async (r) => (await r.config()).views[0].sections[0].cards[0];
+  const pickChoice = (r, option, value) =>
+    r.eval(`(() => { const field = __j.find('select[data-focus="option:${option}"]');
+      field.value = ${JSON.stringify(value)}; field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+  const newLight = async (r, entity) => {
+    await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+    await r.click('[data-test="create"]');
+    await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's empty editor");
+    await r.click('[data-test="add-first-card"]');
+    await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+    check((await r.count('[data-test="tile"][data-component="apollo/light-tile"]')) === 0, "the picker offers the older light tile");
+    // One device field: the card is added the moment the lamp is chosen.
+    await r.click('[data-test="tile"][data-component="apollo/light"]');
+    await r.waitFor(`__j.find('[data-test="entity"][data-entity="${entity}"]')`, `the ${entity} option`);
+    await r.click(`[data-test="entity"][data-entity="${entity}"]`);
+    await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+    await r.waitFor(`__j.find('[data-test="option-row"][data-option="show_brightness"]')`, "the Light card's own rows");
+    await r.waitSaved("the light added");
+  };
+  const cardForms = [
+    step("206", "light-form-colour-lamp", async (r) => {
+      await newLight(r, "light.kitchen");
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="effects_shown"] input')`, "the lamp's effects");
+      const rows = await optionRows(r);
+      check(
+        stable(rows.map((row) => row.option)) ===
+          stable(["show_brightness", "bar_on_tile", "colour_control", "show_saturation", "show_white", "effects_shown"]),
+        `the form shows ${rows.map((row) => row.option)}`,
+      );
+      check(rows.every((row) => row.usable), `a row is greyed for a lamp that can do everything: ${JSON.stringify(rows)}`);
+      check((await r.count('[data-test="card-note"]')) === 0, "a note shows for a colour lamp");
+      const effects = rows.find((row) => row.option === "effects_shown");
+      check(effects.text.includes("Rainbow") && effects.text.includes("Storm") && effects.text.includes("4 chosen, up to 8."), `the effects read "${effects.text}"`);
+      // The card's own rows straight after the device and Size, so what the
+      // card can do is on the first screen; then name and icon, tap and hold.
+      const parts = await r.eval(`[...__j.find('.card-form-2').querySelectorAll(":scope > .form-block > h3")].map((h) => h.textContent)`);
+      check(
+        stable(parts) === stable(["What it controls", "Size", "On the card", "Name and icon", "Tap and hold", "Look", "Position"]),
+        `the form's parts are ${parts}`,
+      );
+      // At a named size the steps wait behind Fine-tune, and the icon is one
+      // line until Change is pressed.
+      check((await r.count('[data-test="wider"]')) === 0 && (await r.count('[data-test="size-fine-tune"]')) === 1, "Width and Height show at a named size");
+      check((await r.count('[data-test="card-icon"]')) === 0 && (await r.count('[data-test="icon-change"]')) === 1, "the icon grid shows before Change");
+      const chips = await r.eval(`__j.all('[data-test="size-chip"]').map((chip) => [chip.dataset.variant, chip.querySelector("input").checked])`);
+      check(stable(chips) === stable([["tile", true], ["wide", false], ["large", false]]), `the sizes read ${JSON.stringify(chips)}`);
+      const tile = await lightPicture(r);
+      check(tile && tile.sliders === 1, `the tile on the picture is ${JSON.stringify(tile)}`);
+      // The picture of the form shows the card's own rows.
+      await r.eval(`__j.find('[data-test="option-row"][data-option="show_brightness"]').scrollIntoView({ block: "start" }); true`);
+      const shot = await r.shot("206-light-form");
+
+      // A switch: no brightness bar on the small tile. It is saved and the
+      // picture follows: the thin level line instead of the bar.
+      await r.click('input[data-focus="option:bar_on_tile"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.bar_on_tile === false`, "the switch to be saved");
+      await r.waitFor(
+        `(() => { const root = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot;
+          const bar = root.querySelector(".at-card .at-slider");
+          return bar && bar.getBoundingClientRect().height < ${tile.heights[0]} / 2; })()`,
+        "the picture to show the level line",
+      );
+      // A choice: favourite colours as well. Their swatches show.
+      await pickChoice(r, "colour_control", "both");
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="favourites"]')`, "the favourite colours");
+      check((await r.count('[data-test="option-row"][data-option="favourites"] [data-test="swatch"]')) === 8, "the favourites are not eight swatches");
+      await r.waitSaved("the colour choice");
+      check(stable((await savedCard(r)).options) === stable({ bar_on_tile: false, colour_control: "both" }), `the card's options are ${JSON.stringify((await savedCard(r)).options)}`);
+      // A size: Wide. The card takes its size on the grid, and the picture
+      // shows it twice as wide with its colour bar.
+      await r.click('[data-test="size-chip"][data-variant="wide"]');
+      await r.waitFor(
+        `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
+          return card.variant === "wide" && card.grid_options?.columns === 12 && card.grid_options?.rows === 3; })()`,
+        "the size to be saved",
+      );
+      await r.waitFor(
+        `(() => { const root = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot;
+          const card = root.querySelector(".at-card");
+          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8 && card.querySelector(".at-slider.tracked"); })()`,
+        "the picture to show the wide card with its colour bar",
+      );
+      check((await r.eval(`__j.find('[data-test="size-chip"][data-variant="wide"] input').checked`)) === true, "Wide is not marked as the size");
+      await r.waitSaved("the size");
+      await r.eval(`__j.find('[data-test="card-lit"]').scrollIntoView({ block: "start" }); true`);
+      await r.screen("206-light-form-wide");
+      // One Undo takes the size back, and the picture with it.
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].variant === undefined`, "Undo to take the size back");
+      await r.waitFor(
+        `(() => { const root = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot;
+          const card = root.querySelector(".at-card");
+          return card && card.getBoundingClientRect().width < ${tile.w} * 1.2; })()`,
+        "the picture to show the tile again",
+      );
+      return shot;
+    }),
+    step("207", "light-form-onoff-lamp", async (r) => {
+      await newLight(r, "light.living_room");
+      await r.waitFor(`__j.find('[data-test="card-note"]')`, "the note about the lamp");
+      check((await r.text('[data-test="card-note"]')) === "This light only turns on and off.", `the note reads "${await r.text('[data-test="card-note"]')}"`);
+      const rows = await optionRows(r);
+      const row = (name) => rows.find((entry) => entry.option === name);
+      // What the lamp cannot do is drawn greyed with its reason, not hidden.
+      for (const [name, reason] of [
+        ["show_brightness", "This light cannot be dimmed"],
+        ["colour_control", "This light has no colour"],
+        ["show_white", "This light has one white only"],
+        ["show_saturation", "This light has no colour"],
+        ["effects_shown", "This light has no effects"],
+      ]) {
+        check(row(name) && !row(name).usable, `${name} is not greyed: ${JSON.stringify(row(name))}`);
+        check(row(name).text.includes(reason), `${name} reads "${row(name)?.text}"`);
+      }
+      check(!row("bar_on_tile") && !row("favourites"), `rows that follow a greyed one are drawn: ${rows.map((entry) => entry.option)}`);
+      const off = await r.eval(`(() => { const input = __j.find('input[data-focus="option:show_brightness"]'); return [input.disabled, input.checked]; })()`);
+      check(stable(off) === stable([true, false]), `Brightness is ${JSON.stringify(off)}, not off and greyed`);
+      // A greyed list shows a dash, not "Off" as if it had been chosen.
+      const colourList = await r.eval(`(() => { const field = __j.find('select[data-focus="option:colour_control"]');
+        return [field.disabled, field.options[field.selectedIndex]?.textContent]; })()`);
+      check(stable(colourList) === stable([true, "\u2013"]), `the greyed colour list is ${JSON.stringify(colourList)}`);
+      // The lamp has no colour to show on the card either.
+      const tint = await r.eval(`(() => { const input = __j.find('input[data-test="card-tint"]');
+        return [input.disabled, input.checked, input.closest(".option-row").innerText.includes("This device has no colour to show.")]; })()`);
+      check(stable(tint) === stable([true, false, true]), `Show the device's colour is ${JSON.stringify(tint)}`);
+      await r.eval(`__j.find('[data-test="option-row"][data-option="show_brightness"]').scrollIntoView({ block: "start" }); true`);
+      const shot = await r.shot("207-light-form-onoff");
+      // The tap row still works: it opens its controls now.
+      await r.eval(`(() => { const field = __j.find('select[data-focus="card-tap"]');
+        field.value = "detail"; field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.tap === "detail"`, "the tap to be saved");
+      await r.waitSaved("the tap");
+      return shot;
+    }),
+    step("208", "older-card-swap", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.0");
+      await r.waitFor(`__j.find('[data-test="newer-card"]')`, "the offer of the newer card");
+      const offer = await r.text('[data-test="newer-card"]');
+      check(offer.includes("A newer card does this: Light."), `the offer reads "${offer}"`);
+      await r.click('[data-test="form-name"]');
+      await r.type("Desk lamp");
+      await r.waitSaved("the name");
+      const before = (await r.config()).views[0].sections[1].cards[0];
+      check(before.component === "apollo/light-tile" && before.title === "Desk lamp", `the card is ${JSON.stringify(before)}`);
+      const shot = await r.shot("208-older-card");
+      await r.click('[data-test="swap-card"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light"`, "the swap to be saved");
+      await r.waitSaved("the swap");
+      const after = (await r.config()).views[0].sections[1].cards[0];
+      check(
+        stable(after) ===
+          stable({
+            type: "custom:apollo-tab-card",
+            component: "apollo/light",
+            params: before.params,
+            title: "Desk lamp",
+            variant: "tile",
+            grid_options: { columns: 6, rows: 3 },
+          }),
+        `the new card is ${JSON.stringify(after)}`,
+      );
+      // The same card stays selected, now with the Light card's form.
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="show_brightness"]')`, "the Light card's form");
+      check((await r.count('[data-test="newer-card"]')) === 0, "the offer stays after the swap");
+      check((await r.eval(`__j.designer()._selected.join(".")`)) === "0.1.0", "another card is selected after the swap");
+      // One Undo brings the older card back.
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light-tile"`, "Undo to bring the older card back");
+      return shot;
+    }),
+    step("209", "light-sizes-and-steps", async (r) => {
+      // The picker's example of a card one row high fits its box.
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's empty editor");
+      await r.click('[data-test="add-first-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      const example = '[data-test="tile"][data-component="apollo/switch"] .tile-preview';
+      await r.waitFor(`__j.find('${example} apollo-tab-card')?.shadowRoot?.querySelector(".at-card")`, "the Switch card's example");
+      const fit = await r.eval(`(() => { const box = __j.find('${example}'); const card = box.querySelector("apollo-tab-card");
+        return [Math.round(box.getBoundingClientRect().height), Math.round(card.getBoundingClientRect().height)]; })()`);
+      check(fit[1] <= fit[0] + 1, `the Switch example is ${fit[1]} px high in a box of ${fit[0]} px`);
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
+      await r.waitFor(`__j.find('[data-test="entity"][data-entity="light.kitchen"]')`, "the light.kitchen option");
+      await r.click('[data-test="entity"][data-entity="light.kitchen"]');
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="show_brightness"]')`, "the Light card's own rows");
+      await r.waitSaved("the light added");
+      const tile = await lightPicture(r);
+      const marked = () => r.eval(`__j.all('[data-test="size-chip"]').filter((chip) => chip.querySelector("input").checked).map((chip) => chip.dataset.variant)`);
+      // Fine-tune opens Width and Height, with the focus on Wider.
+      await r.click('[data-test="size-fine-tune"]');
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
+      check((await focused(r)) === "wider", `after Fine-tune the focus is on ${await focused(r)}`);
+      check((await r.count('[data-test="size-reset"]')) === 0, "Back is offered at the size marked");
+      // Wider: the card shows the largest size that fits, and that size is
+      // marked; the picture shows the wide card.
+      await r.click('[data-test="wider"]');
+      await r.waitFor(
+        `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
+          return card.grid_options?.columns === 12 && card.variant === undefined; })()`,
+        "Wider to be saved",
+      );
+      await r.waitFor(
+        `(() => { const card = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot.querySelector(".at-card");
+          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8 && card.querySelector(".at-slider.tracked"); })()`,
+        "the picture to show the wide card",
+      );
+      check(stable(await marked()) === stable(["wide"]), `after Wider the size marked is ${JSON.stringify(await marked())}`);
+      await r.waitSaved("Wider");
+      const shot = await r.shot("209-light-wider");
+      // Taller, then Narrower: Large, then the tile in a taller box.
+      await r.click('[data-test="taller"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].grid_options?.rows === 6`, "Taller to be saved");
+      check(stable(await marked()) === stable(["large"]), `after Taller the size marked is ${JSON.stringify(await marked())}`);
+      await r.click('[data-test="narrower"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].grid_options?.columns === 6`, "Narrower to be saved");
+      check(stable(await marked()) === stable(["tile"]), `after Narrower the size marked is ${JSON.stringify(await marked())}`);
+      // 1 wide and 2 high is not the tile's own size, so Back is offered.
+      check((await r.text('[data-test="size-reset"]')) === "Back to the Tile size", `Back reads "${await r.text('[data-test="size-reset"]')}"`);
+      await r.waitSaved("Narrower");
+      // A press on the marked size puts the card back to that size.
+      await r.click('[data-test="size-chip"][data-variant="tile"]');
+      await r.waitFor(
+        `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
+          return card.variant === "tile" && card.grid_options?.columns === 6 && card.grid_options?.rows === 3; })()`,
+        "the tile size to come back",
+      );
+      check(stable(await marked()) === stable(["tile"]), `after Tile the size marked is ${JSON.stringify(await marked())}`);
+      await r.waitSaved("the tile size");
+      return shot;
+    }),
+  ];
+
   return [
     first,
     real,
@@ -6665,6 +6941,7 @@ function chains(realConfig) {
     foundation,
     workspace,
     drawing,
+    cardForms,
   ];
 }
 

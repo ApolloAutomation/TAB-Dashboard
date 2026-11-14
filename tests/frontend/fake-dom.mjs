@@ -139,6 +139,19 @@ export class FakeElement {
     return { x: 0, y: 0, width: 0, height: 0, left: 0, top: 0, right: 0, bottom: 0 };
   }
 
+  // The top of the tree, which has no focused element.
+  getRootNode() {
+    let node = this;
+    while (node.parentElement) {
+      node = node.parentElement;
+    }
+    return node;
+  }
+
+  contains(node) {
+    return node === this || this.descendants().includes(node);
+  }
+
   // Every element below this one, in document order.
   descendants() {
     return this.children.flatMap((child) => [child, ...child.descendants()]);

@@ -498,7 +498,6 @@ PICKER_NAME_ROOM = 176 - 2 * 12
 # The list may only get shorter.
 NOT_FRIENDLY_YET = {
     "apollo/alarm-panel": "shows the raw state word armed_home",
-    "apollo/scene-row": "shows each scene's id, such as scene.movie",
     "community/presence-chips": (
         "shows each person's id and raw state, such as person.alex: unknown"
     ),
@@ -550,4 +549,4 @@ def test_cards_the_picker_offers_have_friendly_examples() -> None:
             problems[card["id"]] = found
     assert len(fixtures["cards"]) == 16
     assert set(problems) == set(NOT_FRIENDLY_YET), problems
-    assert len(NOT_FRIENDLY_YET) <= 3
+    assert len(NOT_FRIENDLY_YET) <= 2

@@ -23,9 +23,9 @@ def test_fixtures_file_is_current():
 def test_fixture_cards_cover_all_builtins():
     """The fixture cards lists cover exactly the 25 bundled Components.
 
-    The 16 schema 1 cards are in `cards` and the panel's library; the 9
-    schema 2 cards of step A are in `cards_v2`, which the panel does not
-    read until the editor draws them (packages I7, I8).
+    The panel's library holds all 25, the four older cards marked `legacy`.
+    The 16 schema 1 cards have their example in `cards`, the 9 schema 2
+    cards of step A theirs in `cards_v2`.
     """
     expected = set()
     expected2 = set()
@@ -40,7 +40,14 @@ def test_fixture_cards_cover_all_builtins():
     data = json.loads(FIXTURES_FILE.read_text(encoding="utf-8"))
     assert len(data["cards"]) == 16
     assert {card["id"] for card in data["cards"]} == expected
-    assert {c["id"] for c in data["library"]["components"]} == expected
+    library = data["library"]["components"]
+    assert {c["id"] for c in library} == expected | expected2
+    assert {c["id"] for c in library if c["legacy"]} == {
+        "apollo/light-tile",
+        "apollo/light-slider",
+        "apollo/scene-row",
+        "apollo/sensor-value",
+    }
     assert {card["id"] for card in data["cards_v2"]} == expected2
 
 

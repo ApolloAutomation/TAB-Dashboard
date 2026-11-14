@@ -12,20 +12,29 @@ params:
 
 options:
   show_brightness: {type: toggle, section: controls, label: Brightness, default: true,
+                    help: "A bar to dim the light.",
                     needs: can.brightness, needs_text: This light cannot be dimmed}
   bar_on_tile:     {type: toggle, section: controls, label: Brightness bar on the small tile, default: true,
-                    when: [show_brightness], needs: can.brightness}
+                    help: "When off, the small tile shows a thin line for the level.",
+                    when: [show_brightness], needs: can.brightness, needs_text: This light cannot be dimmed}
   colour_control:  {type: choice, section: controls, label: Colour, default: bar,
                     choices: {none: "Off", bar: Colour bar, dots: Favourite colours, both: Both},
+                    help: "A bar for any colour, buttons for your favourite colours, or both.",
                     needs: can.colour, needs_text: This light has no colour}
-  show_saturation: {type: toggle, section: controls, label: Colour strength, default: false, needs: can.colour}
+  show_saturation: {type: toggle, section: controls, label: Colour strength, default: false,
+                    help: "A bar from pale to deep colour.",
+                    needs: can.colour, needs_text: This light has no colour}
   show_white:      {type: toggle, section: controls, label: Warm to cool, default: true,
+                    help: "A bar from warm to cool white.",
                     needs: can.temperature, needs_text: This light has one white only}
   favourites:      {type: colours, section: controls, label: Favourite colours, max: 8,
                     default: ["#FF453A", "#FF9F0A", "#FFD60A", "#32D74B", "#64D2FF", "#0A84FF", "#BF5AF2", "2700K"],
+                    help: "Press a colour to change it.",
                     when: [colour_control=dots|both]}
   effects_shown:   {type: choice, multiple: true, max: 8, from: can.effect_list, default_first: 4,
-                    section: controls, label: Effects, needs: can.effects}
+                    section: controls, label: Effects,
+                    help: "Buttons on the card's controls page.",
+                    needs: can.effects, needs_text: This light has no effects}
 
 inputs:
   is_on:     "{{ is_state(entity, 'on') }}"

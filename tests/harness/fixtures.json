@@ -400,6 +400,14 @@
     "description": "Arm or disarm an alarm. Always asks before acting.",
     "icon": "mdi:shield-home",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": true,
+    "approved": true,
+    "schema": 1,
+    "group": "security",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      2
@@ -408,17 +416,43 @@
      "columns": 12,
      "rows": 6
     },
-    "source": "builtin",
-    "sensitive": true,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Alarm panel",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "alarm_control_panel",
-      "multiple": false
+      "domains": [
+       "alarm_control_panel"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "alarm_control_panel"
      }
     },
-    "group": "security",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "alarm",
      "security",
@@ -435,6 +469,14 @@
     "description": "Open, stop and close blinds, curtains or a garage door, or set how far open they are.",
     "icon": "mdi:blinds",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "covers",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      1,
      2
@@ -443,17 +485,43 @@
      "columns": 6,
      "rows": 6
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Blinds",
+      "grid": [
+       6,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "cover",
-      "multiple": false
+      "domains": [
+       "cover"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "cover"
      }
     },
-    "group": "covers",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "curtains",
      "shades",
@@ -465,12 +533,131 @@
     ]
    },
    {
+    "id": "apollo/button",
+    "tag": "apollo-tab-el-apollo-button",
+    "name": "Button",
+    "description": "Press a button, run a script or start a scene with a tap.",
+    "icon": "mdi:power",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 1
+    },
+    "variants": [
+     {
+      "id": "chip",
+      "name": "Chip",
+      "grid": [
+       12,
+       1
+      ],
+      "picker": true,
+      "needs_v2": true
+     },
+     {
+      "id": "small",
+      "name": "Small",
+      "grid": [
+       6,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "button",
+       "input_button",
+       "script",
+       "scene"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "What it runs",
+      "help": ""
+     }
+    },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": {
+     "default": "press",
+     "choices": [
+      {
+       "value": "press",
+       "label": "Runs it",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": [],
+    "keywords": [
+     "press",
+     "push",
+     "script",
+     "scene",
+     "run",
+     "doorbell",
+     "start"
+    ]
+   },
+   {
     "id": "apollo/camera-snapshot",
     "tag": "apollo-tab-el-apollo-camera-snapshot",
     "name": "Camera snapshot",
     "description": "A camera's name. The tablet cannot show the camera's picture yet, so it shows an icon in its place.",
     "icon": "mdi:cctv",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "security",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -479,17 +666,43 @@
      "columns": 12,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Camera snapshot",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "camera",
-      "multiple": false
+      "domains": [
+       "camera"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "camera"
      }
     },
-    "group": "security",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "camera",
      "cctv",
@@ -500,12 +713,116 @@
     ]
    },
    {
+    "id": "apollo/select",
+    "tag": "apollo-tab-el-apollo-select",
+    "name": "Dropdown",
+    "description": "Pick one of a list of choices, such as a mode or a programme.",
+    "icon": "mdi:chevron-down",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "more",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "select",
+       "input_select"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "List",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "shown",
+      "type": "choice",
+      "section": "controls",
+      "label": "Choices shown",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": true,
+      "max": 16,
+      "from": "can.options",
+      "default_first": 8,
+      "default": []
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
+    "keywords": [
+     "dropdown",
+     "list",
+     "choice",
+     "mode",
+     "programme",
+     "option",
+     "pick"
+    ]
+   },
+   {
     "id": "community/energy-gauge",
     "tag": "apollo-tab-el-community-energy-gauge",
     "name": "Energy gauge",
     "description": "A power reading on a dial with a limit you choose.",
     "icon": "mdi:lightning-bolt",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "sensors",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      1,
      1
@@ -514,23 +831,52 @@
      "columns": 6,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Energy gauge",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "sensor",
-      "multiple": false
+      "domains": [
+       "sensor"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "sensor"
      },
      "max": {
       "kind": "number",
       "default": 5000.0,
       "min": null,
-      "max": null
+      "max": null,
+      "optional": false,
+      "label": "",
+      "help": ""
      }
     },
-    "group": "sensors",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "power",
      "energy",
@@ -549,6 +895,14 @@
     "description": "Turn a fan on or off, or set it to half speed.",
     "icon": "mdi:fan",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "climate",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      1,
      1
@@ -557,17 +911,43 @@
      "columns": 6,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Fan",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "fan",
-      "multiple": false
+      "domains": [
+       "fan"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "fan"
      }
     },
-    "group": "climate",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "ceiling fan",
      "air",
@@ -578,12 +958,23 @@
     ]
    },
    {
-    "id": "apollo/light-tile",
-    "tag": "apollo-tab-el-apollo-light-tile",
-    "name": "Light tile",
-    "description": "Turn a light on or off and see its brightness.",
+    "id": "apollo/light",
+    "tag": "apollo-tab-el-apollo-light",
+    "name": "Light",
+    "description": "Turn a light on or off, dim it and change its colour.",
     "icon": "mdi:lightbulb",
-    "version": "1.0.0",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "lights",
+    "legacy": false,
+    "replaces": [
+     "apollo/light-tile",
+     "apollo/light-slider"
+    ],
+    "needs_v2": false,
     "size": [
      1,
      1
@@ -592,17 +983,290 @@
      "columns": 6,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "full",
+      "name": "Controls",
+      "grid": [
+       18,
+       11
+      ],
+      "picker": false,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": true,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "light",
-      "multiple": false
+      "domains": [
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Light",
+      "help": "",
+      "domain": "light"
      }
     },
+    "options": [
+     {
+      "name": "show_brightness",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Brightness",
+      "help": "A bar to dim the light.",
+      "when": [],
+      "needs": "can.brightness",
+      "needs_text": "This light cannot be dimmed",
+      "default": true
+     },
+     {
+      "name": "bar_on_tile",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Brightness bar on the small tile",
+      "help": "When off, the small tile shows a thin line for the level.",
+      "when": [
+       "show_brightness"
+      ],
+      "needs": "can.brightness",
+      "needs_text": "This light cannot be dimmed",
+      "default": true
+     },
+     {
+      "name": "colour_control",
+      "type": "choice",
+      "section": "controls",
+      "label": "Colour",
+      "help": "A bar for any colour, buttons for your favourite colours, or both.",
+      "when": [],
+      "needs": "can.colour",
+      "needs_text": "This light has no colour",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "none",
+        "label": "Off"
+       },
+       {
+        "value": "bar",
+        "label": "Colour bar"
+       },
+       {
+        "value": "dots",
+        "label": "Favourite colours"
+       },
+       {
+        "value": "both",
+        "label": "Both"
+       }
+      ],
+      "default": "bar"
+     },
+     {
+      "name": "show_saturation",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Colour strength",
+      "help": "A bar from pale to deep colour.",
+      "when": [],
+      "needs": "can.colour",
+      "needs_text": "This light has no colour",
+      "default": false
+     },
+     {
+      "name": "show_white",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Warm to cool",
+      "help": "A bar from warm to cool white.",
+      "when": [],
+      "needs": "can.temperature",
+      "needs_text": "This light has one white only",
+      "default": true
+     },
+     {
+      "name": "favourites",
+      "type": "colours",
+      "section": "controls",
+      "label": "Favourite colours",
+      "help": "Press a colour to change it.",
+      "when": [
+       "colour_control=dots|both"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "max": 8,
+      "default": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ]
+     },
+     {
+      "name": "effects_shown",
+      "type": "choice",
+      "section": "controls",
+      "label": "Effects",
+      "help": "Buttons on the card's controls page.",
+      "when": [],
+      "needs": "can.effects",
+      "needs_text": "This light has no effects",
+      "multiple": true,
+      "max": 8,
+      "from": "can.effect_list",
+      "default_first": 4,
+      "default": []
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": true,
+     "lit": "fill",
+     "tint": true
+    },
+    "tap": {
+     "default": "toggle",
+     "choices": [
+      {
+       "value": "toggle",
+       "label": "Turns it on or off",
+       "needs": ""
+      },
+      {
+       "value": "detail",
+       "label": "Opens its controls",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": [
+     {
+      "text": "This light only turns on and off.",
+      "when": [
+       "!can.brightness"
+      ]
+     }
+    ],
+    "keywords": [
+     "lamp",
+     "bulb",
+     "dimmer",
+     "brightness",
+     "colour",
+     "color",
+     "lighting",
+     "ceiling light"
+    ]
+   },
+   {
+    "id": "apollo/light-tile",
+    "tag": "apollo-tab-el-apollo-light-tile",
+    "name": "Light tile",
+    "description": "Turn a light on or off and see its brightness.",
+    "icon": "mdi:lightbulb",
+    "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
     "group": "lights",
+    "legacy": true,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     1,
+     1
+    ],
+    "grid": {
+     "columns": 6,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "default",
+      "name": "Light tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "light"
+     }
+    },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "lamp",
      "bulb",
@@ -618,6 +1282,14 @@
     "description": "A light switch with a brightness slider.",
     "icon": "mdi:lightbulb-on",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "lights",
+    "legacy": true,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -626,17 +1298,43 @@
      "columns": 12,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Light with slider",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "light",
-      "multiple": false
+      "domains": [
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "light"
      }
     },
-    "group": "lights",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "lamp",
      "bulb",
@@ -647,12 +1345,131 @@
     ]
    },
    {
+    "id": "apollo/page-link",
+    "tag": "apollo-tab-el-apollo-page-link",
+    "name": "Link",
+    "description": "Go to another page with a tap, with a reading if you like.",
+    "icon": "mdi:view-dashboard",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     1,
+     1
+    ],
+    "grid": {
+     "columns": 6,
+     "rows": 2
+    },
+    "variants": [
+     {
+      "id": "small",
+      "name": "Small",
+      "grid": [
+       6,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "page": {
+      "kind": "page",
+      "optional": false,
+      "label": "Page",
+      "help": ""
+     },
+     "entity": {
+      "kind": "entity",
+      "domains": [],
+      "multiple": false,
+      "optional": true,
+      "device_class": null,
+      "label": "Reading from",
+      "help": ""
+     }
+    },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": {
+     "default": "go",
+     "choices": [
+      {
+       "value": "go",
+       "label": "Goes to the page",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": [],
+    "keywords": [
+     "page",
+     "go to",
+     "link",
+     "jump",
+     "menu",
+     "room"
+    ]
+   },
+   {
     "id": "apollo/lock",
     "tag": "apollo-tab-el-apollo-lock",
     "name": "Lock",
     "description": "Lock or unlock a door. Always asks before acting.",
     "icon": "mdi:lock",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": true,
+    "approved": true,
+    "schema": 1,
+    "group": "security",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      1,
      1
@@ -661,17 +1478,43 @@
      "columns": 6,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": true,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Lock",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "lock",
-      "multiple": false
+      "domains": [
+       "lock"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "lock"
      }
     },
-    "group": "security",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "door",
      "front door",
@@ -688,6 +1531,14 @@
     "description": "What is playing, with play, pause and skip buttons, and the volume. The tablet shows an icon, not the picture of what is playing.",
     "icon": "mdi:speaker",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "media",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -696,17 +1547,43 @@
      "columns": 12,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Media player",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "media_player",
-      "multiple": false
+      "domains": [
+       "media_player"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "media_player"
      }
     },
-    "group": "media",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "music",
      "speaker",
@@ -719,12 +1596,122 @@
     ]
    },
    {
+    "id": "apollo/number",
+    "tag": "apollo-tab-el-apollo-number",
+    "name": "Number",
+    "description": "Set a number with a bar or with minus and plus.",
+    "icon": "mdi:gauge",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "more",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 2
+    },
+    "variants": [
+     {
+      "id": "row",
+      "name": "Row",
+      "grid": [
+       12,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "number",
+       "input_number"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Number",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "control",
+      "type": "choice",
+      "section": "controls",
+      "label": "Control",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "bar",
+        "label": "Bar"
+       },
+       {
+        "value": "buttons",
+        "label": "Minus and plus"
+       }
+      ],
+      "default": "bar"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
+    "keywords": [
+     "value",
+     "level",
+     "setting",
+     "slider",
+     "plus and minus",
+     "amount"
+    ]
+   },
+   {
     "id": "community/presence-chips",
     "tag": "apollo-tab-el-community-presence-chips",
     "name": "Presence chips",
     "description": "Who is home. The tablet shows an icon for each person, not their photo.",
     "icon": "mdi:account-multiple",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -733,17 +1720,44 @@
      "columns": 12,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Presence chips",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "people": {
       "kind": "entity",
+      "domains": [
+       "person"
+      ],
+      "multiple": true,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
       "domain": "person",
-      "multiple": true
+      "max": 8
      }
     },
-    "group": "home",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "people",
      "family",
@@ -760,6 +1774,14 @@
     "description": "Temperature, humidity and lights for one room, with a link to its page.",
     "icon": "mdi:sofa",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -768,30 +1790,74 @@
      "columns": 12,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Room summary",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "temperature_sensor": {
       "kind": "entity",
-      "domain": "sensor",
-      "multiple": false
+      "domains": [
+       "sensor"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "sensor"
      },
      "humidity_sensor": {
       "kind": "entity",
-      "domain": "sensor",
-      "multiple": false
+      "domains": [
+       "sensor"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "sensor"
      },
      "lights": {
       "kind": "entity",
+      "domains": [
+       "light"
+      ],
+      "multiple": true,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
       "domain": "light",
-      "multiple": true
+      "max": 8
      },
      "page": {
-      "kind": "page"
+      "kind": "page",
+      "optional": false,
+      "label": "",
+      "help": ""
      }
     },
-    "group": "home",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "room",
      "area",
@@ -809,6 +1875,14 @@
     "description": "One button for each scene you pick.",
     "icon": "mdi:palette",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "lights",
+    "legacy": true,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -817,17 +1891,44 @@
      "columns": 12,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Scene row",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "scenes": {
       "kind": "entity",
+      "domains": [
+       "scene"
+      ],
+      "multiple": true,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
       "domain": "scene",
-      "multiple": true
+      "max": 8
      }
     },
-    "group": "lights",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "scenes",
      "mood",
@@ -839,12 +1940,22 @@
     ]
    },
    {
-    "id": "apollo/sensor-graph",
-    "tag": "apollo-tab-el-apollo-sensor-graph",
-    "name": "Sensor graph",
-    "description": "The last 24 hours of a sensor as a line.",
-    "icon": "mdi:chart-line",
-    "version": "1.0.0",
+    "id": "apollo/scenes",
+    "tag": "apollo-tab-el-apollo-scenes",
+    "name": "Scenes",
+    "description": "One button for each scene or script you pick.",
+    "icon": "mdi:palette",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [
+     "apollo/scene-row"
+    ],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -853,17 +1964,238 @@
      "columns": 12,
      "rows": 3
     },
+    "variants": [
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "scenes": {
+      "kind": "entity",
+      "domains": [
+       "scene",
+       "script"
+      ],
+      "multiple": true,
+      "optional": false,
+      "device_class": null,
+      "label": "Scenes",
+      "help": "",
+      "max": 8
+     }
+    },
+    "options": [
+     {
+      "name": "show_names",
+      "type": "toggle",
+      "section": "shows",
+      "label": "Names under the icons",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "default": true
+     },
+     {
+      "name": "per_row",
+      "type": "choice",
+      "section": "look",
+      "label": "Buttons in a row",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "2",
+        "label": "Two"
+       },
+       {
+        "value": "4",
+        "label": "Four"
+       }
+      ],
+      "default": "4"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
+    "keywords": [
+     "scenes",
+     "mood",
+     "preset",
+     "movie",
+     "dinner",
+     "night",
+     "script",
+     "buttons"
+    ]
+   },
+   {
+    "id": "apollo/screen",
+    "tag": "apollo-tab-el-apollo-screen",
+    "name": "Screen brightness",
+    "description": "Make the tablet's screen brighter or darker.",
+    "icon": "mdi:tablet",
+    "version": "2.0.0",
     "source": "builtin",
     "sensitive": false,
     "approved": true,
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 2
+    },
+    "variants": [
+     {
+      "id": "row",
+      "name": "Row",
+      "grid": [
+       12,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "sensor",
-      "multiple": false
+      "domains": [
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Screen light",
+      "help": "The tablet's own Backlight",
+      "domain": "light"
      }
     },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
+    "keywords": [
+     "screen",
+     "display",
+     "backlight",
+     "brightness",
+     "dim",
+     "tablet"
+    ]
+   },
+   {
+    "id": "apollo/sensor-graph",
+    "tag": "apollo-tab-el-apollo-sensor-graph",
+    "name": "Sensor graph",
+    "description": "The last 24 hours of a sensor as a line.",
+    "icon": "mdi:chart-line",
+    "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
     "group": "sensors",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "default",
+      "name": "Sensor graph",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "sensor"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "sensor"
+     }
+    },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "graph",
      "chart",
@@ -881,6 +2213,14 @@
     "description": "One sensor reading in large type.",
     "icon": "mdi:gauge",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "sensors",
+    "legacy": true,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      1,
      1
@@ -889,17 +2229,43 @@
      "columns": 6,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Sensor value",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "sensor",
-      "multiple": false
+      "domains": [
+       "sensor"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "sensor"
      }
     },
-    "group": "sensors",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "reading",
      "number",
@@ -911,12 +2277,408 @@
     ]
    },
    {
+    "id": "apollo/reading",
+    "tag": "apollo-tab-el-apollo-reading",
+    "name": "Status",
+    "description": "Show what a sensor reads or what state a device is in.",
+    "icon": "mdi:information-outline",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "sensors",
+    "legacy": false,
+    "replaces": [
+     "apollo/sensor-value"
+    ],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 1
+    },
+    "variants": [
+     {
+      "id": "chip",
+      "name": "Chip",
+      "grid": [
+       12,
+       1
+      ],
+      "picker": true,
+      "needs_v2": true
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Device",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "decimals",
+      "type": "number",
+      "section": "shows",
+      "label": "Decimals",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "min": 0.0,
+      "max": 3.0,
+      "step": 1.0,
+      "unit": "",
+      "default": 1.0
+     },
+     {
+      "name": "unit",
+      "type": "text",
+      "section": "shows",
+      "label": "Unit",
+      "help": "Leave empty to use the unit Home Assistant gives",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 8,
+      "default": ""
+     },
+     {
+      "name": "word_on",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while on",
+      "help": "Leave empty to use the word Home Assistant gives",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": ""
+     },
+     {
+      "name": "word_off",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while off",
+      "help": "Leave empty to use the word Home Assistant gives",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": ""
+     },
+     {
+      "name": "highlight",
+      "type": "choice",
+      "section": "look",
+      "label": "Highlight",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "never",
+        "label": "Never"
+       },
+       {
+        "value": "active",
+        "label": "While on, open or unlocked"
+       },
+       {
+        "value": "above",
+        "label": "Above the high mark"
+       },
+       {
+        "value": "below",
+        "label": "Below the low mark"
+       }
+      ],
+      "default": "never"
+     },
+     {
+      "name": "low",
+      "type": "number",
+      "section": "look",
+      "label": "Low mark",
+      "help": "",
+      "when": [
+       "highlight=below"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "min": null,
+      "max": null,
+      "step": 1.0,
+      "unit": "",
+      "default": 0.0
+     },
+     {
+      "name": "high",
+      "type": "number",
+      "section": "look",
+      "label": "High mark",
+      "help": "",
+      "when": [
+       "highlight=above"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "min": null,
+      "max": null,
+      "step": 1.0,
+      "unit": "",
+      "default": 100.0
+     },
+     {
+      "name": "low_colour",
+      "type": "colour",
+      "section": "look",
+      "label": "Colour below the low mark",
+      "help": "",
+      "when": [
+       "highlight=below"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "default": "info"
+     },
+     {
+      "name": "high_colour",
+      "type": "colour",
+      "section": "look",
+      "label": "Colour above the high mark",
+      "help": "",
+      "when": [
+       "highlight=above"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "default": "warn"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "icon",
+     "tint": true
+    },
+    "tap": {
+     "default": "none",
+     "choices": [
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      },
+      {
+       "value": "toggle",
+       "label": "Turns it on or off",
+       "needs": "can.toggle"
+      }
+     ]
+    },
+    "notes": [],
+    "keywords": [
+     "reading",
+     "status",
+     "temperature",
+     "humidity",
+     "battery",
+     "power",
+     "state",
+     "meter"
+    ]
+   },
+   {
+    "id": "apollo/switch",
+    "tag": "apollo-tab-el-apollo-switch",
+    "name": "Switch",
+    "description": "Turn something on or off with a tap.",
+    "icon": "mdi:toggle-switch",
+    "version": "2.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 2,
+    "group": "lights",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 1
+    },
+    "variants": [
+     {
+      "id": "chip",
+      "name": "Chip",
+      "grid": [
+       12,
+       1
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "small",
+      "name": "Small",
+      "grid": [
+       6,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "switch",
+       "input_boolean",
+       "siren",
+       "fan",
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Device",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "word_on",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while on",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": "On"
+     },
+     {
+      "name": "word_off",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while off",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": "Off"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "fill",
+     "tint": false
+    },
+    "tap": {
+     "default": "toggle",
+     "choices": [
+      {
+       "value": "toggle",
+       "label": "Turns it on or off",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": [],
+    "keywords": [
+     "toggle",
+     "plug",
+     "socket",
+     "on and off",
+     "power",
+     "outlet",
+     "fan"
+    ]
+   },
+   {
     "id": "apollo/thermostat",
     "tag": "apollo-tab-el-apollo-thermostat",
     "name": "Thermostat",
     "description": "Set one target temperature and see what the heating is doing. Heating and cooling together, with a low and a high target, is not supported yet.",
     "icon": "mdi:thermostat",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "climate",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      2
@@ -925,17 +2687,43 @@
      "columns": 12,
      "rows": 6
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Thermostat",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "climate",
-      "multiple": false
+      "domains": [
+       "climate"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "climate"
      }
     },
-    "group": "climate",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "heating",
      "cooling",
@@ -953,6 +2741,14 @@
     "description": "Current conditions and the next five days.",
     "icon": "mdi:weather-partly-cloudy",
     "version": "1.0.0",
+    "source": "builtin",
+    "sensitive": false,
+    "approved": true,
+    "schema": 1,
+    "group": "sensors",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
     "size": [
      2,
      1
@@ -961,17 +2757,43 @@
      "columns": 12,
      "rows": 3
     },
-    "source": "builtin",
-    "sensitive": false,
-    "approved": true,
+    "variants": [
+     {
+      "id": "default",
+      "name": "Weather",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
     "params": {
      "entity": {
       "kind": "entity",
-      "domain": "weather",
-      "multiple": false
+      "domains": [
+       "weather"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "",
+      "help": "",
+      "domain": "weather"
      }
     },
-    "group": "sensors",
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": false,
+     "hold": false,
+     "lit": null,
+     "tint": false
+    },
+    "tap": null,
+    "notes": [],
     "keywords": [
      "forecast",
      "rain",
@@ -3000,7 +4822,7 @@
       "type": "toggle",
       "section": "controls",
       "label": "Brightness",
-      "help": "",
+      "help": "A bar to dim the light.",
       "when": [],
       "needs": "can.brightness",
       "needs_text": "This light cannot be dimmed",
@@ -3011,12 +4833,12 @@
       "type": "toggle",
       "section": "controls",
       "label": "Brightness bar on the small tile",
-      "help": "",
+      "help": "When off, the small tile shows a thin line for the level.",
       "when": [
        "show_brightness"
       ],
       "needs": "can.brightness",
-      "needs_text": "",
+      "needs_text": "This light cannot be dimmed",
       "default": true
      },
      {
@@ -3024,7 +4846,7 @@
       "type": "choice",
       "section": "controls",
       "label": "Colour",
-      "help": "",
+      "help": "A bar for any colour, buttons for your favourite colours, or both.",
       "when": [],
       "needs": "can.colour",
       "needs_text": "This light has no colour",
@@ -3054,10 +4876,10 @@
       "type": "toggle",
       "section": "controls",
       "label": "Colour strength",
-      "help": "",
+      "help": "A bar from pale to deep colour.",
       "when": [],
       "needs": "can.colour",
-      "needs_text": "",
+      "needs_text": "This light has no colour",
       "default": false
      },
      {
@@ -3065,7 +4887,7 @@
       "type": "toggle",
       "section": "controls",
       "label": "Warm to cool",
-      "help": "",
+      "help": "A bar from warm to cool white.",
       "when": [],
       "needs": "can.temperature",
       "needs_text": "This light has one white only",
@@ -3076,7 +4898,7 @@
       "type": "colours",
       "section": "controls",
       "label": "Favourite colours",
-      "help": "",
+      "help": "Press a colour to change it.",
       "when": [
        "colour_control=dots|both"
       ],
@@ -3099,10 +4921,10 @@
       "type": "choice",
       "section": "controls",
       "label": "Effects",
-      "help": "",
+      "help": "Buttons on the card's controls page.",
       "when": [],
       "needs": "can.effects",
-      "needs_text": "",
+      "needs_text": "This light has no effects",
       "multiple": true,
       "max": 8,
       "from": "can.effect_list",

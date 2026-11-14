@@ -589,6 +589,17 @@ export function previewLayout(conn, config) {
   return conn.sendMessagePromise({ type: "apollo_tab/layout/preview", config, dl: 2 });
 }
 
+// What a card's devices can do, for its form (C.7): {can, has}. It writes
+// nothing. Resolves to null when Home Assistant cannot say (an integration
+// without the command, a card it does not know, a lost connection): the form
+// then greys nothing.
+export function cardFacts(conn, component, params) {
+  return conn
+    .sendMessagePromise({ type: "apollo_tab/card/facts", component, params: params || {} })
+    .then((answer) => (answer && typeof answer === "object" && answer.can && answer.has ? answer : null))
+    .catch(() => null);
+}
+
 // ---- tablets --------------------------------------------------------------
 
 // One subscription to the tablet list per connection, shared by Home, the
