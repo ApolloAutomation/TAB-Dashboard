@@ -10,6 +10,7 @@ them byte for byte, on the convert path, in its writer and in the sender.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -405,7 +406,8 @@ def test_ci_compares_the_contract_with_tab_1() -> None:
         for step in steps
         if step.get("with", {}).get("repository") == "ApolloAutomation/TAB-1"
     ]
-    assert checkout["uses"].startswith("actions/checkout@")
+    # Pinned to a commit, like every other action of the file.
+    assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", checkout["uses"])
     assert checkout["with"]["persist-credentials"] is False
     folder = checkout["with"]["path"]
     after = steps[steps.index(checkout) + 1 :]

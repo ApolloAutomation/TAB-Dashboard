@@ -267,7 +267,9 @@ const NIGHT_CONFIG = {
 // again. Until it is approved it shows nothing and is not paired.
 // `reauth` ("erased" or "key") is what Home Assistant waits for from an
 // admin in Repairs before it connects again, under `reauth_name` (the
-// tablet's name there, its own name when not given).
+// tablet's name there, its own name when not given). `simpler`, `dropped`
+// and `not_kept` are what its layout leaves out or keeps, as the integration
+// reports them while it has a dashboard.
 function tabletEntry(n, name, changes = {}) {
   const mac = `aa:bb:cc:dd:ee:${n.toString(16).padStart(2, "0")}`;
   return {
@@ -287,6 +289,9 @@ function tabletEntry(n, name, changes = {}) {
     suggested: null,
     reauth: null,
     reauth_name: null,
+    simpler: 0,
+    dropped: 0,
+    not_kept: false,
     ...changes,
   };
 }
@@ -330,7 +335,8 @@ const TABLET_SETS = {
   // One tablet for every status and reason, both notes about taps, and an
   // erased tablet that Home Assistant waits for an admin's answer about.
   all: () => [
-    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"] }),
+    // Older tablet software: cards shown simpler, a layout not kept.
+    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"], simpler: 3, not_kept: true }),
     tabletEntry(2, "Hallway tablet", { prefer: ["tab-1"], online: false }),
     tabletEntry(3, "Bedroom tablet", BEDROOM_NO_ENGINE),
     tabletEntry(4, "Office tablet", { forced: { status: "unsupported", reason: "tablet_old", retry: false } }),
@@ -485,6 +491,9 @@ export function createMockHass(fixtures, options = {}) {
     suggested: !tablet.approved && isTab(tablet.suggested) ? tablet.suggested : null,
     reauth: tablet.reauth || null,
     reauth_name: tablet.reauth ? tablet.reauth_name || tablet.name : null,
+    simpler: tablet.approved && tablet.dashboard ? tablet.simpler : 0,
+    dropped: tablet.approved && tablet.dashboard ? tablet.dropped : 0,
+    not_kept: Boolean(tablet.approved && tablet.dashboard && tablet.not_kept),
   });
 
   // The tablets an admin turned on; only they show and count.

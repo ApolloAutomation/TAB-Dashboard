@@ -910,6 +910,43 @@ def output_confirm_text(
     return f"{_COVER_VERBS.get(service, 'Move')} {name}?"
 
 
+def cover_questions(
+    hass: HomeAssistant, components: dict[str, dict], bindings: object
+) -> dict[int, str]:
+    """Return the questions for the widgets and cards that move a cover.
+
+    Keyed by widget or card id, from a layout's bindings. The tablet asks
+    them before it sends (cf), so a tap needs no round trip for HA's
+    confirm answer; HA still checks every call. The sender writes them into
+    the device layout, and the converter counts their bytes when it fits a
+    layout to a tablet (C.4).
+    """
+    questions: dict[int, str] = {}
+    actions = bindings.get("actions") if isinstance(bindings, dict) else None
+    if not isinstance(actions, dict):
+        return questions
+    for key, action in actions.items():
+        if not isinstance(action, dict) or action.get("demo"):
+            continue
+        component_id = action.get("component")
+        component = (
+            components.get(component_id) if isinstance(component_id, str) else None
+        )
+        widget_id, _, _event = str(key).partition(":")
+        if component is None or not widget_id.isdigit():
+            continue
+        text = output_confirm_text(
+            hass,
+            component,
+            action,
+            action.get("params") or {},
+            action.get("entities") or [],
+        )
+        if text:
+            questions.setdefault(int(widget_id), text)
+    return questions
+
+
 def _confirm_text2(
     hass: HomeAssistant,
     output: dict,

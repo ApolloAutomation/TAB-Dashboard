@@ -301,6 +301,7 @@ class DashboardManager:
                 icons=self.icons,
                 caps=caps,
                 status=made_from.get("status"),
+                confirm=self._cover_questions,
             )
         except Exception:
             _LOGGER.exception(
@@ -316,6 +317,10 @@ class DashboardManager:
             "dl": 2,
         }
         return versions[key]
+
+    def _cover_questions(self, bindings: dict) -> dict[int, str]:
+        """Return the cover questions the sender writes into a device layout."""
+        return live.cover_questions(self._hass, self.library.components, bindings)
 
     async def async_convert_all(self) -> None:
         """Convert every dashboard and forget dashboards that are gone."""
@@ -371,6 +376,7 @@ class DashboardManager:
             dl=dl,
             icons=self.icons,
             status=self.library.status,
+            confirm=self._cover_questions,
         )
         return {
             "layout": result["layout"],

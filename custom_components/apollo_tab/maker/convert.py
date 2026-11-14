@@ -5,12 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Set
+from collections.abc import Callable, Mapping, Set
 from typing import Any
 
 from .compile import compile_card
 from .compile2 import compile_card2, role_table, validate_card_config2
-from .compile2_v1 import compile_card2_v1, note_card, variant_of
+from .compile2_v1 import compile_card2_v1, level1_names, note_card, variant_of
 from .const import (
     DEFAULT_THEME,
     DETAIL_TTL_S,
@@ -24,7 +24,12 @@ from .const import (
     MAX_TRACKS_PER_PAGE,
     UPDATE_NOTE,
 )
-from .device import ENGINE_CAPS_V2, ContractError, compile_device_layout
+from .device import (
+    CAPS_DEFAULTS,
+    ENGINE_CAPS_V2,
+    ContractError,
+    compile_device_layout,
+)
 from .errors import MakerError
 from .geometry import (
     CELL_INSET,
@@ -80,6 +85,7 @@ def convert_dashboard(
     icons: dict | None = None,
     caps: Mapping[str, Any] | None = None,
     status: Mapping[str, Any] | None = None,
+    confirm: Callable[[dict], Mapping[int, str]] | None = None,
 ) -> dict:
     """Return {"layout", "bindings", "warnings", "sources", "simpler"}.
 
@@ -93,11 +99,15 @@ def convert_dashboard(
     replaced by its version 1 form (C.6); simpler counts those cards. With
     2 the layout is version 2, with detail pages, subviews and page themes.
     icons is the contract's icons.json: version 1 forms keep only icons of
-    level 1 (none without it), and a layout v2 is fitted to caps (a
+    level 1 (none without it), so do side bar entries and headings of a
+    layout v1 (all are kept without it), and a layout v2 is fitted to caps (a
     tablet's, else what engine 0.2.0 answers) by leaving out detail pages
     and then cards (C.4). Without icons nothing is fitted. status is the
     library's status.json: the colours a card's roles good, warn, bad and
-    info take on its theme (without it, those of a dark theme).
+    info take on its theme (without it, those of a dark theme). confirm
+    gives, for a layout's bindings, the questions the tablet asks before a
+    cover moves, keyed by widget or card id: the sender writes them into the
+    device layout, so the fit counts their bytes (C.4).
     """
     if not isinstance(config, dict):
         config = {}
@@ -126,7 +136,7 @@ def convert_dashboard(
             "status": status,
             "warnings": warnings,
             "dl": dl,
-            "level1": _level1(icons),
+            "level1": level1_names(icons),
             "simpler": simpler,
         }
         views = config.get("views")
@@ -165,6 +175,8 @@ def convert_dashboard(
         if dl == 2:
             subviews = sum(1 for page in pages if page.get("sub"))
             details = _detail_pages(pages, env, MAX_DETAIL_PAGES - subviews)
+        elif icons is not None:
+            _level1_icons_only(nav, pages, env["level1"])
     head = {
         "v": dl,
         "screen": [SCREEN_W, SCREEN_H],
@@ -172,7 +184,9 @@ def convert_dashboard(
         "nav": nav,
     }
     if dl == 2 and icons is not None:
-        layout, bindings, sources = _fit(head, pages, details, warnings, icons, caps)
+        layout, bindings, sources = _fit(
+            head, pages, details, warnings, icons, caps, confirm
+        )
     else:
         layout, bindings, sources = _assemble(head, pages, details)
     return {
@@ -184,15 +198,23 @@ def convert_dashboard(
     }
 
 
-def _level1(icons: dict | None) -> frozenset[str]:
-    """Return the names of the icons of level 1 (engine 0.1.0 holds those)."""
-    if not isinstance(icons, dict) or not isinstance(icons.get("icons"), dict):
-        return frozenset()
-    return frozenset(
-        name
-        for name, entry in icons["icons"].items()
-        if isinstance(entry, list) and len(entry) == 2 and entry[1] <= 1
-    )
+def _level1_icons_only(nav: list[dict], pages: list[dict], level1: Set[str]) -> None:
+    """Leave out side bar and heading icons a version 1 tablet does not hold.
+
+    Engine 0.1.0 holds the icons of level 1 and draws the fallback glyph (a
+    question mark) for any other. A side bar entry without its icon gets
+    the icon a page without one gets; a heading shows its text alone. The
+    page keeps the icon the person picked.
+    """
+    for entry in nav:
+        if entry.get("icon") is not None and entry["icon"] not in level1:
+            del entry["icon"]
+    for page in pages:
+        for item in page["items"]:
+            if item["kind"] != "heading":
+                continue
+            if item.get("icon") is not None and item["icon"] not in level1:
+                del item["icon"]
 
 
 def _is_subview(view: object) -> bool:
@@ -241,6 +263,7 @@ def _fit(
     warnings: list[dict],
     icons: dict,
     caps: Mapping[str, Any] | None,
+    confirm: Callable[[dict], Mapping[int, str]] | None = None,
 ) -> tuple[dict, dict, dict]:
     """Assemble a layout v2 that fits the tablet (the over-a-limit rule, C.4).
 
@@ -251,10 +274,14 @@ def _fit(
     """
     caps = dict(caps) if caps is not None else dict(ENGINE_CAPS_V2)
 
-    def fits(layout: dict) -> dict | None:
-        """Return the compiled device layout, or None when it is too big."""
+    def fits(layout: dict, bindings: dict) -> dict | None:
+        """Return the compiled device layout, or None when it is too big.
+
+        With the questions the sender adds, so what fits here fits there.
+        """
+        questions = dict(confirm(bindings)) if confirm is not None else None
         try:
-            return compile_device_layout(layout, icons, caps)
+            return compile_device_layout(layout, icons, caps, confirm=questions)
         except ContractError as err:
             if err.code in ("limits", "too_big"):
                 return None
@@ -264,7 +291,7 @@ def _fit(
         trimmed = _without_last_cards(pages, cut)
         built = _assemble(head, trimmed, details, kept)
         try:
-            return built, fits(built[0])
+            return built, fits(built[0], built[1])
         except ContractError:
             # Not a matter of size: the sender reports it for the tablet.
             return built, {}
@@ -316,12 +343,14 @@ def _fit(
                     rect=item["rect"],
                 )
             )
-    if device and device.get("size", 0) > int(caps.get("max_stored", 0) or 0):
+    # A tablet that leaves max_stored out keeps the contract's default.
+    try:
+        stored = int(caps.get("max_stored", CAPS_DEFAULTS["max_stored"]) or 0)
+    except TypeError, ValueError, OverflowError:
+        stored = 0
+    if device and device.get("size", 0) > stored:
         warnings.append(
-            _warning(
-                "not_kept",
-                detail=f"{device['size']} bytes, kept up to {caps['max_stored']}",
-            )
+            _warning("not_kept", detail=f"{device['size']} bytes, kept up to {stored}")
         )
     return built
 
@@ -827,7 +856,7 @@ def _v1_form(
     if target == "note":
         return note_card(component, cfg, UPDATE_NOTE), component["id"], cfg["params"]
     if isinstance(target, str):
-        old = _old_card(target, variant, cfg, card, env)
+        old = _old_card(target, component, variant, cfg, card, env)
         if old is not None:
             return old
     try:
@@ -840,14 +869,26 @@ def _v1_form(
 
 
 def _old_card(
-    target: str, variant: dict, cfg: dict, card: dict, env: dict
+    target: str, component: dict, variant: dict, cfg: dict, card: dict, env: dict
 ) -> tuple[dict, str, dict] | None:
-    """Compile the schema 1 card a variant names, when all three rules hold."""
+    """Compile the schema 1 card a variant names, when all three rules hold.
+
+    A sensitive old card (a lock or an alarm, whoever wrote it) stands in
+    only for a built-in card or an approved file from the person's folder:
+    else a file without an action of its own could put Unlock on a version
+    1 tablet with no admin's approval.
+    """
     old = env["components"].get(target)
     if not isinstance(old, dict) or old.get("schema", 1) != 1:
         return None
     sensitive = old.get("source") == "user" and old.get("sensitive")
     if sensitive and target not in env["approved"]:
+        return None
+    if (
+        old.get("sensitive")
+        and component.get("source") == "user"
+        and component["id"] not in env["approved"]
+    ):
         return None
     size = old.get("size") or [1, 1]
     grid = variant["grid"]

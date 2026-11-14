@@ -43,8 +43,8 @@ from .live import (
     CallError,
     SlotTracker,
     async_run_output,
+    cover_questions,
     jsonable,
-    output_confirm_text,
 )
 from .maker import outputs as out2
 from .maker.device import (
@@ -196,6 +196,12 @@ class Compiled:
     layout: dict
     digest: str
     level: int
+    # Cards shown in a version 1 form or as the update note (C.5), widgets
+    # left out because the tablet cannot draw their kind, and whether the
+    # layout is too big to be kept across a restart (caps.max_stored).
+    simpler: int = 0
+    dropped: int = 0
+    not_kept: bool = False
 
 
 def _find_widget(layout: dict, widget_id: int) -> dict | None:
@@ -379,10 +385,6 @@ class TabletSession:
         # The device layout version this tablet gets: 2 when its proto
         # includes 2 (contract section 3).
         self.dl = 1
-        # Cards this tablet shows in a version 1 form or as the note, and
-        # whether its layout is too big to be kept across a restart.
-        self.simpler = 0
-        self.not_kept = False
         self.shown: str | None = None
         # A hash HA committed that the tablet may still be building: neither
         # confirmed on screen nor reported as ended. Kept across connections,
@@ -492,6 +494,24 @@ class TabletSession:
     def running(self) -> bool:
         """Return whether a run is going on."""
         return self._task is not None and not self._task.done()
+
+    # What the layout HA last made for this tablet leaves out or keeps
+    # (C.5). Nothing while HA has made none for it.
+
+    @property
+    def simpler(self) -> int:
+        """Return how many cards it shows in a version 1 form or as the note."""
+        return self.want.simpler if self.want is not None else 0
+
+    @property
+    def dropped_widgets(self) -> int:
+        """Return how many widgets are left out because it cannot draw them."""
+        return self.want.dropped if self.want is not None else 0
+
+    @property
+    def not_kept(self) -> bool:
+        """Return whether its layout is too big to be kept across a restart."""
+        return self.want.not_kept if self.want is not None else False
 
     def drop_session(self) -> None:
         """Forget the session and the value trackers (the connection ended)."""
@@ -777,8 +797,6 @@ class TabletSession:
         icons = self.sender.icons
         result = compile_device_layout(layout, icons, self.caps, confirm=confirm)
         caps = {**CAPS_DEFAULTS, **self.caps}
-        self.not_kept = result["size"] > int(caps["max_stored"])
-        self.simpler = int(stored.get("simpler", 0) or 0)
         compiled = Compiled(
             url_path=url_path,
             hash=result["hash"],
@@ -789,45 +807,24 @@ class TabletSession:
             layout=layout,
             digest=bindings_digest(stored["bindings"], result["slots"]),
             level=icon_level(icons, self.caps),
+            simpler=int(stored.get("simpler", 0) or 0),
+            dropped=len(result["dropped"]),
+            not_kept=result["size"] > int(caps["max_stored"]),
         )
         self._compile_cache = (layout, caps_key, confirm, compiled)
         return compiled
 
     def _cover_questions(self, bindings: dict) -> dict[int, str]:
-        """Questions for widgets that move a garage, gate or door cover.
-
-        The tablet asks them before it sends (cf), so a tap needs no round
-        trip for HA's confirm answer. HA still checks every call.
-        """
-        questions: dict[int, str] = {}
-        actions = bindings.get("actions") if isinstance(bindings, dict) else None
-        if not isinstance(actions, dict):
-            return questions
-        components = self.sender.library.components
-        for key, action in actions.items():
-            if not isinstance(action, dict) or action.get("demo"):
-                continue
-            component_id = action.get("component")
-            component = (
-                components.get(component_id) if isinstance(component_id, str) else None
-            )
-            widget_id, _, _event = str(key).partition(":")
-            if component is None or not widget_id.isdigit():
-                continue
-            text = output_confirm_text(
-                self.hass,
-                component,
-                action,
-                action.get("params") or {},
-                action.get("entities") or [],
-            )
-            if text:
-                questions.setdefault(int(widget_id), text)
-        return questions
+        """Questions for widgets that move a garage, gate or door cover."""
+        return cover_questions(self.hass, self.sender.library.components, bindings)
 
     def _set_want(self, compiled: Compiled) -> None:
         """Keep bindings for the wanted layout and for the one on screen."""
+        before = (self.simpler, self.dropped_widgets, self.not_kept)
         self.want = compiled
+        if (compiled.simpler, compiled.dropped, compiled.not_kept) != before:
+            # The tablets list shows them (C.5).
+            self.sender.notify()
         kept = {compiled.hash: compiled}
         if self.shown and self.shown != compiled.hash and self.shown in self.kept:
             kept[self.shown] = self.kept[self.shown]
@@ -1910,6 +1907,7 @@ class TabletSender:
         approved = session.approved
         device = dr.async_get(self.hass).async_get(session.device_id)
         reauth, reauth_name = self._reauth(session, name)
+        shows = approved and session.dashboard is not None
         return {
             "mac": session.mac,
             "device_id": session.device_id,
@@ -1934,6 +1932,13 @@ class TabletSender:
             # connects to the tablet again, and the name Repairs gives it.
             "reauth": reauth,
             "reauth_name": reauth_name,
+            # What the layout HA made for it leaves out or keeps (C.5): cards
+            # shown simpler because its software is older, widgets it cannot
+            # draw, and whether the layout is too big to be kept across a
+            # restart. Nothing for a tablet that shows nothing.
+            "simpler": session.simpler if shows else 0,
+            "dropped": session.dropped_widgets if shows else 0,
+            "not_kept": session.not_kept if shows else False,
         }
 
     def _reauth(

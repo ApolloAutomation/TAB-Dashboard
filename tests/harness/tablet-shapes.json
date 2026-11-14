@@ -21,6 +21,7 @@
     "'tablets' counts the approved tablets; 'sent_to_tablets' is true when one of them is 'on_tablet'.",
     "Assigning a dashboard to a tablet that is not approved approves it only with 'approve' true, which only the panel's \"Turn on with this dashboard\" sends; without it the answer is the error 'not_approved' (the commands are admin only). An approved tablet switches with or without 'approve'.",
     "'reauth' is what Home Assistant waits for from an admin, under Settings > Repairs, before ESPHome connects to the tablet again: one of 'reauths' ('erased': confirm that the tablet was erased; 'key': it asks for a key), or null. 'reauth_name' is the name Repairs gives it (\"Authentication expired for <reauth_name>\"), null exactly when 'reauth' is null.",
+    "'simpler', 'dropped' and 'not_kept' describe the layout Home Assistant made for the tablet last: how many cards it shows simpler (in a version 1 form or as the note to update the tablet) because its software is older, how many widgets are left out because it cannot draw their kind, and whether the layout is too big to be kept when the tablet restarts. Both numbers are 0 or more. A tablet without a dashboard has 0, 0 and false.",
     "The panel treats a reason it does not know by 'retry'."
   ],
   "tablet": {
@@ -40,7 +41,10 @@
     "approved": { "type": "boolean" },
     "suggested": { "type": ["string", "null"], "pattern": "^\\S+$" },
     "reauth": { "type": ["string", "null"], "values": "reauths" },
-    "reauth_name": { "type": ["string", "null"], "pattern": "^\\S(.*\\S)?$" }
+    "reauth_name": { "type": ["string", "null"], "pattern": "^\\S(.*\\S)?$" },
+    "simpler": { "type": "integer" },
+    "dropped": { "type": "integer" },
+    "not_kept": { "type": "boolean" }
   },
   "statuses": ["new", "no_dashboard", "offline", "no_engine", "unsupported", "sending", "on_tablet", "failed"],
   "inputs": ["ok", "needs_encryption", "not_paired"],
@@ -143,6 +147,9 @@
     "approved": true,
     "suggested": null,
     "reauth": null,
-    "reauth_name": null
+    "reauth_name": null,
+    "simpler": 0,
+    "dropped": 0,
+    "not_kept": false
   }
 }

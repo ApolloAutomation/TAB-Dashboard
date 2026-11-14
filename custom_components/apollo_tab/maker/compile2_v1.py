@@ -15,7 +15,8 @@ from __future__ import annotations
 from collections.abc import Set
 from typing import Any
 
-from .compile2 import _Compiler2
+from .compile2 import _Compiler2, validate_card_config2
+from .errors import MakerError
 from .geometry import card_size_px, layout_card
 
 # Label sizes of version 2 and the version 1 size each is drawn at.
@@ -32,6 +33,24 @@ LABEL_SIZE_V1 = {
 TITLE_HEADERS = ("title", "chip", "tile", "tile_v")
 
 
+def level1_names(icons: object) -> frozenset[str]:
+    """Return the names of the icons of level 1 in the contract's icons.json.
+
+    Engine 0.1.0 holds those. Anything that is not icons.json gives none.
+    """
+    table = icons.get("icons") if isinstance(icons, dict) else None
+    if not isinstance(table, dict):
+        return frozenset()
+    return frozenset(
+        name
+        for name, entry in table.items()
+        if isinstance(entry, list)
+        and len(entry) == 2
+        and isinstance(entry[1], int | float)
+        and entry[1] <= 1
+    )
+
+
 def compile_card2_v1(
     component: dict,
     card: dict,
@@ -46,6 +65,33 @@ def compile_card2_v1(
     the card is shown as the note.
     """
     return _V1Form(component, card, facts or {}, level1).form()
+
+
+def keeps_nothing(component: dict, variant: str, level1: Set[str]) -> bool:
+    """Return whether a variant's own version 1 form keeps nothing (C.6, rule 2).
+
+    Made as the picker shows the card: the file's preview values (for a
+    page or number param too, which a demo card does not read), the default
+    options and the variant's own grid. True means a version 1 tablet gets
+    the note for it, unless an old card stands in (rule 1). A card that
+    cannot be made without its devices tells nothing: False.
+    """
+    preview = component["preview"]["params"]
+    params = {
+        name: value
+        for name, value in preview.items()
+        if component["params"][name]["kind"] != "entity"
+    }
+    try:
+        card = validate_card_config2(component, {"params": params})
+    except MakerError:
+        return False
+    columns, rows = component["variants"][variant]["grid"]
+    card = {**card, "variant": variant, "columns": columns, "rows": rows}
+    try:
+        return compile_card2_v1(component, card, {}, level1=level1) is None
+    except MakerError:
+        return False
 
 
 def variant_of(component: dict, card: dict) -> str:

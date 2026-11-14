@@ -142,6 +142,11 @@ function checkTablet(where, tablet) {
   assert.ok(shortNames(tablet.name).has(tablet.short_name), `${where}: short name "${tablet.short_name}"`);
   // The name Repairs uses comes with what it waits for, and only then.
   assert.equal(tablet.reauth === null, tablet.reauth_name === null, `${where}: reauth ${tablet.reauth}, ${tablet.reauth_name}`);
+  // What the layout made for it leaves out or keeps; nothing without a dashboard.
+  assert.ok(tablet.simpler >= 0 && tablet.dropped >= 0, `${where}: simpler ${tablet.simpler}, dropped ${tablet.dropped}`);
+  if (tablet.dashboard === null) {
+    assert.deepEqual([tablet.simpler, tablet.dropped, tablet.not_kept], [0, 0, false], where);
+  }
 }
 
 function checkTabletList(where, list) {
@@ -237,6 +242,13 @@ test("the shapes file's example passes its own rules", () => {
   assert.throws(() => checkTablet("reauth without a name", { ...SHAPES.example, reauth: "erased" }));
   assert.throws(() => checkTablet("a name without reauth", { ...SHAPES.example, reauth_name: "Kitchen" }));
   assert.throws(() => checkTablet("a padded name", { ...SHAPES.example, reauth: "key", reauth_name: " Kitchen" }));
+  checkTablet("older software", { ...SHAPES.example, simpler: 3, dropped: 2, not_kept: true });
+  assert.throws(() => checkTablet("simpler as text", { ...SHAPES.example, simpler: "3" }));
+  assert.throws(() => checkTablet("a fraction", { ...SHAPES.example, dropped: 1.5 }));
+  assert.throws(() => checkTablet("below 0", { ...SHAPES.example, simpler: -1 }));
+  assert.throws(() => checkTablet("not_kept as a number", { ...SHAPES.example, not_kept: 1 }));
+  assert.throws(() => checkTablet("simpler without a dashboard", { ...fresh, simpler: 1 }));
+  assert.throws(() => checkTablet("not_kept without a dashboard", { ...fresh, not_kept: true }));
 });
 
 test("the panel knows every status and reason of the shapes file, with words", () => {
