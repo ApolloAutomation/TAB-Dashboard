@@ -48,7 +48,7 @@ async def test_builtins_load(hass: HomeAssistant) -> None:
     """All built-in Components load without errors."""
     library = Library(hass)
     await library.async_load()
-    assert len(library.components) == 25
+    assert len(library.components) == 39
     assert library.errors == []
     assert library.themes
     assert "apollo/light-tile" in library.components
@@ -68,7 +68,7 @@ async def test_user_component_loads(
     component = library.components["me/simple"]
     assert component["source"] == "user"
     assert component["file"] == "simple.yaml"
-    assert len(library.components) == 26
+    assert len(library.components) == 40
     assert library.errors == []
     listing = library.as_dict()
     assert listing["components_path"] == library.user_dir
@@ -108,7 +108,7 @@ async def test_yaml_error_reported(
     assert len(library.errors) == 1
     assert library.errors[0]["code"] == "yaml_error"
     assert library.errors[0]["file"] == "broken.yaml"
-    assert len(library.components) == 25
+    assert len(library.components) == 39
 
 
 async def test_python_tag_rejected(
@@ -154,7 +154,7 @@ async def test_file_too_large_reported(
     assert len(library.errors) == 1
     assert library.errors[0]["code"] == "file_too_large"
     assert library.errors[0]["file"] == "big.yaml"
-    assert len(library.components) == 25
+    assert len(library.components) == 39
 
 
 async def test_reserved_namespace_rejected(

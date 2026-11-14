@@ -1,0 +1,131 @@
+schema: 2
+id: apollo/cover
+version: 2.0.0
+name: Blinds and doors
+description: Open, close or stop blinds, curtains, a garage door or a gate.
+icon: mdi:blinds
+group: covers
+replaces: [apollo/blinds]
+
+params:
+  entity: {domain: cover, label: Blind or door}
+
+options:
+  show_position: {type: toggle, section: controls, label: Position bar, default: true,
+                  needs: can.position, needs_text: This one only opens and closes}
+  show_stop:     {type: toggle, section: controls, label: Stop button, default: true,
+                  needs: can.stop, needs_text: This one cannot be stopped}
+  show_tilt:     {type: toggle, section: controls, label: Tilt bar, default: false,
+                  needs: can.tilt, needs_text: This one cannot tilt}
+  turn_round:    {type: toggle, section: look, label: The bar grows as it opens, default: false,
+                  when: [show_position]}
+
+inputs:
+  pos:     "{{ state_attr(entity, 'current_position') }}"
+  closed:  "{{ 100 - pos if pos is number else none }}"
+  tilt:    "{{ state_attr(entity, 'current_tilt_position') }}"
+  is_open: "{{ states(entity) in ['open', 'opening'] }}"
+  state:   >-
+    {{ state_translated(entity) ~ (' ' ~ pos ~ '%' if pos is number and states(entity) == 'open' and pos < 100 else '') }}
+  icon:    {source: state_icon, entity: "{{ entity }}"}
+  name:    "{{ state_attr(entity, 'friendly_name') or entity }}"
+
+outputs:
+  open:         {action: cover.open_cover, data: {entity_id: "{{ entity }}"}, feedback: progress}
+  close:        {action: cover.close_cover, data: {entity_id: "{{ entity }}"}, feedback: progress}
+  stop:         {action: cover.stop_cover, data: {entity_id: "{{ entity }}"}, feedback: progress}
+  toggle:       {action: cover.toggle, data: {entity_id: "{{ entity }}"}, feedback: progress}
+  set_closed:   {action: cover.set_cover_position,
+                 data: {entity_id: "{{ entity }}", position: "{{ 100 - value }}"}, feedback: progress}
+  set_position: {action: cover.set_cover_position,
+                 data: {entity_id: "{{ entity }}", position: "{{ value }}"}, feedback: progress}
+  set_tilt:     {action: cover.set_cover_tilt_position,
+                 data: {entity_id: "{{ entity }}", tilt_position: "{{ value }}"}, feedback: progress}
+
+on: is_open
+state: state
+lit: icon
+tap:
+  default: toggle
+  choices:
+    toggle: {label: Opens or closes it, output: toggle}
+    detail: {label: Opens its controls}
+    none:   {label: Does nothing}
+hold: detail
+
+parts:
+  # How far it is closed, as a blind hangs; or how far it is open.
+  closed_bar: {type: slider, look: bar, value: closed, min: 0, max: 100, on_change: set_closed,
+               when: [can.position, show_position, "!turn_round"]}
+  open_bar:   {type: slider, look: bar, value: pos, min: 0, max: 100, on_change: set_position,
+               when: [can.position, show_position, turn_round]}
+  tilt_bar:   {type: slider, look: bar, value: tilt, min: 0, max: 100, on_change: set_tilt,
+               when: [can.tilt, show_tilt]}
+  buttons:
+    type: row
+    items:
+      - {type: button, icon: "mdi:arrow-up", on_tap: open}
+      - {type: button, icon: "mdi:stop", on_tap: stop, when: [can.stop, show_stop]}
+      - {type: button, icon: "mdi:arrow-down", on_tap: close}
+  open_or_close:
+    type: swap
+    items:
+      - {type: button, text: Close, icon: "mdi:arrow-down", on_tap: close, visible: is_open}
+      - {type: button, text: Open, icon: "mdi:arrow-up", on_tap: open, visible: "{{ not is_open }}"}
+  # What a tablet with older software shows on the tile and the door.
+  old_buttons:
+    type: row
+    when: ["!tablet.v2"]
+    items:
+      - {type: button, text: Open, on_tap: open}
+      - {type: button, text: Close, on_tap: close}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: tile_v
+    layout: [{use: old_buttons}]
+  tall:
+    name: Tall
+    grid: [6, 6]
+    header: tile
+    v1: apollo/blinds
+    layout: [{use: buttons}, {use: closed_bar}, {use: open_bar}, {use: tilt_bar}]
+  window:
+    name: Window
+    grid: [6, 9]
+    header: tile
+    v1: apollo/blinds
+    layout:
+      - {use: closed_bar, look: bar, direction: down, grow: true}
+      - {use: open_bar, look: bar, direction: up, grow: true}
+      - {use: buttons}
+  door:
+    name: Door
+    grid: [12, 3]
+    needs: can.asks
+    needs_text: Only for a garage door, a gate or a door
+    header: none
+    layout:
+      - {type: image, value: icon, look: bare, side: true, when: [tablet.v2]}
+      - {type: label, text: "{{ name }}", size: m, when: [tablet.v2]}
+      - {type: label, text: "{{ state }}", size: s, when: [tablet.v2]}
+      - {use: open_or_close}
+      - {use: old_buttons}
+  full:
+    name: Controls
+    grid: [18, 11]
+    header: tile
+    picker: false
+    layout:
+      - {use: closed_bar, height: 56}
+      - {use: open_bar, height: 56}
+      - {use: tilt_bar, height: 48}
+      - {use: buttons, height: 64}
+detail: full
+
+preview:
+  params: {entity: cover.example}
+  can: {position: true, stop: true, tilt: false, asks: false}
+  inputs: {pos: 60, closed: 40, tilt: null, is_open: true, state: "Open 60%", name: Living room}

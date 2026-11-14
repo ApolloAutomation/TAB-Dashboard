@@ -1,0 +1,54 @@
+schema: 2
+id: apollo/readings
+version: 2.0.0
+name: List
+description: A short list of readings, one line each with its icon and value.
+icon: mdi:information-outline
+group: sensors
+
+params:
+  entities: {domain: any, multiple: true, max: 8, label: Devices}
+
+inputs:
+  gone: "{{ entities | select('is_state', 'unavailable') | list | count == entities | count }}"
+
+unavailable: gone
+lit: none
+
+parts:
+  lines:
+    type: row
+    for_each: entities
+    as: e
+    height: 28
+    when: [tablet.v2]
+    items:
+      - {type: image, value: "{{ e_can.icon }}", look: bare, width: 24}
+      - {type: label, text: "{{ state_attr(e, 'friendly_name') or e }}", size: s}
+      - {type: label, size: s, align: right,
+         text: "{{ (states(e) ~ ' ' ~ (state_attr(e, 'unit_of_measurement') or '')) | trim }}"}
+  # What a tablet with older software shows: "name: value" per device.
+  old_lines:
+    type: label
+    for_each: entities
+    as: e
+    size: s
+    when: ["!tablet.v2"]
+    text: >-
+      {{ state_attr(e, 'friendly_name') or e }}: {{ (states(e) ~ ' ' ~ (state_attr(e, 'unit_of_measurement') or '')) | trim }}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: none
+    layout: [{use: lines}, {use: old_lines}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: title
+    layout: [{use: lines}, {use: old_lines}]
+
+preview:
+  params: {entities: [sensor.living_room, sensor.bedroom, sensor.outside]}
+  inputs: {gone: false}

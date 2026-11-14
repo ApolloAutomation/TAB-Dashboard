@@ -851,7 +851,7 @@ def _v1_form(
     2. Else the variant itself, with version 1 keys only.
     3. Else, or when the variant says so, the note.
     """
-    variant = component["variants"][variant_of(component, cfg)]
+    variant = component["variants"][variant_of(component, cfg, env["facts"])]
     target = variant.get("v1") or component.get("v1")
     if target == "note":
         return note_card(component, cfg, UPDATE_NOTE), component["id"], cfg["params"]

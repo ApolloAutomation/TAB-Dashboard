@@ -1,0 +1,90 @@
+schema: 2
+id: apollo/light-group
+version: 2.0.0
+name: Lights together
+description: See how many lights are on, dim them together and turn them all on or off.
+icon: mdi:lightbulb-group
+group: lights
+
+params:
+  lights: {domain: light, multiple: true, max: 16, label: Lights}
+
+options:
+  show_bar: {type: toggle, section: controls, label: Brightness bar, default: true}
+  bar_sets: {type: choice, section: controls, label: The bar dims, default: "on",
+             choices: {"on": The lights that are on, all: All lights}, when: [show_bar]}
+
+inputs:
+  on_count: "{{ lights | select('is_state', 'on') | list | count }}"
+  total:    "{{ lights | count }}"
+  any_on:   "{{ on_count > 0 }}"
+  # The mean brightness of the lights that are on.
+  pct: >-
+    {% set b = lights | select('is_state', 'on') | map('state_attr', 'brightness') | reject('none') | list %}{{ ((b | sum / b | count) / 2.55) | round | int if b else 0 }}
+  line:     "{{ on_count }} of {{ total }} on"
+  of_total: "of {{ total }} lights on"
+  # The lights the bar dims: those that are on, or all when none is.
+  targets: >-
+    {{ lights if bar_sets == 'all' or on_count == 0 else lights | select('is_state', 'on') | list }}
+  gone:     "{{ lights | select('is_state', 'unavailable') | list | count == total }}"
+
+outputs:
+  all_on:  {action: light.turn_on, data: {entity_id: "{{ lights }}"}, feedback: optimistic}
+  all_off: {action: light.turn_off, data: {entity_id: "{{ lights }}"}, feedback: optimistic}
+  set_pct: {action: light.turn_on, uses: {targets: entities},
+            data: {entity_id: "{{ targets }}", brightness_pct: "{{ value }}"}, feedback: optimistic}
+
+on: any_on
+state: line
+unavailable: gone
+lit: fill
+tap:
+  default: none
+  choices:
+    none: {label: Does nothing}
+
+parts:
+  bar: {type: slider, look: bar, value: pct, min: 1, max: 100, icon: "mdi:brightness-6",
+        on_change: set_pct, when: [show_bar]}
+  all:
+    type: swap
+    items:
+      - {type: button, text: Turn all off, icon: "mdi:lightbulb-off", on_tap: all_off, visible: any_on}
+      - {type: button, text: Turn all on, icon: "mdi:lightbulb-on", on_tap: all_on,
+         visible: "{{ not any_on }}"}
+  # What a tablet with older software shows instead of the swap.
+  old_buttons:
+    type: row
+    when: ["!tablet.v2"]
+    items:
+      - {type: button, text: All on, on_tap: all_on}
+      - {type: button, text: All off, on_tap: all_off}
+  old_line: {type: label, text: "{{ line }}", size: s, when: ["!tablet.v2"]}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: tile
+    layout: [{use: all}, {use: old_line}, {use: old_buttons}]
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    layout: [{use: bar}, {use: all}, {use: old_buttons}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: tile
+    layout:
+      - {type: label, text: "{{ on_count }}", size: xl}
+      - {type: label, text: "{{ of_total }}", size: m}
+      - {use: bar}
+      - {use: all}
+      - {use: old_line}
+      - {use: old_buttons}
+
+preview:
+  params: {lights: [light.kitchen, light.hall, light.sofa, light.desk]}
+  inputs: {on_count: 2, total: 4, any_on: true, pct: 60, line: "2 of 4 on",
+           of_total: "of 4 lights on", gone: false}

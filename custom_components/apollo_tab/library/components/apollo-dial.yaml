@@ -1,0 +1,55 @@
+schema: 2
+id: apollo/dial
+version: 2.0.0
+name: Gauge
+description: Show a number on a round gauge, coloured by the limits you set.
+icon: mdi:gauge
+group: sensors
+replaces: [community/energy-gauge]
+
+params:
+  entity: {domain: [sensor, number, input_number], label: Reading from}
+  max:    {type: number, default: 5000, label: Top of the gauge}
+
+options:
+  min:         {type: number, section: shows, label: Bottom of the gauge, default: 0}
+  low:         {type: number, section: shows, label: Low below, default: 0}
+  low_colour:  {type: colour, section: look, label: Colour when low, default: info}
+  high:        {type: number, section: shows, label: High above, default: 0}
+  high_colour: {type: colour, section: look, label: Colour when high, default: warn}
+  unit:        {type: text, max: 8, section: shows, label: Unit}
+
+inputs:
+  reading: "{{ states(entity) | float(0) }}"
+  shown_unit: "{{ unit or state_attr(entity, 'unit_of_measurement') or '' }}"
+  text:    "{{ (states(entity) ~ ' ' ~ shown_unit) | trim }}"
+  # A limit of 0 is not set.
+  tone: >-
+    {{ high_colour if high and reading > high else low_colour if low and reading < low else none }}
+
+on: "{{ tone is not none }}"
+state: text
+tint: tone
+lit: icon
+
+parts:
+  gauge: {type: thermostat, value: reading, min: "{{ min }}", max: "{{ max }}", colour: tone}
+  text:  {type: label, text: "{{ text }}", size: m, align: centre}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: title
+    v1: community/energy-gauge
+    layout: [{use: gauge}, {use: text}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: title
+    v1: community/energy-gauge
+    layout: [{use: gauge}, {use: text, size: ml}]
+
+preview:
+  params: {entity: sensor.example, max: 5000}
+  inputs: {reading: 1840, shown_unit: W, text: "1840 W", tone: null}

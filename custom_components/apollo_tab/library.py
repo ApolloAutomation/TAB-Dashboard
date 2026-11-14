@@ -298,15 +298,19 @@ def _variant_entries(
     entries = []
     for name, variant in component["variants"].items():
         v1 = variant.get("v1") or default_v1
-        entries.append(
-            {
-                "id": name,
-                "name": variant["name"],
-                "grid": list(variant["grid"]),
-                "picker": variant["picker"],
-                "needs_v2": needs_v2.get(name, v1 == "note"),
-            }
-        )
+        entry = {
+            "id": name,
+            "name": variant["name"],
+            "grid": list(variant["grid"]),
+            "picker": variant["picker"],
+            "needs_v2": needs_v2.get(name, v1 == "note"),
+        }
+        if variant.get("needs"):
+            # The form offers it only where the fact holds, and says why
+            # not with needs_text, as for an option.
+            entry["needs"] = variant["needs"]
+            entry["needs_text"] = variant.get("needs_text", "")
+        entries.append(entry)
     return entries
 
 

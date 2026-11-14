@@ -272,6 +272,13 @@ def test_the_shipped_light_is_the_light_of_d1() -> None:
         " else '' }}"
     )
     d1["inputs"].pop("level")
+    # Large is not offered for a lamp that only turns on and off (D.1, the
+    # coordinator's decision 9).
+    large = shipped["variants"]["large"]
+    assert (large.pop("needs"), large.pop("needs_text")) == (
+        "can.brightness",
+        "This light only turns on and off",
+    )
     wide = d1["variants"]["wide"]["layout"]
     assert wide.pop(2) == {"use": "dots", "when": ["can.colour", "colour_control=dots"]}
     assert shipped == d1

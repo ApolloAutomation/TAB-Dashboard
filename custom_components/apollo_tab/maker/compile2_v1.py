@@ -94,9 +94,12 @@ def keeps_nothing(component: dict, variant: str, level1: Set[str]) -> bool:
         return False
 
 
-def variant_of(component: dict, card: dict) -> str:
-    """Return the variant a card is drawn in (the person's, else the largest)."""
-    return _Compiler2(component, card, {}, 2, None, False)._variant()
+def variant_of(component: dict, card: dict, facts: dict | None = None) -> str:
+    """Return the variant a card is drawn in (the person's, else the largest).
+
+    Facts decide a variant's `needs`, as when the card is compiled.
+    """
+    return _Compiler2(component, card, facts or {}, 2, None, False)._variant()
 
 
 def note_card(component: dict, card: dict, text: str) -> dict:

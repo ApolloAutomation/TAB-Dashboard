@@ -92,6 +92,12 @@ FACTS = {
 }
 # Facts every entity has.
 ANY_FACTS = ("toggle", "icon", "kind")
+# Every name of the fixed table. A card file's `can.<name>` names one of
+# these or one of its own device params, and a device param may not take
+# one of these names (it would hide the fact).
+FACT_NAMES = frozenset(
+    ANY_FACTS + tuple(name for row in FACTS.values() for group in row for name in group)
+)
 
 # Feature enum members, by name, that make a yes or no fact true.
 _FEATURE_FACTS = {

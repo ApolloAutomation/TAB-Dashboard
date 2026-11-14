@@ -591,17 +591,41 @@ class _Compiler2:
         )
         return out
 
+    def _holds(self, name: str) -> bool:
+        """Return whether the card's device can do what a variant needs."""
+        needs = self.component["variants"][name].get("needs")
+        return not needs or term_holds(needs, self.names)
+
+    def _detail(self) -> str | None:
+        """Return the detail variant, or None when there is none for this device.
+
+        A detail variant whose `needs` does not hold makes no detail page,
+        so nothing opens one: no hold, no tap choice, no `more`.
+        """
+        detail = self.component["detail"]
+        return detail if detail and self._holds(detail) else None
+
     def _variant(self) -> str:
-        """Pick the detail variant, the person's, else the largest that fits."""
+        """Pick the detail variant, the person's, else the largest that fits.
+
+        Only variants whose `needs` holds count. A stored variant that does
+        not hold gives the file's first picker variant that does. An example
+        card (no device picked yet) is the picture of the variant it names,
+        whatever the example's facts.
+        """
         variants = self.component["variants"]
-        if self.detail_copy and self.component["detail"]:
+        if self.detail_copy and self._detail():
             return self.component["detail"]
+        picker = [
+            name for name in _picker_variants(self.component) if self._holds(name)
+        ]
         if self.card["variant"] in variants:
-            return self.card["variant"]
+            if self.demo or self._holds(self.card["variant"]):
+                return self.card["variant"]
+            return picker[0]
         columns = self.card["columns"]
         columns = 36 if columns == "full" else columns
         rows = self.card["rows"]
-        picker = _picker_variants(self.component)
 
         def area(name: str) -> int:
             grid = variants[name]["grid"]
@@ -741,7 +765,7 @@ class _Compiler2:
         if chosen is None or (chosen["value"] == "none" and "output" not in chosen):
             return None, toggle
         if "output" not in chosen:
-            if chosen["value"] == "detail" and self.component["detail"]:
+            if chosen["value"] == "detail" and self._detail():
                 self.opener = True
                 return {"tap": {"local": "detail"}}, toggle
             return None, toggle
@@ -792,7 +816,7 @@ class _Compiler2:
         """Return the card's hold: open its detail page, unless switched off."""
         if self.detail_copy or self.component["hold"] != "detail":
             return None
-        if not self.component["detail"] or not self.standard.get("hold", True):
+        if not self._detail() or not self.standard.get("hold", True):
             return None
         self.opener = True
         return {"local": "detail"}
@@ -800,7 +824,7 @@ class _Compiler2:
     def _tap_of(self, name: str, key: str, item_vars: dict) -> dict | None:
         """Build the tap of an output, recording an action under key."""
         if name == "detail":
-            if self.detail_copy or not self.component["detail"]:
+            if self.detail_copy or not self._detail():
                 return None
             self.opener = True
             return {"local": "detail"}
@@ -810,7 +834,7 @@ class _Compiler2:
             return {"policy": output["feedback"]}
         local = output["local"]
         if local == "detail":
-            if self.detail_copy or not self.component["detail"]:
+            if self.detail_copy or not self._detail():
                 return None
             self.opener = True
             return {"local": "detail"}
@@ -913,7 +937,7 @@ class _Compiler2:
         if trailing is None or variant["header"] not in ("tile", "tile_v"):
             return None
         form = trailing["form"]
-        if form == "more" and (self.detail_copy or not self.component["detail"]):
+        if form == "more" and (self.detail_copy or not self._detail()):
             return None
         if form == "input":
             return "text", trailing
@@ -1187,7 +1211,7 @@ class _Compiler2:
             self.actions[f"{index}:change"] = action
         if item.get("confirm") is not None and ("tap" in widget or "change" in widget):
             widget["confirm"] = self._bind(item["confirm"], names, "text")
-        if item.get("on_hold") == "detail" and not self.detail_copy:
+        if item.get("on_hold") == "detail" and not self.detail_copy and self._detail():
             widget["hold"] = {"local": "detail"}
             self.opener = True
         self._next(widget)

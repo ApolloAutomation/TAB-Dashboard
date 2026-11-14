@@ -1,0 +1,52 @@
+schema: 2
+id: apollo/clock
+version: 2.0.0
+name: Clock
+description: The time in large digits, with the date and a greeting if you like.
+icon: mdi:clock-outline
+group: home
+
+options:
+  hours:         {type: choice, section: look, label: Hours, default: "24",
+                  choices: {"24": "24 hours", "12": "12 hours"}}
+  show_date:     {type: toggle, section: shows, label: Date, default: true}
+  show_greeting: {type: toggle, section: shows, label: Greeting, default: false}
+
+inputs:
+  clock:    {source: clock}
+  date:     "{{ now().strftime('%A %-d %B') }}"
+  greeting: >-
+    {{ 'Good morning' if now().hour < 12 else 'Good afternoon' if now().hour < 18 else 'Good evening' }}
+  text:     "{{ now().strftime('%H:%M' if hours == '24' else '%-I:%M') }}"
+
+lit: none
+
+parts:
+  time_24:  {type: label, clock: 24, value: clock, size: xxl, align: centre,
+             when: [hours=24, tablet.v2]}
+  time_12:  {type: label, clock: 12, value: clock, size: xxl, align: centre,
+             when: [hours=12, tablet.v2]}
+  date:     {type: label, text: "{{ date }}", size: s, align: centre, when: [show_date]}
+  greeting: {type: label, text: "{{ greeting }}", size: m, align: centre, when: [show_greeting]}
+  # What a tablet with older software shows: the time as text, sent each minute.
+  old_time: {type: label, text: "{{ text }}", size: l, align: centre, when: ["!tablet.v2"]}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: none
+    layout: [{use: time_24}, {use: time_12}, {use: old_time}, {use: date}]
+  hero:
+    name: Large
+    grid: [24, 6]
+    header: none
+    layout:
+      - {use: time_24, size: huge}
+      - {use: time_12, size: huge}
+      - {use: old_time}
+      - {use: date, size: ml}
+      - {use: greeting}
+
+preview:
+  inputs: {date: Tuesday 10 November, greeting: Good morning, text: "10:42"}

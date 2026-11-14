@@ -82,6 +82,7 @@ from .const import (
     WHEN_VALUE_RE,
 )
 from .errors import MakerError
+from .features import FACT_NAMES
 from .outputs import reference
 from .schema import (
     _as_mapping,
@@ -347,13 +348,66 @@ def _fact(value: object, path: str, ctx: _Ctx) -> str:
     match = _FACT.match(value)
     if match is None:
         raise MakerError("bad_value", path, f"bad fact {value!r}")
-    if match.group(2) is not None:
-        param = ctx.params.get(match.group(1))
-        if param is None or param["kind"] != "entity":
-            raise MakerError(
-                "unknown_param", path, f"no device param {match.group(1)!r}"
-            )
+    _fact_parts(match.group(1), match.group(2), path, ctx)
     return value
+
+
+def _is_device_param(name: str, ctx: _Ctx) -> bool:
+    """Return whether a name is an entity param of the file."""
+    param = ctx.params.get(name)
+    return param is not None and param["kind"] == "entity"
+
+
+def _fact_parts(first: str, second: str | None, path: str, ctx: _Ctx) -> None:
+    """Check `can.<first>` or `can.<first>.<second>` against the fixed table.
+
+    One name: a fact of the table, or a device param of the file (all its
+    facts). Two names: a device param, then a fact of the table.
+    """
+    if second is None:
+        if first in FACT_NAMES or _is_device_param(first, ctx):
+            return
+        raise MakerError(
+            "unknown_fact",
+            path,
+            f"can.{first} is neither a fact a device can have"
+            " nor a device of this card",
+        )
+    if not _is_device_param(first, ctx):
+        raise MakerError("unknown_param", path, f"no device param {first!r}")
+    if second not in FACT_NAMES:
+        raise MakerError(
+            "unknown_fact", path, f"{second!r} is not a fact a device can have"
+        )
+
+
+# `can.<x>` or `can.<param>.<x>` inside a template's text.
+_CAN_IN_TEMPLATE = re.compile(
+    r"(?<![A-Za-z0-9_.])can\.([a-z][a-z0-9_]*)(?:\.([a-z][a-z0-9_]*))?"
+)
+
+
+def _check_template_facts(doc: dict, ctx: _Ctx) -> None:
+    """Check every `can.<x>` a template of the file reads (decision 2).
+
+    A second name is checked only after a device param: after a fact it is
+    a method or a key of the fact's own value.
+    """
+    stack: list[tuple[str, object]] = [
+        (key, value) for key, value in doc.items() if key != "preview"
+    ]
+    while stack:
+        path, value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend((f"{path}.{key}", inner) for key, inner in value.items())
+        elif isinstance(value, list):
+            stack.extend((f"{path}.{i}", inner) for i, inner in enumerate(value))
+        elif isinstance(value, str) and _is_template(value):
+            for match in _CAN_IN_TEMPLATE.finditer(value):
+                first, second = match.groups()
+                if not _is_device_param(first, ctx):
+                    second = None
+                _fact_parts(first, second, path, ctx)
 
 
 def _when(raw: object, path: str, ctx: _Ctx) -> list:
@@ -424,6 +478,14 @@ def _validate_params(raw: object, ctx: _Ctx) -> None:
             raise MakerError("duplicate_name", path, f"duplicate name {name!r}")
         ctx.used.add(name)
         ctx.params[name] = _validate_param(spec, path)
+        if ctx.params[name]["kind"] == "entity" and name in FACT_NAMES:
+            # can.<name> would mean both the fact and this device.
+            raise MakerError(
+                "bad_name",
+                path,
+                f"{name!r} is the name of a fact (can.{name});"
+                " give this device another name",
+            )
 
 
 def _words(spec: dict, path: str) -> tuple[str, str]:
@@ -1140,6 +1202,12 @@ def _mark(
             if needs_key is not None:
                 if needs_key and key is None:
                     raise MakerError("bad_value", path, f"{name} needs a key")
+                if needs_key and name != "can" and key not in FACT_NAMES:
+                    # <as>_can of a loop over devices: one device's facts.
+                    # (`{{ can.<x> }}` is checked with every template.)
+                    raise MakerError(
+                        "unknown_fact", path, f"{key!r} is not a fact a device can have"
+                    )
                 return {"form": "lookup", "name": name, "key": key}
         if _is_template(value):
             if not template:
@@ -1917,6 +1985,11 @@ def _validate_variants(doc: dict, ctx: _Ctx, card: dict) -> dict:
         out[name] = _variant(spec, path, ctx, card)
     if not any(variant["picker"] for variant in out.values()):
         raise MakerError("bad_value", "variants", "one variant must be in the picker")
+    if not any(variant["picker"] and not variant["needs"] for variant in out.values()):
+        # A card whose device can do nothing must still have a variant.
+        raise MakerError(
+            "bad_value", "variants", "one variant in the picker must have no needs"
+        )
     return out
 
 
@@ -1925,11 +1998,28 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
     spec = _as_mapping(spec, path)
     _reject_unknown_keys(
         spec,
-        {"name", "grid", "header", "trailing", "layout", "v1", "picker", "align"},
+        {
+            "name",
+            "grid",
+            "header",
+            "trailing",
+            "layout",
+            "v1",
+            "picker",
+            "align",
+            "needs",
+            "needs_text",
+        },
         path,
     )
     prefix = f"{path}." if path else ""
     name = _text(_required(spec, "name", path), f"{prefix}name", MAX_LABEL_2)
+    # What the device must be able to do for this variant, as for an option.
+    needs = spec.get("needs")
+    needs = "" if needs is None else _fact(needs, f"{prefix}needs", ctx)
+    needs_text = _text(spec.get("needs_text", ""), f"{prefix}needs_text", MAX_HELP_2)
+    if needs_text and not needs:
+        raise MakerError("bad_value", f"{prefix}needs_text", "needs_text needs 'needs'")
     grid = _required(spec, "grid", path)
     if not isinstance(grid, list) or len(grid) != 2:
         raise MakerError("bad_value", f"{prefix}grid", "grid is [columns, rows]")
@@ -1951,6 +2041,8 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
         "picker": _bool(spec.get("picker", True), f"{prefix}picker"),
         "align": _choose(spec, "align", ("top",), path),
         "v1": _v1(spec.get("v1"), f"{prefix}v1"),
+        "needs": needs,
+        "needs_text": needs_text,
     }
     layout = _required(spec, "layout", path)
     lpath = f"{prefix}layout"
@@ -2242,6 +2334,7 @@ def validate_component2(doc: dict) -> dict:
     if detail is not None and detail not in variants:
         raise MakerError("bad_value", "detail", f"no variant named {detail!r}")
     _resolve_deferred(ctx)
+    _check_template_facts(doc, ctx)
     notes = _validate_notes(doc.get("notes"), ctx)
     first = next(v for v in variants.values() if v["picker"])
     columns, rows = first["grid"]

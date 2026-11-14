@@ -1,0 +1,40 @@
+schema: 2
+id: apollo/volume
+version: 2.0.0
+name: Volume
+description: Set the volume of a speaker or a TV, and mute it.
+icon: mdi:volume-high
+group: media
+
+params:
+  entity: {domain: media_player, label: Player}
+
+inputs:
+  vol:   "{{ ((state_attr(entity, 'volume_level') or 0) * 100) | round | int }}"
+  muted: "{{ state_attr(entity, 'is_volume_muted') == true }}"
+  text:  "{{ vol }}%"
+
+outputs:
+  set_volume: {action: media_player.volume_set,
+               data: {entity_id: "{{ entity }}", volume_level: "{{ value / 100 }}"}, feedback: optimistic}
+  mute:       {action: media_player.volume_mute, uses: {muted: bool},
+               data: {entity_id: "{{ entity }}", is_volume_muted: "{{ not muted }}"}, feedback: optimistic}
+
+state: text
+lit: none
+
+variants:
+  row:
+    name: Row
+    grid: [12, 2]
+    header: chip
+    layout:
+      - type: row
+        items:
+          - {type: button, icon: "mdi:volume-off", selected: muted, on_tap: mute, width: 48,
+             when: [tablet.v2]}
+          - {type: slider, look: bar, value: vol, min: 0, max: 100, on_change: set_volume}
+
+preview:
+  params: {entity: media_player.example}
+  inputs: {vol: 64, muted: false, text: "64%"}

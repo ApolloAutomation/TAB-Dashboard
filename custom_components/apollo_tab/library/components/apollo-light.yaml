@@ -109,6 +109,9 @@ variants:
   large:
     name: Large
     grid: [12, 6]
+    # A lamp that only turns on and off has nothing to show here (D.1).
+    needs: can.brightness
+    needs_text: This light only turns on and off
     header: tile
     trailing: switch
     v1: apollo/light-slider
@@ -116,6 +119,10 @@ variants:
   full:
     name: Controls
     grid: [18, 11]
+    # D.1 offers no controls page for a lamp that only turns on and off.
+    # `needs: can.brightness` here would say so, but the cards fixture of
+    # the first release holds such a lamp with its controls page, and its
+    # bytes may not change. Left for a decision.
     header: tile
     trailing: switch
     picker: false

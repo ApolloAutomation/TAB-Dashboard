@@ -1041,7 +1041,7 @@ def test_data_templates_see_options_can_vars_loops_and_option():
     data = {
         "entity_id": "{{ entity }}",
         "effect": "{{ option }}",
-        "transition": "{{ word ~ mode ~ can.x }}",
+        "transition": "{{ word ~ mode ~ can.kind }}",
     }
     button = {"type": "button", "text": "Go", "on_tap": "run", "vars": {"mode": "heat"}}
     _check(_with_layout(button, outputs=_out(action="light.turn_on", data=data)))

@@ -69,7 +69,7 @@ layout:
 def test_builtin_components_pass() -> None:
     """Every built-in Component passes the static template checks."""
     files = sorted(BUILTIN_COMPONENTS_DIR.glob("*.yaml"))
-    assert len(files) == 25
+    assert len(files) == 39
     for path in files:
         for doc in yaml.safe_load_all(path.read_text(encoding="utf-8")):
             component = validate_component(doc)
