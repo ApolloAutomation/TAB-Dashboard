@@ -50,6 +50,10 @@
     "new_tablet": {
       "title": "New TAB-1 tablet found: {name}",
       "description": "New TAB-1 tablet found: {name}. Open TAB-1 in the sidebar, pick a dashboard for it and press \"Turn on with this dashboard\". If you do not know this device, remove it from ESPHome."
+    },
+    "facts_held": {
+      "title": "A device keeps changing: {device}",
+      "description": "{device} ({entity_id}) keeps changing what it says it can do, for example its list of effects or sources. So that the TAB-1 tablets do not get a new dashboard every time, its dashboards keep what it could do before for {hours} h. This note goes away by itself when that time is up."
     }
   },
   "services": {

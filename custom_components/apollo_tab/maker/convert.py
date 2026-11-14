@@ -57,12 +57,14 @@ def convert_dashboard(
     components: Mapping[str, dict],
     themes: Mapping[str, dict],
     approved: Set[str],
+    facts: Mapping[str, dict] | None = None,
 ) -> dict:
     """Return {"layout": ..., "bindings": ..., "warnings": [...], "sources": {...}}.
 
     sources maps the id of every heading and card drawn on a page, as a
-    string, to the [view, section, card] it came from. Never raises for bad
-    dashboards.
+    string, to the [view, section, card] it came from. facts maps an entity
+    id to what it can do (maker/features.py), as plain data; schema 1 cards
+    do not read it. Never raises for bad dashboards.
     """
     if not isinstance(config, dict):
         config = {}
@@ -81,6 +83,7 @@ def convert_dashboard(
             "components": components,
             "themes": themes,
             "approved": approved,
+            "facts": facts or {},
             "theme_id": theme_id,
             "wall": theme.get("wall", "#000000"),
             "warnings": warnings,

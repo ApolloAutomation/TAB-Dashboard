@@ -14,9 +14,11 @@ from homeassistant.helpers.template import TemplateError
 
 from . import compat, live
 from .const import DOMAIN
+from .facts import FactKeeper
 from .library import Library
 from .maker.const import DEFAULT_THEME
 from .maker.convert import convert_dashboard
+from .maker.features import dashboard_facts
 from .maker.schema import is_tab_dashboard
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,10 +31,15 @@ _ECHO_WINDOW = 2.0
 class DashboardManager:
     """Convert TAB-1 dashboards and serve their layouts and live values."""
 
-    def __init__(self, hass: HomeAssistant, library: Library) -> None:
+    def __init__(
+        self, hass: HomeAssistant, library: Library, facts: FactKeeper | None = None
+    ) -> None:
         """Initialise the manager."""
         self._hass = hass
         self.library = library
+        # What the devices can do; only this manager's conversions of saved
+        # dashboards write it.
+        self.facts = facts if facts is not None else FactKeeper(hass)
         self.layouts: dict[str, dict] = {}
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.layouts")
         self._listeners: list[Callable[[str, str], None]] = []
@@ -59,6 +66,7 @@ class DashboardManager:
             self.library.async_listen(self._handle_library_change)
         )
         self._unsubscribers.append(async_at_started(self._hass, self._async_started))
+        self._unsubscribers.append(self.facts.async_listen(self._handle_facts_change))
 
     @callback
     def async_stop(self) -> None:
@@ -70,6 +78,8 @@ class DashboardManager:
         """Convert all dashboards once Home Assistant has started."""
         try:
             await self.async_convert_all()
+            # Devices of dashboards that are gone since the last run.
+            self.facts.async_prune()
         finally:
             self.ready = True
             for listener in list(self._ready_listeners):
@@ -137,6 +147,11 @@ class DashboardManager:
         self._hass.async_create_task(self.async_convert(url_path))
 
     @callback
+    def _handle_facts_change(self, url_path: str) -> None:
+        """Convert a dashboard again after a fact one of its cards names changed."""
+        self._hass.async_create_task(self.async_convert(url_path))
+
+    @callback
     def _handle_library_change(self) -> None:
         """Convert everything again when the library changes."""
         self._hass.async_create_task(self.async_convert_all())
@@ -190,16 +205,20 @@ class DashboardManager:
             self._quiet_until[url_path] = self._hass.loop.time() + _ECHO_WINDOW
         self._sources[url_path] = config
         components = self.library.components
+        named = dashboard_facts(config, components)
+        facts = self.facts.facts_for(named)
         try:
             result = convert_dashboard(
                 config,
                 components=components,
                 themes=self.library.themes,
                 approved=self.library.approved_ids(),
+                facts=facts,
             )
         except Exception:
             _LOGGER.exception("Conversion of dashboard %s failed", url_path)
             return
+        self.facts.async_converted(url_path, named, facts)
         layout: dict = result["layout"]
         theme = layout.get("theme", {}).get("id", DEFAULT_THEME)
         self.layouts[url_path] = {
@@ -261,11 +280,14 @@ class DashboardManager:
 
         Nothing is stored and no listener is told.
         """
+        components = self.library.components
         result = convert_dashboard(
             config,
-            components=self.library.components,
+            components=components,
             themes=self.library.themes,
             approved=self.library.approved_ids(),
+            # Read only: a preview never writes the facts store.
+            facts=self.facts.facts_for(dashboard_facts(config, components)),
         )
         return {
             "layout": result["layout"],
@@ -310,6 +332,7 @@ class DashboardManager:
         that could not be read before and is deleted now, and its tablets
         must still move on.
         """
+        self.facts.async_forget(url_path)
         if url_path not in self.layouts:
             self._notify("absent", url_path)
             return
