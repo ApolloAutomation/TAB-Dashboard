@@ -50,3 +50,17 @@ jobs:
         env:
           APOLLO_TAB_NEED_ESPHOME: "1"
       - run: node --test "tests/frontend/*.test.mjs"
+      # The contract is one folder in two repositories, and both read its
+      # fixtures as the law. Compare this copy with TAB-1's, file for file,
+      # on the TAB-1 branch that contract changes reach first.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ApolloAutomation/TAB-1
+          ref: beta
+          path: tab1
+          persist-credentials: false
+          sparse-checkout: Integrations/ESPHome/engine_tests/contract
+      - name: The contract is the same as TAB-1's copy
+        run: node --test --test-name-pattern="the contract is the same as TAB-1" tests/frontend/tablet-screens.test.mjs
+        env:
+          TAB1_DIR: tab1

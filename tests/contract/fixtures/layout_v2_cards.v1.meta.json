@@ -1,0 +1,235 @@
+{
+ "caps": {
+  "icons": 1,
+  "max_chunk": 16000,
+  "max_layout": 262144,
+  "max_slots": 1024,
+  "max_widgets": 2048,
+  "screen": [
+   1280,
+   800
+  ],
+  "w": [
+   "heading",
+   "card",
+   "label",
+   "button",
+   "switch",
+   "slider",
+   "thermostat",
+   "chart",
+   "image"
+  ]
+ },
+ "counts": {
+  "pages": 2,
+  "slots": 40,
+  "widgets": 69
+ },
+ "dropped": [],
+ "hash": "2340a74ba26f45b3",
+ "size": 6473,
+ "slots": [
+  {
+   "d": 1,
+   "src": 1,
+   "type": "b"
+  },
+  {
+   "d": 2,
+   "src": 2,
+   "type": "t"
+  },
+  {
+   "d": 3,
+   "src": 3,
+   "type": "t"
+  },
+  {
+   "d": 4,
+   "src": 4,
+   "type": "b"
+  },
+  {
+   "d": 5,
+   "src": 5,
+   "type": "t"
+  },
+  {
+   "d": 6,
+   "src": 6,
+   "type": "t"
+  },
+  {
+   "d": 7,
+   "src": 7,
+   "type": "b"
+  },
+  {
+   "d": 8,
+   "src": 8,
+   "type": "n"
+  },
+  {
+   "d": 9,
+   "src": 9,
+   "type": "t"
+  },
+  {
+   "d": 10,
+   "src": 10,
+   "type": "t"
+  },
+  {
+   "d": 11,
+   "src": 11,
+   "type": "t"
+  },
+  {
+   "d": 12,
+   "src": 12,
+   "type": "t"
+  },
+  {
+   "d": 13,
+   "src": 13,
+   "type": "n"
+  },
+  {
+   "d": 14,
+   "src": 14,
+   "type": "t"
+  },
+  {
+   "d": 15,
+   "src": 15,
+   "type": "t"
+  },
+  {
+   "d": 16,
+   "src": 16,
+   "type": "t"
+  },
+  {
+   "d": 17,
+   "src": 17,
+   "type": "t"
+  },
+  {
+   "d": 18,
+   "src": 18,
+   "type": "t"
+  },
+  {
+   "d": 19,
+   "src": 19,
+   "type": "n"
+  },
+  {
+   "d": 20,
+   "src": 20,
+   "type": "t"
+  },
+  {
+   "d": 21,
+   "src": 21,
+   "type": "t"
+  },
+  {
+   "d": 22,
+   "src": 22,
+   "type": "t"
+  },
+  {
+   "d": 23,
+   "src": 23,
+   "type": "t"
+  },
+  {
+   "d": 24,
+   "src": 24,
+   "type": "n"
+  },
+  {
+   "d": 25,
+   "src": 25,
+   "type": "t"
+  },
+  {
+   "d": 26,
+   "src": 26,
+   "type": "t"
+  },
+  {
+   "d": 27,
+   "src": 27,
+   "type": "t"
+  },
+  {
+   "d": 28,
+   "src": 28,
+   "type": "b"
+  },
+  {
+   "d": 29,
+   "src": 29,
+   "type": "n"
+  },
+  {
+   "d": 30,
+   "src": 30,
+   "type": "t"
+  },
+  {
+   "d": 31,
+   "src": 31,
+   "type": "t"
+  },
+  {
+   "d": 32,
+   "src": 32,
+   "type": "b"
+  },
+  {
+   "d": 33,
+   "src": 33,
+   "type": "t"
+  },
+  {
+   "d": 34,
+   "src": 34,
+   "type": "t"
+  },
+  {
+   "d": 35,
+   "src": 35,
+   "type": "t"
+  },
+  {
+   "d": 36,
+   "src": 36,
+   "type": "t"
+  },
+  {
+   "d": 37,
+   "src": 37,
+   "type": "b"
+  },
+  {
+   "d": 38,
+   "src": 38,
+   "type": "t"
+  },
+  {
+   "d": 39,
+   "src": 39,
+   "type": "t"
+  },
+  {
+   "d": 40,
+   "src": 40,
+   "type": "b"
+  }
+ ],
+ "source_hash": "c85d32a6e2dd2ce4"
+}
