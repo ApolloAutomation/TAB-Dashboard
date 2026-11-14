@@ -136,6 +136,168 @@ def _read_documents(path: Path) -> tuple[list | None, dict | None]:
     return docs, None
 
 
+def _v1_targets(component: dict) -> list[str]:
+    """Return the ids a schema 2 card names for version 1 tablets."""
+    if component.get("schema") != 2:
+        return []
+    names = [component.get("v1")]
+    names.extend(variant.get("v1") for variant in component["variants"].values())
+    return [name for name in names if name not in (None, "note")]
+
+
+def _drop_unknown_v1(candidates: list[dict], errors: list[dict]) -> list[dict]:
+    """Refuse schema 2 cards whose v1 is not a loaded schema 1 card."""
+    schema1 = {
+        candidate["component"]["id"]
+        for candidate in candidates
+        if candidate["component"].get("schema", 1) == 1
+    }
+    kept = []
+    for candidate in candidates:
+        component = candidate["component"]
+        missing = [name for name in _v1_targets(component) if name not in schema1]
+        if missing:
+            errors.append(
+                _error(
+                    candidate["file"],
+                    candidate["index"],
+                    component["id"],
+                    "unknown_v1",
+                    f"v1 names {missing[0]}, which is not a loaded schema 1 card",
+                )
+            )
+            continue
+        kept.append(candidate)
+    return kept
+
+
+def _param_entry(spec: dict) -> dict:
+    """Return one param as the form reads it (C.7), for both schemas."""
+    if spec.get("kind") != "entity":
+        return {
+            **spec,
+            "optional": spec.get("optional", False),
+            "label": spec.get("label", ""),
+            "help": spec.get("help", ""),
+        }
+    domains = spec.get("domains")
+    if domains is None:
+        domains = [spec["domain"]] if spec.get("domain") else []
+    entry = {
+        "kind": "entity",
+        "domains": list(domains),
+        "multiple": spec.get("multiple", False),
+        "optional": spec.get("optional", False),
+        "device_class": spec.get("device_class"),
+        "label": spec.get("label", ""),
+        "help": spec.get("help", ""),
+    }
+    if len(domains) == 1:
+        # Today's text; the panel reads it where a param has one kind.
+        entry["domain"] = domains[0]
+    if entry["multiple"]:
+        entry["max"] = spec.get("max", 8)
+    return entry
+
+
+def _variant_entries(component: dict) -> list[dict]:
+    """Return the variants as the picker reads them."""
+    if component.get("schema") != 2:
+        size = component.get("size", [1, 1])
+        return [
+            {
+                "id": "default",
+                "name": component.get("name", ""),
+                "grid": [size[0] * 6, size[1] * 3],
+                "picker": True,
+                "needs_v2": False,
+            }
+        ]
+    default_v1 = component.get("v1")
+    entries = []
+    for name, variant in component["variants"].items():
+        v1 = variant.get("v1") or default_v1
+        entries.append(
+            {
+                "id": name,
+                "name": variant["name"],
+                "grid": list(variant["grid"]),
+                "picker": variant["picker"],
+                # Known from the file alone; the converter also shows the note
+                # when a variant's own version 1 form keeps nothing (C.6).
+                "needs_v2": v1 == "note",
+            }
+        )
+    return entries
+
+
+def _option_entries(component: dict) -> list[dict]:
+    """Return the options in file order, each with its name (C.7)."""
+    return [
+        {"name": name, **spec} for name, spec in component.get("options", {}).items()
+    ]
+
+
+def _standard(component: dict) -> dict:
+    """Return which standard options a card offers (C.2.3)."""
+    if component.get("schema") != 2:
+        return {"title": True, "icon": False, "hold": False, "lit": None, "tint": False}
+    return {
+        "title": any(
+            variant["header"] != "none" for variant in component["variants"].values()
+        ),
+        "icon": True,
+        "hold": component.get("detail") is not None,
+        "lit": component.get("lit"),
+        "tint": component.get("tint") is not None,
+    }
+
+
+def _tap_entry(component: dict) -> dict | None:
+    """Return the tap choices, with the standard "Goes to a page" before none."""
+    tap = component.get("tap")
+    if tap is None:
+        return None
+    choices = [
+        {"value": choice["value"], "label": choice["label"], "needs": choice["needs"]}
+        for choice in tap["choices"]
+    ]
+    page = {"value": "page", "label": "Goes to a page", "needs": ""}
+    at = next(
+        (i for i, choice in enumerate(choices) if choice["value"] == "none"),
+        len(choices),
+    )
+    choices.insert(at, page)
+    return {"default": tap["default"], "choices": choices}
+
+
+def form_entry(component: dict, legacy: bool) -> dict:
+    """Return the static fields of one card for the form and picker (C.7)."""
+    variants = _variant_entries(component)
+    first = next(variant for variant in variants if variant["picker"])
+    columns, rows = first["grid"]
+    picker = [variant for variant in variants if variant["picker"]]
+    return {
+        "schema": component.get("schema", 1),
+        "group": component.get("group", "more"),
+        "legacy": legacy,
+        "replaces": list(component.get("replaces", [])),
+        "needs_v2": all(variant["needs_v2"] for variant in picker),
+        "size": [max(1, min(6, -(-columns // 6))), max(1, min(4, -(-rows // 3)))],
+        "grid": {"columns": columns, "rows": rows},
+        "variants": variants,
+        "has_detail": component.get("detail") is not None,
+        "params": {
+            name: _param_entry(spec)
+            for name, spec in component.get("params", {}).items()
+        },
+        "options": _option_entries(component),
+        "standard": _standard(component),
+        "tap": _tap_entry(component),
+        "notes": [dict(note) for note in component.get("notes", [])],
+    }
+
+
 class Library:
     """Hold the Components, themes and strings offered to dashboards."""
 
@@ -256,6 +418,7 @@ class Library:
                         f"{type(err).__name__}: {err}",
                     )
                 )
+        candidates = _drop_unknown_v1(candidates, errors)
         return {
             "themes": themes,
             "strings": strings,
@@ -296,6 +459,19 @@ class Library:
                         )
                     )
                     continue
+                if source == "user" and component.get("replaces"):
+                    # A stranger's file could otherwise hide the built-in
+                    # cards in the picker and take their place.
+                    errors.append(
+                        _error(
+                            path.name,
+                            index,
+                            component_id,
+                            "replaces_not_allowed",
+                            "only built-in cards may replace other cards",
+                        )
+                    )
+                    continue
                 if component_id in seen:
                     errors.append(
                         _error(
@@ -319,6 +495,10 @@ class Library:
                     )
                     continue
                 seen.add(component_id)
+                if source == "user" and component.get("uses_inputs"):
+                    # Service data that reads an input can carry house state
+                    # out; a person's own file needs an admin's approval.
+                    component["sensitive"] = True
                 check_component_templates(component)
                 template_error = self._check_templates(component)
                 if template_error is not None:
@@ -357,6 +537,19 @@ class Library:
                         f"{type(err).__name__}: {err}",
                     )
                 )
+
+    def replaced_ids(self) -> set[str]:
+        """Return the ids that a built-in schema 2 card names in replaces.
+
+        `replaces` is read from built-in files only (C.2.1); a person's file
+        that carries it is refused when it loads.
+        """
+        return {
+            replaced
+            for component in self.components.values()
+            if component.get("source") == "builtin"
+            for replaced in component.get("replaces", [])
+        }
 
     def approved_ids(self) -> set[str]:
         """Return ids of sensitive user Components whose stored hash matches."""
@@ -407,24 +600,21 @@ class Library:
     def as_dict(self) -> dict[str, Any]:
         """Return the library as a JSON-able dict for the frontend."""
         components = []
+        replaced = self.replaced_ids()
         for component in self.components.values():
-            size = component.get("size", [1, 1])
-            components.append(
-                {
-                    "id": component["id"],
-                    "tag": alias_tag(component["id"]),
-                    "name": component.get("name", ""),
-                    "description": component.get("description", ""),
-                    "icon": component.get("icon", ""),
-                    "version": component.get("version", ""),
-                    "size": size,
-                    "grid": {"columns": size[0] * 6, "rows": size[1] * 3},
-                    "source": component.get("source", "user"),
-                    "sensitive": component.get("sensitive", False),
-                    "approved": self.is_approved(component["id"]),
-                    "params": component.get("params", {}),
-                }
-            )
+            entry = {
+                "id": component["id"],
+                "tag": alias_tag(component["id"]),
+                "name": component.get("name", ""),
+                "description": component.get("description", ""),
+                "icon": component.get("icon", ""),
+                "version": component.get("version", ""),
+                "source": component.get("source", "user"),
+                "sensitive": component.get("sensitive", False),
+                "approved": self.is_approved(component["id"]),
+            }
+            entry.update(form_entry(component, component["id"] in replaced))
+            components.append(entry)
         components.sort(key=lambda item: (item["source"] != "builtin", item["name"]))
         return {
             "components": components,

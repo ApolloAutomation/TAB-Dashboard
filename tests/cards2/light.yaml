@@ -1,0 +1,129 @@
+schema: 2
+id: apollo/light
+version: 2.0.0
+name: Light
+description: Turn a light on or off, dim it and change its colour.
+icon: mdi:lightbulb
+group: lights
+replaces: [apollo/light-tile, apollo/light-slider]
+
+params:
+  entity: {domain: light, label: Light}
+
+options:
+  show_brightness: {type: toggle, section: controls, label: Brightness, default: true,
+                    needs: can.brightness, needs_text: This light cannot be dimmed}
+  bar_on_tile:     {type: toggle, section: controls, label: Brightness bar on the small tile, default: true,
+                    when: [show_brightness], needs: can.brightness}
+  colour_control:  {type: choice, section: controls, label: Colour, default: bar,
+                    choices: {none: "Off", bar: Colour bar, dots: Favourite colours, both: Both},
+                    needs: can.colour, needs_text: This light has no colour}
+  show_saturation: {type: toggle, section: controls, label: Colour strength, default: false, needs: can.colour}
+  show_white:      {type: toggle, section: controls, label: Warm to cool, default: true,
+                    needs: can.temperature, needs_text: This light has one white only}
+  favourites:      {type: colours, section: controls, label: Favourite colours, max: 8,
+                    default: ["#FF453A", "#FF9F0A", "#FFD60A", "#32D74B", "#64D2FF", "#0A84FF", "#BF5AF2", "2700K"],
+                    when: [colour_control=dots|both]}
+  effects_shown:   {type: choice, multiple: true, max: 8, from: can.effect_list, default_first: 4,
+                    section: controls, label: Effects, needs: can.effects}
+
+inputs:
+  is_on:     "{{ is_state(entity, 'on') }}"
+  pct:       "{{ ((state_attr(entity, 'brightness') or 0) / 2.55) | round | int }}"
+  colour:    {source: colour, entity: "{{ entity }}", of: rgb}       # none while off
+  hue_tone:  {source: colour, entity: "{{ entity }}", of: hue}       # the hue at full strength
+  hue:       "{{ (state_attr(entity, 'hs_color') or [none, none])[0] }}"
+  sat:       "{{ (state_attr(entity, 'hs_color') or [none, none])[1] }}"
+  kelvin:    "{{ state_attr(entity, 'color_temp_kelvin') }}"          # none while the light shows a colour
+  effect_at: "{{ effects_shown.index(state_attr(entity, 'effect')) if state_attr(entity, 'effect') in effects_shown else none }}"
+  level:     "{{ (pct ~ '%') if is_on else '' }}"
+  state:     "{{ state_translated(entity) }}"
+
+outputs:
+  toggle:         {action: light.toggle,  data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+  set_brightness: {action: light.turn_on, data: {entity_id: "{{ entity }}", brightness_pct: "{{ value }}"}, feedback: optimistic}
+  set_hue:        {action: light.turn_on, uses: {sat: number}, data: {entity_id: "{{ entity }}",
+                   hs_color: ["{{ value }}", "{{ sat if sat is number and sat >= 10 else 100 }}"]}, feedback: optimistic}
+  set_sat:        {action: light.turn_on, uses: {hue: number}, data: {entity_id: "{{ entity }}",
+                   hs_color: ["{{ hue if hue is number else 0 }}", "{{ value }}"]}, feedback: optimistic}
+  set_white:      {action: light.turn_on, data: {entity_id: "{{ entity }}", color_temp_kelvin: "{{ value | int }}"}, feedback: optimistic}
+  set_favourite:  {action: light.turn_on, data: {entity_id: "{{ entity }}",
+                   rgb_color: "{{ option.rgb }}", color_temp_kelvin: "{{ option.kelvin }}"}, feedback: pulse}
+  set_effect:     {action: light.turn_on, data: {entity_id: "{{ entity }}", effect: "{{ option }}"}, feedback: optimistic}
+
+on: is_on
+tint: colour
+lit: fill
+state: state
+tap:
+  default: toggle
+  choices:
+    toggle: {label: Turns it on or off, output: toggle}
+    detail: {label: Opens its controls}
+    none:   {label: Does nothing}
+hold: detail
+
+parts:
+  dim:     {type: slider, look: bar, value: pct, min: 1, max: 100, icon: mdi:brightness-6, colour: colour,
+            on_change: set_brightness, when: [can.brightness, show_brightness]}
+  level:   {type: slider, look: bar, height: 8, value: pct, min: 0, max: 100, colour: colour, when: [can.brightness]}
+  hue:     {type: slider, look: bar, track: hue, value: hue, min: 0, max: 360, keep_active: true,
+            on_change: set_hue, when: [can.colour, colour_control=bar|both]}
+  sat:     {type: slider, look: bar, value: sat, min: 0, max: 100, colour: hue_tone,
+            on_change: set_sat, when: [can.colour, show_saturation]}
+  white:   {type: slider, look: bar, track: {kelvin: ["{{ can.min_kelvin }}", "{{ can.max_kelvin }}"]},
+            value: kelvin, min: "{{ can.min_kelvin }}", max: "{{ can.max_kelvin }}", step: 50, keep_active: true,
+            on_change: set_white, when: [can.temperature, show_white]}
+  dots:    {type: choice, look: dots, options: favourites, on_change: set_favourite,
+            when: [colour_control=dots|both]}
+  effects: {type: choice, options: effects_shown, value: effect_at, on_change: set_effect,
+            when: [can.effects, effects_shown]}
+  switch:  {type: switch, value: is_on, on_tap: toggle}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: tile_v
+    trailing: level                       # "68%" at the top right
+    v1: apollo/light-tile
+    layout:
+      - {use: dim, when: [can.brightness, show_brightness, bar_on_tile]}
+      - {use: level, when: [can.brightness, "!bar_on_tile"]}
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    trailing: switch
+    v1: apollo/light-slider
+    layout:
+      - {use: dim}
+      - {use: hue}
+      - {use: dots, when: [can.colour, colour_control=dots]}
+      - {use: white, when: [can.temperature, show_white, "!can.colour"]}
+  large:
+    name: Large
+    grid: [12, 6]
+    header: tile
+    trailing: switch
+    v1: apollo/light-slider
+    layout: [{use: dim}, {use: hue}, {use: sat}, {use: white}, {use: dots}]
+  full:
+    name: Controls
+    grid: [18, 11]
+    header: tile
+    trailing: switch
+    picker: false
+    layout:
+      - {use: dim, height: 56}
+      - {use: hue, height: 48}
+      - {use: sat, height: 48}
+      - {use: white, height: 48}
+      - {use: dots, height: 56}
+      - {use: effects, rows: 2}
+detail: full
+
+preview:
+  can: {brightness: true, colour: true, temperature: true, effects: false, min_kelvin: 2000, max_kelvin: 6500}
+  inputs: {is_on: true, pct: 68, colour: 16757575, hue_tone: 16744448, hue: 30, sat: 58, kelvin: null,
+           level: "68%", state: "On"}

@@ -802,10 +802,15 @@ def _validate_gradient(raw: object) -> dict:
 def validate_component(raw: object) -> dict:
     """Validate one component document and return its normalised form."""
     doc = _as_mapping(raw, "")
-    _reject_unknown_keys(doc, _TOP_KEYS, "")
     schema_version = doc.get("schema", 1)
+    if type(schema_version) is int and schema_version == 2:
+        # Schema 2 has a validator of its own; schema 1 below stays as it was.
+        from .schema2 import validate_component2
+
+        return validate_component2(doc)
+    _reject_unknown_keys(doc, _TOP_KEYS, "")
     if isinstance(schema_version, bool) or schema_version != 1:
-        raise MakerError("bad_value", "schema", "schema must be 1")
+        raise MakerError("bad_value", "schema", "schema must be 1 or 2")
     comp_id = _required(doc, "id", "")
     if not isinstance(comp_id, str) or len(comp_id) > 64 or not _ID.match(comp_id):
         raise MakerError("bad_id", "id", f"bad id {comp_id!r}")
@@ -936,6 +941,12 @@ def _grid_rows(grid: dict, size: list) -> int:
 
 def validate_card_config(component: dict, raw: object) -> dict:
     """Validate a stored card config against its component definition."""
+    if component.get("schema", 1) != 1:
+        # Schema 2 cards are compiled by a later package; until then they
+        # are left out with a clear reason instead of being misread here.
+        raise MakerError(
+            "not_supported", "", "this card needs a newer version of Apollo TAB"
+        )
     cfg = _as_mapping(raw, "")
     raw_params = cfg.get("params")
     if raw_params is None:
@@ -1017,8 +1028,66 @@ def is_tab_dashboard(config: object) -> bool:
     return isinstance(config, dict) and isinstance(config.get("apollo_tab"), dict)
 
 
+# Item keys that may hold a template; templates.py::_LAYOUT_KEYS holds the
+# same list. A templated key missing here is never checked at load.
+TEMPLATE_ITEM_KEYS = (
+    "value",
+    "min",
+    "max",
+    "step",
+    "text",
+    "confirm",
+    "visible",
+    "colour",
+    "selected",
+    "icon_live",
+    "mark",
+    "rate",
+)
+# Card-level keys of schema 2 that may hold a template.
+TEMPLATE_CARD_KEYS = ("on", "tint", "state", "unavailable")
+
+
+def _template_of(value: object) -> str | None:
+    """Return the template text of a field, marked or not, else None."""
+    if isinstance(value, dict):
+        value = value.get("template")
+    return value if _is_template(value) else None
+
+
+def _component_templates2(component: dict) -> list[str]:
+    """Collect the templates of a schema 2 card file."""
+    from .schema2 import iter_items
+
+    templates: list[str] = []
+    for spec in component["inputs"].values():
+        if spec["kind"] == "template":
+            templates.append(spec["template"])
+        elif spec["kind"] == "action":
+            templates.append(spec["result"])
+    for spec in component["outputs"].values():
+        if spec["kind"] != "action":
+            continue
+        for value in spec["data"].values():
+            for entry in value if isinstance(value, list) else [value]:
+                if _is_template(entry):
+                    templates.append(entry)
+    for key in TEMPLATE_CARD_KEYS:
+        text = _template_of(component.get(key))
+        if text is not None:
+            templates.append(text)
+    for _path, item in iter_items(component):
+        for key in TEMPLATE_ITEM_KEYS:
+            text = _template_of(item.get(key))
+            if text is not None:
+                templates.append(text)
+    return templates
+
+
 def component_templates(component: dict) -> list[str]:
     """Collect every template string that must pass a syntax check."""
+    if component.get("schema") == 2:
+        return _component_templates2(component)
     templates: list[str] = []
     for spec in component["inputs"].values():
         if spec["kind"] == "template":
