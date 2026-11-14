@@ -466,7 +466,7 @@ async def test_offline_and_no_engine(
 
 
 @pytest.mark.parametrize(
-    ("proto", "reason"), [((0, 0), "tablet_old"), ((2, 3), "tablet_new")]
+    ("proto", "reason"), [((0, 0), "tablet_old"), ((3, 4), "tablet_new")]
 )
 async def test_no_common_protocol(
     hass: HomeAssistant,

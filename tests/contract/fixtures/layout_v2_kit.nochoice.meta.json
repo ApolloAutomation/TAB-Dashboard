@@ -1,0 +1,233 @@
+{
+ "caps": {
+  "icons": 2,
+  "max_chunk": 16000,
+  "max_layout": 262144,
+  "max_pages": 64,
+  "max_slots": 1024,
+  "max_stored": 131072,
+  "max_widgets": 2048,
+  "screen": [
+   1280,
+   800
+  ],
+  "w": [
+   "heading",
+   "card",
+   "label",
+   "button",
+   "switch",
+   "slider",
+   "thermostat",
+   "chart",
+   "image"
+  ]
+ },
+ "counts": {
+  "normal_pages": 3,
+  "pages": 5,
+  "slots": 35,
+  "widgets": 63
+ },
+ "dropped": [
+  19,
+  20,
+  21,
+  61
+ ],
+ "hash": "ecb4558dda0de604",
+ "size": 7368,
+ "slots": [
+  {
+   "d": 1,
+   "src": 1,
+   "type": "t"
+  },
+  {
+   "d": 2,
+   "src": 2,
+   "type": "b"
+  },
+  {
+   "d": 3,
+   "src": 4,
+   "type": "i"
+  },
+  {
+   "coerce": "colour",
+   "d": 4,
+   "src": 3,
+   "type": "n"
+  },
+  {
+   "d": 5,
+   "src": 5,
+   "type": "t"
+  },
+  {
+   "d": 6,
+   "src": 6,
+   "type": "t"
+  },
+  {
+   "d": 7,
+   "src": 7,
+   "type": "n"
+  },
+  {
+   "d": 8,
+   "src": 8,
+   "type": "b"
+  },
+  {
+   "d": 9,
+   "src": 9,
+   "type": "n"
+  },
+  {
+   "d": 10,
+   "src": 10,
+   "type": "n"
+  },
+  {
+   "d": 11,
+   "src": 37,
+   "type": "n"
+  },
+  {
+   "d": 12,
+   "src": 11,
+   "type": "n"
+  },
+  {
+   "d": 13,
+   "src": 12,
+   "type": "n"
+  },
+  {
+   "d": 14,
+   "src": 13,
+   "type": "n"
+  },
+  {
+   "d": 15,
+   "src": 16,
+   "type": "b"
+  },
+  {
+   "d": 16,
+   "src": 17,
+   "type": "i"
+  },
+  {
+   "coerce": "colour",
+   "d": 17,
+   "src": 18,
+   "type": "n"
+  },
+  {
+   "d": 18,
+   "src": 19,
+   "type": "b"
+  },
+  {
+   "d": 19,
+   "src": 21,
+   "type": "b"
+  },
+  {
+   "coerce": "colour",
+   "d": 20,
+   "roles": {
+    "bad": 16739166,
+    "good": 5030794,
+    "info": 7124223,
+    "warn": 16102727
+   },
+   "src": 20,
+   "type": "n"
+  },
+  {
+   "d": 21,
+   "src": 23,
+   "type": "n"
+  },
+  {
+   "d": 22,
+   "src": 22,
+   "type": "n"
+  },
+  {
+   "d": 23,
+   "src": 24,
+   "type": "l"
+  },
+  {
+   "d": 24,
+   "src": 26,
+   "type": "l"
+  },
+  {
+   "d": 25,
+   "src": 25,
+   "type": "n"
+  },
+  {
+   "d": 26,
+   "src": 27,
+   "type": "n"
+  },
+  {
+   "d": 27,
+   "src": 33,
+   "type": "b"
+  },
+  {
+   "d": 28,
+   "src": 35,
+   "type": "b"
+  },
+  {
+   "d": 29,
+   "src": 28,
+   "type": "b"
+  },
+  {
+   "d": 30,
+   "src": 29,
+   "type": "b"
+  },
+  {
+   "coerce": "colour",
+   "d": 31,
+   "roles": {
+    "bad": 12990764,
+    "good": 2002522,
+    "info": 2060241,
+    "warn": 12086784
+   },
+   "src": 20,
+   "type": "n"
+  },
+  {
+   "d": 32,
+   "src": 31,
+   "type": "n"
+  },
+  {
+   "d": 33,
+   "src": 32,
+   "type": "b"
+  },
+  {
+   "d": 34,
+   "src": 38,
+   "type": "n"
+  },
+  {
+   "d": 35,
+   "src": 39,
+   "type": "n"
+  }
+ ]
+}

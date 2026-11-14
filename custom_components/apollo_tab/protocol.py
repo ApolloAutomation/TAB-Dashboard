@@ -1,4 +1,4 @@
-"""The TAB-1 tablet contract, version 1: chunks, state, pairing, signatures.
+"""The TAB-1 tablet contract, versions 1 and 2: chunks, state, pairing, signatures.
 
 ``contract/CONTRACT.md`` in the tests is the specification; the device
 layout itself is compiled in ``maker/device.py``. Everything here is pure
@@ -24,9 +24,14 @@ from .maker.device import (
 
 __all__ = ["CAPS_DEFAULTS", "ContractError"]
 
-PROTO = 1
-# The contract versions this integration speaks, lowest first.
-PROTO_RANGE = (1, 1)
+# The contract versions this integration speaks (the handshake range,
+# contract section 9). Version 2 is version 1 with device layout version 2.
+PROTO_LOW = 1
+PROTO = 2
+PROTO_RANGE = (PROTO_LOW, PROTO)
+# Field 1 of the input payload and of the knock. It is 1 in both versions
+# and is not PROTO: the engine writes "1|" whatever it speaks.
+INPUT_VERSION = 1
 
 MAX_SET_BYTES = 12000
 MAX_INPUT_PAYLOAD = 200
@@ -249,7 +254,7 @@ def input_payload(
     """Build the signed text of one input event."""
     return "|".join(
         [
-            str(PROTO),
+            str(INPUT_VERSION),
             mac,
             nonce,
             str(counter),
@@ -315,7 +320,7 @@ def verify_input(
     if len(parts) != INPUT_FIELDS or len(payload) > MAX_INPUT_PAYLOAD:
         return "malformed", None
     version, p_mac, p_nonce, p_counter, p_layout, p_widget, event, conf, value = parts
-    if version != str(PROTO):
+    if version != str(INPUT_VERSION):
         return "version", None
     if p_mac != mac:
         return "wrong_tablet", None
@@ -359,7 +364,7 @@ def parse_knock(data: Any) -> tuple[str, int] | None:
     if not isinstance(payload, str) or not payload.isascii() or len(payload) > 64:
         return None
     parts = payload.split("|")
-    if len(parts) != 3 or parts[0] != str(PROTO) or not is_hex(parts[1], 12):
+    if len(parts) != 3 or parts[0] != str(INPUT_VERSION) or not is_hex(parts[1], 12):
         return None
     if not parts[2].isdigit() or len(parts[2]) > 10:
         return None
@@ -383,20 +388,39 @@ def knock_times(limit: float) -> list[int]:
             gap = min(gap * 2, KNOCK_MAX_S)
 
 
-def proto_verdict(response: dict) -> str:
-    """Return "" when HA speaks the tablet's range, else tablet_old or tablet_new."""
+def _proto_range(response: dict) -> tuple[int, int] | None:
+    """Return the tablet's [low, high] proto range, or None when unreadable."""
     proto = response.get("proto")
     try:
-        low, high = int(proto[0]), int(proto[1])  # type: ignore[index]
+        return int(proto[0]), int(proto[1])  # type: ignore[index]
     except TypeError, ValueError, IndexError, KeyError:
+        return None
+
+
+def layout_version(response: dict) -> int:
+    """Return the device layout version HA compiles for a tablet, 0 for none.
+
+    HA and the tablet can talk when the ranges [low, high] and PROTO_RANGE
+    share a version; HA speaks the highest one they share (contract 9).
+    Version 2 is the only one with device layout version 2.
+    """
+    tablet = _proto_range(response)
+    if tablet is None:
+        return 0
+    shared = min(tablet[1], PROTO_RANGE[1])
+    if shared < max(tablet[0], PROTO_RANGE[0]):
+        return 0
+    return 2 if shared >= 2 else 1
+
+
+def proto_verdict(response: dict) -> str:
+    """Return "" when the ranges overlap, else tablet_old or tablet_new."""
+    tablet = _proto_range(response)
+    if tablet is None:
         return "tablet_old"
-    if high < PROTO_RANGE[0]:
-        return "tablet_old"
-    if low > PROTO_RANGE[1]:
-        return "tablet_new"
-    if not low <= PROTO <= high:
-        return "tablet_old" if high < PROTO else "tablet_new"
-    return ""
+    if layout_version(response):
+        return ""
+    return "tablet_new" if tablet[0] > PROTO_RANGE[1] else "tablet_old"
 
 
 def hello_steps(
@@ -406,10 +430,12 @@ def hello_steps(
 
     steps is a list of: "pair", "hello" (greet again, a pairing ends the
     session), "send_layout", "send_state". status is "" or "unsupported".
+    dl is the device layout version HA compiles: the highest version both
+    ranges share, 0 when they share none.
     """
     reason = proto_verdict(response)
     if reason:
-        return {"steps": [], "status": "unsupported", "reason": reason}
+        return {"steps": [], "status": "unsupported", "reason": reason, "dl": 0}
     steps: list[str] = []
     if response.get("enc") == 1:
         if (
@@ -426,7 +452,12 @@ def hello_steps(
         if response.get("layout") != want_hash:
             steps.append("send_layout")
         steps.append("send_state")
-    return {"steps": steps, "status": "", "reason": reason}
+    return {
+        "steps": steps,
+        "status": "",
+        "reason": reason,
+        "dl": layout_version(response),
+    }
 
 
 def knock_step(*, session: bool, status: dict | None = None) -> str:
@@ -459,7 +490,11 @@ def status_verdict(response: dict, want_hash: str) -> str:
 
 
 def caps_of(response: dict) -> dict[str, Any]:
-    """Return the tablet's caps with the contract defaults for missing keys."""
+    """Return the tablet's caps with the contract defaults for missing keys.
+
+    max_pages and max_stored are kept too: a tablet without max_pages gets
+    at most 20 pages (contract 3).
+    """
     caps = response.get("caps")
     if not isinstance(caps, dict):
         caps = {}

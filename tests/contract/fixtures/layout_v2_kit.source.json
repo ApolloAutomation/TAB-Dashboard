@@ -1,0 +1,1487 @@
+{
+ "layout": {
+  "nav": [
+   {
+    "icon": "mdi:view-dashboard",
+    "page": "kit",
+    "title": "Kit"
+   },
+   {
+    "icon": "mdi:thermostat",
+    "page": "climate",
+    "title": "Climate"
+   },
+   {
+    "icon": "mdi:home",
+    "page": "old",
+    "title": "Old"
+   },
+   {
+    "icon": "mdi:lightbulb",
+    "page": "light",
+    "title": "Living room"
+   }
+  ],
+  "pages": [
+   {
+    "id": "kit",
+    "title": "Kit",
+    "w": [
+     {
+      "c": "#4CC38A",
+      "icon": "mdi:home",
+      "id": 1,
+      "r": [
+       100,
+       20,
+       568,
+       56
+      ],
+      "t": "heading",
+      "text": "Kit"
+     },
+     {
+      "header": {
+       "icon": "mdi:lightbulb",
+       "r": [
+        116,
+        100,
+        344,
+        32
+       ],
+       "title": {
+        "s": 1
+       }
+      },
+      "hold": {
+       "local": "go_to_page",
+       "page": "light"
+      },
+      "ic": {
+       "s": 4
+      },
+      "id": 2,
+      "lit": 0,
+      "on": {
+       "s": 2
+      },
+      "r": [
+       100,
+       84,
+       376,
+       248
+      ],
+      "t": "card",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "tint": {
+       "s": 3
+      },
+      "w": [
+       {
+        "id": 3,
+        "look": 1,
+        "r": [
+         116,
+         140,
+         64,
+         64
+        ],
+        "t": "image",
+        "value": {
+         "s": 4
+        }
+       },
+       {
+        "al": 2,
+        "id": 4,
+        "r": [
+         188,
+         140,
+         272,
+         28
+        ],
+        "size": "s",
+        "t": "label",
+        "text": {
+         "s": 5
+        }
+       },
+       {
+        "id": 5,
+        "px": 28,
+        "r": [
+         188,
+         172,
+         272,
+         36
+        ],
+        "t": "label",
+        "text": {
+         "s": 6
+        }
+       },
+       {
+        "c": {
+         "s": 3
+        },
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:brightness-6",
+        "id": 6,
+        "look": 1,
+        "max": 100,
+        "min": 0,
+        "r": [
+         116,
+         268,
+         344,
+         48
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 7
+        }
+       }
+      ]
+     },
+     {
+      "header": {
+       "icon": "mdi:lightbulb",
+       "r": [
+        500,
+        100,
+        344,
+        32
+       ],
+       "title": {
+        "s": 1
+       }
+      },
+      "hold": {
+       "local": "go_to_page",
+       "page": "light"
+      },
+      "ic": {
+       "s": 4
+      },
+      "id": 7,
+      "lit": 2,
+      "on": {
+       "s": 2
+      },
+      "r": [
+       484,
+       84,
+       376,
+       248
+      ],
+      "style": {
+       "accf": "#FFC266",
+       "accf_pr": "#E0A040",
+       "card2_pr": "#353C4B",
+       "card_pr": "#2A2F3A",
+       "ion": "#FFC266",
+       "onbg_pr": "#4E3E22"
+      },
+      "t": "card",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "tint": {
+       "s": 3
+      },
+      "un": {
+       "s": 8
+      },
+      "w": [
+       {
+        "id": 8,
+        "look": 1,
+        "r": [
+         500,
+         140,
+         64,
+         64
+        ],
+        "t": "image",
+        "value": {
+         "s": 4
+        }
+       },
+       {
+        "al": 2,
+        "id": 9,
+        "r": [
+         572,
+         140,
+         272,
+         28
+        ],
+        "size": "s",
+        "t": "label",
+        "text": {
+         "s": 5
+        }
+       },
+       {
+        "id": 10,
+        "px": 28,
+        "r": [
+         572,
+         172,
+         272,
+         36
+        ],
+        "t": "label",
+        "text": {
+         "s": 6
+        }
+       },
+       {
+        "c": {
+         "s": 3
+        },
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:brightness-6",
+        "id": 11,
+        "look": 1,
+        "max": 100,
+        "min": 0,
+        "r": [
+         500,
+         268,
+         344,
+         48
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 7
+        }
+       }
+      ]
+     },
+     {
+      "header": {
+       "icon": "mdi:palette",
+       "r": [
+        884,
+        100,
+        344,
+        32
+       ],
+       "title": "Sliders"
+      },
+      "id": 12,
+      "r": [
+       868,
+       84,
+       376,
+       400
+      ],
+      "t": "card",
+      "w": [
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 13,
+        "max": 360,
+        "min": 0,
+        "nv": 1,
+        "r": [
+         884,
+         140,
+         344,
+         40
+        ],
+        "step": 1,
+        "t": "slider",
+        "track": [
+         "#FF0000",
+         "#FFFF00",
+         "#00FF00",
+         "#00FFFF",
+         "#0000FF",
+         "#FF00FF",
+         "#FF0000"
+        ],
+        "value": {
+         "s": 9
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 14,
+        "look": 1,
+        "max": 6500,
+        "min": 2000,
+        "r": [
+         884,
+         188,
+         344,
+         40
+        ],
+        "step": {
+         "s": 37
+        },
+        "t": "slider",
+        "track": [
+         "#FF8912",
+         "#FFF9FD",
+         "#CFE0FF"
+        ],
+        "value": {
+         "s": 10
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "dir": 1,
+        "id": 15,
+        "look": 1,
+        "max": 100,
+        "min": 0,
+        "r": [
+         884,
+         236,
+         80,
+         200
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 7
+        }
+       },
+       {
+        "dir": 2,
+        "id": 16,
+        "look": 1,
+        "max": 100,
+        "min": 0,
+        "r": [
+         972,
+         236,
+         80,
+         200
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 11
+        }
+       },
+       {
+        "id": 17,
+        "look": 1,
+        "max": 300,
+        "min": 0,
+        "r": [
+         884,
+         452,
+         344,
+         8
+        ],
+        "rate": {
+         "s": 13
+        },
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 12
+        }
+       }
+      ]
+     },
+     {
+      "header": {
+       "icon": "mdi:palette-outline",
+       "r": [
+        116,
+        356,
+        536,
+        32
+       ],
+       "title": "Choices"
+      },
+      "id": 18,
+      "r": [
+       100,
+       340,
+       568,
+       296
+      ],
+      "t": "card",
+      "w": [
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 19,
+        "r": [
+         116,
+         396,
+         536,
+         48
+        ],
+        "t": "choice",
+        "texts": [
+         "Off",
+         "Low",
+         "Medium",
+         "High"
+        ],
+        "value": {
+         "s": 14
+        }
+       },
+       {
+        "change": {
+         "policy": "progress"
+        },
+        "icons": [
+         "mdi:weather-sunny",
+         "mdi:weather-night",
+         "",
+         "mdi:fan",
+         "mdi:snowflake",
+         "mdi:fire"
+        ],
+        "id": 20,
+        "r": [
+         116,
+         452,
+         536,
+         104
+        ],
+        "rows": 2,
+        "t": "choice",
+        "texts": [
+         "Day",
+         "Night",
+         "Auto",
+         "Fan",
+         "Cool",
+         "Heat"
+        ],
+        "value": {
+         "s": 15
+        }
+       },
+       {
+        "change": {
+         "policy": "pulse"
+        },
+        "cols": [
+         "#FF453A",
+         "#FF9F0A",
+         "#FFD60A",
+         "#30D158",
+         "#0A84FF"
+        ],
+        "confirm": "Change the colour?",
+        "id": 21,
+        "look": 1,
+        "r": [
+         116,
+         564,
+         536,
+         56
+        ],
+        "t": "choice"
+       }
+      ]
+     },
+     {
+      "header": {
+       "icon": "mdi:gesture-tap-button",
+       "r": [
+        692,
+        508,
+        536,
+        32
+       ],
+       "title": "Buttons"
+      },
+      "id": 22,
+      "r": [
+       676,
+       492,
+       568,
+       192
+      ],
+      "t": "card",
+      "w": [
+       {
+        "id": 23,
+        "r": [
+         692,
+         548,
+         128,
+         48
+        ],
+        "t": "button",
+        "tap": {
+         "policy": "optimistic"
+        },
+        "text": "Party",
+        "value": {
+         "s": 16
+        }
+       },
+       {
+        "ic": {
+         "s": 17
+        },
+        "icon": "mdi:fan",
+        "id": 24,
+        "r": [
+         828,
+         548,
+         128,
+         48
+        ],
+        "t": "button",
+        "tap": {
+         "policy": "pulse"
+        },
+        "text": "Fan"
+       },
+       {
+        "c": {
+         "s": 18
+        },
+        "id": 25,
+        "r": [
+         964,
+         548,
+         128,
+         48
+        ],
+        "t": "button",
+        "tap": {
+         "policy": "optimistic"
+        },
+        "value": {
+         "s": 19
+        }
+       },
+       {
+        "icon": "mdi:power",
+        "id": 26,
+        "isz": 1,
+        "r": [
+         1100,
+         548,
+         112,
+         112
+        ],
+        "shape": 1,
+        "t": "button",
+        "tap": {
+         "policy": "optimistic"
+        }
+       },
+       {
+        "icon": "mdi:dots-horizontal",
+        "id": 27,
+        "r": [
+         692,
+         604,
+         128,
+         48
+        ],
+        "shape": 2,
+        "t": "button",
+        "tap": {
+         "policy": "pulse"
+        }
+       },
+       {
+        "c": {
+         "roles": {
+          "bad": "#FF6B5E",
+          "good": "#4CC38A",
+          "info": "#6CB4FF",
+          "warn": "#F5B547"
+         },
+         "s": 20
+        },
+        "id": 28,
+        "r": [
+         828,
+         604,
+         128,
+         48
+        ],
+        "t": "switch",
+        "tap": {
+         "policy": "optimistic"
+        },
+        "value": {
+         "s": 21
+        }
+       },
+       {
+        "hold": {
+         "local": "go_to_page",
+         "page": "more"
+        },
+        "id": 29,
+        "r": [
+         964,
+         604,
+         64,
+         64
+        ],
+        "t": "image",
+        "value": "mdi:cog"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "climate",
+    "theme": {
+     "acc": "#B86E00",
+     "acc2": "#1F6FD1",
+     "accf": "#9C5C00",
+     "accf_pr": "#7E4A00",
+     "acct": "#FFFFFF",
+     "bw": 0,
+     "card": "#FFFFFF",
+     "card2": "#E2E6EC",
+     "card2_pr": "#D2D7DE",
+     "card_pr": "#E9ECF0",
+     "dark": false,
+     "ion": "#B86E00",
+     "line": "#DDE1E6",
+     "onbg": "#FFF1D6",
+     "onbg_pr": "#F2DFB8",
+     "ontx": "#5A3600",
+     "r": 16,
+     "r2": 10,
+     "tx": "#15181D",
+     "tx2": "#5D6570",
+     "wall": "#EEF0F3"
+    },
+    "title": "Climate",
+    "w": [
+     {
+      "id": 30,
+      "r": [
+       100,
+       20,
+       568,
+       56
+      ],
+      "t": "heading",
+      "text": "Climate"
+     },
+     {
+      "header": {
+       "icon": "mdi:thermostat",
+       "r": [
+        116,
+        100,
+        248,
+        32
+       ],
+       "title": "Heating"
+      },
+      "id": 31,
+      "r": [
+       100,
+       84,
+       280,
+       300
+      ],
+      "t": "card",
+      "w": [
+       {
+        "bs": 56,
+        "c": "#FF6B5E",
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 32,
+        "mark": {
+         "s": 22
+        },
+        "max": 35,
+        "min": 7,
+        "r": [
+         116,
+         140,
+         248,
+         228
+        ],
+        "step": 0.5,
+        "t": "thermostat",
+        "value": {
+         "s": 23
+        }
+       }
+      ]
+     },
+     {
+      "header": {
+       "icon": "mdi:chart-line",
+       "r": [
+        404,
+        100,
+        344,
+        32
+       ],
+       "title": "Charts"
+      },
+      "id": 33,
+      "r": [
+       388,
+       84,
+       376,
+       300
+      ],
+      "t": "card",
+      "w": [
+       {
+        "c": "#1F6FD1",
+        "id": 34,
+        "kind": "line",
+        "r": [
+         404,
+         140,
+         344,
+         104
+        ],
+        "st": 1,
+        "t": "chart",
+        "value": {
+         "s": 24
+        }
+       },
+       {
+        "id": 35,
+        "kind": "bars",
+        "mark": {
+         "s": 25
+        },
+        "r": [
+         404,
+         252,
+         344,
+         116
+        ],
+        "t": "chart",
+        "value": {
+         "s": 26
+        }
+       }
+      ]
+     },
+     {
+      "id": 36,
+      "r": [
+       772,
+       84,
+       488,
+       300
+      ],
+      "t": "card",
+      "w": [
+       {
+        "id": 37,
+        "px": 192,
+        "r": [
+         788,
+         114,
+         456,
+         240
+        ],
+        "t": "label",
+        "text": "21:05"
+       }
+      ]
+     },
+     {
+      "id": 38,
+      "r": [
+       100,
+       392,
+       280,
+       208
+      ],
+      "t": "card",
+      "w": [
+       {
+        "clk": 1,
+        "id": 39,
+        "px": 96,
+        "r": [
+         116,
+         408,
+         248,
+         120
+        ],
+        "t": "label",
+        "value": {
+         "s": 27
+        }
+       },
+       {
+        "clk": 2,
+        "id": 40,
+        "px": 48,
+        "r": [
+         116,
+         536,
+         248,
+         60
+        ],
+        "t": "label",
+        "value": {
+         "s": 27
+        }
+       }
+      ]
+     },
+     {
+      "header": {
+       "icon": "mdi:water",
+       "r": [
+        404,
+        408,
+        152,
+        32
+       ],
+       "title": "Fountain"
+      },
+      "id": 41,
+      "lit": 1,
+      "on": {
+       "s": 33
+      },
+      "r": [
+       388,
+       392,
+       184,
+       184
+      ],
+      "t": "card",
+      "tap": {
+       "policy": "pulse"
+      },
+      "w": [
+       {
+        "id": 42,
+        "r": [
+         404,
+         448,
+         152,
+         28
+        ],
+        "size": "s",
+        "t": "label",
+        "text": "Pulse"
+       },
+       {
+        "c": "#1F6FD1",
+        "id": 43,
+        "look": 2,
+        "r": [
+         404,
+         496,
+         64,
+         64
+        ],
+        "t": "image",
+        "tap": {
+         "local": "go_to_page",
+         "page": "more"
+        },
+        "value": "mdi:water-pump"
+       }
+      ]
+     },
+     {
+      "confirm": "Turn the pump off?",
+      "header": {
+       "icon": "mdi:power-plug",
+       "r": [
+        596,
+        408,
+        152,
+        32
+       ],
+       "title": "Pump"
+      },
+      "id": 44,
+      "lit": 3,
+      "on": {
+       "s": 33
+      },
+      "r": [
+       580,
+       392,
+       184,
+       184
+      ],
+      "t": "card",
+      "tap": {
+       "policy": "confirm"
+      },
+      "w": [
+       {
+        "id": 45,
+        "r": [
+         596,
+         448,
+         152,
+         28
+        ],
+        "size": "s",
+        "t": "label",
+        "text": "Asks first"
+       }
+      ]
+     },
+     {
+      "header": {
+       "icon": "mdi:gesture-tap-button",
+       "r": [
+        788,
+        408,
+        456,
+        32
+       ],
+       "title": "Routing"
+      },
+      "hold": {
+       "local": "go_to_page",
+       "page": "more"
+      },
+      "id": 46,
+      "on": {
+       "s": 35
+      },
+      "r": [
+       772,
+       392,
+       488,
+       268
+      ],
+      "t": "card",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "w": [
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 47,
+        "max": 35,
+        "min": 7,
+        "r": [
+         788,
+         448,
+         200,
+         196
+        ],
+        "step": 0.5,
+        "t": "thermostat",
+        "value": {
+         "s": 23
+        }
+       },
+       {
+        "id": 48,
+        "r": [
+         1004,
+         448,
+         240,
+         48
+        ],
+        "t": "button",
+        "tap": {
+         "policy": "optimistic"
+        },
+        "text": "Arm",
+        "vis": {
+         "s": 28
+        }
+       },
+       {
+        "id": 49,
+        "r": [
+         1004,
+         448,
+         240,
+         48
+        ],
+        "t": "button",
+        "tap": {
+         "policy": "optimistic"
+        },
+        "text": "Disarm",
+        "vis": {
+         "s": 29
+        }
+       },
+       {
+        "c": {
+         "roles": {
+          "bad": "#C6392C",
+          "good": "#1E8E5A",
+          "info": "#1F6FD1",
+          "warn": "#B86E00"
+         },
+         "s": 20
+        },
+        "id": 50,
+        "r": [
+         1004,
+         504,
+         240,
+         28
+        ],
+        "t": "label",
+        "text": "Status"
+       },
+       {
+        "al": 1,
+        "id": 51,
+        "r": [
+         1004,
+         540,
+         240,
+         28
+        ],
+        "t": "label",
+        "text": "Centre"
+       },
+       {
+        "id": 52,
+        "look": 1,
+        "max": 100,
+        "min": 0,
+        "r": [
+         1004,
+         576,
+         240,
+         24
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 31
+        }
+       },
+       {
+        "id": 53,
+        "r": [
+         1004,
+         608,
+         240,
+         40
+        ],
+        "t": "switch",
+        "tap": {
+         "policy": "optimistic"
+        },
+        "value": {
+         "s": 32
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "old",
+    "title": "Old",
+    "w": [
+     {
+      "id": 54,
+      "r": [
+       100,
+       20,
+       376,
+       56
+      ],
+      "t": "heading",
+      "text": "Kitchen"
+     },
+     {
+      "header": {
+       "icon": "mdi:lightbulb",
+       "r": [
+        116,
+        100,
+        152,
+        32
+       ],
+       "title": {
+        "s": 1
+       }
+      },
+      "id": 55,
+      "on": {
+       "s": 2
+      },
+      "r": [
+       100,
+       84,
+       184,
+       184
+      ],
+      "t": "card",
+      "w": [
+       {
+        "id": 56,
+        "r": [
+         116,
+         176,
+         152,
+         40
+        ],
+        "t": "switch",
+        "tap": {
+         "policy": "optimistic"
+        },
+        "value": {
+         "s": 2
+        }
+       },
+       {
+        "id": 57,
+        "r": [
+         116,
+         224,
+         152,
+         28
+        ],
+        "size": "m",
+        "t": "label",
+        "text": {
+         "s": 6
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "light",
+    "sub": 1,
+    "title": "Living room",
+    "ttl": 60,
+    "w": [
+     {
+      "id": 58,
+      "r": [
+       100,
+       20,
+       568,
+       56
+      ],
+      "t": "heading",
+      "text": "Living room"
+     },
+     {
+      "header": {
+       "icon": "mdi:lightbulb",
+       "r": [
+        116,
+        100,
+        536,
+        32
+       ],
+       "title": {
+        "s": 1
+       }
+      },
+      "id": 59,
+      "r": [
+       100,
+       84,
+       568,
+       400
+      ],
+      "t": "card",
+      "w": [
+       {
+        "icon": "mdi:arrow-left",
+        "id": 60,
+        "r": [
+         116,
+         140,
+         128,
+         48
+        ],
+        "t": "button",
+        "tap": {
+         "local": "back"
+        },
+        "text": "Back"
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 61,
+        "r": [
+         116,
+         196,
+         536,
+         104
+        ],
+        "rows": 2,
+        "t": "choice",
+        "texts": [
+         "None",
+         "Rainbow",
+         "Candle",
+         "Party",
+         "Fire",
+         "Ocean"
+        ],
+        "value": {
+         "s": 36
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 62,
+        "look": 1,
+        "max": 100,
+        "min": 0,
+        "r": [
+         116,
+         308,
+         536,
+         48
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 7
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 63,
+        "max": 360,
+        "min": 0,
+        "r": [
+         116,
+         364,
+         536,
+         48
+        ],
+        "step": 0,
+        "t": "slider",
+        "track": [
+         "#FF0000",
+         "#FFFF00",
+         "#00FF00",
+         "#00FFFF",
+         "#0000FF",
+         "#FF00FF",
+         "#FF0000"
+        ],
+        "value": {
+         "s": 9
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 64,
+        "look": 1,
+        "max": {
+         "s": 39
+        },
+        "min": {
+         "s": 38
+        },
+        "r": [
+         116,
+         420,
+         536,
+         48
+        ],
+        "step": 100,
+        "t": "slider",
+        "track": [
+         "#FF8912",
+         "#FFF9FD",
+         "#CFE0FF"
+        ],
+        "value": {
+         "s": 10
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "more",
+    "sub": 1,
+    "title": "More",
+    "ttl": 0,
+    "w": [
+     {
+      "id": 65,
+      "r": [
+       100,
+       20,
+       568,
+       56
+      ],
+      "t": "heading",
+      "text": "More"
+     },
+     {
+      "header": {
+       "icon": "mdi:cog",
+       "r": [
+        116,
+        100,
+        344,
+        32
+       ],
+       "title": "Settings"
+      },
+      "id": 66,
+      "r": [
+       100,
+       84,
+       376,
+       184
+      ],
+      "t": "card",
+      "w": [
+       {
+        "id": 67,
+        "r": [
+         116,
+         140,
+         344,
+         28
+        ],
+        "t": "label",
+        "text": "Opened by a hold"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "screen": [
+   1280,
+   800
+  ],
+  "theme": {
+   "acc": "#F5B547",
+   "acc2": "#6CB4FF",
+   "accf": "#F5B547",
+   "accf_pr": "#D99A2B",
+   "acct": "#0E1116",
+   "bw": 0,
+   "card": "#181C23",
+   "card2": "#232833",
+   "card2_pr": "#303746",
+   "card_pr": "#232833",
+   "dark": true,
+   "ion": "#F5B547",
+   "line": "#2A303A",
+   "onbg": "#33291A",
+   "onbg_pr": "#4A3A20",
+   "ontx": "#F7E3BC",
+   "r": 16,
+   "r2": 10,
+   "tx": "#E8EAED",
+   "tx2": "#9AA0A8",
+   "wall": "#101418"
+  },
+  "v": 2
+ },
+ "note": "A layout v2 written by hand in reference/gen_fixtures.py, with every key and kind of version 2 at least once. 'values' are what Home Assistant finds for each source slot.",
+ "values": {
+  "1": "Living room",
+  "10": 2700,
+  "11": 60,
+  "12": 30,
+  "13": 1,
+  "14": 1,
+  "15": 0,
+  "16": "off",
+  "17": "mdi:fan-off",
+  "18": "#FF453A",
+  "19": "on",
+  "2": "on",
+  "20": "good",
+  "21": "on",
+  "22": 20.8,
+  "23": 21.5,
+  "24": [
+   19.2,
+   19.4,
+   20.1,
+   20.9,
+   21.3,
+   21.1
+  ],
+  "25": 4,
+  "26": [
+   3,
+   5,
+   2,
+   6,
+   4,
+   1,
+   0
+  ],
+  "27": 615,
+  "28": "on",
+  "29": "off",
+  "3": [
+   255,
+   167,
+   87
+  ],
+  "31": 40,
+  "32": "on",
+  "33": "on",
+  "35": "off",
+  "36": 0,
+  "37": 100,
+  "38": 2000,
+  "39": 6535,
+  "4": "mdi:lightbulb-on",
+  "5": "On",
+  "6": "80%",
+  "7": 80,
+  "8": "off",
+  "9": 30
+ }
+}

@@ -3,9 +3,10 @@
 Usage: gen_icons.py <materialdesignicons-webfont.ttf> <out icons.json>
 
 Each icon has a code point and the icon-set level that added it. Level 1 is
-this list. A later contract adds icons at level 2 and up; it never removes or
-renumbers one. The tablet reports the level it has; Home Assistant sends the
-fallback glyph for icons above that level.
+the list of contract version 1, level 2 the icons version 2 adds. A later
+contract adds icons at a higher level; it never removes or renumbers one.
+The tablet reports the level it has; Home Assistant sends the fallback glyph
+for icons above that level.
 """
 
 import json
@@ -30,6 +31,28 @@ door door-open window-closed window-open garage-open water-percent water fire sn
 motion-sensor bell robot-vacuum ceiling-light floor-lamp lamp led-strip-variant
 power-plug toggle-switch car calendar clock-outline
 """.split()
+
+LEVEL_2 = """
+home-thermometer home-floor-g home-floor-0 home-floor-1 home-floor-2
+wall-sconce-flat desk-lamp outdoor-lamp string-lights track-light
+lightbulb-off lightbulb-multiple light-switch brightness-6 palette-outline
+creation white-balance-sunny movie-open spa leaf book-open-variant
+moon-waning-crescent sleep weather-sunset coffee-maker dishwasher
+tumble-dryer fridge-outline stove pot-steam kettle sprinkler flash
+solar-power ev-station car-electric transmission-tower molecule-co2
+air-filter air-purifier air-humidifier air-conditioner radiator
+water-boiler water-pump fan-off autorenew rocket-launch home-export-outline
+thermometer-low thermometer-high blinds-open window-shutter
+window-shutter-open gate gate-open garage-alert door-closed angle-acute
+lock-alert shield-check shield-alert shield-outline bell-ring bell-off
+smoke-detector pipe-leak walk umbrella alarm timer-outline calendar-today
+check-circle toggle-switch-off gesture-tap-button script-text-outline
+numeric dots-horizontal map-marker shuffle repeat volume-mute volume-low
+speaker-multiple cast television-play battery battery-50 battery-20
+battery-charging battery-alert
+""".split()
+
+LEVELS = ((1, LEVEL_1), (2, LEVEL_2))
 
 # The 258 standard Macintosh glyph names, in the order of the 'post' table. A
 # format 2 table names a glyph by its index in this list, or from 258 up by a
@@ -117,15 +140,16 @@ def main() -> None:
     }
     icons = {}
     missing = []
-    for name in LEVEL_1:
-        if name not in by_name:
-            missing.append(name)
-            continue
-        icons[f"mdi:{name}"] = [by_name[name], 1]
+    for level, names_of_level in LEVELS:
+        for name in names_of_level:
+            if name not in by_name:
+                missing.append(name)
+                continue
+            icons[f"mdi:{name}"] = [by_name[name], level]
     if missing:
         raise SystemExit("not in the font: " + " ".join(missing))
     out = {
-        "version": 1,
+        "version": LEVELS[-1][0],
         "fallback": "mdi:help-circle-outline",
         "placeholder": "mdi:image-outline",
         "icons": dict(sorted(icons.items())),

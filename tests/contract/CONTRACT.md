@@ -1,4 +1,4 @@
-# TAB-1 tablet contract, version 1
+# TAB-1 tablet contract, version 2
 
 This is the one contract between the Home Assistant integration (`apollo_tab`)
 and the TAB-1 firmware engine. Both repositories copy this folder unchanged and
@@ -14,8 +14,9 @@ test against `fixtures/`. A change here is a change to both.
   library only. If it disagrees with this text, this text wins.
 
 Words used here: **HA** is the integration. **Tablet** is the firmware engine.
-**Layout v1** is what `maker/convert.py` produces. **Device layout** (DL) is
-what the tablet receives.
+**Layout** is what `maker/convert.py` produces: layout v1 for device layout
+version 1, layout v2 for version 2. **Device layout** (DL) is what the tablet
+receives. "(2)" marks a key or rule that only device layout version 2 has.
 
 ## 1. Roles
 
@@ -27,6 +28,10 @@ what the tablet receives.
 - One HA per tablet. Two Home Assistant installs that both manage the same
   tablet take it from each other by pairing again. HA logs a warning when that
   happens (section 3) and does it at most once a minute.
+- (2) The tablet does learn the words a card shows: titles, button texts
+  and the option texts of a `choice` (effect names, source names, the
+  options of a select). Some of them come from devices. They are in the
+  layout, and so in the copy the tablet keeps in flash.
 
 ## 2. Transport
 
@@ -144,17 +149,18 @@ contract version.
 Response data:
 
 ```json
-{"proto":[1,1], "engine":"0.1.0", "boot":3,
+{"proto":[1,2], "engine":"0.2.0", "boot":3,
  "layout":"a9326c033e45f2f4", "kid":"<16 hex or empty>", "enc":1, "session":1,
- "caps":{"w":["heading","card","label","button","switch","slider","thermostat","chart","image"],
-         "icons":1, "screen":[1280,800],
-         "max_layout":262144, "max_chunk":16000, "max_slots":1024, "max_widgets":2048},
+ "caps":{"w":["heading","card","label","button","switch","slider","thermostat","chart","image","choice"],
+         "icons":2, "screen":[1280,800], "max_pages":64,
+         "max_layout":262144, "max_stored":131072, "max_chunk":16000,
+         "max_slots":1024, "max_widgets":2048},
  "mem":{"int":61000,"psram":28000000,"block":16000000}}
 ```
 
 | Key | Meaning |
 |---|---|
-| `proto` | Lowest and highest contract version the tablet speaks. |
+| `proto` | Lowest and highest contract version the tablet speaks. Version 2 is version 1 with device layout version 2 (section 4). Nothing else differs. HA and the tablet can talk when the two ranges share a version (section 9). |
 | `engine` | Engine version text. For display only. |
 | `boot` | Boot counter. Also in the knock. |
 | `layout` | Hash of the layout on screen, or empty. A staged layout does not count. |
@@ -164,6 +170,8 @@ Response data:
 | `caps.w` | Widget kinds the tablet can draw. |
 | `caps.icons` | Icon set level (section 4.5). |
 | `caps.max_*` | Limits of this tablet. HA uses the smaller of these and its own. |
+| `caps.max_pages` | Most pages in one layout. Missing: 20. |
+| `caps.max_stored` | Largest layout, in bytes, that the tablet keeps across a restart. Missing: 131072. A larger layout is still sent, shown and used; HA warns that it is not kept. |
 | `mem` | Free internal RAM, free PSRAM and largest free PSRAM block, in bytes. |
 
 HA rules after the response (`fixtures/hello.json`, `hello_steps` in the
@@ -180,12 +188,14 @@ reference code):
 3. If `enc` is 0: no pairing, no input, no signing. HA sends an empty `auth`
    and accepts no input event from this tablet, also when it holds a secret
    for it. Layout and state still work.
-4. Compile the device layout for these `caps`. If its hash differs from
-   `layout`: send the layout.
+4. Compile the device layout for these `caps`, in the highest layout version
+   both sides speak: version 2 when `proto` includes 2, else version 1
+   (section 4.6). If its hash differs from `layout`: send the layout.
 5. Send a full state snapshot.
 
 Unknown keys in the response are ignored. Missing `caps` keys take
-`caps_defaults` from `contract.json`.
+`caps_defaults` from `contract.json`. `engine_caps` in `contract.json` is
+what the newest engine reports.
 
 ### 3.1 `tab_status`
 
@@ -201,15 +211,26 @@ No arguments, no side effects, no session needed. Response data:
 | `layout` | Hash of the layout on screen, or empty. |
 | `staged` | Hash of the layout that is committed and still being built, or empty. |
 | `build` | Result of the last build that ended without showing its layout: `memory` or `build`. Empty after a build that was shown, and after a new `tab_layout` seq 0. |
-| `mem` | As in `tab_hello`. |
+| `mem` | As in `tab_hello`. In both answers `block` may be, while a layout is being built, the value the tablet read when the build began: it does not walk its heap during a build. |
 | `session` | 1 when the tablet has a session on the current API connection, else 0. |
 
 HA uses it to learn when a committed layout is really on screen
 (section 5, `fixtures/status.json`), and to check a knock (section 2.2).
 
-## 4. Device layout (DL) version 1
+## 4. Device layout (DL), versions 1 and 2
 
-HA compiles layout v1 into a device layout. The tablet does not get layout v1.
+HA compiles a dashboard into a device layout. The tablet does not get the
+layout `maker/convert.py` makes.
+
+Version 2 is version 1 with more keys. Every key marked (2) is optional, and
+where it is absent the tablet draws exactly what version 1 draws. So a
+version 1 layout is also a valid version 2 layout, and the tablet reads both
+with the same code. HA writes `"v": 2` only for a tablet whose `proto`
+includes 2, and never puts a key marked (2) into a `"v": 1` layout.
+
+On a tablet that speaks version 2, `v` itself changes only two things: the
+page limit and the per-page draw counts (4.2). Every key is read and drawn
+whatever `v` says.
 
 ### 4.1 Encoding
 
@@ -228,22 +249,33 @@ HA compiles layout v1 into a device layout. The tablet does not get layout v1.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `v` | 1 | DL version. |
+| `v` | 1 or 2 | DL version. |
 | `screen` | `[1280,800]` | Pixel size the rectangles assume. |
 | `theme` | object | Colours as integers `0xRRGGBB`: `wall card card_pr card2 card2_pr line tx tx2 acc accf accf_pr acct acc2 onbg onbg_pr ontx ion`. Plus `dark` (0/1), `r` (card radius), `r2` (inner radius), `bw` (border width). Roles are in section 4.7. |
-| `nav` | list | Side bar entries, at most 8: `{"p": page index, "title": text, "icon": code point}`. `icon` is optional. |
-| `pages` | list | At most 20. Each `{"title": text, "w": [items]}`. Page 0 is shown first. |
+| `nav` | list | Side bar entries, at most 8: `{"p": page index, "title": text, "icon": code point}`. `icon` is optional. Entry `i` has its place by its index in the list (4.7). (2) HA sends no entry for a detail page. If one names a detail page, the tablet does not draw it and the other entries keep their places. |
+| `pages` | list | Each `{"title": text, "w": [items]}`. Page 0 is shown first. (2) Optional `sub`, `ttl` and `theme` (section 4.8). |
 | `slots` | string | One character per slot: the type of slot 1, 2, 3 and so on. |
 
 Limits and how they are counted:
 
-- Pages: length of `pages`, at most 20.
+- Pages: length of `pages`. Version 1: at most 20. (2) At most
+  `caps.max_pages` (64). A page is a **detail page** when its `sub` is 1 and
+  it is not page 0. Every other page is **normal**, also one with `"sub": 0`;
+  at most 20 pages are normal.
 - Slots: length of `slots`, at most `caps.max_slots` (1024).
 - Widgets: every object that has an `id` (headings, cards, and the widgets
   inside cards), at most `caps.max_widgets` (2048).
+- (2) On one page the tablet draws at most 8 charts, 8 thermostats and 12
+  sliders with a `track`. It skips a further chart or thermostat like a kind
+  it does not know, and draws a further slider without its `track`. HA sends
+  at most 4, 4 and 6 (`limits.send_*` in `contract.json`). Those three are
+  HA's own choice: never above the tablet's counts, and HA may change them
+  without a new contract version.
 
 HA checks all of these and the byte size before it sends anything
-(`compile_device_layout` raises `too_big` or `limits`).
+(`compile_device_layout` raises `too_big` or `limits`). (2) A layout larger
+than `caps.max_stored` is sent all the same; the tablet does not keep it
+across a restart (section 5).
 
 ### 4.3 Items and widgets
 
@@ -254,49 +286,164 @@ of a card are absolute too: the card's border `bw` does not move them.
 Rectangles (`r`, `hr`) are cut to the 1280x800 screen: the tablet keeps the
 part of the rectangle that lies on the screen, and a negative width or
 height counts as 0. A number in a rectangle below -4000 or above 4000 is
-`parse`. So no widget is ever larger than the screen.
+`parse`. So no widget is ever larger than the screen. (2) A widget whose
+rectangle is left with a width or a height of 0 is not drawn and takes no
+touch.
 
 Page items:
 
 | `t` | Keys |
 |---|---|
-| `heading` | `text`, optional `icon`. |
-| `card` | `w` (widgets). Optional: `hr` (header rectangle), `icon`, `title` (text), `on` (bool), `style`. |
+| `heading` | `text`, optional `icon`. (2) `c` (colour). |
+| `card` | `w` (widgets). Optional: `hr` (header rectangle), `icon`, `title` (text), `on` (bool), `style`. (2) `tap`, `cf`, `confirm`, `hold`, `ic` (icon), `tint` (colour), `lit`, `un` (bool). |
 
 `style` overrides theme colours for one card: `bg bg2 tx tx2 acc acc2 acct card2
 line onbg ontx` (integers), `r r2 bw`, and `gd` (0 = top to bottom, 1 = left to
-right; only with `bg2`). `bg` replaces the theme's `card`.
+right; only with `bg2`). `bg` replaces the theme's `card`. (2) Also
+`card_pr card2_pr accf accf_pr onbg_pr ion`, so a card can carry another
+theme whole.
 
 A card with `on` is drawn in the "on" colours while the value is 1.
+
+(2) More keys of a card:
+
+| Key | Meaning |
+|---|---|
+| `tap` | As on a widget (below). The whole card is a button. Which presses are the card's is in "Who gets a press" below. `cf` and `confirm` work as on a widget. Engine 0.1.0 reads the key and does nothing with it. |
+| `hold` | `{"go": page}`. A press held 500 ms opens that page (section 7.4). |
+| `ic` | A value above 0 replaces `icon` in the header. No value or 0: `icon`. Ignored on a card without `icon`. |
+| `tint` | The card's own accent colour, for example the colour of a lamp (section 4.7, "Card colours"). |
+| `lit` | How the card looks while `on` is 1: 0 fill (the look of version 1), 1 icon only, 2 outline, 3 no change. Default 0. |
+| `un` | 1: the device is not available. The header and every widget of the card are drawn at 40% opacity, and nothing in the card sends an input while the tablet can send (as for a control without a value, section 7.4). A `go` or `back` still works. Opacity does not multiply: a control without a value inside such a card is at 40%, not less. |
 
 Widgets inside a card:
 
 | `t` | Keys | Draws |
 |---|---|---|
-| `label` | `text` (text), `size` 0/1/2 (small, medium, large) | One line of text, cut to the rectangle. |
-| `button` | optional `text` (text), optional `icon` | A press button. |
-| `switch` | `value` (bool) | A toggle. |
-| `slider` | `value min max step` (numbers) | A horizontal slider. |
-| `thermostat` | `value min max step` (numbers) | An arc with the value in the middle. With `change`: a minus and a plus button. |
-| `chart` | `value` (list), `kind` 0 = line, 1 = bars | A small graph. |
-| `image` | `value` (icon) | An icon, or the placeholder. Pictures come in a later version. |
+| `label` | `text` (text), `size` 0/1/2 (small, medium, large). (2) `px`, `al`, `c` (colour), `clk` with `value` (number) | One line of text, cut to the rectangle. (2) With `clk`: a clock. |
+| `button` | optional `text` (text), optional `icon`. (2) `value` (bool), `ic` (icon), `c` (colour), `shape`, `isz` | A press button. (2) With `value`: it can look selected. |
+| `switch` | `value` (bool). (2) `c` (colour) | A toggle. |
+| `slider` | `value min max step` (numbers). (2) `look`, `dir`, `track`, `icon`, `c` (colour), `nv`, `rate` (number) | A slider. (2) Also a bar, a level, a progress, upright, or over a run of colours. |
+| `thermostat` | `value min max step` (numbers). (2) `c` (colour), `mark` (number), `bs` | An arc with the value in the middle. With `change`: a minus and a plus button. |
+| `chart` | `value` (list), `kind` 0 = line, 1 = bars. (2) `c` (colour), `mark` (number), `st` | A small graph. |
+| `image` | `value` (icon). (2) `look`, `c` (colour) | An icon, or the placeholder. Pictures come in a later version. |
+| (2) `choice` | `texts`, `icons`, `cols`: HA sends at least one of them. Optional `value` (number), `rows`, `look` | One of up to 16 options. |
 
-Interaction keys on any widget:
+(2) The new keys, per kind. Section 4.7 says how each is drawn.
+
+| Kind | Key | Values |
+|---|---|---|
+| any widget | `vis` (bool) | 0 or no value: the widget is not drawn and is not there for a touch ("Who gets a press" below). Its rectangle stays where it is. Two widgets may share a rectangle when HA's values never make both 1. |
+| any widget but `slider`, `thermostat`, `choice` | `hold` | `{"go": page}` |
+| `label` | `px` | Text size wanted, a whole number. Wins over `size`. |
+| | `al` | 0 left, 1 centre, 2 right. |
+| | `clk` | 1: 24 hour clock. 2: 12 hour clock. The label then shows `value` as a time and ignores `text`. |
+| `button` | `value` | 1: selected. 0 or no value: not selected. The button works in both. |
+| | `ic` | As on a card. |
+| | `c` | The button's own fill colour (a colour swatch). |
+| | `shape` | 0 box, 1 round, 2 bare (no background). |
+| | `isz` | 0: icon 24. 1: a large icon. |
+| `switch` | `c` | Track colour while the value is 1. |
+| `slider` | `look` | 0 knob (version 1), 1 bar. |
+| | `dir` | 0 left to right, 1 bottom to top, 2 top to bottom. |
+| | `track` | A list of 2 to 8 colours (constants) painted along the slider instead of a fill. |
+| | `icon` | A constant icon inside a bar. |
+| | `c` | Fill colour. |
+| | `nv` | 1: without a value the slider is not faded and still takes input. |
+| | `rate` | Units per second by which a slider without `change` moves by itself. |
+| `thermostat` | `c` | Colour of the value arc. |
+| | `mark` | A second value, shown as a dot on the arc. |
+| | `bs` | Side of the minus and plus buttons, 36 to 64. Default 36. |
+| `chart` | `c` | Colour of the line or the bars. |
+| | `mark` | Bars: the index of the bar that stands for "now". |
+| | `st` | Line: 1 draws steps. |
+| `image` | `look` | 0 box (version 1), 1 badge, 2 bare. |
+| | `c` | Icon colour. |
+| `choice` | `texts` | List of at most 16 constant texts, each at most 40 UTF-8 bytes. `""`: this option has no text. |
+| | `icons` | List of at most 16 constant code points. 0: this option has no icon (here 0 is not the placeholder). |
+| | `cols` | List of at most 16 constant colours: the options are swatches. |
+| | `value` | Optional. Index of the selected option, from 0. Absent, no value, a fraction, or a number that is no index: none is selected. The control stays active. |
+| | `rows` | 1 to 4. Default 1. |
+| | `look` | 0 cells, 1 dots. |
+
+The options of a `choice` are as many as its longest list, at most 16; more
+are ignored. A shorter list leaves the later options without that part. A
+`choice` with no option at all (no list, or only empty lists) is not drawn
+and is not there for a touch, like a hidden widget. It is never `parse`. HA
+sends none.
+
+Interaction keys on any widget, and (2) on a card:
 
 | Key | Meaning |
 |---|---|
 | `tap: {"p": n}` | A press sends an input. `n` is the feedback policy: 0 optimistic, 1 pulse, 2 progress, 3 confirm. |
 | `tap: {"go": page}` | A press switches to that page. Nothing is sent. |
-| `change: {"p": n}` | Slider: releasing it sends an input with the value. Thermostat: each press on minus or plus sends an input with the stepped value. |
+| (2) `tap: {"back": 1}` | A press on a detail page returns to the page it was opened from (section 4.8). Elsewhere it does nothing. Nothing is sent. |
+| `change: {"p": n}` | Slider: releasing it sends an input with the value. Thermostat: each press on minus or plus sends an input with the stepped value. (2) `choice`: a tap on option `i` sends an input with the value `i`; a tap on the selected option sends again. |
+| (2) `hold: {"go": page}` | A press held 500 ms switches to that page. Nothing is sent, and the release is not a tap. |
 | `cf: 1` | The tablet must ask before it sends. |
 | `confirm` (text) | The question to ask. Without it the tablet asks "Are you sure?". |
 
-A widget with neither `tap` nor `change` is display only.
+A widget with neither `tap` nor `change` nor `hold` is display only. A `tap`
+or `hold` object with none of the forms above, and a `go` to a page that
+does not exist, do nothing.
+
+(2) **Who gets a press.** One table for taps and holds; sections 4.8 and
+7.4 follow it. "The card's" means: the card's `tap` fires on release, and
+the card's `hold` after 500 ms, when the card has them. Else nothing
+happens.
+
+| The press begins on | A tap is | A hold is |
+|---|---|---|
+| A hidden widget (`vis` 0 or no value) | Not the widget's: it is not there. The press goes to the widget under it at that point, else it is the card's | the same |
+| A widget with `tap` | The widget's. Never the card's | The widget's `hold`; without one, the card's |
+| A slider with `change` | The slider's: a drag, anywhere in its rectangle. Never the card's | None |
+| A thermostat with `change`: its minus and plus buttons | The button's | None |
+| A thermostat with `change`: the rest of its rectangle | The card's | The card's |
+| A `choice` with `change` | The control's, anywhere in its rectangle. A press inside a cell picks that option (`look` 1: the whole cell, not only the dot). A press in a gap between cells does nothing | None |
+| A widget with `hold` and no `tap` | The card's | The widget's |
+| Any other widget without `tap` and `change`: a label, an image, a chart, a slider, thermostat or `choice` that only shows. Also while it is drawn faded | The card's | The card's |
+| A widget with `tap` or `change` that is drawn faded because it has no value (4.7). For a thermostat with `change`: its two buttons | No input, and not the card's. A `go` or `back` of the widget still works, as in version 1 | As for the same widget with a value |
+| Anything in a card with `un` 1 | Nothing is sent (section 7.4) | Works: a `go` sends nothing |
+| The card itself, outside its widgets | The card's | The card's |
+
+- A card tap needs no value: a card whose `on` has no value still sends
+  (section 7.4 says what it shows).
+- A press that has moved 12 px or more from where it began is no longer a
+  card tap and no longer a hold. The 12 px are the straight-line distance
+  from the first point of the press (`dx * dx + dy * dy >= 144`). Once
+  passed, it stays passed: a finger that comes back does not make the press
+  a tap or a hold again. At 48 px sideways it becomes a page swipe (4.8);
+  before that it is nothing. A widget with `tap` keeps the rule of
+  version 1: it fires on release unless a swipe took the press.
+- A widget that has the press by this table and becomes hidden, faded or
+  unavailable while the finger is down loses the press (section 7.4).
+
+(2) How the tablet reads values of version 2 keys:
+
+- A known key with the wrong JSON type (text where a number is expected, a
+  slot of another type than the field's) is `parse`, as in version 1.
+- A whole number out of range in a key that only changes the look (`px al
+  shape isz look dir rows st bs lit ttl`) is held to the nearest allowed
+  value. So a later contract can add a value without a new key. For `ttl`:
+  below 0 is 0, 1 to 4 is 5, above 3600 is 3600.
+- These keys, and `clk`, `nv` and `sub`, take whole numbers. A fraction in
+  one of them is `parse`, as for `size` and `kind` in version 1.
+- `clk` other than 1 or 2: a plain label that shows `text`. `nv` and `sub`
+  count only when they are exactly 1; any other whole number is 0.
+- A constant colour outside 0 to 16777215 is `parse`.
+- A `track` with fewer than 2 colours is no track; of more than 8 the first
+  8 count.
+- A `texts` entry longer than 40 bytes is cut to 40 at a character border,
+  never `parse`. An entry that is not text is `parse`.
+- A live value that is out of range (a colour, a `choice` index) counts as
+  no value.
 
 ### 4.4 Bound fields and slots
 
-A field marked (text), (bool), (number), (list) or (icon) holds either a
-constant of that type or `{"s": n}`, a reference to slot `n` (1-based).
+A field marked (text), (bool), (number), (list), (icon) or (2) (colour)
+holds either a constant of that type or `{"s": n}`, a reference to slot `n`
+(1-based).
 
 | Type | Char | Wire value |
 |---|---|---|
@@ -305,38 +452,77 @@ constant of that type or `{"s": n}`, a reference to slot `n` (1-based).
 | number | `n` | Number. |
 | list | `l` | List of at most 120 numbers. |
 | icon | `i` | Code point from `icons.json`. 0 means "draw the placeholder". |
+| (2) colour | `n` | A whole number 0 to 16777215, `0xRRGGBB`. A colour lives in a number slot; there is no slot letter for it. |
 
 Every slot may also be `null`: "no value". The tablet then draws the widget in
-its unavailable look (section 4.7). Before the first `tab_set` all slots are
+its faded look of "No value" (section 4.7). Before the first `tab_set` all slots are
 `null`.
 
+(2) No value, per field: a colour without a value (also a number that is not
+whole or not in range) means "no colour": the part keeps its usual colour.
+`vis` without a value hides the widget, so two widgets that share a place
+never both show before values arrive. `un`, a button's `value` and `rate`
+without a value count as 0. A `mark` without a value is no mark.
+
+(2) **Age.** The tablet remembers when each slot was last written: the
+moment a `tab_set` named it with a value, also when the value was the same
+as before, also in a full snapshot. The age of a widget is the time, in
+seconds, since the slot bound to its `value` was last written. A widget
+whose `value` is a constant has age 0 for ever: it does not move. `clk`
+and `rate` count with the age (4.7). A write to the slot of `rate` does not
+change the age. The count never wraps while the tablet has power.
+
 HA gives each (source slot, type) pair its own device slot, so a slot has one
-type. HA does the conversion (`coerce` in the reference code): bool follows
-`isOn` in `frontend/logic.js`; number follows `toNumber`; an icon name that is
-not in the tablet's icon set, and any picture URL, becomes 0.
+type. (2) Where the same source is converted in two ways (as a number and as
+a colour, or as a colour for two cards with different themes) each way has
+its own device slot. HA does the conversion (`coerce` in the reference
+code): bool follows `isOn` in `frontend/logic.js`; number follows
+`toNumber`; an icon name that is not in the tablet's icon set, and any
+picture URL, becomes 0.
+
+(2) Colour conversion. A colour may come as a list of exactly three numbers
+that are each 0 to 255 after rounding (`[r, g, b]`), as `"#RRGGBB"` with
+six hex digits in either case, as a whole number 0 to 16777215 (also
+written `16711680.0`), or as a role name HA knows for that card (`good`,
+`warn` and so on). Anything else is `null`: a list of another length, a
+part out of range, `"#FFF"`, a bool, a fraction. `fixtures/state_v2.json`
+has a sample of each under "colours".
 
 The device layout holds no entity ids. Two dashboards that differ only in
-which entity a card uses have the same bytes and the same hash. HA therefore
-never uses the hash to decide whether values or actions changed
-(section 8).
+which entity a card uses have the same bytes and the same hash. (2) In
+version 2 that holds when the devices can also do the same: a layout
+depends on what a device can do and may hold names it reports (4.3,
+`texts`). HA therefore never uses the hash to decide whether values or
+actions changed (section 8).
 
 ### 4.5 Icons
 
-`icons.json` maps `mdi:` names to `[code point, level]`. Level 1 is the set in
-this contract. A later contract may add icons with a higher level. It never
-removes or renumbers one. The firmware embeds every glyph up to its level and
-reports the level in `caps.icons`. HA sends the `fallback` glyph for a fixed
-icon above the tablet's level.
+`icons.json` maps `mdi:` names to `[code point, level]`. Level 1 is the set of
+contract version 1 (106 icons). Level 2 adds 91. A later contract may add
+icons with a higher level. It never removes or renumbers one. The firmware
+embeds every glyph up to its level and reports the level in `caps.icons`.
+HA sends the `fallback` glyph for a fixed icon above the tablet's level, and
+0 for a bound one.
 
 ### 4.6 Down-levelling
 
-HA leaves out widgets whose kind is not in `caps.w`. The rest of the card stays.
-Headings and cards are always sent, whatever `caps.w` lists: a tablet that
-speaks this contract draws them. A missing `caps.w` means every kind of this
-contract version; an empty list means no kind inside a card.
+By version first. A tablet whose `proto` does not include 2 gets a version 1
+layout. HA makes it from the dashboard again, not from the version 2 layout:
+every card is laid out for version 1, as its own version 1 form or as a card
+that says the tablet needs an update. So nothing leaves a hole. A dashboard
+that uses only cards of version 1 gives the same bytes as it did before
+version 2 existed. Detail pages and page themes are left out of a version 1
+layout.
+
+Then by kind, as before: HA leaves out widgets whose kind is not in `caps.w`.
+The rest of the card stays. Headings and cards are always sent, whatever
+`caps.w` lists: a tablet that speaks this contract draws them. A missing
+`caps.w` means the nine kinds of version 1; an empty list means no kind
+inside a card.
+
 The hash is taken after down-levelling, so two tablets with different caps can
-hold different hashes for the same dashboard. HA supports the current and the
-previous contract version.
+hold different hashes for the same dashboard. HA supports version 1 for as
+long as it ships the cards of version 1.
 
 ### 4.7 How it is drawn
 
@@ -344,19 +530,21 @@ The tablet must look like the editor's picture. The reference is
 `frontend/render.js` and the `.at-*` rules in `frontend/styles.js` of the
 integration, at scale 1. All numbers are pixels on the 1280x800 screen.
 Colour names are theme keys; a card's `style` overrides them inside that card.
+(2) "Theme" is the theme of the page on screen (section 4.8).
 
 Fonts. Exactly these sizes exist on the tablet (`fonts` in `contract.json`):
 
 | Use | Size |
 |---|---|
 | Label small / medium / large (`size` 0 / 1 / 2) | 14 / 18 / 34 |
+| (2) Label with `px` | The largest size the tablet has that is not above `px`, at least 14. Text sizes: 14, 15, 16, 18, 20, 28, 34. Digit sizes: 48, 96, 192; they hold only `fonts.digits_glyphs` (`0123456789.,-:°%+` and the space). A digit size is used only when every character of the text is in that set; otherwise the largest text size not above `px`. While the text at a digit size is wider than the rectangle: the next smaller of 192, 96, 48, 34. At 34 and below it is cut with "…" like any text. |
 | Button text | 15 |
 | Card header title | 16 |
 | Heading text | 20 |
-| Thermostat value | The largest of 48, 34, 20, 18, 14 that is not above `thermostatFit` (below). The 48 size holds only `0123456789.,-`, so the "–" for no value takes the largest of 34, 20, 18, 14 that fits. A negative value uses the ASCII `-`. Then, while the text drawn at that size is wider than the text may be (`thermostatFit`'s width), the next smaller of those sizes: 48, 34, 20, 18, 14. Only at 14 is it cut with "…". |
+| Thermostat value | The largest of 48, 34, 20, 18, 14 that is not above `thermostatFit` (below). The thermostat uses the 48 size only for a text made of `0123456789.,-`, so the "–" for no value takes the largest of 34, 20, 18, 14 that fits. A negative value uses the ASCII `-`. Then, while the text drawn at that size is wider than the text may be (`thermostatFit`'s width), the next smaller of those sizes: 48, 34, 20, 18, 14. Only at 14 is it cut with "…". |
 | Icons in headers, headings, buttons, minus and plus | 24 |
 | Icons in the side bar | 28 |
-| Image widget icon | The largest of 72, 48, 28, 24 that is not above `min(w, h) / 2`. |
+| Image widget icon | The largest of 72, 48, 28, 24 that is not above `min(w, h) / 2`. (2) Other looks: see "Image". |
 
 The text sizes hold only the characters in `fonts.text_glyphs` (Latin,
 Latin-1, Latin Extended-A, dashes, quotes, bullet, ellipsis, euro). Any
@@ -365,26 +553,118 @@ as an empty box, and the editor's tablet preview shows a box there too.
 
 Every text is one line, left aligned unless said otherwise, centred
 vertically in its rectangle, and cut with "…" when it does not fit. No text
-box ever changes size with its content.
+box ever changes size with its content. (2) A line that is higher than its
+rectangle starts at the rectangle's top and is cut at its bottom. HA gives
+a label of a digit size a rectangle at least `fonts.row_px` high (60, 120
+and 240 for 48, 96 and 192), which holds the line.
+
+(2) Five rules for every formula below, so that odd sizes and odd values
+have one answer on both sides (vectors in `fixtures/maths.json`):
+
+- `round(x)` is `floor(x + 0.5)`.
+- `a mod b` is the remainder that is never negative.
+- A length that comes out below 0 counts as 0. A part whose width or height
+  is 0 is not drawn.
+- Where a formula divides by a length or by `max - min` and that is 0 or
+  less, the result is 0: a slider whose track has no length, or whose `max`
+  is not above `min`, shows amount 0, has no mark and sends nothing.
+- Where an icon is "the largest of 72, 48, 28, 24 that is not above" a
+  length and none is, it is 24.
+
+(2) **Card colours.** Five functions, the same on both sides. No colour
+is ever worked out in floating point. Their vectors are in
+`fixtures/maths.json`.
+
+- `mix(a, b, p)`: per channel `(a * (100 - p) + b * p + 50) div 100`, in
+  whole numbers. `p` is a whole number from 0 to 100; `p` 0 gives `a`.
+- `lum(c)`: `(0.2126 * L[r] + 0.7152 * L[g]) + 0.0722 * L[b]`, in this
+  order, in 64-bit floating point, each step on its own (no fused
+  multiply-add). `L` is the table `linear` of `maths.json`: 256 numbers,
+  the linear value of each channel value. Every side holds a copy of the
+  table and never works the values out itself.
+- `contrast(a, b)`: `(hi + 0.05) / (lo + 0.05)`, with `hi` the larger and
+  `lo` the smaller of `lum(a)` and `lum(b)`.
+- `readable(c)`: `0xFFFFFF` or `0x15181D`, the one with the higher contrast
+  on `c`; `0xFFFFFF` when both are equal.
+- `legible(c, b, t)`: `c` when `contrast(c, b) >= 3`; else `m = mix(c, t,
+  50)` when `contrast(m, b) >= 3`; else `t`. `t` is the text colour in use
+  on `b`.
+
+A card's colours are the page's theme with the card's `style` on top. For
+`ion` and `onbg_pr`, in this order: the style's own value when it has one;
+else, when the style's `onbg` differs from the page theme's `onbg`, `ion` is
+`acc` when `contrast(acc, onbg) >= 3` and `ontx` otherwise, and `onbg_pr` is
+`blend(ontx, onbg, 0.82)`; else the theme's. `blend(a, b, t)` is the one
+formula kept from version 1: per channel `floor(a * (1 - t) + b * t + 0.5)`,
+in this order, in 64-bit floating point, each step on its own. It is used
+here and nowhere else.
+
+With `bg` the card's background (`style.bg`, else `card`), `X` the value of
+`tint` (or none), and `dark` true when `readable(bg)` is `0xFFFFFF` (on
+every theme of the library that is the theme's own `dark` flag):
+
+| Name | Without `tint` | With a `tint` value `X` |
+|---|---|---|
+| `A`, the accent | `acc` | `legible(X, bg, tx)` |
+| `AF`, accent fill | `accf` | `A` |
+| `AT`, content on `AF` | `acct` | `readable(A)` |
+| `AP`, `AF` pressed | `accf_pr` | `mix(0x000000, A, 88)` |
+| `F`, the "on" fill | `onbg` | `mix(X, bg, dark ? 78 : 84)` |
+| `FT`, text on `F` | `ontx` | `tx` |
+| `FS`, small text on `F` | `ontx` | `tx2` when `contrast(tx2, F) >= 3`, else `tx` |
+| `FI`, icon on `F` | `ion` | `legible(X, F, tx)` |
+| `FP`, pressed and tracks on `F` | `onbg_pr` | `mix(tx, F, 90)` |
+
+Where a rule below names `acc`, `accf`, `acct`, `accf_pr`, `onbg`, `ontx`,
+`ion` or `onbg_pr`, it means `A`, `AF`, `AT`, `AP`, `F`, `FT` (`FS` for small
+text), `FI` and `FP`. Without `tint` these are the theme's own colours, so
+version 1 is unchanged. "On:" in a rule applies while the card is **filled**:
+`on` is 1 and `lit` is 0.
+
+| `on` and `lit` | Card |
+|---|---|
+| `on` 0, or `lit` 3 | The off look. |
+| `on` 1, `lit` 0 | Filled: background `onbg`, border colour `acc`, text `ontx`. Every "on:" colour applies. |
+| `on` 1, `lit` 1 | The off look, but the header icon and the icon of an image with `look` 1 or 2 take `acc`. |
+| `on` 1, `lit` 2 | As `lit` 1, and the border is `acc` and at least 2 wide. |
+
+"The card's background now" is `onbg` while filled, else `bg`. "The card's
+text colour now" is `ontx` while filled, else `tx`.
 
 | Part | Drawing |
 |---|---|
 | Page | Background `wall`. |
-| Side bar | Rectangle `[0, 0, 96, 800]`, colour `card`. Always drawn, also with no entries. Entry `i` is a button at `[16, 16 + 72*i, 64, 64]`, radius `r2`, no background, icon 28 in `tx2`. No title text. The entry of the page on screen: background `onbg`, icon `acc`. An entry without `icon` uses `mdi:view-dashboard`. |
+| Side bar | Rectangle `[0, 0, 96, 800]`, colour `card`. Always drawn, also with no entries. Entry `i` is a button at `[16, 16 + 72*i, 64, 64]`, radius `r2`, no background, icon 28 in `tx2`. No title text. The entry of the page on screen: background `onbg`, icon `acc`. An entry without `icon` uses `mdi:view-dashboard`. (2) On a detail page: one entry at `[16, 16, 64, 64]` in the look of the entry on screen, with `mdi:arrow-left`. The side bar always uses the theme's own colours, never a card's. |
 | Not connected mark | `mdi:lan-disconnect`, 28, colour `tx2`, centred in `[32, 736, 32, 32]` of the side bar. Shown after 10 s without HA. |
-| Heading | Optional icon 24, gap 8, text 20. Colour `tx`. |
+| Heading | Optional icon 24, gap 8, text 20. Colour `tx`. (2) With `c`: `legible(c, wall, tx)` for both. |
 | Card | Radius `r`. Border `bw` wide in `line`. Background `card` (or `style.bg`; with `bg2` a gradient from `bg` to `bg2`, direction `gd`). Text `tx`. |
-| Card, on | Background `onbg`, border colour `acc`, text `ontx`. |
-| Header | In `hr`: icon 24 in `tx2` (on: `ion`), gap 8, title 16. |
-| Label | Small: `tx2` (on: `ontx`). Medium and large: the card's text colour. |
+| Card, on | Background `onbg`, border colour `acc`, text `ontx`. (2) By `lit`, as in the table above. |
+| (2) Card, pressed | Only a card with `tap` or `hold`. Background `card_pr` (on: `onbg_pr`); a style with `bg` and no `card_pr`: `mix(tx, bg, 90)`. The pressed look appears 80 ms after the touch, and only if the finger is still down and has moved less than 12 px, so a page swipe that starts on a card does not flash it. |
+| (2) Card, pulse | Background `accf`. Header icon, title, labels and image icons `acct`; images are drawn without their box or badge. For 300 ms. |
+| (2) Card, waiting | A 2 px outline in `acc` (on: `ion`). |
+| (2) Card, not available | `un` 1: the header and every widget at 40% opacity. The 40% is applied once: a control without a value in such a card is at 40% too, not at 16%. |
+| Header | In `hr`: icon 24 in `tx2` (on: `ion`), gap 8, title 16. (2) `ic` replaces the icon while it has a value above 0. |
+| Label | Small: `tx2` (on: `ontx`). Medium and large: the card's text colour. (2) With `px`: drawn at 14 or 15 it is small, at any other size it takes the card's text colour. `al` places the text left, centred or right in the rectangle. `c`: the text is `legible(c, the card's background now, the card's text colour now)`. |
+| (2) Label, clock | `value` is `v`, minutes after local midnight; it may have a fraction. The label shows `m = floor(v + age / 60) mod 1440` as `HH:MM`, two digits each (`clk` 1), or with the hour as 12, 1 to 11 without a leading zero (`clk` 2). `age` is the age of 4.4. No am or pm. No value: `--:--`. It is drawn again when `m` changes. Size, `al` and `c` as for any label. |
 | Button | Background `card2`, radius `r2`, padding 6. Icon 24 and text 15, centred, gap 6; side by side, or stacked when both exist and the height is 64 or more. Text colour `tx`. Pressed: `card2_pr` (on: `onbg_pr`). Pulse: background `accf`, content `acct`, for 300 ms. Waiting (policies 0 and 2 until the answer): a 2 px outline in `acc` (on: `ion`). |
-| Switch | Track `min(w, 64)` by `min(h, 36)`, at the left of the rectangle, centred vertically, fully round, `card2`. Knob 28 round, 4 from the left, `tx2`. Value 1: track `acc` (on: `ion`), knob 4 from the right, `acct` (on: `onbg`). |
-| Slider | Track over the full width, 14 high, radius 7, centred vertically, `card2` (on: `onbg_pr`). Fill from the left in `acc` (on: `ion`). Knob 22 round in `tx` (on: `ontx` with a 2 px ring in `onbg`). The value is `min + amount * (max - min)` rounded to `step` and clamped. |
-| Thermostat | In the square of side `s = min(w, h)` centred in the rectangle. Arc centre in the middle, radius `0.36 * s`, from 135° to 405° (open at the bottom), round ends, width `max(8, s / 14) * s / 200`. Track `card2` (on: `onbg_pr`). Value arc `acc2` from 135° over `270° * (value - min) / (max - min)`. Value text centred: no decimals from 1000 up, else at most one; "–" when there is no value. With `change`: two round buttons 36 by 36 at the bottom left and bottom right of the rectangle, `card2`, icons `mdi:minus` and `mdi:plus` 24. |
-| Chart | A 1 px line in `line` one pixel above the bottom: it fills pixel row `h - 2` of the rectangle, rows counted from 0 at the top. Line kind: a 3 px line in `acc2` with round joins through the points of `linePoints(values, w, h, 4)`. Bar kind: bars in `acc2` with radius `min(4, bar width / 2)` from `barRects(values, w, h - 2, 4)`. Both functions are in `frontend/logic.js`. |
-| Image | Background `card2`, radius `r2`. The icon centred, colour `acc2`. Value 0 or no value: the `placeholder` glyph of `icons.json`. |
-| No value | A bound text shows nothing. A switch, slider, thermostat, chart or image whose value is `null` is drawn at 40% opacity and does not react to touch. |
-| Pressed | Any widget with `tap` shows its pressed look in the same frame as the touch. |
+| (2) Button, selected | `value` 1: background `accf`, content `acct`. Pressed: `accf_pr`. When `contrast(accf, the card's background now) < 1.3`: also a 2 px border in `acct`, inside. |
+| (2) Button with `c` | While `c` has a value: background `c`, content `readable(c)`, pressed `mix(readable(c), c, 85)`. Selected: the background stays `c`, with a 3 px border in the card's text colour now, inside. |
+| (2) Button, `shape` and `isz` | `shape` 1: a circle of diameter `min(w, h)`, centred in the rectangle; no text is drawn. `shape` 2: no background; pressed `card2_pr` (on: `onbg_pr`); selected and pulse fill as usual. `isz` 1: the icon is the largest of 72, 48, 28, 24 that is not above `min(w, h) / 2`. `ic` as in a header. |
+| Switch | Track `min(w, 64)` by `min(h, 36)`, at the left of the rectangle, centred vertically, fully round, `card2`. Knob 28 round, 4 from the left, `tx2`. Value 1: track `acc` (on: `ion`), knob 4 from the right, `acct` (on: `onbg`). (2) With `c`: the track at value 1 is `legible(c, the card's background now, the card's text colour now)` and the knob `readable` of that. |
+| Slider | Track over the full width, 14 high, radius 7, centred vertically, `card2` (on: `onbg_pr`). Fill from the left in `acc` (on: `ion`). Knob 22 round in `tx` (on: `ontx` with a 2 px ring in `onbg`). The value is `min + amount * (max - min)` rounded to `step` and clamped. Under a finger, `amount = clamp((finger - start) / L, 0, 1)`: `start` is the left edge of the rectangle and `L` its width. (2) In every look and for every `dir`, `start` and `L` are the start edge and the length along the axis (next row); only a slider with a `track` has its own formula (below). |
+| (2) Slider, `dir` | The axis. 0: the start is the left edge. 1: the bottom edge. 2: the top edge. Below, `L` is the length of the rectangle along the axis and `S` its other side; "fill from the left" reads "from the start". With `dir` 1 or 2 and `look` 0 the track is 14 wide and centred across. |
+| (2) Slider, bar | `look` 1. Track: the whole rectangle, radius `R = min(r2, S div 2)`, `card2` (on: `onbg_pr`). Fill from the start edge, `round(amount * L)` long, same radius; a fill shorter than `2R` is drawn `2R` long; no fill at amount 0. No knob. With `change`: a handle line, 4 along the axis and `S - 16` across, radius 2, its far edge 8 before the end of the fill, colour `readable(fill colour)`; not drawn while the fill is shorter than 28. `icon` (only when `S >= 32`): an icon 24 with its centre 24 from the start edge, centred across, in `readable(fill colour)` when the fill is at least 48 long, else `tx2` (on: `ontx`). |
+| (2) Slider, `c` | The fill is `legible(c, track colour, the card's text colour now)`. Not with `track`. |
+| (2) Slider, `track` | `n` colours. The track has the shape of its look (14 thick with radius `R = 7`, or the whole rectangle with the bar's `R`). `x0 = R` and `x1 = L - R` along the axis, from the start. Three parts that do not overlap: the start cap, which is the part of the rounded track from 0 to `x0`, in colour 1; the end cap, from `x1` to `L`, in colour `n`; and between them `n - 1` pieces with square corners, piece `k` (from 0) from `x0 + floor(k * (x1 - x0) / (n - 1))` to `x0 + floor((k + 1) * (x1 - x0) / (n - 1))`, each fading along the axis from colour `k + 1` to colour `k + 2`. No fill. `amount = clamp((finger - x0) / (x1 - x0), 0, 1)`. When `x1` is not above `x0` the two caps are drawn, there are no pieces and no mark, and the amount is 0. The mark's centre is at `x0 + amount * (x1 - x0)`. Mark, `look` 0: a circle 22, `0xFFFFFF`, with a 2 px border in `0x15181D` inside. `look` 1: a rounded rectangle 12 along the axis and `S + 4` across, radius 6, same colours. Bands of colour between the 16-bit steps are accepted. Drawn faded (40%), the track fades as one picture: no part shows through another. |
+| (2) Slider, `nv` and `rate` | `nv` 1: without a value the slider is drawn at full opacity with its track only (no fill, knob, handle or mark) and takes input. `rate` (only without `change`): the value shown is `clamp(value + rate * age, min, max)`, with the age of 4.4; a `rate` without a value counts as 0. It is drawn again at most once a second, and only on the page on screen. |
+| Thermostat | In the square of side `s = min(w, h)` centred in the rectangle. Arc centre in the middle, radius `0.36 * s`, from 135° to 405° (open at the bottom), round ends, width `max(8, s / 14) * s / 200`. Track `card2` (on: `onbg_pr`). Value arc `acc2` from 135° over `270° * (value - min) / (max - min)`. Value text centred: no decimals from 1000 up, else at most one; "–" when there is no value. With `change`: two round buttons 36 by 36 at the bottom left and bottom right of the rectangle, `card2`, icons `mdi:minus` and `mdi:plus` 24. (2) `bs`: the buttons are `bs` by `bs`. `c`: the value arc is `legible(c, the card's background now, the card's text colour now)`. `mark` `m`: a filled circle in the card's text colour now, diameter `max(6, arc width - 4)`, centred on the middle line of the arc at `135° + 270° * (m - min) / (max - min)`. It is drawn whenever `m` has a value inside `min` to `max`, also while the thermostat's own `value` has none (a climate device that is off has a temperature and no target); it then fades with the widget. No mark while `m` has no value or lies outside `min` to `max`. |
+| Chart | A 1 px line in `line` one pixel above the bottom: it fills pixel row `h - 2` of the rectangle, rows counted from 0 at the top. Line kind: a 3 px line in `acc2` with round joins through the points of `linePoints(values, w, h, 4)`. Bar kind: bars in `acc2` with radius `min(4, bar width / 2)` from `barRects(values, w, h - 2, 4)`. Both functions are in `frontend/logic.js`. (2) `c`: `legible(c, the card's background now, the card's text colour now)` in place of `acc2`. `st` 1, line kind: steps through the same points `(x_i, y_i)`: for each `i` below the last a flat run from `x_i` to `x_(i+1)` at `y_i`, then an upright run at `x_(i+1)` from `y_i` to `y_(i+1)`; each a filled rectangle 3 thick centred on its line and 1 longer at both ends; each of its edges is rounded on its own. `mark` `k`, bar kind: bars before index `round(k)` as usual, the bar at it in `acc`, later bars in `card2`. A `mark` without a value, or with `round(k)` below 0 or past the last bar, is no mark: every bar as usual. |
+| Image | Background `card2`, radius `r2`. The icon centred, colour `acc2`. Value 0 or no value: the `placeholder` glyph of `icons.json`. (2) With `c`: the icon is `legible(c, card2, tx)`. |
+| (2) Image, badge and bare | The image is **plain** when `c` has no value and the card is neither filled nor on with `lit` 1 or 2 (so: `on` 0, or `lit` 3). This is decided by state, never by comparing colour numbers. `K` is `c` when it has a value; else `tx2` when plain, `ion` when the card is filled, `acc` when it is on with `lit` 1 or 2. `look` 1, badge: a circle of diameter `d = min(w, h)`, centred. Icon: the largest of 72, 48, 28, 24 that is not above `0.6 * d`. Plain: circle `card2`, icon `tx2`. Otherwise: circle `W = mix(K, B, 80)` and icon `legible(K, W, T)`, with `B` the card's background now and `T` the card's text colour now. `look` 2, bare: no box. Icon: the largest of 72, 48, 28, 24 that is not above `min(w, h)`, in `legible(K, B, T)`. With `tap`, pressed: background `card2_pr` (on: `onbg_pr`), radius `r2`. The placeholder and the no-value look are as in `look` 0. |
+| (2) Choice | `n` options (with `n` 0 nothing is drawn, 4.3) in `rows` rows: `k = ceil(n / rows)` cells a row, filled row by row. Gap 8 between cells and between rows. Cell width `floor((w - 8 * (k - 1)) / k)`, height `floor((h - 8 * (rows - 1)) / rows)`. When either is below 1 the control is not drawn and is not there for a touch, like a hidden widget. Cell: background `card2` (on: `onbg_pr`), radius `r2`, content as in a button (icon 24, text 15, the button's stacking rule) in the card's text colour now; an option without an icon or without a text shows the other part alone. Selected: background `accf`, content `acct`. Pressed: `card2_pr` (on: `onbg_pr`); the selected cell `accf_pr`. With `cols`: the cell's background is its colour, content `readable` of it; selected: a 3 px border in the card's text colour now, inside. `look` 1: each cell is drawn as a circle of diameter `min(cell width, cell height)`, centred in its cell; the whole cell still takes the touch. |
+| (2) Hidden | A widget whose `vis` is 0 or has no value is not drawn and is not there for a touch (4.3, "Who gets a press"). |
+| No value | A bound text shows nothing. A switch, slider, thermostat, chart or image whose value is `null` is drawn at 40% opacity and takes no input. (2) Who gets a press that begins on it is in 4.3: a faded control swallows it, a faded widget that only shows leaves it to the card. A `choice`, and a slider with `nv` 1, do not fade. |
+| Pressed | Any widget with `tap` shows its pressed look in the same frame as the touch. (2) A card: after 80 ms, see "Card, pressed". |
 
 `thermostatFit(text, s, stroke)` from `render.js`: the inner diameter is
 `2 * (72 - stroke / 2) * s / 200` with `stroke = max(8, s / 14)`; the text may
@@ -396,11 +676,49 @@ above). The tablet's box for the text is `floor(width)` pixels wide.
 
 The tablet's own pieces (question box, message strip, waiting screen) use
 `card`, `tx`, `tx2`, `card2` and `accf` with `acct`, text sizes 15, 16, 18,
-20 and 34.
+20 and 34. (2) They use the theme of the page on screen.
 
 The font is Montserrat Medium (SIL Open Font License), one weight for all
 text. The editor's tablet previews use the same font file. The browser card
 uses Home Assistant's font in three weights. That difference is accepted.
+
+### 4.8 (2) Pages: detail pages and page themes
+
+| Key of a page | Type | Meaning |
+|---|---|---|
+| `sub` | 0 or 1 | 1: a detail page. 0 or absent: a normal page. |
+| `ttl` | whole number | Detail pages only: seconds without a touch after which the tablet returns. 0: never. Otherwise 5 to 3600. Default 60. The count stands still while a finger is down or the question box is open. |
+| `theme` | object | Any keys of the top-level `theme`. On this page they replace the layout's theme; a key that is missing keeps the layout's value. |
+
+Detail pages. A detail page holds the full controls of one card. It stands
+in for a popup: nothing is drawn over a page, and opening one costs what a
+page switch costs.
+
+- A page is a detail page when it has `sub` 1 and is not page 0. `sub` on
+  page 0 is ignored, so every layout has a normal page.
+- It is opened by `{"go": page}` in a `tap` or a `hold`.
+- Swipes. A swipe is a press that has travelled 48 px or more sideways,
+  with at least twice as much sideways as up-and-down travel
+  (`timing.swipe_px`). There is no time limit. On a normal page a swipe to
+  the left shows the next normal page and one to the right the one before.
+  The step wraps from the last normal page to the first and never lands on
+  a detail page. A press that began on a slider with `change` is never a
+  swipe.
+- The tablet remembers the normal page it came from, the origin. A `go` from
+  one detail page to another keeps the origin.
+- It returns to the origin on: a press on the side bar's back entry (4.7), a
+  swipe to the right, `tap: {"back": 1}`, or `ttl` seconds without a touch.
+  A swipe to the left does nothing.
+- After a layout switch the tablet never shows a detail page. If it was on
+  a detail page: it shows the origin when that page index still exists and
+  is a normal page in the new layout, else page 0. If it was on a normal
+  page and that index is a detail page in the new layout: page 0. After a
+  restart it shows page 0.
+- HA puts detail pages after the normal pages and sends no `nav` entry for
+  one.
+
+Page themes. The side bar, the question box, the message strip and every
+card on the page use the page's theme. A card's `style` still goes on top.
 
 ## 5. Sending a layout
 
@@ -433,8 +751,8 @@ Tablet rules (`fixtures/chunks.json`):
   it answers `incomplete` and HA starts again from `seq` 0.
 - `tab_commit` errors, checked in this order: `auth`, `incomplete` (no
   finished transfer with this hash), `hash` (bytes do not hash to `hash`),
-  `parse` (not valid JSON of this shape), `version` (`v` is not supported),
-  `limits` (too many pages, slots or widgets), `memory`.
+  `parse` (not valid JSON of this shape), `version` (`v` is not 1 or 2),
+  `limits` (too many pages, normal pages, slots or widgets), `memory`.
 - `tab_commit` answers as soon as the layout is checked and parsed. The tablet
   then builds the new screens in the background and switches in one step. The
   old layout stays on screen and stays live until then. It does not switch
@@ -451,6 +769,17 @@ Tablet rules (`fixtures/chunks.json`):
   nothing changes: the same build carries on. If that build has already
   failed, nothing is staged any more and the commit answers `incomplete`.
 - The tablet keeps the page index across a switch when that page still exists.
+  (2) Not on a detail page: section 4.8.
+- (2) Flash writes. The tablet keeps a count of the writes it may make: 12
+  after a restart, one more for every 2 hours of running, never above 12
+  (`timing.cache_bucket`, `timing.cache_refill_s`). Storing a layout takes
+  one. With none left, the layout is shown and used as any other, and
+  stored when a write is free again. Erasing the stored layout (after
+  `tab_clear`, or for a layout too large to keep) takes none and is never
+  put off.
+- (2) A layout larger than `caps.max_stored` is shown and used but not
+  stored, and the older copy is erased. After a restart such a tablet waits
+  for HA.
 - `tab_clear` drops the layout, the staged layout and the stored copy.
 
 HA rules:
@@ -458,7 +787,7 @@ HA rules:
 - One transfer per tablet at a time. If the wanted hash changes during a
   transfer or a build, HA starts again from `seq` 0.
 - After `tab_commit` succeeds HA calls `tab_status` after 0.15 s, 0.3 s, then
-  every 0.5 s, for at most 20 s (`status_verdict` in the reference code):
+  every 0.5 s, for at most 60 s (`status_verdict` in the reference code):
   - `layout` is the wanted hash: the layout is on the tablet.
   - `staged` is the wanted hash: still building. Ask again.
   - otherwise: the build failed with the code in `build` (or `replaced` when
@@ -576,7 +905,7 @@ Checks, in this order. The first failure decides.
 | Check | Verdict |
 |---|---|
 | `d` is an ASCII string; `s` is exactly 32 lower-case hex characters; 9 fields; at most 200 characters | `malformed` |
-| Field 1 is a version HA speaks | `version` |
+| Field 1 is `1` (`input_version` in `contract.json`; the same in versions 1 and 2) | `version` |
 | MAC belongs to a known tablet | `wrong_tablet` |
 | The tablet is paired, and its last `tab_hello` said `enc` 1 | `not_paired` |
 | Signature matches (constant-time compare) | `bad_signature` |
@@ -584,6 +913,24 @@ Checks, in this order. The first failure decides.
 | Fields have the right shape | `malformed` |
 | Counter is above the last accepted one | `replay` |
 | Layout hash is one HA keeps bindings for on this tablet | `stale_layout` |
+
+(2) What HA checks before it runs an input that passed the table:
+
+- The widget id of a `t` event may be a card's id. HA runs it only when
+  that card has a tap action in HA's copy of the layout. A `t` for a card
+  without one, and a `c` for a widget without `change`, run nothing.
+- A `c` event must carry a finite number that is inside the widget's `min`
+  and `max` and on its step grid (`min + k * step`, within 0.0015; `max`
+  itself always counts). A step of 0 or less has no grid: only the range
+  is checked (the tablet does not snap then either). Where HA sent `min`,
+  `max` or `step` as live values, it checks against the values it last
+  sent to this tablet, and refuses when it has sent none.
+- A `c` event from a `choice` must carry a whole number from 0 to one below
+  the number of options HA compiled for that widget. HA takes the option
+  from its own copy of the list; the tablet never names an option.
+
+An input that fails one of these gets `tab_ack(counter, false, "failed")`.
+`fixtures/input_v2.json` has a case for each.
 
 Which hashes HA keeps bindings for: the wanted layout, and the one that was on
 screen before it, until `tab_status` (or `tab_hello`) confirms the switch.
@@ -642,6 +989,46 @@ accepts 10 per second).
   and shows "The dashboard changed. Try again" for a moment. When touch
   cannot be sent, it shows why, as above.
 
+(2) Version 2:
+
+- Who gets a press, for a tap and for a hold, is in the table of 4.3.
+- A card with `tap` follows the same policies. Policy 0 with a bound `on`
+  that has a value: the card shows the other state at once, and goes back
+  if the ack says not ok or none comes within 4 s. Policy 0 without `on`,
+  or while `on` has no value, and policy 2: the waiting outline (4.7).
+  Policy 1: the card's pulse. Policy 3 or `cf`: the question, then the
+  outline.
+- An optimistic bool is shown per slot inside its card: while a tap shows a
+  flipped value for a slot, the card's `on`, every switch `value` and every
+  button `value` of that card that is bound to the same slot show it too.
+  So the switch in the corner of a tile and the tile agree.
+- A button with a bound `value` and policy 0 shows the other state at once,
+  like a switch.
+- `choice`: it sends when the finger lifts inside the cell it went down in.
+  Policy 0 shows the tapped option as selected at once, with the same way
+  back. Policy 1 flashes the tapped cell (`accf` with `acct`, 300 ms).
+  Policy 2: a 2 px outline around the control until a value of the card
+  changes, or 30 s. Policy 3 or `cf`: the question, then the index is sent.
+  A page swipe may start on a `choice`.
+- Hold: a press that stays down 500 ms and has moved less than 12 px from
+  where it began opens the `hold` page that the table of 4.3 names. Nothing
+  is sent. The release after it is not a tap and not a swipe. No hold page
+  opens while the hold-to-erase watch runs (for a touch that starts in the
+  first 10 s after power-on). Such a press stays an ordinary press however
+  long it lasts: released before the erase question opens, it is a tap, as
+  in version 1.
+- A press that starts on a slider with `change` is never a page swipe, also
+  on an upright slider.
+- A widget that has the press (4.3) and becomes hidden (`vis`), faded (its
+  value goes away) or unavailable (`un`) while the finger is down loses
+  the press: the release sends nothing, also when the widget is shown
+  again before the finger lifts. A press that is the card's stays the
+  card's when a widget under the finger that only shows fades or hides;
+  it is lost when the card turns `un`. An input already sent still gets
+  its ack.
+- On a card with `un` 1 nothing is sent. While the tablet cannot send, a
+  tap on a card with `un` 1 says why, as for a control without a value.
+
 ## 8. State
 
 `tab_set(data, auth)`, where `data` is canonical JSON:
@@ -659,7 +1046,15 @@ accepts 10 per second).
   `v` that is not a list; nothing applied), `hash`.
 - HA splits a full snapshot larger than 12000 bytes (its `tab_set` limit,
   section 2.1) over several calls. Only the first has `f`.
-- HA sends changes only, at most 10 calls per second per tablet, one in flight.
+- HA sends changes only, at most 10 calls per second per tablet, one in
+  flight. (2) Two exceptions, because the tablet counts on from the moment
+  of a write (4.4). A slot fed by a clock or by a position is sent every
+  time HA works it out again, also when the value is the same as the last
+  one sent. And a new value for a widget's `rate` always travels in the
+  same `tab_set` as a fresh value for that widget's `value`; when a
+  snapshot is split over several calls, the two stay in one call. A tablet
+  that gets a new `rate` without a value keeps counting from the last
+  write of the value.
 - After `hash` HA runs the handshake again.
 - HA sends a full snapshot after every handshake, after every commit, and
   whenever the dashboard's bindings changed, even when the layout hash did
@@ -671,12 +1066,22 @@ values the tablet must hold afterwards. The fixture tablet is not paired, so
 
 ## 9. Versions
 
-- `proto` in this document is 1. `v` of the device layout is 1.
-- Additions that an old side can ignore (a new optional key, a new error code,
-  a new icon level, a new widget kind behind `caps.w`) do not change the
-  version.
-- Anything else raises `proto`. HA speaks the tablet's highest version that it
-  also knows. HA keeps the previous version for one release cycle.
+- `proto` in this document is 2. A tablet may speak 1 only (engine 0.1.0)
+  or 1 and 2. HA speaks both. `v` of the device layout is 1 or 2.
+- HA and a tablet can talk when their ranges share a version, and HA speaks
+  the highest one they share. A tablet that answers `[2, 2]` or `[2, 3]`
+  gets version 2. One that answers `[3, 4]` is `unsupported`.
+- Version 2 differs from version 1 only in the device layout (section 4).
+  Field 1 of the input payload (7.1) and of the knock (2.2) is
+  `input_version`, which is 1 in both. It is not `proto`.
+- Additions that an old side can ignore do not change the version: a new
+  optional key that only changes a look, a new value of a look key (4.3), a
+  new error code, a new icon level, a new widget kind behind `caps.w`.
+- A control whose sent value gets a new meaning is a new kind, never a new
+  key on an old kind. An old engine then leaves it out and cannot send a
+  number that HA would read wrongly.
+- Anything else raises `proto`. HA keeps version 1 for as long as it ships
+  the cards of version 1.
 
 ## 10. Fixtures
 
@@ -685,15 +1090,36 @@ values the tablet must hold afterwards. The fixture tablet is not paired, so
 | `layout_small.source.json` | A dashboard config, its layout v1, bindings and warnings. HA test input. |
 | `layout_small.dl.json` | The exact device layout bytes. HA must produce them; the tablet must load them. |
 | `layout_small.meta.json` | Hash, size and the slot plan (device slot to source slot and type). |
-| `layout_all_cards.*` | The same for a dashboard that uses all 16 library cards and all 9 widget kinds, on 3 pages. |
+| `layout_all_cards.*` | The same for a dashboard that uses all 16 cards of version 1 and its 9 widget kinds, on 3 pages. |
 | `layout_all_cards.nochart.*` | Down-levelled for a tablet without `chart`. |
-| `chunks.json` | A layout sent in 3000-byte chunks, plus failure cases (order, size, hash, parse, version, limits, memory), the `seq` 0 header order, a new transfer or a bad header during a build, and repeated commits. |
+| `chunks.json` | A layout sent in 3000-byte chunks, plus failure cases (order, size, hash, parse, version, limits, memory), the `seq` 0 header order, a new transfer or a bad header during a build, and repeated commits. The `version` case carries `"v": 3`. |
 | `status.json` | `tab_status` responses and what HA concludes; "knock": what HA does with a knock. |
 | `state_stream.json` | Sample evaluated values, their wire form, and a stream of `tab_set` payloads with the expected slot values after each. |
 | `input_events.json` | Events with good and bad signatures, replays, old sessions, odd characters; expected verdict for each, fed in order. Cases with `widget_rect` are also what the tablet must emit when that rectangle is pressed. |
 | `pair.json` | Wrapping vectors and failure cases. |
 | `auth.json` | Signed call vectors: good ones, replays, wrong body, wrong session, an unpaired tablet, a repeated `tab_hello` nonce, a tablet without an API key. |
-| `hello.json` | Handshake responses and what HA must do next. |
+| `hello.json` | Handshake responses and what HA must do next, for a tablet of version 1. The case of a tablet that is too new answers `[3, 4]`. |
+| `layout_v2_kit.source.json`, `.dl.json`, `.meta.json` | (2) A layout v2 written by hand in the reference code, with every key and kind of version 2 at least once, on 3 normal pages and 2 detail pages. It needs no card file. HA must produce the bytes from the source; the tablet must load and draw them. |
+| `layout_v2_kit.nochoice.dl.json`, `.nochoice.meta.json` | (2) The kit down-levelled for a tablet whose `caps.w` lacks `choice`. |
+| `layout_v2_cards.source.json`, `.dl.json`, `.meta.json` | (2) A dashboard that uses every card of the first version 2 library. |
+| `layout_v2_cards.v1.dl.json`, `.v1.meta.json` | The same dashboard for a tablet that answers `proto [1, 1]` with the caps of engine 0.1.0: what tablets in the field get. It holds only keys of version 1. |
+| `layout_v2_cards2.*`, with its `.v1.*` pair | (2) The same two for the cards added after the first library. A file of its own, so the first is never edited. |
+| `maths.json` | (2) The table `linear`. Vectors for `mix` (with every exact half of each weight in use), `lum`, `contrast`, `readable`, `legible`, `blend` at 0.82 (with every exact half, and the pairs a fused multiply-add gets wrong), the card colours of 4.7 for every `lit` with and without `tint`, the circle and the icon of a badge in each state (plain, filled, on with `lit` 1, with `c`), the label size picked for a `px` and a text, the clock text (also for a negative and a very large value), slider value to position and back for every `look`, `dir` and `track`, the pieces of a track, the cells of a `choice` (also with no option), the steps of a chart; and each of these for a rectangle that is 0 wide, 1 px, or shorter than its corners, and for `min` equal to `max`. The themes and the card styles the vectors name are in the file (`themes`, `styles`), in device form. Tested by the tablet, by `frontend/logic.js` and by `maker`. |
+| `commit_v2.json` | (2) Layouts at the limits of version 2 with the `tab_commit` answer for each: 64 pages and 65; 20 normal pages and 21; `sub` on page 0; 21 pages of which one has `"sub": 0` (it is normal: `limits`); `v` 3. And what HA compiles for a tablet without `caps.max_pages`, and for a `track` of 8 and 9 colours, a `choice` of 16 and 17 options and option texts of 40 and 41 bytes (`cuts`); the tablet's answer to the same lists uncut. |
+| `input_v2.json` | (2) Presses on `layout_v2_kit`, one case for every row of "Who gets a press" (4.3) and every bullet of 7.4: a card tap, a tap on a child, on a thermostat's body and on its buttons, a `choice` cell and a gap, an upright slider, a hold, the back entry, a press on a hidden part, on a faded control (nothing), on a faded part that only shows (the card's) and on an unavailable part, a part hidden while the finger is down, a card whose `on` has no value, a drift of 20 px, a finger that drifts 13 px and comes back (no tap, no hold), a slow swipe that starts on a card. For each: the events the tablet must emit, or none, and the page it must show. With signed payloads for HA, as in `input_events.json`, and HA's own cases: field 1 is `2`, a value out of range, a value off the step, a value between steps for a widget whose step is 0 (accepted), a live `step` that was never sent, a `c` for a widget with `tap`, a `t` for a card without a tap. |
+| `state_v2.json` | (2) A `tab_set` stream for `layout_v2_kit`: a colour slot with good and bad values, `vis`, `un`, a clock value and a `rate`; an equal value written again (the age starts again); a new `rate` with and without a value; a full snapshot (`f` 1); numbers of 1e9, -1 and 0.5 for a colour, a `choice` index and a `mark`; a thermostat `mark` with a value while the thermostat's own value has none (the mark is drawn, faded); a chart `mark` of -1 and one past the last bar (no mark); a label's `c` slot. With the time between steps and what each widget must show after each. Also "colours": values as HA finds them and the wire value of each, or `null`. |
+| `hello_v2.json` | (2) Handshake responses and what HA must do next (which layout version it compiles, which hash it expects): a tablet that answers `[1, 2]` with `engine_caps`; `[1, 1]`; `[2, 2]`; `[2, 3]`; `[1, 2]` without `choice` in `caps.w`; `[1, 2]` without `caps.max_pages`; `[1, 2]` with `enc` 0. |
+
+A case of `input_v2.json` has `page` (the page on screen), `slots` (the
+values in force, as `[slot, value]` pairs), `touch` (a list of `[ms,
+"down" | "move" | "up", x, y]`), and where needed `sets` (`[ms, [[slot,
+value], ...]]`: a `tab_set` that arrives while the finger is down) and
+`acks` (`[ms, ok, code]`). It expects `events` (each `[widget id, event,
+confirmed, value]`, in order, often none), `end_page` (the page shown at
+the end) and `question` (0 or 1). A case with `payload` and `verdict` is
+also input for HA: `counter` is the tablet's counter for the first event,
+`run` whether HA runs the input, and `sent` the values HA last sent (else
+the file's own `sent`).
 
 To make them again: `python -B reference/gen_fixtures.py <custom_components/apollo_tab> <this folder>`
 (needs PyYAML and the integration's `maker` package and library; it writes only

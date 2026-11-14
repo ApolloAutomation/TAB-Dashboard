@@ -411,7 +411,7 @@ async def test_the_integration_sends_the_shared_shapes(
     bedroom = make_tablet(mac="AA:BB:CC:DD:EE:03", name="Bedroom Tablet")
     make_tablet(mac="AA:BB:CC:DD:EE:04", name="Den Tablet", psk=None)
     make_tablet(mac="AA:BB:CC:DD:EE:05", name="Office Tablet", proto=(0, 0))
-    make_tablet(mac="AA:BB:CC:DD:EE:06", name="Garage Tablet", proto=(2, 3))
+    make_tablet(mac="AA:BB:CC:DD:EE:06", name="Garage Tablet", proto=(3, 4))
     make_tablet(mac="AA:BB:CC:DD:EE:07", name="Attic Tablet", caps={"max_layout": 200})
     make_tablet(mac="AA:BB:CC:DD:EE:08", name="Loft Tablet")
     make_tablet(mac="AA:BB:CC:DD:EE:09", name="Loft Tablet")

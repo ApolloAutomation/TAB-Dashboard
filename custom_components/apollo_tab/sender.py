@@ -102,7 +102,9 @@ NO_RETRY = tp.DETERMINISTIC_ERRORS | {"unreadable"}
 DEBOUNCE_S = 0.7
 DEBOUNCE_MAX_S = 2.0
 STATUS_POLL_S = (0.15, 0.3, 0.5)
-STATUS_POLL_LIMIT_S = 20.0
+# How long HA asks tab_status after a commit (contract.json
+# timing.status_poll_limit_s): a large build plus a finger on the glass.
+STATUS_POLL_LIMIT_S = 60.0
 VALUE_BATCH_S = 0.1
 # A tab_set that timed out or failed is sent again after this wait.
 SET_RETRY_S = 1.0
