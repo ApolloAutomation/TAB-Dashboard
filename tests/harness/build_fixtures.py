@@ -8,7 +8,12 @@ from pathlib import Path
 import yaml
 from jinja2.sandbox import SandboxedEnvironment
 
+from custom_components.apollo_tab.library import form_entry
 from custom_components.apollo_tab.maker.compile import compile_card, public_card
+from custom_components.apollo_tab.maker.compile2 import (
+    compile_card2,
+    validate_card_config2,
+)
 from custom_components.apollo_tab.maker.convert import alias_tag, convert_dashboard
 from custom_components.apollo_tab.maker.schema import (
     validate_card_config,
@@ -42,10 +47,19 @@ def load_components():
     return components
 
 
+def _schema1(components):
+    """Return the schema 1 cards; the panel draws no schema 2 card yet."""
+    return {
+        component_id: component
+        for component_id, component in components.items()
+        if component.get("schema", 1) == 1
+    }
+
+
 def _library(components, theme_entries):
     """Build the library object the panel would receive."""
     ordered = sorted(
-        components.values(),
+        _schema1(components).values(),
         key=lambda comp: (comp.get("source") != "builtin", comp.get("name", "")),
     )
     entries = [
@@ -225,6 +239,54 @@ def _sample_dashboard():
     }
 
 
+def _cards_v2(components):
+    """Return each schema 2 card as the editor will need it (packages I7, I8).
+
+    Per card: its static form data (C.7) and, per variant, the example card
+    the editor draws before a device is picked, compiled for layout v2, with
+    the values of its slots. Nothing here is drawn by the panel yet.
+    """
+    replaced = {
+        replaced_id
+        for component in components.values()
+        for replaced_id in component.get("replaces", [])
+    }
+    env = renderer()
+    entries = []
+    for component_id in sorted(components):
+        component = components[component_id]
+        if component.get("schema") != 2:
+            continue
+        variants = {}
+        for name, variant in component["variants"].items():
+            columns, rows = variant["grid"]
+            card_config = {
+                "type": "custom:apollo-tab-card",
+                "component": component_id,
+                "variant": name,
+                "grid_options": {"columns": columns, "rows": rows},
+            }
+            card = validate_card_config2(component, card_config)
+            compiled = compile_card2(
+                component, card, {}, 2, detail=not variant["picker"]
+            )
+            variants[name] = {
+                "card": card_config,
+                "init": public_card(compiled),
+                "values": render_slots(compiled.get("slots") or [], env),
+            }
+        entries.append(
+            {
+                "id": component_id,
+                "name": component["name"],
+                "icon": component["icon"],
+                "form": form_entry(component, component_id in replaced),
+                "variants": variants,
+            }
+        )
+    return entries
+
+
 def load_theme_entries():
     """Load the bundled themes in file order."""
     return json.loads((LIBRARY_DIR / "themes.json").read_text(encoding="utf-8"))
@@ -286,6 +348,7 @@ def build() -> dict:
         "themes": theme_entries,
         "library": library,
         "cards": cards,
+        "cards_v2": _cards_v2(components),
         "sample_config": sample,
         "layout": layout_entry,
         "dashboards": dashboards,

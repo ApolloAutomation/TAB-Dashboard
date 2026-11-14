@@ -40,6 +40,16 @@ EXPECTED_BUILTIN_IDS = {
     "community/energy-gauge",
     "community/presence-chips",
     "community/room-summary",
+    # Cards, step A (schema 2).
+    "apollo/button",
+    "apollo/light",
+    "apollo/number",
+    "apollo/page-link",
+    "apollo/reading",
+    "apollo/scenes",
+    "apollo/screen",
+    "apollo/select",
+    "apollo/switch",
 }
 
 
@@ -86,9 +96,9 @@ def _camera_doc(refresh):
 
 
 def test_all_builtin_components_validate():
-    """Validate all 16 bundled component files."""
+    """Validate all 25 bundled component files."""
     files = sorted(COMPONENTS_DIR.glob("*.yaml"))
-    assert len(files) == 16
+    assert len(files) == 25
     seen = {}
     for path in files:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))

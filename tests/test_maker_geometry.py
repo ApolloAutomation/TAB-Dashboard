@@ -37,6 +37,9 @@ def _load_builtins():
     components = []
     for path in sorted(COMPONENTS_DIR.glob("*.yaml")):
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if doc.get("schema") == 2:
+            # Schema 2 cards have layout_card2 and their own fit tests.
+            continue
         components.append(validate_component(doc))
     return components
 

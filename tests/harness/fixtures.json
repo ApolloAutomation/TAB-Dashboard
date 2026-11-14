@@ -1962,6 +1962,3770 @@
    }
   }
  ],
+ "cards_v2": [
+  {
+   "id": "apollo/button",
+   "name": "Button",
+   "icon": "mdi:power",
+   "form": {
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 1
+    },
+    "variants": [
+     {
+      "id": "chip",
+      "name": "Chip",
+      "grid": [
+       12,
+       1
+      ],
+      "picker": true,
+      "needs_v2": true
+     },
+     {
+      "id": "small",
+      "name": "Small",
+      "grid": [
+       6,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "button",
+       "input_button",
+       "script",
+       "scene"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "What it runs",
+      "help": ""
+     }
+    },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": {
+     "default": "press",
+     "choices": [
+      {
+       "value": "press",
+       "label": "Runs it",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": []
+   },
+   "variants": {
+    "chip": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/button",
+      "variant": "chip",
+      "grid_options": {
+       "columns": 12,
+       "rows": 1
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/button",
+      "name": "Button",
+      "variant": "chip",
+      "demo": true,
+      "w": 376,
+      "h": 56,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "un": false,
+      "tap": {
+       "policy": "pulse"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         24,
+         24
+        ],
+        "value": "mdi:script-text-outline",
+        "look": 2,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         48,
+         16,
+         148,
+         24
+        ],
+        "text": "Button",
+        "size": "m",
+        "i": 1
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {
+         "toggle": true,
+         "icon": "mdi:script-text-outline",
+         "kind": null,
+         "entity": {
+          "toggle": true,
+          "icon": "mdi:script-text-outline",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "small": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/button",
+      "variant": "small",
+      "grid_options": {
+       "columns": 6,
+       "rows": 2
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/button",
+      "name": "Button",
+      "variant": "small",
+      "demo": true,
+      "w": 184,
+      "h": 120,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "un": false,
+      "tap": {
+       "policy": "pulse"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:script-text-outline",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         100,
+         26
+        ],
+        "text": "Button",
+        "size": "m",
+        "i": 1
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {
+         "toggle": true,
+         "icon": "mdi:script-text-outline",
+         "kind": null,
+         "entity": {
+          "toggle": true,
+          "icon": "mdi:script-text-outline",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "tile": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/button",
+      "variant": "tile",
+      "grid_options": {
+       "columns": 6,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/button",
+      "name": "Button",
+      "variant": "tile",
+      "demo": true,
+      "w": 184,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "un": false,
+      "tap": {
+       "policy": "pulse"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         44,
+         44
+        ],
+        "value": "mdi:script-text-outline",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         68,
+         152,
+         28
+        ],
+        "text": "Button",
+        "size": "m",
+        "i": 1
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {
+         "toggle": true,
+         "icon": "mdi:script-text-outline",
+         "kind": null,
+         "entity": {
+          "toggle": true,
+          "icon": "mdi:script-text-outline",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    }
+   }
+  },
+  {
+   "id": "apollo/light",
+   "name": "Light",
+   "icon": "mdi:lightbulb",
+   "form": {
+    "schema": 2,
+    "group": "lights",
+    "legacy": false,
+    "replaces": [
+     "apollo/light-tile",
+     "apollo/light-slider"
+    ],
+    "needs_v2": false,
+    "size": [
+     1,
+     1
+    ],
+    "grid": {
+     "columns": 6,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "full",
+      "name": "Controls",
+      "grid": [
+       18,
+       11
+      ],
+      "picker": false,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": true,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Light",
+      "help": "",
+      "domain": "light"
+     }
+    },
+    "options": [
+     {
+      "name": "show_brightness",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Brightness",
+      "help": "",
+      "when": [],
+      "needs": "can.brightness",
+      "needs_text": "This light cannot be dimmed",
+      "default": true
+     },
+     {
+      "name": "bar_on_tile",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Brightness bar on the small tile",
+      "help": "",
+      "when": [
+       "show_brightness"
+      ],
+      "needs": "can.brightness",
+      "needs_text": "",
+      "default": true
+     },
+     {
+      "name": "colour_control",
+      "type": "choice",
+      "section": "controls",
+      "label": "Colour",
+      "help": "",
+      "when": [],
+      "needs": "can.colour",
+      "needs_text": "This light has no colour",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "none",
+        "label": "Off"
+       },
+       {
+        "value": "bar",
+        "label": "Colour bar"
+       },
+       {
+        "value": "dots",
+        "label": "Favourite colours"
+       },
+       {
+        "value": "both",
+        "label": "Both"
+       }
+      ],
+      "default": "bar"
+     },
+     {
+      "name": "show_saturation",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Colour strength",
+      "help": "",
+      "when": [],
+      "needs": "can.colour",
+      "needs_text": "",
+      "default": false
+     },
+     {
+      "name": "show_white",
+      "type": "toggle",
+      "section": "controls",
+      "label": "Warm to cool",
+      "help": "",
+      "when": [],
+      "needs": "can.temperature",
+      "needs_text": "This light has one white only",
+      "default": true
+     },
+     {
+      "name": "favourites",
+      "type": "colours",
+      "section": "controls",
+      "label": "Favourite colours",
+      "help": "",
+      "when": [
+       "colour_control=dots|both"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "max": 8,
+      "default": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ]
+     },
+     {
+      "name": "effects_shown",
+      "type": "choice",
+      "section": "controls",
+      "label": "Effects",
+      "help": "",
+      "when": [],
+      "needs": "can.effects",
+      "needs_text": "",
+      "multiple": true,
+      "max": 8,
+      "from": "can.effect_list",
+      "default_first": 4,
+      "default": []
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": true,
+     "lit": "fill",
+     "tint": true
+    },
+    "tap": {
+     "default": "toggle",
+     "choices": [
+      {
+       "value": "toggle",
+       "label": "Turns it on or off",
+       "needs": ""
+      },
+      {
+       "value": "detail",
+       "label": "Opens its controls",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": [
+     {
+      "text": "This light only turns on and off.",
+      "when": [
+       "!can.brightness"
+      ]
+     }
+    ]
+   },
+   "variants": {
+    "tile": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/light",
+      "variant": "tile",
+      "grid_options": {
+       "columns": 6,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/light",
+      "name": "Light",
+      "variant": "tile",
+      "demo": true,
+      "w": 184,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": true,
+      "lit": 0,
+      "tint": "#FFB347",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "hold": {
+       "local": "detail"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         44,
+         44
+        ],
+        "value": "mdi:lightbulb",
+        "look": 1,
+        "c": "#FFB347",
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         68,
+         152,
+         28
+        ],
+        "text": "Light",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         98,
+         152,
+         22
+        ],
+        "text": "On",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         27,
+         100,
+         22
+        ],
+        "text": "68%",
+        "size": "s",
+        "al": 2,
+        "i": 3
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         128,
+         152,
+         40
+        ],
+        "value": 68,
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "icon": "mdi:brightness-6",
+        "c": "#FFB347",
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 4
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "show_brightness": true,
+         "bar_on_tile": true,
+         "colour_control": "bar",
+         "show_saturation": false,
+         "show_white": true,
+         "favourites": [
+          "#FF453A",
+          "#FF9F0A",
+          "#FFD60A",
+          "#32D74B",
+          "#64D2FF",
+          "#0A84FF",
+          "#BF5AF2",
+          "2700K"
+         ],
+         "effects_shown": []
+        },
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "temperature": true,
+         "effects": false,
+         "min_kelvin": 2000,
+         "max_kelvin": 6500
+        }
+       },
+       "uses": {}
+      },
+      "opener": true,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/light",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/light",
+      "name": "Light",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": true,
+      "lit": 0,
+      "tint": "#FFB347",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "hold": {
+       "local": "detail"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:lightbulb",
+        "look": 1,
+        "c": "#FFB347",
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         220,
+         26
+        ],
+        "text": "Light",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         220,
+         22
+        ],
+        "text": "On",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "switch",
+        "r": [
+         296,
+         22,
+         64,
+         36
+        ],
+        "value": true,
+        "tap": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         80,
+         344,
+         40
+        ],
+        "value": 68,
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "icon": "mdi:brightness-6",
+        "c": "#FFB347",
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 4
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         128,
+         344,
+         40
+        ],
+        "value": 30,
+        "min": 0,
+        "max": 360,
+        "step": 1,
+        "look": 1,
+        "track": [
+         "#FF0000",
+         "#FFFF00",
+         "#00FF00",
+         "#00FFFF",
+         "#0000FF",
+         "#FF00FF",
+         "#FF0000"
+        ],
+        "nv": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 5
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "show_brightness": true,
+         "bar_on_tile": true,
+         "colour_control": "bar",
+         "show_saturation": false,
+         "show_white": true,
+         "favourites": [
+          "#FF453A",
+          "#FF9F0A",
+          "#FFD60A",
+          "#32D74B",
+          "#64D2FF",
+          "#0A84FF",
+          "#BF5AF2",
+          "2700K"
+         ],
+         "effects_shown": []
+        },
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "temperature": true,
+         "effects": false,
+         "min_kelvin": 2000,
+         "max_kelvin": 6500
+        }
+       },
+       "uses": {
+        "5:change": {
+         "sat": {
+          "type": "number",
+          "slot": null
+         }
+        }
+       }
+      },
+      "opener": true,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "large": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/light",
+      "variant": "large",
+      "grid_options": {
+       "columns": 12,
+       "rows": 6
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/light",
+      "name": "Light",
+      "variant": "large",
+      "demo": true,
+      "w": 376,
+      "h": 376,
+      "entities": [],
+      "header": null,
+      "on": true,
+      "lit": 0,
+      "tint": "#FFB347",
+      "tap": {
+       "policy": "optimistic"
+      },
+      "hold": {
+       "local": "detail"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:lightbulb",
+        "look": 1,
+        "c": "#FFB347",
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         220,
+         26
+        ],
+        "text": "Light",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         220,
+         22
+        ],
+        "text": "On",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "switch",
+        "r": [
+         296,
+         22,
+         64,
+         36
+        ],
+        "value": true,
+        "tap": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         224,
+         344,
+         40
+        ],
+        "value": 68,
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "icon": "mdi:brightness-6",
+        "c": "#FFB347",
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 4
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         272,
+         344,
+         40
+        ],
+        "value": 30,
+        "min": 0,
+        "max": 360,
+        "step": 1,
+        "look": 1,
+        "track": [
+         "#FF0000",
+         "#FFFF00",
+         "#00FF00",
+         "#00FFFF",
+         "#0000FF",
+         "#FF00FF",
+         "#FF0000"
+        ],
+        "nv": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 5
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         320,
+         344,
+         40
+        ],
+        "value": null,
+        "min": 2000,
+        "max": 6500,
+        "step": 50,
+        "look": 1,
+        "track": [
+         "#FF890E",
+         "#FFB576",
+         "#FFD4B1",
+         "#FFEBDA",
+         "#FFFEFA"
+        ],
+        "nv": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 6
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "show_brightness": true,
+         "bar_on_tile": true,
+         "colour_control": "bar",
+         "show_saturation": false,
+         "show_white": true,
+         "favourites": [
+          "#FF453A",
+          "#FF9F0A",
+          "#FFD60A",
+          "#32D74B",
+          "#64D2FF",
+          "#0A84FF",
+          "#BF5AF2",
+          "2700K"
+         ],
+         "effects_shown": []
+        },
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "temperature": true,
+         "effects": false,
+         "min_kelvin": 2000,
+         "max_kelvin": 6500
+        }
+       },
+       "uses": {
+        "5:change": {
+         "sat": {
+          "type": "number",
+          "slot": null
+         }
+        }
+       }
+      },
+      "opener": true,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "full": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/light",
+      "variant": "full",
+      "grid_options": {
+       "columns": 18,
+       "rows": 11
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/light",
+      "name": "Light",
+      "variant": "full",
+      "demo": true,
+      "w": 568,
+      "h": 696,
+      "entities": [],
+      "header": null,
+      "on": true,
+      "lit": 0,
+      "tint": "#FFB347",
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:lightbulb",
+        "look": 1,
+        "c": "#FFB347",
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         412,
+         26
+        ],
+        "text": "Light",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         412,
+         22
+        ],
+        "text": "On",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "switch",
+        "r": [
+         488,
+         22,
+         64,
+         36
+        ],
+        "value": true,
+        "tap": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         512,
+         536,
+         56
+        ],
+        "value": 68,
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "icon": "mdi:brightness-6",
+        "c": "#FFB347",
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 4
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         576,
+         536,
+         48
+        ],
+        "value": 30,
+        "min": 0,
+        "max": 360,
+        "step": 1,
+        "look": 1,
+        "track": [
+         "#FF0000",
+         "#FFFF00",
+         "#00FF00",
+         "#00FFFF",
+         "#0000FF",
+         "#FF00FF",
+         "#FF0000"
+        ],
+        "nv": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 5
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         632,
+         536,
+         48
+        ],
+        "value": null,
+        "min": 2000,
+        "max": 6500,
+        "step": 50,
+        "look": 1,
+        "track": [
+         "#FF890E",
+         "#FFB576",
+         "#FFD4B1",
+         "#FFEBDA",
+         "#FFFEFA"
+        ],
+        "nv": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 6
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "show_brightness": true,
+         "bar_on_tile": true,
+         "colour_control": "bar",
+         "show_saturation": false,
+         "show_white": true,
+         "favourites": [
+          "#FF453A",
+          "#FF9F0A",
+          "#FFD60A",
+          "#32D74B",
+          "#64D2FF",
+          "#0A84FF",
+          "#BF5AF2",
+          "2700K"
+         ],
+         "effects_shown": []
+        },
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "temperature": true,
+         "effects": false,
+         "min_kelvin": 2000,
+         "max_kelvin": 6500
+        }
+       },
+       "uses": {
+        "5:change": {
+         "sat": {
+          "type": "number",
+          "slot": null
+         }
+        }
+       }
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": [
+       {
+        "code": "variant_unknown",
+        "path": "variant"
+       }
+      ]
+     },
+     "values": {}
+    }
+   }
+  },
+  {
+   "id": "apollo/number",
+   "name": "Number",
+   "icon": "mdi:gauge",
+   "form": {
+    "schema": 2,
+    "group": "more",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 2
+    },
+    "variants": [
+     {
+      "id": "row",
+      "name": "Row",
+      "grid": [
+       12,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "number",
+       "input_number"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Number",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "control",
+      "type": "choice",
+      "section": "controls",
+      "label": "Control",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "bar",
+        "label": "Bar"
+       },
+       {
+        "value": "buttons",
+        "label": "Minus and plus"
+       }
+      ],
+      "default": "bar"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": []
+   },
+   "variants": {
+    "row": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/number",
+      "variant": "row",
+      "grid_options": {
+       "columns": 12,
+       "rows": 2
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/number",
+      "name": "Number",
+      "variant": "row",
+      "demo": true,
+      "w": 376,
+      "h": 120,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         24,
+         24
+        ],
+        "value": "mdi:numeric",
+        "look": 2,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         48,
+         16,
+         148,
+         24
+        ],
+        "text": "Number",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         204,
+         17,
+         156,
+         22
+        ],
+        "text": "40 %",
+        "size": "s",
+        "al": 2,
+        "i": 2
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         64,
+         344,
+         40
+        ],
+        "value": 40,
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "control": "bar"
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:numeric",
+         "kind": null,
+         "min": 0,
+         "max": 100,
+         "step": 1,
+         "unit": "%",
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:numeric",
+          "kind": null,
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "unit": ""
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/number",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/number",
+      "name": "Number",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:numeric",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         292,
+         26
+        ],
+        "text": "Number",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         292,
+         22
+        ],
+        "text": "40 %",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         128,
+         344,
+         40
+        ],
+        "value": 40,
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "control": "bar"
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:numeric",
+         "kind": null,
+         "min": 0,
+         "max": 100,
+         "step": 1,
+         "unit": "%",
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:numeric",
+          "kind": null,
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "unit": ""
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    }
+   }
+  },
+  {
+   "id": "apollo/page-link",
+   "name": "Link",
+   "icon": "mdi:view-dashboard",
+   "form": {
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     1,
+     1
+    ],
+    "grid": {
+     "columns": 6,
+     "rows": 2
+    },
+    "variants": [
+     {
+      "id": "small",
+      "name": "Small",
+      "grid": [
+       6,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "page": {
+      "kind": "page",
+      "optional": false,
+      "label": "Page",
+      "help": ""
+     },
+     "entity": {
+      "kind": "entity",
+      "domains": [],
+      "multiple": false,
+      "optional": true,
+      "device_class": null,
+      "label": "Reading from",
+      "help": ""
+     }
+    },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": {
+     "default": "go",
+     "choices": [
+      {
+       "value": "go",
+       "label": "Goes to the page",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": []
+   },
+   "variants": {
+    "small": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/page-link",
+      "variant": "small",
+      "grid_options": {
+       "columns": 6,
+       "rows": 2
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/page-link",
+      "name": "Link",
+      "variant": "small",
+      "demo": false,
+      "w": 184,
+      "h": 120,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "un": {
+       "s": 1
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:view-dashboard",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         100,
+         26
+        ],
+        "text": "Link",
+        "size": "m",
+        "i": 1
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "False"
+     }
+    },
+    "tile": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/page-link",
+      "variant": "tile",
+      "grid_options": {
+       "columns": 6,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/page-link",
+      "name": "Link",
+      "variant": "tile",
+      "demo": false,
+      "w": 184,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "un": {
+       "s": 1
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:view-dashboard",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         100,
+         26
+        ],
+        "text": "Link",
+        "size": "m",
+        "i": 1
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "False"
+     }
+    },
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/page-link",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/page-link",
+      "name": "Link",
+      "variant": "wide",
+      "demo": false,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "un": {
+       "s": 1
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:view-dashboard",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         292,
+         26
+        ],
+        "text": "Link",
+        "size": "m",
+        "i": 1
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "False"
+     }
+    }
+   }
+  },
+  {
+   "id": "apollo/reading",
+   "name": "Status",
+   "icon": "mdi:information-outline",
+   "form": {
+    "schema": 2,
+    "group": "sensors",
+    "legacy": false,
+    "replaces": [
+     "apollo/sensor-value"
+    ],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 1
+    },
+    "variants": [
+     {
+      "id": "chip",
+      "name": "Chip",
+      "grid": [
+       12,
+       1
+      ],
+      "picker": true,
+      "needs_v2": true
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Device",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "decimals",
+      "type": "number",
+      "section": "shows",
+      "label": "Decimals",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "min": 0.0,
+      "max": 3.0,
+      "step": 1.0,
+      "unit": "",
+      "default": 1.0
+     },
+     {
+      "name": "unit",
+      "type": "text",
+      "section": "shows",
+      "label": "Unit",
+      "help": "Leave empty to use the unit Home Assistant gives",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 8,
+      "default": ""
+     },
+     {
+      "name": "word_on",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while on",
+      "help": "Leave empty to use the word Home Assistant gives",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": ""
+     },
+     {
+      "name": "word_off",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while off",
+      "help": "Leave empty to use the word Home Assistant gives",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": ""
+     },
+     {
+      "name": "highlight",
+      "type": "choice",
+      "section": "look",
+      "label": "Highlight",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "never",
+        "label": "Never"
+       },
+       {
+        "value": "active",
+        "label": "While on, open or unlocked"
+       },
+       {
+        "value": "above",
+        "label": "Above the high mark"
+       },
+       {
+        "value": "below",
+        "label": "Below the low mark"
+       }
+      ],
+      "default": "never"
+     },
+     {
+      "name": "low",
+      "type": "number",
+      "section": "look",
+      "label": "Low mark",
+      "help": "",
+      "when": [
+       "highlight=below"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "min": null,
+      "max": null,
+      "step": 1.0,
+      "unit": "",
+      "default": 0.0
+     },
+     {
+      "name": "high",
+      "type": "number",
+      "section": "look",
+      "label": "High mark",
+      "help": "",
+      "when": [
+       "highlight=above"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "min": null,
+      "max": null,
+      "step": 1.0,
+      "unit": "",
+      "default": 100.0
+     },
+     {
+      "name": "low_colour",
+      "type": "colour",
+      "section": "look",
+      "label": "Colour below the low mark",
+      "help": "",
+      "when": [
+       "highlight=below"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "default": "info"
+     },
+     {
+      "name": "high_colour",
+      "type": "colour",
+      "section": "look",
+      "label": "Colour above the high mark",
+      "help": "",
+      "when": [
+       "highlight=above"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "default": "warn"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "icon",
+     "tint": true
+    },
+    "tap": {
+     "default": "none",
+     "choices": [
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      },
+      {
+       "value": "toggle",
+       "label": "Turns it on or off",
+       "needs": "can.toggle"
+      }
+     ]
+    },
+    "notes": []
+   },
+   "variants": {
+    "chip": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/reading",
+      "variant": "chip",
+      "grid_options": {
+       "columns": 12,
+       "rows": 1
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/reading",
+      "name": "Status",
+      "variant": "chip",
+      "demo": true,
+      "w": 376,
+      "h": 56,
+      "entities": [],
+      "header": null,
+      "on": false,
+      "lit": 1,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         24,
+         24
+        ],
+        "value": "mdi:information-outline",
+        "look": 2,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         48,
+         16,
+         148,
+         24
+        ],
+        "text": "Status",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         204,
+         17,
+         156,
+         22
+        ],
+        "text": "21.4 \u00b0C",
+        "size": "s",
+        "al": 2,
+        "i": 2
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "decimals": 1.0,
+         "unit": "",
+         "word_on": "",
+         "word_off": "",
+         "highlight": "never",
+         "low": 0.0,
+         "high": 100.0,
+         "low_colour": "info",
+         "high_colour": "warn"
+        },
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "tile": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/reading",
+      "variant": "tile",
+      "grid_options": {
+       "columns": 6,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/reading",
+      "name": "Status",
+      "variant": "tile",
+      "demo": true,
+      "w": 184,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": false,
+      "lit": 1,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         20,
+         44,
+         44
+        ],
+        "value": null,
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         72,
+         152,
+         60
+        ],
+        "px": 48,
+        "text": {
+         "s": 1
+        },
+        "vis": true,
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         72,
+         152,
+         60
+        ],
+        "px": 28,
+        "text": {
+         "s": 1
+        },
+        "vis": {
+         "s": 2
+        },
+        "i": 2
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         140,
+         152,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 3
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "decimals": 1.0,
+         "unit": "",
+         "word_on": "",
+         "word_off": "",
+         "highlight": "never",
+         "low": 0.0,
+         "high": 100.0,
+         "low_colour": "info",
+         "high_colour": "warn"
+        },
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "21.4 \u00b0C",
+      "2": "False",
+      "3": ""
+     }
+    },
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/reading",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/reading",
+      "name": "Status",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": false,
+      "lit": 1,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:information-outline",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         292,
+         26
+        ],
+        "text": "Status",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         292,
+         22
+        ],
+        "text": "21.4 \u00b0C",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         108,
+         344,
+         60
+        ],
+        "px": 48,
+        "text": {
+         "s": 1
+        },
+        "al": 2,
+        "vis": true,
+        "i": 3
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         108,
+         344,
+         60
+        ],
+        "px": 28,
+        "text": {
+         "s": 1
+        },
+        "al": 2,
+        "vis": {
+         "s": 2
+        },
+        "i": 4
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "decimals": 1.0,
+         "unit": "",
+         "word_on": "",
+         "word_off": "",
+         "highlight": "never",
+         "low": 0.0,
+         "high": 100.0,
+         "low_colour": "info",
+         "high_colour": "warn"
+        },
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "21.4 \u00b0C",
+      "2": "False"
+     }
+    }
+   }
+  },
+  {
+   "id": "apollo/scenes",
+   "name": "Scenes",
+   "icon": "mdi:palette",
+   "form": {
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [
+     "apollo/scene-row"
+    ],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "scenes": {
+      "kind": "entity",
+      "domains": [
+       "scene",
+       "script"
+      ],
+      "multiple": true,
+      "optional": false,
+      "device_class": null,
+      "label": "Scenes",
+      "help": "",
+      "max": 8
+     }
+    },
+    "options": [
+     {
+      "name": "show_names",
+      "type": "toggle",
+      "section": "shows",
+      "label": "Names under the icons",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "default": true
+     },
+     {
+      "name": "per_row",
+      "type": "choice",
+      "section": "look",
+      "label": "Buttons in a row",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "2",
+        "label": "Two"
+       },
+       {
+        "value": "4",
+        "label": "Four"
+       }
+      ],
+      "default": "4"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": []
+   },
+   "variants": {
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/scenes",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/scenes",
+      "name": "Scenes",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "un": {
+       "s": 5
+      },
+      "widgets": [
+       {
+        "t": "button",
+        "r": [
+         16,
+         120,
+         80,
+         48
+        ],
+        "text": {
+         "s": 1
+        },
+        "icon": "mdi:palette",
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 0
+       },
+       {
+        "t": "button",
+        "r": [
+         104,
+         120,
+         80,
+         48
+        ],
+        "text": {
+         "s": 2
+        },
+        "icon": "mdi:palette",
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 1
+       },
+       {
+        "t": "button",
+        "r": [
+         192,
+         120,
+         80,
+         48
+        ],
+        "text": {
+         "s": 3
+        },
+        "icon": "mdi:palette",
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 2
+       },
+       {
+        "t": "button",
+        "r": [
+         280,
+         120,
+         80,
+         48
+        ],
+        "text": {
+         "s": 4
+        },
+        "icon": "mdi:palette",
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "show_names": true,
+         "per_row": "4"
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:palette",
+         "kind": null,
+         "scenes": [
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          },
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          },
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          },
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          }
+         ]
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "scene.movie",
+      "2": "scene.dinner",
+      "3": "scene.relax",
+      "4": "scene.all_off"
+     }
+    },
+    "large": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/scenes",
+      "variant": "large",
+      "grid_options": {
+       "columns": 12,
+       "rows": 6
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/scenes",
+      "name": "Scenes",
+      "variant": "large",
+      "demo": true,
+      "w": 376,
+      "h": 376,
+      "entities": [],
+      "header": {
+       "r": [
+        16,
+        16,
+        344,
+        32
+       ],
+       "icon": "mdi:palette",
+       "title": "Scenes"
+      },
+      "on": null,
+      "lit": 3,
+      "un": {
+       "s": 5
+      },
+      "widgets": [
+       {
+        "t": "button",
+        "r": [
+         16,
+         224,
+         168,
+         64
+        ],
+        "text": {
+         "s": 1
+        },
+        "icon": "mdi:palette",
+        "isz": 1,
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 0
+       },
+       {
+        "t": "button",
+        "r": [
+         192,
+         224,
+         168,
+         64
+        ],
+        "text": {
+         "s": 2
+        },
+        "icon": "mdi:palette",
+        "isz": 1,
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 1
+       },
+       {
+        "t": "button",
+        "r": [
+         16,
+         296,
+         168,
+         64
+        ],
+        "text": {
+         "s": 3
+        },
+        "icon": "mdi:palette",
+        "isz": 1,
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 2
+       },
+       {
+        "t": "button",
+        "r": [
+         192,
+         296,
+         168,
+         64
+        ],
+        "text": {
+         "s": 4
+        },
+        "icon": "mdi:palette",
+        "isz": 1,
+        "tap": {
+         "policy": "pulse"
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "show_names": true,
+         "per_row": "4"
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:palette",
+         "kind": null,
+         "scenes": [
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          },
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          },
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          },
+          {
+           "toggle": false,
+           "icon": "mdi:palette",
+           "kind": null
+          }
+         ]
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "scene.movie",
+      "2": "scene.dinner",
+      "3": "scene.relax",
+      "4": "scene.all_off"
+     }
+    }
+   }
+  },
+  {
+   "id": "apollo/screen",
+   "name": "Screen brightness",
+   "icon": "mdi:tablet",
+   "form": {
+    "schema": 2,
+    "group": "home",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 2
+    },
+    "variants": [
+     {
+      "id": "row",
+      "name": "Row",
+      "grid": [
+       12,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Screen light",
+      "help": "The tablet's own Backlight",
+      "domain": "light"
+     }
+    },
+    "options": [],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": []
+   },
+   "variants": {
+    "row": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/screen",
+      "variant": "row",
+      "grid_options": {
+       "columns": 12,
+       "rows": 2
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/screen",
+      "name": "Screen brightness",
+      "variant": "row",
+      "demo": true,
+      "w": 376,
+      "h": 120,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         24,
+         24
+        ],
+        "value": "mdi:tablet",
+        "look": 2,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         48,
+         16,
+         148,
+         24
+        ],
+        "text": "Screen brightness",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         204,
+         17,
+         156,
+         22
+        ],
+        "text": "80%",
+        "size": "s",
+        "al": 2,
+        "i": 2
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         64,
+         344,
+         40
+        ],
+        "value": 80,
+        "min": 10,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "icon": "mdi:brightness-6",
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/screen",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/screen",
+      "name": "Screen brightness",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:tablet",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         292,
+         26
+        ],
+        "text": "Screen brightness",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         292,
+         22
+        ],
+        "text": "80%",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         128,
+         344,
+         40
+        ],
+        "value": 80,
+        "min": 10,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "icon": "mdi:brightness-6",
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {},
+        "can": {}
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    }
+   }
+  },
+  {
+   "id": "apollo/select",
+   "name": "Dropdown",
+   "icon": "mdi:chevron-down",
+   "form": {
+    "schema": 2,
+    "group": "more",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "select",
+       "input_select"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "List",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "shown",
+      "type": "choice",
+      "section": "controls",
+      "label": "Choices shown",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": true,
+      "max": 16,
+      "from": "can.options",
+      "default_first": 8,
+      "default": []
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": []
+   },
+   "variants": {
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/select",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/select",
+      "name": "Dropdown",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": {
+       "r": [
+        16,
+        16,
+        344,
+        32
+       ],
+       "icon": "mdi:dots-horizontal",
+       "title": "Dropdown"
+      },
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "choice",
+        "r": [
+         16,
+         120,
+         344,
+         48
+        ],
+        "texts": [
+         "Eco",
+         "Comfort",
+         "Away",
+         "Boost"
+        ],
+        "value": 1,
+        "rows": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 0
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "shown": [
+          "Eco",
+          "Comfort",
+          "Away",
+          "Boost"
+         ]
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:dots-horizontal",
+         "kind": null,
+         "options": [
+          "Eco",
+          "Comfort",
+          "Away",
+          "Boost"
+         ],
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:dots-horizontal",
+          "kind": null,
+          "options": []
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "large": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/select",
+      "variant": "large",
+      "grid_options": {
+       "columns": 12,
+       "rows": 6
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/select",
+      "name": "Dropdown",
+      "variant": "large",
+      "demo": true,
+      "w": 376,
+      "h": 376,
+      "entities": [],
+      "header": {
+       "r": [
+        16,
+        16,
+        344,
+        32
+       ],
+       "icon": "mdi:dots-horizontal",
+       "title": "Dropdown"
+      },
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "choice",
+        "r": [
+         16,
+         312,
+         344,
+         48
+        ],
+        "texts": [
+         "Eco",
+         "Comfort",
+         "Away",
+         "Boost"
+        ],
+        "value": 1,
+        "rows": 1,
+        "change": {
+         "policy": "optimistic"
+        },
+        "i": 0
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "shown": [
+          "Eco",
+          "Comfort",
+          "Away",
+          "Boost"
+         ]
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:dots-horizontal",
+         "kind": null,
+         "options": [
+          "Eco",
+          "Comfort",
+          "Away",
+          "Boost"
+         ],
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:dots-horizontal",
+          "kind": null,
+          "options": []
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    }
+   }
+  },
+  {
+   "id": "apollo/switch",
+   "name": "Switch",
+   "icon": "mdi:toggle-switch",
+   "form": {
+    "schema": 2,
+    "group": "lights",
+    "legacy": false,
+    "replaces": [],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 1
+    },
+    "variants": [
+     {
+      "id": "chip",
+      "name": "Chip",
+      "grid": [
+       12,
+       1
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "small",
+      "name": "Small",
+      "grid": [
+       6,
+       2
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "tile",
+      "name": "Tile",
+      "grid": [
+       6,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "switch",
+       "input_boolean",
+       "siren",
+       "fan",
+       "light"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Device",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "word_on",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while on",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": "On"
+     },
+     {
+      "name": "word_off",
+      "type": "text",
+      "section": "shows",
+      "label": "Word while off",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "max": 20,
+      "default": "Off"
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "fill",
+     "tint": false
+    },
+    "tap": {
+     "default": "toggle",
+     "choices": [
+      {
+       "value": "toggle",
+       "label": "Turns it on or off",
+       "needs": ""
+      },
+      {
+       "value": "page",
+       "label": "Goes to a page",
+       "needs": ""
+      },
+      {
+       "value": "none",
+       "label": "Does nothing",
+       "needs": ""
+      }
+     ]
+    },
+    "notes": []
+   },
+   "variants": {
+    "chip": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/switch",
+      "variant": "chip",
+      "grid_options": {
+       "columns": 12,
+       "rows": 1
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/switch",
+      "name": "Switch",
+      "variant": "chip",
+      "demo": true,
+      "w": 376,
+      "h": 56,
+      "entities": [],
+      "header": null,
+      "on": true,
+      "lit": 0,
+      "tap": {
+       "policy": "optimistic"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         24,
+         24
+        ],
+        "value": "mdi:toggle-switch",
+        "look": 2,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         48,
+         16,
+         148,
+         24
+        ],
+        "text": "Switch",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         204,
+         17,
+         156,
+         22
+        ],
+        "text": "On",
+        "size": "s",
+        "al": 2,
+        "i": 2
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "word_on": "On",
+         "word_off": "Off"
+        },
+        "can": {
+         "toggle": true,
+         "icon": "mdi:toggle-switch",
+         "kind": null,
+         "entity": {
+          "toggle": true,
+          "icon": "mdi:toggle-switch",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "small": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/switch",
+      "variant": "small",
+      "grid_options": {
+       "columns": 6,
+       "rows": 2
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/switch",
+      "name": "Switch",
+      "variant": "small",
+      "demo": true,
+      "w": 184,
+      "h": 120,
+      "entities": [],
+      "header": null,
+      "on": true,
+      "lit": 0,
+      "tap": {
+       "policy": "optimistic"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         18,
+         44,
+         44
+        ],
+        "value": "mdi:toggle-switch",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         16,
+         100,
+         26
+        ],
+        "text": "Switch",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         100,
+         22
+        ],
+        "text": "On",
+        "size": "s",
+        "i": 2
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "word_on": "On",
+         "word_off": "Off"
+        },
+        "can": {
+         "toggle": true,
+         "icon": "mdi:toggle-switch",
+         "kind": null,
+         "entity": {
+          "toggle": true,
+          "icon": "mdi:toggle-switch",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    },
+    "tile": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/switch",
+      "variant": "tile",
+      "grid_options": {
+       "columns": 6,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/switch",
+      "name": "Switch",
+      "variant": "tile",
+      "demo": true,
+      "w": 184,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": true,
+      "lit": 0,
+      "tap": {
+       "policy": "optimistic"
+      },
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         44,
+         44
+        ],
+        "value": "mdi:toggle-switch",
+        "look": 1,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         68,
+         152,
+         28
+        ],
+        "text": "Switch",
+        "size": "m",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         98,
+         152,
+         22
+        ],
+        "text": "On",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "switch",
+        "r": [
+         104,
+         20,
+         64,
+         36
+        ],
+        "value": true,
+        "tap": {
+         "policy": "optimistic"
+        },
+        "i": 3
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "word_on": "On",
+         "word_off": "Off"
+        },
+        "can": {
+         "toggle": true,
+         "icon": "mdi:toggle-switch",
+         "kind": null,
+         "entity": {
+          "toggle": true,
+          "icon": "mdi:toggle-switch",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {}
+    }
+   }
+  }
+ ],
  "sample_config": {
   "apollo_tab": {
    "version": 1,

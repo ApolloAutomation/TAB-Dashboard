@@ -1,0 +1,56 @@
+schema: 2
+id: apollo/button
+version: 2.0.0
+name: Button
+description: Press a button, run a script or start a scene with a tap.
+icon: mdi:power
+group: home
+
+params:
+  entity: {domain: [button, input_button, script, scene], label: What it runs}
+
+inputs:
+  name: "{{ state_attr(entity, 'friendly_name') or entity }}"
+  gone: "{{ is_state(entity, 'unavailable') }}"
+
+outputs:
+  press: {action: {button: button.press, input_button: input_button.press, script: script.turn_on,
+                   scene: scene.turn_on},
+          data: {entity_id: "{{ entity }}"}, feedback: pulse}
+
+unavailable: gone
+lit: none
+tap:
+  default: press
+  choices:
+    press: {label: Runs it, output: press}
+    none:  {label: Does nothing}
+
+parts:
+  # What a tablet with older software shows: one button with the name.
+  old_button: {type: button, text: "{{ name }}", on_tap: press, when: ["!tablet.v2"]}
+
+variants:
+  chip:
+    name: Chip
+    grid: [12, 1]
+    header: chip
+    v1: note
+    layout:
+      - {type: space}
+  small:
+    name: Small
+    grid: [6, 2]
+    header: tile
+    layout:
+      - {use: old_button}
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: tile_v
+    layout:
+      - {use: old_button}
+
+preview:
+  params: {entity: script.example}
+  inputs: {name: Good night, gone: false}

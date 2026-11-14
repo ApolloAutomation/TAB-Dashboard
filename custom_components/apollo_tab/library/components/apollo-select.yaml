@@ -1,0 +1,54 @@
+schema: 2
+id: apollo/select
+version: 2.0.0
+name: Dropdown
+description: Pick one of a list of choices, such as a mode or a programme.
+icon: mdi:chevron-down
+group: more
+
+params:
+  entity: {domain: [select, input_select], label: List}
+
+options:
+  shown: {type: choice, multiple: true, max: 16, from: can.options, default_first: 8,
+          section: controls, label: Choices shown}
+
+inputs:
+  current: "{{ states(entity) }}"
+  index:   "{{ shown.index(current) if current in shown else none }}"
+
+outputs:
+  pick:     {action: {select: select.select_option, input_select: input_select.select_option},
+             data: {entity_id: "{{ entity }}", option: "{{ option }}"}, feedback: optimistic}
+  next:     {action: {select: select.select_next, input_select: input_select.select_next},
+             data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+  previous: {action: {select: select.select_previous, input_select: input_select.select_previous},
+             data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+
+state: current
+lit: none
+
+parts:
+  choices: {type: choice, options: shown, value: index, on_change: pick, when: [shown]}
+  # What a tablet with older software shows: the choice now, previous and next.
+  old_now: {type: label, text: "{{ current }}", size: l, when: ["!tablet.v2"]}
+  old_previous: {type: button, icon: "mdi:chevron-left", text: Previous, on_tap: previous,
+                 when: ["!tablet.v2"]}
+  old_next: {type: button, icon: "mdi:chevron-right", text: Next, on_tap: next, when: ["!tablet.v2"]}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: title
+    layout: [{use: choices}, {use: old_now}, {use: old_previous}, {use: old_next}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: title
+    layout: [{use: choices}, {use: old_now}, {use: old_previous}, {use: old_next}]
+
+preview:
+  params: {entity: select.example}
+  can: {options: [Eco, Comfort, Away, Boost]}
+  inputs: {current: Comfort, index: 1}

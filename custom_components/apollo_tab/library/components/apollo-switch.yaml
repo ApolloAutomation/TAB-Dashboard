@@ -1,0 +1,64 @@
+schema: 2
+id: apollo/switch
+version: 2.0.0
+name: Switch
+description: Turn something on or off with a tap.
+icon: mdi:toggle-switch
+group: lights
+
+params:
+  entity: {domain: [switch, input_boolean, siren, fan, light], label: Device}
+
+options:
+  word_on:  {type: text, section: shows, label: Word while on, default: "On", max: 20}
+  word_off: {type: text, section: shows, label: Word while off, default: "Off", max: 20}
+
+inputs:
+  is_on: "{{ is_state(entity, 'on') }}"
+  state: "{{ word_on if is_on else word_off }}"
+
+outputs:
+  toggle: {action: {switch: switch.toggle, input_boolean: input_boolean.toggle, siren: siren.toggle,
+                    fan: fan.toggle, light: light.toggle},
+           data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+
+on: is_on
+lit: fill
+state: state
+tap:
+  default: toggle
+  choices:
+    toggle: {label: Turns it on or off, output: toggle}
+    none:   {label: Does nothing}
+
+parts:
+  # What a tablet with older software shows: the switch and the word. On the
+  # tile the trailing switch is that switch already.
+  old_switch: {type: switch, value: is_on, on_tap: toggle, when: ["!tablet.v2"]}
+  old_state:  {type: label, text: "{{ state }}", size: s, when: ["!tablet.v2"]}
+
+variants:
+  chip:
+    name: Chip
+    grid: [12, 1]
+    header: chip
+    layout:
+      - {use: old_switch}
+  small:
+    name: Small
+    grid: [6, 2]
+    header: tile
+    layout:
+      - {use: old_switch}
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: tile_v
+    trailing: switch
+    layout:
+      - {use: old_state}
+
+preview:
+  params: {entity: switch.example}
+  can: {toggle: true}
+  inputs: {is_on: true, state: "On"}

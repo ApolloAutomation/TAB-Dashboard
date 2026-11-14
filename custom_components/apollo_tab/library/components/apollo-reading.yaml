@@ -1,0 +1,106 @@
+schema: 2
+id: apollo/reading
+version: 2.0.0
+name: Status
+description: Show what a sensor reads or what state a device is in.
+icon: mdi:information-outline
+group: sensors
+replaces: [apollo/sensor-value]
+
+params:
+  entity: {domain: any, label: Device}
+
+options:
+  decimals:    {type: number, section: shows, label: Decimals, min: 0, max: 3, step: 1, default: 1}
+  unit:        {type: text, section: shows, label: Unit, max: 8,
+                help: Leave empty to use the unit Home Assistant gives}
+  word_on:     {type: text, section: shows, label: Word while on, max: 20,
+                help: Leave empty to use the word Home Assistant gives}
+  word_off:    {type: text, section: shows, label: Word while off, max: 20,
+                help: Leave empty to use the word Home Assistant gives}
+  highlight:   {type: choice, section: look, label: Highlight, default: never,
+                choices: {never: Never, active: "While on, open or unlocked", above: Above the high mark,
+                          below: Below the low mark}}
+  low:         {type: number, section: look, label: Low mark, default: 0,
+                when: ["highlight=below"]}
+  high:        {type: number, section: look, label: High mark, default: 100,
+                when: ["highlight=above"]}
+  low_colour:  {type: colour, section: look, label: Colour below the low mark, default: info,
+                when: ["highlight=below"]}
+  high_colour: {type: colour, section: look, label: Colour above the high mark, default: warn,
+                when: ["highlight=above"]}
+
+inputs:
+  number:  "{{ states(entity) | float(none) }}"
+  reading: >-
+    {% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}
+  unit_text: "{{ unit or state_attr(entity, 'unit_of_measurement') or '' }}"
+  line:    "{{ (reading ~ ' ' ~ unit_text) | trim if number is number else reading }}"
+  is_number: "{{ number is number }}"
+  # One expression, so it stays a yes or no where other inputs use it.
+  active:  >-
+    {{ (highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])
+       or (highlight == 'above' and number is number and number > high)
+       or (highlight == 'below' and number is number and number < low) }}
+  tone:    "{{ (high_colour if highlight == 'above' else low_colour if highlight == 'below' else none) if active else none }}"
+  icon:    {source: state_icon, entity: "{{ entity }}"}
+
+outputs:
+  toggle: {action: {switch: switch.toggle, input_boolean: input_boolean.toggle, light: light.toggle,
+                    fan: fan.toggle, siren: siren.toggle, cover: cover.toggle, valve: valve.toggle},
+           data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+
+on: active
+tint: tone
+lit: icon
+state: line
+tap:
+  default: none
+  choices:
+    none:   {label: Does nothing}
+    toggle: {label: Turns it on or off, output: toggle, needs: can.toggle}
+
+parts:
+  # The reading at 48 px when it is a number, else at 28 px.
+  big:
+    type: swap
+    items:
+      - {type: label, text: "{{ line }}", size: xl, visible: is_number}
+      - {type: label, text: "{{ line }}", size: ml, visible: "{{ not is_number }}"}
+  # What a tablet with older software shows instead.
+  old: {type: label, text: "{{ line }}", size: l, when: ["!tablet.v2"]}
+
+variants:
+  chip:
+    name: Chip
+    grid: [12, 1]
+    header: chip
+    v1: note
+    layout:
+      - {type: space}
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: none
+    v1: apollo/sensor-value
+    layout:
+      - {type: row, when: [tablet.v2], height: 44,
+         items: [{type: image, value: icon, look: badge, colour: tone, width: 44}]}
+      - {use: big}
+      - {type: label, text: "{{ state_attr(entity, 'friendly_name') or entity }}", size: m}
+      - {use: old}
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    v1: apollo/sensor-value
+    layout:
+      - type: swap
+        items:
+          - {type: label, text: "{{ line }}", size: xl, align: right, visible: is_number}
+          - {type: label, text: "{{ line }}", size: ml, align: right, visible: "{{ not is_number }}"}
+      - {use: old}
+
+preview:
+  inputs: {number: 21.4, reading: "21.4", unit_text: "°C", line: "21.4 °C", is_number: true,
+           active: false, tone: null}

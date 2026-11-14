@@ -21,16 +21,44 @@ def test_fixtures_file_is_current():
 
 
 def test_fixture_cards_cover_all_builtins():
-    """The fixture cards list covers exactly the 16 bundled Components."""
+    """The fixture cards lists cover exactly the 25 bundled Components.
+
+    The 16 schema 1 cards are in `cards` and the panel's library; the 9
+    schema 2 cards of step A are in `cards_v2`, which the panel does not
+    read until the editor draws them (packages I7, I8).
+    """
     expected = set()
+    expected2 = set()
     for path in sorted(COMPONENTS_DIR.glob("*.yaml")):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         for entry in raw if isinstance(raw, list) else [raw]:
-            expected.add(validate_component(entry)["id"])
+            component = validate_component(entry)
+            target = expected2 if component.get("schema") == 2 else expected
+            target.add(component["id"])
     assert len(expected) == 16
+    assert len(expected2) == 9
     data = json.loads(FIXTURES_FILE.read_text(encoding="utf-8"))
     assert len(data["cards"]) == 16
     assert {card["id"] for card in data["cards"]} == expected
+    assert {c["id"] for c in data["library"]["components"]} == expected
+    assert {card["id"] for card in data["cards_v2"]} == expected2
+
+
+def test_schema_2_fixture_cards_carry_form_data_and_examples():
+    """Each schema 2 card has its form data and an example per variant."""
+    data = json.loads(FIXTURES_FILE.read_text(encoding="utf-8"))
+    for entry in data["cards_v2"]:
+        assert entry["form"]["schema"] == 2, entry["id"]
+        names = [variant["id"] for variant in entry["form"]["variants"]]
+        assert list(entry["variants"]) == names, entry["id"]
+        for name, variant in entry["variants"].items():
+            init = variant["init"]
+            assert init["schema"] == 2 and init["variant"] == name
+            assert init["warnings"] == [], (entry["id"], name)
+            assert "slots" not in init and "actions" not in init
+    light = next(entry for entry in data["cards_v2"] if entry["id"] == "apollo/light")
+    assert light["form"]["has_detail"] is True
+    assert light["form"]["replaces"] == ["apollo/light-tile", "apollo/light-slider"]
 
 
 def test_fixture_params_keep_the_yaml_order():

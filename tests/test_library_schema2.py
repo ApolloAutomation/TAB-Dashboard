@@ -142,16 +142,14 @@ async def test_replaces_in_a_user_file_is_refused(
     """Only built-in files may carry replaces."""
     user_components(
         "plug.yaml",
-        USER_CARD.replace(
-            "name: Plug\n", "name: Plug\nreplaces: [apollo/light-tile]\n"
-        ),
+        USER_CARD.replace("name: Plug\n", "name: Plug\nreplaces: [apollo/lock]\n"),
     )
     library = Library(hass)
     await library.async_load()
     assert "me/plug" not in library.components
     assert [error["code"] for error in library.errors] == ["replaces_not_allowed"]
-    assert library.replaced_ids() == set()
-    assert _entry(library, "apollo/light-tile")["legacy"] is False
+    assert "apollo/lock" not in library.replaced_ids()
+    assert _entry(library, "apollo/lock")["legacy"] is False
 
 
 async def test_a_v1_that_names_no_loaded_schema_1_card_is_refused(
@@ -222,8 +220,13 @@ async def test_built_in_cards_replace_the_old_ones(
     library = Library(hass)
     await library.async_load()
     assert library.errors == []
-    assert len(library.components) == 17
-    assert library.replaced_ids() == {"apollo/light-tile", "apollo/light-slider"}
+    assert len(library.components) == 25
+    assert library.replaced_ids() == {
+        "apollo/light-tile",
+        "apollo/light-slider",
+        "apollo/scene-row",
+        "apollo/sensor-value",
+    }
     assert _entry(library, "apollo/light-tile")["legacy"] is True
     assert _entry(library, "apollo/light-slider")["legacy"] is True
     assert _entry(library, "apollo/lock")["legacy"] is False
@@ -236,8 +239,9 @@ async def test_replaces_counts_only_from_built_in_cards(
     """A card that is not built in never hides another, however it got loaded."""
     library = Library(hass)
     await library.async_load()
-    light = library.components["apollo/light"]
-    library.components["apollo/light"] = {**light, "source": "user"}
+    for component_id, component in list(library.components.items()):
+        if component.get("replaces"):
+            library.components[component_id] = {**component, "source": "user"}
     assert library.replaced_ids() == set()
 
 
@@ -324,7 +328,8 @@ async def test_a_schema_1_card_in_the_form_data(hass: HomeAssistant) -> None:
     await library.async_load()
     entry = _entry(library, "apollo/light-slider")
     assert entry["schema"] == 1
-    assert entry["legacy"] is False
+    # The built-in apollo/light replaces it (cards, step A).
+    assert entry["legacy"] is True
     assert entry["variants"] == [
         {
             "id": "default",

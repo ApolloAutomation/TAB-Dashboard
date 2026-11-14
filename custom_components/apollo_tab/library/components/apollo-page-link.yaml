@@ -1,0 +1,54 @@
+schema: 2
+id: apollo/page-link
+version: 2.0.0
+name: Link
+description: Go to another page with a tap, with a reading if you like.
+icon: mdi:view-dashboard
+group: home
+
+params:
+  page:   {type: page, label: Page}
+  entity: {domain: any, optional: true, label: Reading from}
+
+inputs:
+  reading: "{{ (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim }}"
+  line:    "{{ state_attr(entity, 'friendly_name') or '' }}"
+  gone:    "{{ false }}"
+
+outputs:
+  go: {local: go_to_page, page: "{{ page }}"}
+
+unavailable: gone
+lit: none
+tap:
+  default: go
+  choices:
+    go:   {label: Goes to the page, output: go}
+    none: {label: Does nothing}
+
+parts:
+  reading:  {type: label, text: "{{ reading }}", size: l, when: [has.entity]}
+  line:     {type: label, text: "{{ line }}", size: s, when: [has.entity, tablet.v2]}
+  # What a tablet with older software shows: a button that goes to the page.
+  old_go:   {type: button, icon: "mdi:arrow-right", text: Open, on_tap: go, when: ["!tablet.v2"]}
+
+variants:
+  small:
+    name: Small
+    grid: [6, 2]
+    header: tile
+    layout: [{use: old_go}]
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: tile
+    layout: [{use: reading}, {use: line}, {use: old_go}]
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    layout: [{use: reading}, {use: line}, {use: old_go}]
+
+preview:
+  params: {page: home}
+  inputs: {reading: "21.4 °C", line: Living room}
