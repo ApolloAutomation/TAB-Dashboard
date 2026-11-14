@@ -11,7 +11,7 @@ import {
   t,
 } from "./api.js";
 import { defineAliases } from "./card.js";
-import { el, focusLost, icon, makeButton, screenHeading } from "./card-form.js";
+import { applyAccent, el, focusLost, icon, makeButton, screenHeading } from "./card-form.js";
 import { keptChanges, onKeptChanges } from "./designer.js";
 import {
   mergeDashboards,
@@ -44,6 +44,8 @@ import {
 } from "./tablets.js";
 
 const DEFAULT_PREFIX = "/apollo-tab";
+// The width under which the panel is laid out for a phone, as the editor's.
+const COMPACT_BELOW = 900;
 const URL_PATH_RE = /^[a-z0-9_-]+$/;
 const GUIDE_URL = "https://github.com/ApolloAutomation/TAB-Dashboard";
 // The guide to writing a card, inside the repository.
@@ -168,6 +170,11 @@ export class ApolloTabPanel extends HTMLElement {
     this._settleTimer = null;
     this._tabletsObserver = null;
     this._watchedBox = null;
+    // The theme last read for the accent colours (see _themeChanged), and
+    // what watches the panel's own width for the compact layout.
+    this._themeSeen = null;
+    this._accentFrame = 0;
+    this._sizeObserver = null;
 
     this._onPopState = () => {
       const prefix = this._prefix();
@@ -181,6 +188,7 @@ export class ApolloTabPanel extends HTMLElement {
   set hass(value) {
     const first = !this._hass;
     this._hass = value;
+    this._themeChanged(value);
     if (first) {
       this._load();
       this._draw();
@@ -235,7 +243,36 @@ export class ApolloTabPanel extends HTMLElement {
     return this._panel;
   }
 
+  // Home Assistant hands over a new hass before it has written the new
+  // theme's colours to the page, so the accent is read again on the next
+  // frame as well.
+  _themeChanged(hass) {
+    const seen = [hass?.themes, hass?.selectedTheme];
+    if (this._themeSeen && seen[0] === this._themeSeen[0] && seen[1] === this._themeSeen[1]) {
+      return;
+    }
+    this._themeSeen = seen;
+    if (!this.isConnected) {
+      return;
+    }
+    applyAccent(this);
+    cancelAnimationFrame(this._accentFrame);
+    this._accentFrame = requestAnimationFrame(() => applyAccent(this));
+  }
+
+  // Under 900 px the panel takes the class compact, which makes every
+  // control a touch target (styles.js), in the editor and its dialogs too.
+  _checkCompact() {
+    this.classList.toggle("compact", this.getBoundingClientRect().width < COMPACT_BELOW);
+  }
+
   connectedCallback() {
+    applyAccent(this);
+    if (typeof ResizeObserver === "function" && !this._sizeObserver) {
+      this._sizeObserver = new ResizeObserver(() => this._checkCompact());
+    }
+    this._sizeObserver?.observe(this);
+    this._checkCompact();
     window.addEventListener("popstate", this._onPopState);
     // Home marks a dashboard whose last change is not saved yet.
     this._stopKept = onKeptChanges(() => {
@@ -248,6 +285,8 @@ export class ApolloTabPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._sizeObserver?.disconnect();
+    cancelAnimationFrame(this._accentFrame);
     window.removeEventListener("popstate", this._onPopState);
     this._stopKept?.();
     this._stopKept = null;
@@ -1203,9 +1242,11 @@ export class ApolloTabPanel extends HTMLElement {
     }
   }
 
+  // "Create dashboard" is the one filled button of a start screen with no
+  // dashboard yet; "Create another dashboard" is a plain one.
   _createButton(labelKey) {
     return makeButton(this._creating ? t("home.creating") : t(labelKey), {
-      className: "primary",
+      kind: labelKey === "home.create" ? "primary" : undefined,
       test: "create",
       focus: "create",
       disabled: this._creating,
@@ -1254,7 +1295,6 @@ export class ApolloTabPanel extends HTMLElement {
     if (row.editable) {
       item.append(
         makeButton(t("home.edit"), {
-          className: "primary",
           test: "edit",
           focus: `edit:${row.url_path}`,
           onClick: () => this._go(`/edit/${encodeURIComponent(row.url_path)}`),
@@ -1331,8 +1371,10 @@ export class ApolloTabPanel extends HTMLElement {
   }
 
   _advancedNodes() {
+    // A top bar holds no link or filled button (their colours are made for
+    // the page, not the bar), so Back is a plain button, as in the editor.
     const back = makeButton(null, {
-      className: "link",
+      className: "back",
       test: "back",
       focus: "back",
       onClick: () => this._go(""),
@@ -1409,7 +1451,6 @@ export class ApolloTabPanel extends HTMLElement {
       tags.append(el("span", "tag", t(component.approved ? "advanced.allowed" : "advanced.blocked")));
       text.append(el("h3", null, component.name), tags);
       const button = makeButton(t(component.approved ? "advanced.revoke" : "advanced.allow"), {
-        className: component.approved ? null : "primary",
         test: "allow",
         focus: `allow:${component.id}`,
         disabled: this._advancedBusy,

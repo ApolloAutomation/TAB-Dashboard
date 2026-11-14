@@ -8,7 +8,11 @@ from pathlib import Path
 import yaml
 from jinja2.sandbox import SandboxedEnvironment
 
-from custom_components.apollo_tab.library import form_entry
+from custom_components.apollo_tab.library import (
+    form_entry,
+    picker_fields,
+    read_picker,
+)
 from custom_components.apollo_tab.maker.compile import compile_card, public_card
 from custom_components.apollo_tab.maker.compile2 import (
     compile_card2,
@@ -58,6 +62,7 @@ def _schema1(components):
 
 def _library(components, theme_entries):
     """Build the library object the panel would receive."""
+    picker = read_picker()
     ordered = sorted(
         _schema1(components).values(),
         key=lambda comp: (comp.get("source") != "builtin", comp.get("name", "")),
@@ -79,6 +84,7 @@ def _library(components, theme_entries):
             "sensitive": bool(component.get("sensitive")),
             "approved": True,
             "params": component.get("params", {}),
+            **picker_fields(component, picker),
         }
         for component in ordered
     ]
@@ -251,6 +257,7 @@ def _cards_v2(components):
         for component in components.values()
         for replaced_id in component.get("replaces", [])
     }
+    picker = read_picker()
     env = renderer()
     entries = []
     for component_id in sorted(components):
@@ -280,7 +287,12 @@ def _cards_v2(components):
                 "id": component_id,
                 "name": component["name"],
                 "icon": component["icon"],
-                "form": form_entry(component, component_id in replaced),
+                # As the library answer gives it: the form data with the
+                # picker's group and search words.
+                "form": {
+                    **form_entry(component, component_id in replaced),
+                    **picker_fields(component, picker),
+                },
                 "variants": variants,
             }
         )

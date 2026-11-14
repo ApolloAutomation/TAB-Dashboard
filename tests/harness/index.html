@@ -17,6 +17,13 @@
       --primary-color: #009ac7;
       --text-primary-color: #ffffff;
       --error-color: #db4437;
+      --secondary-background-color: #282828;
+      --app-header-background-color: #101e24;
+      --app-header-text-color: #e1e1e1;
+      --disabled-text-color: #6f6f6f;
+      --success-color: #43a047;
+      --warning-color: #ffa600;
+      --info-color: #039be5;
       font-family: system-ui, sans-serif;
     }
     :root.ha-light {
@@ -28,12 +35,21 @@
       --primary-color: #009ac7;
       --text-primary-color: #ffffff;
       --error-color: #db4437;
+      --secondary-background-color: #e5e5e5;
+      --app-header-background-color: var(--primary-color);
+      --app-header-text-color: #ffffff;
+      --disabled-text-color: #bdbdbd;
+      --success-color: #43a047;
+      --warning-color: #ffa600;
+      --info-color: #039be5;
     }
     * {
       box-sizing: border-box;
     }
+    /* Home Assistant's base text size. */
     body {
       margin: 0;
+      font-size: 14px;
       min-height: 100vh;
       background: var(--primary-background-color);
       color: var(--primary-text-color);

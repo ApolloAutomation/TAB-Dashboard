@@ -326,3 +326,185 @@ test("tabletFit gives a missing character the tablet's box width", () => {
   // The box is never measured in the browser's font.
   assert.ok(!asked.includes(box) && !asked.includes("Ω"));
 });
+
+// The accent made readable (build plan 1.8). The themes are the harness
+// page's: Home Assistant's default light and dark colours.
+const hex = (text) => [1, 3, 5].map((start) => Number.parseInt(text.slice(start, start + 2), 16));
+const toHex = (rgb) => `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+const ratio = (a, b) => {
+  const light = (rgb) => {
+    const [r, g, bl] = rgb.map((value) => {
+      const c = value / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [light(a), light(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+const TONES = { ok: hex("#43a047"), warn: hex("#ffa600"), err: hex("#db4437"), info: hex("#039be5") };
+const THEMES = {
+  light: { surface: hex("#ffffff"), page: hex("#fafafa"), stage: hex("#e5e5e5"), text: hex("#141414") },
+  dark: { surface: hex("#1c1c1c"), page: hex("#111111"), stage: hex("#282828"), text: hex("#e1e1e1") },
+};
+const grounds = (theme, accent) => logic.accentGrounds({ ...THEMES[theme], accent: hex(accent), tones: TONES });
+
+test("parseCssColour reads rgb and color(srgb), clamps, and gives null for what it cannot read", () => {
+  assert.deepEqual(logic.parseCssColour("rgb(0, 154, 199)"), [0, 154, 199]);
+  assert.deepEqual(logic.parseCssColour("rgba(0, 154, 199, 1)"), [0, 154, 199]);
+  assert.deepEqual(logic.parseCssColour("color(srgb 0 0.6 0.78)"), [0, 153, 199]);
+  // A wide-gamut theme colour can come out a little past 0 or 1.
+  assert.deepEqual(logic.parseCssColour("color(srgb 1.02 -0.01 0.5)"), [255, 0, 128]);
+  assert.equal(logic.parseCssColour("rgba(0, 154, 199, 0.5)"), null);
+  assert.equal(logic.parseCssColour("color(srgb 0 0.6 0.78 / 0.5)"), null);
+  assert.equal(logic.parseCssColour("oklch(0.6 0.12 220)"), null);
+  assert.equal(logic.parseCssColour("#009ac7"), null);
+  assert.equal(logic.parseCssColour(""), null);
+  assert.equal(logic.parseCssColour(undefined), null);
+});
+
+test("accentInk darkens a mid accent until white has 4.5 to 1", () => {
+  const blue = logic.accentInk(hex("#009ac7"));
+  assert.equal(toHex(blue.fill), "#007b9f");
+  assert.equal(toHex(blue.ink), "#ffffff");
+  assert.ok(ratio(blue.fill, blue.ink) >= 4.5);
+  assert.equal(toHex(logic.accentInk(hex("#03a9f4")).fill), "#027ab0");
+  const dark = logic.accentInk(hex("#1565c0"));
+  assert.equal(toHex(dark.fill), "#1565c0");
+  assert.equal(toHex(dark.ink), "#ffffff");
+});
+
+test("accentInk keeps a light accent and gives it dark ink", () => {
+  for (const colour of ["#f5b547", "#ffeb3b"]) {
+    const { fill, ink } = logic.accentInk(hex(colour));
+    assert.equal(toHex(fill), colour);
+    assert.equal(toHex(ink), "#111111");
+    assert.ok(ratio(fill, ink) >= 4.5);
+  }
+});
+
+test("accentText moves toward black on a light surface and toward white on a dark one", () => {
+  const cases = [
+    ["#009ac7", "light", "#006f8f"],
+    ["#009ac7", "dark", "#14a2cb"],
+    ["#f5b547", "light", "#7f5e25"],
+    ["#f5b547", "dark", "#f5b547"],
+    ["#1565c0", "light", "#1565c0"],
+    ["#1565c0", "dark", "#699cd7"],
+  ];
+  for (const [accent, theme, expected] of cases) {
+    assert.equal(toHex(logic.accentText(hex(accent), grounds(theme, accent))), expected, `${accent} in ${theme}`);
+  }
+  // The focus ring, on white.
+  assert.equal(toHex(logic.accentText(hex("#009ac7"), [hex("#ffffff")])), "#007b9f");
+  assert.equal(toHex(logic.accentText(hex("#f5b547"), [hex("#ffffff")])), "#936d2b");
+});
+
+test("the accent as text has 4.5 to 1 on every ground", () => {
+  for (const accent of ["#009ac7", "#f5b547", "#1565c0", "#03a9f4", "#4caf50", "#e91e63"]) {
+    for (const theme of ["light", "dark"]) {
+      const list = grounds(theme, accent);
+      // The surface, the page, the stage, accent-soft, tonal and four notices.
+      assert.equal(list.length, 9);
+      const text = logic.accentText(hex(accent), list);
+      for (const ground of list) {
+        assert.ok(ratio(text, ground) >= 4.5, `${accent} in ${theme}: ${toHex(text)} on ${toHex(ground)}`);
+      }
+    }
+  }
+});
+
+test("a switch that is off has a knob lighter than its track in both themes", () => {
+  // Home Assistant's default surfaces and text colours (tests/harness/index.html).
+  const themes = [
+    [hex("#ffffff"), hex("#141414")],
+    [hex("#1c1c1c"), hex("#e1e1e1")],
+  ];
+  assert.equal(toHex(logic.switchKnob(...themes[0])), "#ffffff");
+  assert.equal(toHex(logic.switchKnob(...themes[1])), "#e1e1e1");
+  for (const [surface, text] of themes) {
+    // The track is the text at 48 % over the surface (--tab-field-line).
+    const track = surface.map((value, index) => Math.round(value + (text[index] - value) * 0.48));
+    const knob = logic.switchKnob(surface, text);
+    const light = (rgb) => rgb.reduce((sum, value) => sum + value, 0);
+    assert.ok(light(knob) > light(track), `${toHex(knob)} on ${toHex(track)}`);
+  }
+});
+
+test("layoutBand picks wide, medium, compact and short", () => {
+  const cases = [
+    [1280, 800, "wide"],
+    [1160, 800, "wide"],
+    [1159, 800, "medium"],
+    [900, 800, "medium"],
+    [899, 800, "compact"],
+    [844, 390, "short"],
+    [599, 390, "compact"],
+    [1280, 559, "short"],
+  ];
+  for (const [width, height, band] of cases) {
+    assert.equal(logic.layoutBand(width, height), band, `${width} x ${height}`);
+  }
+});
+
+test("fitStage gives the table of the build plan", () => {
+  // [availW, availH, picture width]; compact passes Infinity as the height.
+  const rows = [
+    [879.2, 584, 879],
+    [796, 584, 796],
+    [972, 600, 960],
+    [1452, 864, 1280],
+    [2092, 1224, 1280],
+    [879.2, 504, 806],
+    [942.8, 552, 883],
+    [772, 584, 772],
+    [848, 600, 848],
+    [784, Infinity, 784],
+    [354, Infinity, 354],
+    [284, Infinity, 284],
+    [470.4, 258, 412],
+    [324, 268, 324],
+  ];
+  for (const [w, h, width] of rows) {
+    assert.equal(logic.fitStage(w, h), width, `${w} x ${h}`);
+  }
+  // With the one line of page notices, 44 px less height.
+  const withNotice = [
+    [879.2, 584, 864],
+    [942.8, 552, 812],
+    [879.2, 504, 736],
+    [972, 600, 889],
+    [796, 584, 796],
+    [772, 584, 772],
+    [470.4, 258, 342],
+  ];
+  for (const [w, h, width] of withNotice) {
+    assert.equal(logic.fitStage(w, h - 44), width, `${w} x ${h} with a notice`);
+  }
+  assert.equal(logic.fitStage(-5, 100), 0);
+});
+
+test("drawerShift keeps the card clear of the drawer and never moves it past the padding", () => {
+  // Clear of the drawer already: no move.
+  assert.equal(logic.drawerShift(100, 400, 704, 16), 0);
+  assert.equal(logic.drawerShift(100, 688, 704, 16), 0);
+  // Just under it: moved by what it needs, 16 px clear.
+  assert.equal(logic.drawerShift(500, 800, 704, 16), 112);
+  // Wider than the room beside the drawer: only until the left edge is at
+  // the padding.
+  assert.equal(logic.drawerShift(100, 900, 704, 16), 84);
+  // Already at the padding: no move left.
+  assert.equal(logic.drawerShift(16, 900, 704, 16), 0);
+  assert.equal(logic.drawerShift(10, 900, 704, 16), 0);
+});
+
+test("shellHeight follows the keyboard and ignores a pinch zoom", () => {
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: null, top: 56 }), 744);
+  // The keyboard is up: the visible part is 500 high.
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 500, offsetTop: 0, scale: 1 }, top: 0 }), 500);
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 500, offsetTop: 40, scale: 1 }, top: 20 }), 520);
+  // Pinch zoom at 2: the window's own height.
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 400, offsetTop: 120, scale: 2 }, top: 10 }), 790);
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 640.6, offsetTop: 0, scale: 1.005 }, top: 0.4 }), 640);
+  assert.equal(logic.shellHeight({ innerHeight: 300, visual: null, top: 400 }), 0);
+});

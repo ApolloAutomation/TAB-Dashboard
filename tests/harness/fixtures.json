@@ -417,7 +417,16 @@
       "domain": "alarm_control_panel",
       "multiple": false
      }
-    }
+    },
+    "group": "security",
+    "keywords": [
+     "alarm",
+     "security",
+     "siren",
+     "burglar",
+     "intruder",
+     "away"
+    ]
    },
    {
     "id": "apollo/blinds",
@@ -443,13 +452,23 @@
       "domain": "cover",
       "multiple": false
      }
-    }
+    },
+    "group": "covers",
+    "keywords": [
+     "curtains",
+     "shades",
+     "shutters",
+     "roller",
+     "garage",
+     "awning",
+     "window"
+    ]
    },
    {
     "id": "apollo/camera-snapshot",
     "tag": "apollo-tab-el-apollo-camera-snapshot",
     "name": "Camera snapshot",
-    "description": "A still image from a camera that refreshes every few seconds.",
+    "description": "A camera's name. The tablet cannot show the camera's picture yet, so it shows an icon in its place.",
     "icon": "mdi:cctv",
     "version": "1.0.0",
     "size": [
@@ -469,7 +488,16 @@
       "domain": "camera",
       "multiple": false
      }
-    }
+    },
+    "group": "security",
+    "keywords": [
+     "camera",
+     "cctv",
+     "doorbell",
+     "driveway",
+     "video",
+     "security"
+    ]
    },
    {
     "id": "community/energy-gauge",
@@ -501,7 +529,18 @@
       "min": null,
       "max": null
      }
-    }
+    },
+    "group": "sensors",
+    "keywords": [
+     "power",
+     "energy",
+     "electricity",
+     "watts",
+     "dial",
+     "solar",
+     "usage",
+     "meter"
+    ]
    },
    {
     "id": "apollo/fan",
@@ -527,7 +566,16 @@
       "domain": "fan",
       "multiple": false
      }
-    }
+    },
+    "group": "climate",
+    "keywords": [
+     "ceiling fan",
+     "air",
+     "cooling",
+     "breeze",
+     "ventilation",
+     "speed"
+    ]
    },
    {
     "id": "apollo/light-tile",
@@ -553,7 +601,15 @@
       "domain": "light",
       "multiple": false
      }
-    }
+    },
+    "group": "lights",
+    "keywords": [
+     "lamp",
+     "bulb",
+     "lighting",
+     "ceiling light",
+     "on and off"
+    ]
    },
    {
     "id": "apollo/light-slider",
@@ -579,7 +635,16 @@
       "domain": "light",
       "multiple": false
      }
-    }
+    },
+    "group": "lights",
+    "keywords": [
+     "lamp",
+     "bulb",
+     "dimmer",
+     "brightness",
+     "lighting",
+     "ceiling light"
+    ]
    },
    {
     "id": "apollo/lock",
@@ -605,13 +670,22 @@
       "domain": "lock",
       "multiple": false
      }
-    }
+    },
+    "group": "security",
+    "keywords": [
+     "door",
+     "front door",
+     "deadbolt",
+     "key",
+     "unlock",
+     "security"
+    ]
    },
    {
     "id": "apollo/media-player",
     "tag": "apollo-tab-el-apollo-media-player",
     "name": "Media player",
-    "description": "What is playing, with its picture, play, pause and skip buttons, and the volume.",
+    "description": "What is playing, with play, pause and skip buttons, and the volume. The tablet shows an icon, not the picture of what is playing.",
     "icon": "mdi:speaker",
     "version": "1.0.0",
     "size": [
@@ -631,13 +705,24 @@
       "domain": "media_player",
       "multiple": false
      }
-    }
+    },
+    "group": "media",
+    "keywords": [
+     "music",
+     "speaker",
+     "tv",
+     "radio",
+     "song",
+     "audio",
+     "playlist",
+     "podcast"
+    ]
    },
    {
     "id": "community/presence-chips",
     "tag": "apollo-tab-el-community-presence-chips",
     "name": "Presence chips",
-    "description": "Who is home, with a picture for each person.",
+    "description": "Who is home. The tablet shows an icon for each person, not their photo.",
     "icon": "mdi:account-multiple",
     "version": "1.0.0",
     "size": [
@@ -657,7 +742,16 @@
       "domain": "person",
       "multiple": true
      }
-    }
+    },
+    "group": "home",
+    "keywords": [
+     "people",
+     "family",
+     "person",
+     "away",
+     "who is home",
+     "phone"
+    ]
    },
    {
     "id": "community/room-summary",
@@ -696,7 +790,17 @@
      "page": {
       "kind": "page"
      }
-    }
+    },
+    "group": "home",
+    "keywords": [
+     "room",
+     "area",
+     "overview",
+     "temperature",
+     "humidity",
+     "lights",
+     "page"
+    ]
    },
    {
     "id": "apollo/scene-row",
@@ -722,7 +826,17 @@
       "domain": "scene",
       "multiple": true
      }
-    }
+    },
+    "group": "lights",
+    "keywords": [
+     "scenes",
+     "mood",
+     "preset",
+     "movie",
+     "dinner",
+     "night",
+     "buttons"
+    ]
    },
    {
     "id": "apollo/sensor-graph",
@@ -748,7 +862,17 @@
       "domain": "sensor",
       "multiple": false
      }
-    }
+    },
+    "group": "sensors",
+    "keywords": [
+     "graph",
+     "chart",
+     "history",
+     "trend",
+     "temperature",
+     "humidity",
+     "power"
+    ]
    },
    {
     "id": "apollo/sensor-value",
@@ -774,7 +898,17 @@
       "domain": "sensor",
       "multiple": false
      }
-    }
+    },
+    "group": "sensors",
+    "keywords": [
+     "reading",
+     "number",
+     "temperature",
+     "humidity",
+     "battery",
+     "power",
+     "meter"
+    ]
    },
    {
     "id": "apollo/thermostat",
@@ -800,7 +934,17 @@
       "domain": "climate",
       "multiple": false
      }
-    }
+    },
+    "group": "climate",
+    "keywords": [
+     "heating",
+     "cooling",
+     "temperature",
+     "heat",
+     "radiator",
+     "boiler",
+     "air conditioning"
+    ]
    },
    {
     "id": "apollo/weather",
@@ -826,7 +970,17 @@
       "domain": "weather",
       "multiple": false
      }
-    }
+    },
+    "group": "sensors",
+    "keywords": [
+     "forecast",
+     "rain",
+     "sun",
+     "temperature",
+     "outside",
+     "clouds",
+     "wind"
+    ]
    }
   ],
   "errors": [
@@ -2526,7 +2680,16 @@
       }
      ]
     },
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "press",
+     "push",
+     "script",
+     "scene",
+     "run",
+     "doorbell",
+     "start"
+    ]
    },
    "variants": {
     "chip": {
@@ -2986,6 +3149,16 @@
        "!can.brightness"
       ]
      }
+    ],
+    "keywords": [
+     "lamp",
+     "bulb",
+     "dimmer",
+     "brightness",
+     "colour",
+     "color",
+     "lighting",
+     "ceiling light"
     ]
    },
    "variants": {
@@ -3789,7 +3962,15 @@
      "tint": false
     },
     "tap": null,
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "value",
+     "level",
+     "setting",
+     "slider",
+     "plus and minus",
+     "amount"
+    ]
    },
    "variants": {
     "row": {
@@ -4111,7 +4292,15 @@
       }
      ]
     },
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "page",
+     "go to",
+     "link",
+     "jump",
+     "menu",
+     "room"
+    ]
    },
    "variants": {
     "small": {
@@ -4548,7 +4737,17 @@
       }
      ]
     },
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "reading",
+     "status",
+     "temperature",
+     "humidity",
+     "battery",
+     "power",
+     "state",
+     "meter"
+    ]
    },
    "variants": {
     "chip": {
@@ -4967,7 +5166,17 @@
      "tint": false
     },
     "tap": null,
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "scenes",
+     "mood",
+     "preset",
+     "movie",
+     "dinner",
+     "night",
+     "script",
+     "buttons"
+    ]
    },
    "variants": {
     "wide": {
@@ -5333,7 +5542,15 @@
      "tint": false
     },
     "tap": null,
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "screen",
+     "display",
+     "backlight",
+     "brightness",
+     "dim",
+     "tablet"
+    ]
    },
    "variants": {
     "row": {
@@ -5603,7 +5820,16 @@
      "tint": false
     },
     "tap": null,
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "dropdown",
+     "list",
+     "choice",
+     "mode",
+     "programme",
+     "option",
+     "pick"
+    ]
    },
    "variants": {
     "wide": {
@@ -5909,7 +6135,16 @@
       }
      ]
     },
-    "notes": []
+    "notes": [],
+    "keywords": [
+     "toggle",
+     "plug",
+     "socket",
+     "on and off",
+     "power",
+     "outlet",
+     "fan"
+    ]
    },
    "variants": {
     "chip": {

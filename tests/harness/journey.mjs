@@ -240,8 +240,23 @@ window.__j = {
     return { error: selector + " is covered by " + this.describe(hit) + " at " + x + "," + y };
   },
   // "" when the selected card on the tablet picture is on screen and nothing
-  // covers its centre, else what is wrong.
+  // covers its centre, else what is wrong. While the phone layout's edit
+  // mode is open the page behind it is covered: then the card is looked for
+  // in the edit mode's strip of the picture, wholly inside it.
   selectedCardProblem() {
+    if (this.find('[data-test="side"][data-mode="edit"]')) {
+      const strip = this.find('[data-test="edit-preview"]');
+      const mark = strip && this.all("[data-selected]", strip).find((node) => this.visible(node));
+      if (!mark) return "no card is selected in the edit mode's picture";
+      const box = strip.getBoundingClientRect();
+      const rect = mark.getBoundingClientRect();
+      if (rect.left < box.left - 0.5 || rect.top < box.top - 0.5 || rect.right > box.right + 0.5 || rect.bottom > box.bottom + 0.5) {
+        return "the selected card is not wholly inside the edit mode's picture";
+      }
+      if (rect.bottom > innerHeight || rect.top < 0) return "the edit mode's picture is off screen";
+      const top = this.at(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
+      return this.inside(strip, top) ? "" : "the selected card is covered by " + this.describe(top);
+    }
     const hit = this.find('[data-test="hit"][aria-pressed="true"]');
     if (!hit) return "no card is selected on the tablet picture";
     const rect = hit.getBoundingClientRect();
@@ -761,6 +776,7 @@ export class Run {
   }
 
   async clearSelection() {
+    await leaveEditMode(this);
     if (await this.count('[data-test="close-panel"]')) {
       await this.click('[data-test="close-panel"]');
     } else if (await this.count('[data-test="hit"][aria-pressed="true"]')) {
@@ -775,8 +791,34 @@ export class Run {
   }
 }
 
-function step(n, name, run, { desktopOnly = false } = {}) {
-  return { n, name, run, desktopOnly };
+function step(n, name, run, { desktopOnly = false, phoneOnly = false } = {}) {
+  return { n, name, run, desktopOnly, phoneOnly };
+}
+
+// Whether the phone layout's edit mode (the layer with a card's form) is open.
+function inEditMode(r) {
+  return r.count('[data-test="side"][data-mode="edit"]');
+}
+
+// Closes the phone layout's edit mode with Done, as a person would before
+// pressing something under it.
+async function leaveEditMode(r) {
+  if (await inEditMode(r)) {
+    await r.click('[data-test="close-panel"]');
+    await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode to close");
+  }
+}
+
+// Shows every page notice: "+N more" when it shows and is closed. On a phone
+// every notice shows already.
+async function openNotices(r) {
+  if (await r.count('[data-test="notices-more"][aria-expanded="false"]')) {
+    await r.click('[data-test="notices-more"]');
+    await r.waitFor(`__j.find('[data-test="notices-more"][aria-expanded="true"]')`, "every page notice to show");
+    // The pointer leaves the notices, so no button there is left hovered.
+    await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: r.setup.height - 1 });
+    await sleep(200);
+  }
 }
 
 // The stand-in tablets of mock-hass.js ("three", "no-engine", "new" and
@@ -968,6 +1010,21 @@ const DIALS_CONFIG = twoPages(tabCards(5, "apollo/thermostat", "climate.hall"));
 // harness server's own (FIVE_GRAPHS).
 const GRAPHS_CONFIG = twoPages(tabCards(1, "me/five-graphs", "sensor.energy"));
 
+// One page that uses the whole screen with a full row of lights and more.
+const ROW_CONFIG = {
+  apollo_tab: { version: 1, theme: "midnight" },
+  views: [
+    {
+      type: "sections",
+      title: "Home",
+      path: "home",
+      icon: "mdi:home",
+      max_columns: 3,
+      sections: [{ type: "grid", column_span: 3, cards: tabCards(6, "apollo/light-tile", "light.kitchen") }],
+    },
+  ],
+};
+
 // So many cards that the page needs two screens; the last of five dials is
 // left out on the second screen.
 const SPILL_CONFIG = twoPages([
@@ -1022,9 +1079,8 @@ export async function checkTextContrast(r, selectors, timeout = 3000) {
 // Nothing is wider than the screen the set-up asked for. The window's own
 // width is no measure on a phone: with mobile emulation it grows with
 // content that is too wide, so the page and the window are both compared
-// with the set-up's width.
-export async function checkNoSidewaysScroll(r) {
-  const limit = r.setup.width;
+// with the set-up's width, or with the width a step set for itself.
+export async function checkNoSidewaysScroll(r, limit = r.setup.width) {
   const widths = await r.eval(`({
     page: document.documentElement.scrollWidth,
     body: document.body.scrollWidth,
@@ -1081,9 +1137,11 @@ async function openSample(r, params = {}) {
   await r.waitFor(`__j.count('[data-test="hit"]') > 3`, "cards on the canvas");
 }
 
-// Chooses a card in the list. On a phone the open card sheet is closed
-// first, as a person would, since it covers the list.
+// Chooses a card in the list. On a phone the edit mode is closed first, as
+// a person would, since it covers the list; on a wide screen the list shows
+// only while no card is selected.
 async function selectRow(r, key) {
+  await leaveEditMode(r);
   if (await r.count('[data-test="hit"][aria-pressed="true"]')) {
     await r.clearSelection();
   }
@@ -1099,7 +1157,10 @@ async function expectSelected(r, name, key, when) {
   while (Date.now() < end) {
     last = await r.eval(`(() => {
       const selected = __j.designer()._selected;
-      const row = __j.find('[data-test="list-row"][aria-current="true"]');
+      // While a card is selected the list is not on screen (its form is in
+      // its place), so its row is read from the list itself.
+      const list = __j.designer()._els.list;
+      const row = list && list.querySelector('[data-test="list-row"][aria-current="true"]');
       return {
         selected: selected ? selected.join(".") : null,
         row: row ? row.dataset.source : null,
@@ -1276,6 +1337,86 @@ async function keepChange(r, { offline }) {
   return original;
 }
 
+// Page-side checks of the panel's visual system (steps 111 to 118). The
+// tablet picture and the example cards in the picker are left out: they are
+// drawn as the tablet draws them.
+const UI = `window.__ui = {
+  inPicture(node) {
+    for (let at = node; at && at.nodeType === 1; at = __j.up(at)) {
+      if (
+        at.classList.contains("page-host") ||
+        at.classList.contains("tile-preview") ||
+        at.classList.contains("tablet-pic") ||
+        at.localName === "apollo-tab-card"
+      ) {
+        return true;
+      }
+    }
+    return false;
+  },
+  ownText(node) {
+    return [...node.childNodes].some((child) => child.nodeType === 3 && child.textContent.trim());
+  },
+  // Home Assistant's own sidebar button, drawn by Home Assistant.
+  inMenuButton(node) {
+    for (let at = node; at && at.nodeType === 1; at = __j.up(at)) {
+      if (at.localName === "ha-menu-button") return true;
+    }
+    return false;
+  },
+  // [element, font size] of everything with words of its own.
+  textSizes() {
+    return __j.all("*")
+      .filter((node) => __j.visible(node) && !this.inPicture(node) && !this.inMenuButton(node) && this.ownText(node))
+      .filter((node) => !["STYLE", "SCRIPT", "OPTION", "TITLE"].includes(node.tagName))
+      .map((node) => [__j.describe(node) + " " + node.textContent.trim().slice(0, 24), parseFloat(getComputedStyle(node).fontSize)]);
+  },
+  // Everything that can be pressed, with its height. A switch is measured
+  // by its row, which takes the press; a link inside a sentence is a line
+  // high, as the words are, and is left out.
+  controls() {
+    const found = [];
+    for (const node of __j.all("button, a, input, select, textarea, label.check")) {
+      if (!__j.visible(node) || this.inPicture(node) || node.matches(".hit")) continue;
+      if (node.matches("input[type=checkbox], input[type=radio]")) continue;
+      if (node.matches("a:not(.button-link)") && getComputedStyle(node).display === "inline") continue;
+      let kind = "other";
+      if (node.matches(".tab")) kind = "tab";
+      else if (node.matches(".list-row, .entity-option, .tile")) kind = "row";
+      else if (node.matches("select, textarea, input:not([type=range]):not([type=color])")) kind = "field";
+      else if (node.matches("button, a.button-link")) kind = "plain";
+      const rect = node.getBoundingClientRect();
+      found.push({ kind, test: node.dataset.test || null, what: __j.describe(node),
+        height: Math.round(rect.height * 10) / 10, minHeight: getComputedStyle(node).minHeight });
+    }
+    return found;
+  },
+  // The filled buttons on screen, by their data-test.
+  filled() {
+    return __j.all("button.primary").filter((node) => __j.visible(node) && !this.inPicture(node))
+      .map((node) => node.dataset.test || __j.describe(node));
+  },
+  // What in a bar cannot be read: words under 4.5:1, icons under 3:1.
+  barProblems(selector) {
+    const problems = [];
+    for (const bar of __j.all(selector).filter((node) => __j.visible(node))) {
+      for (const node of [bar, ...bar.querySelectorAll("*")]) {
+        if (!__j.visible(node) || node.closest("button:disabled")) continue;
+        if (node.localName === "ha-icon") {
+          // The stand-in icon fills itself with its colour, so it is
+          // measured against what is behind it.
+          const ratio = __j.contrast(__j.paint(node, __j.rgba(getComputedStyle(node).color)), __j.backdrop(__j.up(node)));
+          if (ratio < 3) problems.push([__j.describe(node), ratio]);
+        } else if (this.ownText(node)) {
+          const ratio = __j.textContrast(node);
+          if (ratio < 4.5) problems.push([__j.describe(node), node.textContent.trim().slice(0, 30), ratio]);
+        }
+      }
+    }
+    return problems;
+  },
+}; true`;
+
 // Steps that share state are in one chain; a failed step skips the rest of
 // its chain, since they would only fail for the same reason.
 function chains(realConfig) {
@@ -1406,6 +1547,7 @@ function chains(realConfig) {
       return r.shot("07-card-styled");
     }),
     step("08", "page-added", async (r) => {
+      await leaveEditMode(r);
       await r.click('[data-test="add-page"]');
       await r.waitFor(`__j.active()?.dataset?.test === "page-name"`, "the page name field to get focus");
       const selected = await r.eval(`(() => { const input = __j.active(); return input.selectionStart === 0 && input.selectionEnd === input.value.length && input.value.length > 0; })()`);
@@ -1452,7 +1594,17 @@ function chains(realConfig) {
       return null;
     }),
     step("11", "undo-toast", async (r) => {
-      await r.click('[data-test="hit"]');
+      if (r.setup.device === "phone") {
+        // On a phone a press opens the edit mode over the picture, so the
+        // card is reached from the keyboard with the edit mode closed.
+        await leaveEditMode(r);
+        await r.click('[data-test="hit"]');
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]') && __j.find('[data-test="hit"][aria-pressed="true"]')`, "a press to open the edit mode");
+        await leaveEditMode(r);
+        await r.eval(`__j.find('[data-test="hit"]').focus(); true`);
+      } else {
+        await r.click('[data-test="hit"]');
+      }
       await r.waitFor(`__j.active()?.dataset?.test === "hit"`, "the card to have focus");
       await r.key("Delete");
       await r.waitFor(`__j.count('[data-test="hit"]') === 0`, "the card to be removed");
@@ -1505,6 +1657,8 @@ function chains(realConfig) {
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the heading on the canvas");
       await r.waitFor(`__j.find('[data-test="list-row"][data-shown="false"]')`, "the list to know what is shown");
+      // One page notice shows; the other two are behind "+2 more".
+      await openNotices(r);
       check((await r.count('[data-test="sidebar-notice"]')) === 1, "no sidebar notice");
       check((await r.count('[data-test="columns-notice"]')) === 1, "no columns notice");
       const row = await r.text('[data-test="list-row"][data-shown="false"]');
@@ -1559,6 +1713,7 @@ function chains(realConfig) {
       return shot;
     }),
     step("16", "hide-from-sidebar", async (r) => {
+      await openNotices(r);
       await r.click('[data-test="sidebar-hide"]');
       await r.waitFor(`!__j.find('[data-test="sidebar-notice"]')`, "the sidebar notice to go");
       const updates = await r.calls("lovelace/dashboards/update");
@@ -1567,6 +1722,7 @@ function chains(realConfig) {
       return null;
     }),
     step("17", "real-after", async (r) => {
+      await openNotices(r);
       await r.click('[data-test="use-whole-screen"]');
       await r.waitFor(
         `(() => { const sections = __apolloMockHass.getConfig("tab-1").views[0].sections;
@@ -1788,20 +1944,41 @@ function chains(realConfig) {
       await r.click('[data-test="close-panel"]');
       await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "the dashboard theme after Close");
 
-      await r.click(card);
-      await r.waitFor(`__j.find('${pressed}')`, "the card to be selected again");
-      await r.click(card);
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "the card to let go when pressed again");
+      if (r.setup.device === "desktop") {
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}')`, "the card to be selected again");
+        await r.click(card);
+        await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "the card to let go when pressed again");
 
-      await r.click(card);
-      await r.waitFor(`__j.find('${pressed}')`, "the card to be selected once more");
-      const point = await r.eval(`__j.emptyCanvasPoint()`);
-      check(point && !point.error, point?.error || "no free point on the picture");
-      await r.clickAt(point.x, point.y);
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "a press beside the cards to clear the selection");
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}')`, "the card to be selected once more");
+        const point = await r.eval(`__j.emptyCanvasPoint()`);
+        check(point && !point.error, point?.error || "no free point on the picture");
+        await r.clickAt(point.x, point.y);
+        await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "a press beside the cards to clear the selection");
+      } else {
+        // On a phone the card and the picture around it are under the edit
+        // mode: a press where the card is changes nothing, and Done and
+        // Escape are the ways out.
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}') && __j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode");
+        const place = await r.eval(`(() => { const rect = __j.find('${card}').getBoundingClientRect();
+          return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`);
+        const before = stable(await r.draft());
+        await r.clickAt(place.x, place.y);
+        await sleep(300);
+        check((await r.count(pressed)) === 1 && (await inEditMode(r)), "a press at the card's place under the edit mode let the card go");
+        check(stable(await r.draft()) === before, "a press at the card's place under the edit mode changed the dashboard");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('${pressed}') && !__j.find('[data-test="side"][data-mode="edit"]') && __j.find('${theme}')`, "Escape to close the edit mode");
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}') && __j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode again");
+        await r.click('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('${pressed}') && !__j.find('[data-test="side"][data-mode="edit"]')`, "Done to close the edit mode");
+      }
 
       // On a phone the list is below the picture; choosing a card there
-      // brings the picture back into view above the card's sheet.
+      // opens the edit mode with the card in its strip of the picture.
       await r.click(`[data-test="list-row"][data-source="${source}"]`);
       await r.waitFor(`__j.find('${pressed}')`, "the card to be selected from the list");
       if (r.setup.device === "phone") {
@@ -1876,7 +2053,7 @@ function chains(realConfig) {
             `__j.all('[data-test="hit"]').map((hit) => hit.dataset.source).find((key) => !key.endsWith(".t"))`,
           );
           await r.click(`[data-test="list-row"][data-source="${source}"]`);
-          await r.waitFor(`__j.find(".side.sheet")`, "the card sheet");
+          await r.waitFor(`__j.find('.side.sheet[data-mode="edit"]')`, "the edit mode");
           const box = await r.eval(`(() => {
             const sheet = __j.find(".side.sheet").getBoundingClientRect();
             const panel = __apolloPanel.getBoundingClientRect();
@@ -1890,13 +2067,11 @@ function chains(realConfig) {
           check(box.at === "docked-sidebar", `the sidebar is covered by ${box.at}`);
           await checkSelectedCardVisible(r, "with the sidebar docked");
           const shot = await r.shot("31-mid-width-sheet");
+          await checkNoSidewaysScroll(r, 1100);
           // The sample's light tile is drawn on the page's second screen;
-          // choosing it in the list shows that screen.
-          await r.click('[data-test="list-row"][data-source="0.1.0"]');
-          await r.waitFor(
-            `__j.find('[data-test="hit"][data-source="0.1.0"][aria-pressed="true"]')`,
-            "the screen with the chosen card",
-          );
+          // choosing it in the list (the edit mode closed first) shows that
+          // screen.
+          await selectRow(r, "0.1.0");
           await checkSelectedCardVisible(r, "after choosing a card drawn on another screen");
           return shot;
         } finally {
@@ -1923,7 +2098,9 @@ function chains(realConfig) {
         const box = dialog.getBoundingClientRect();
         return {
           background: getComputedStyle(dialog).backgroundColor,
-          card: getComputedStyle(__j.find('[data-test="side"]')).backgroundColor,
+          // The inspector's surface; on a phone it is drawn only as the
+          // edit mode, so its colour is read from the element itself.
+          card: getComputedStyle(__j.designer().shadowRoot.querySelector('[data-test="side"]')).backgroundColor,
           heights: [a.height, b.height],
           gap: Math.max(b.left - a.right, b.top - a.bottom),
           fits: box.left >= 0 && box.right <= innerWidth,
@@ -1934,7 +2111,10 @@ function chains(realConfig) {
         };
       })()`);
       check(look.background === look.card, `the question is drawn in ${look.background}, not the card colour ${look.card}`);
-      check(look.heights.every((height) => height >= 44), `its buttons are ${look.heights.join(" and ")} px high`);
+      // 40 px with a mouse, 44 on a phone: the dialog is centred on the
+      // window, so the window's width decides.
+      const tall = r.setup.device === "phone" ? 44 : 40;
+      check(look.heights.every((height) => height >= tall), `its buttons are ${look.heights.join(" and ")} px high`);
       check(look.gap >= 8, `its buttons are ${look.gap} px apart`);
       check(look.fits, "the question does not fit the screen");
       check(look.focus === "confirm-cancel", `focus starts on ${look.focus}`);
@@ -1956,7 +2136,12 @@ function chains(realConfig) {
   const contrast = [
     step("27", "error-text-contrast", async (r) => {
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
-      await r.waitFor(`__j.find('[data-test="page-name"]') && __j.find('[data-test="sidebar-notice"]')`, "the editor");
+      await r.waitFor(
+        `__j.find('[data-test="page-name"]') && (__j.find('[data-test="sidebar-notice"]') || __j.find('[data-test="notices-more"]'))`,
+        "the editor",
+      );
+      await openNotices(r);
+      await r.waitFor(`__j.find('[data-test="sidebar-notice"]')`, "the sidebar notice");
       const edges = await r.eval(`['[data-test="page-name"]', '[data-test="dashboard-name"]', '[data-test="theme"]']
         .map((selector) => [selector, __j.edgeContrast(__j.find(selector))])`);
       for (const [selector, ratio] of edges) {
@@ -2545,15 +2730,25 @@ function chains(realConfig) {
           }
           return result;
         };
-        mock.addDashboard("rooms-1", "Rooms", ${JSON.stringify(LONG_NAMES_CONFIG)});
+        mock.addDashboard("rooms-1", "Rooms upstairs and downstairs, the guest wing, the garden house, the garage and the cellar under the old barn", ${JSON.stringify(LONG_NAMES_CONFIG)});
         await __apolloPanel._refresh();
         return true; })()`);
       await r.click('[data-test="dashboard-row"][data-url-path="rooms-1"] [data-test="edit"]');
       await r.waitFor(`__j.find('[data-test="list-row"][data-source="0.0.0"]') && __j.find('[data-test="theme"]')`, "the editor");
       const theme = await r.eval(`__j.find('[data-test="theme"]').selectedOptions[0].textContent`);
       check(theme === LONG_THEME, `the dashboard theme reads "${theme}"`);
+      // A long dashboard name gives way first in the top bar: it is cut,
+      // and the tablet line keeps its first words (polish decision 12).
+      const bar = await r.eval(`(() => { const d = __j.designer().shadowRoot; const title = d.querySelector(".ed-header h1");
+        const lines = d.querySelector(".ed-header .tablet-lines"); const block = d.querySelector(".title-block");
+        return { cut: title.scrollWidth > title.clientWidth, lines: lines && lines.textContent && lines.getClientRects().length
+          ? lines.getBoundingClientRect().width : null, block: block.getBoundingClientRect().width }; })()`);
+      check(bar.cut, `the long dashboard name is not cut in the top bar: ${JSON.stringify(bar)}`);
+      check(bar.lines === null || bar.lines >= Math.min(168, bar.block * 0.4) - 1, `the tablet line is squeezed by the long name: ${JSON.stringify(bar)}`);
       await r.eval(`__j.find('[data-test="theme"]').scrollIntoView({ block: "center" }); true`);
-      const settings = await r.eval(`__j.overflowProblems(__j.find('[data-test="side"]'))`);
+      // On a phone the settings are in the page column, in the idle holder.
+      const holder = r.setup.device === "phone" ? "idle" : "side";
+      const settings = await r.eval(`__j.overflowProblems(__j.find('[data-test="${holder}"]'))`);
       check(settings.length === 0, `page and dashboard settings: ${settings.join("; ")}`);
       const shot = await r.shot("50-long-names");
 
@@ -2980,22 +3175,33 @@ function chains(realConfig) {
             height: innerHeight, ring: getComputedStyle(element).outlineStyle }; })()`);
       await openSample(r);
       await selectRow(r, "0.1.0");
-      await r.click('[data-test="page-tab"][aria-selected="true"]');
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('[data-test="page-name"]')`, "the page's settings");
-      const mouse = await where();
-      check(mouse.test === "settings-heading" && mouse.text === "This page", `focus went to ${JSON.stringify(mouse)}`);
-      check(mouse.top >= -1 && mouse.bottom <= mouse.height + 1, `the page's settings are off screen (${mouse.top}..${mouse.bottom})`);
-      const name = await r.eval(`__j.find('[data-test="page-name"]').value`);
-      check(name === "Home", `the page name field holds "${name}"`);
-      const shot = await r.shot("62-page-tab-to-settings");
+      let shot;
+      if (r.setup.device === "desktop") {
+        await r.click('[data-test="page-tab"][aria-selected="true"]');
+        await r.waitFor(`!__j.find('${pressed}') && __j.find('[data-test="page-name"]')`, "the page's settings");
+        const mouse = await where();
+        check(mouse.test === "settings-heading" && mouse.text === "This page", `focus went to ${JSON.stringify(mouse)}`);
+        check(mouse.top >= -1 && mouse.bottom <= mouse.height + 1, `the page's settings are off screen (${mouse.top}..${mouse.bottom})`);
+        const name = await r.eval(`__j.find('[data-test="page-name"]').value`);
+        check(name === "Home", `the page name field holds "${name}"`);
+        shot = await r.shot("62-page-tab-to-settings");
 
-      // From the keyboard too, where the heading shows that it has focus.
-      await selectRow(r, "0.1.0");
-      await r.eval(`__j.find('[data-test="page-tab"][aria-selected="true"]').focus(); true`);
-      await r.key("Enter");
-      await r.waitFor(`!__j.find('${pressed}') && __j.active()?.dataset?.test === "settings-heading"`, "Enter to show the settings");
-      const keyboard = await where();
-      check(keyboard.ring !== "none", "the settings heading shows no focus ring after Enter");
+        // From the keyboard too, where the heading shows that it has focus.
+        await selectRow(r, "0.1.0");
+        await r.eval(`__j.find('[data-test="page-tab"][aria-selected="true"]').focus(); true`);
+        await r.key("Enter");
+        await r.waitFor(`!__j.find('${pressed}') && __j.active()?.dataset?.test === "settings-heading"`, "Enter to show the settings");
+        const keyboard = await where();
+        check(keyboard.ring !== "none", "the settings heading shows no focus ring after Enter");
+      } else {
+        // On a phone the page strip is under the edit mode and takes no
+        // press or focus; Done is the way out.
+        const inert = await r.eval(`Boolean(__j.find('[data-test="page-tab"][aria-selected="true"]').closest("[inert]"))`);
+        check(inert, "the page's tab can be reached under the edit mode");
+        shot = await r.shot("62-page-tab-to-settings");
+        await r.click('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('${pressed}') && !__j.find('[data-test="side"][data-mode="edit"]')`, "Done to close the edit mode");
+      }
       // Without a selected card a press on the page's own tab changes nothing.
       await r.eval(`__j.find('[data-test="page-tab"][aria-selected="true"]').focus(); true`);
       await r.key("Enter");
@@ -3258,6 +3464,50 @@ function chains(realConfig) {
     }
   }
 
+  // The toast is in its home (build plan 2.11): "stage", centred on the
+  // stage column with its bottom 16 px above the status strip (or the
+  // column's bottom); "fab", centred above the floating Add card; "edit",
+  // inside the edit mode, 16 px above its bottom.
+  async function checkToastHome(r, when, home) {
+    const places = await r.eval(`({
+      toast: ${edgesOf(`__j.find('[data-test="toast"]')`)},
+      main: ${edgesOf(`__j.designer().shadowRoot.querySelector(".main")`)},
+      strip: ${edgesOf(`__j.find(".status-strip")`)},
+      root: ${edgesOf(`__j.designer().shadowRoot.querySelector(".root")`)},
+      fab: ${edgesOf(`__j.find('.fab[data-test="add-card"]')`)},
+      edit: ${edgesOf(`__j.find('[data-test="side"][data-mode="edit"]')`)},
+      frame: ${edgesOf(`__j.designer().shadowRoot.querySelector(".device")`)},
+      height: innerHeight,
+      width: innerWidth,
+    })`);
+    const { toast } = places;
+    check(toast, `${when}: no toast`);
+    check(
+      toast.top >= 0 && toast.bottom <= places.height && toast.left >= 0 && toast.right <= places.width,
+      `${when}: the toast is not wholly on screen (${JSON.stringify(places)})`,
+    );
+    const middle = (box) => (box.left + box.right) / 2;
+    const near = (a, b) => Math.abs(a - b) <= 2;
+    let ok = false;
+    if (home === "stage") {
+      // 16 px above the status strip when that leaves it wholly on the grey
+      // under the tablet frame (8 px clear of it); else over the strip, 4 px
+      // above the column's bottom. Never across the frame's edge.
+      const bottom = places.strip ? places.strip.top : places.main.bottom;
+      const { frame, strip } = places;
+      const room = !strip || !frame || bottom - 16 - (toast.bottom - toast.top) >= frame.bottom + 8;
+      ok = near(middle(toast), middle(places.main)) && near(toast.bottom, room ? bottom - 16 : strip.bottom - 4);
+      check(!frame || toast.top >= frame.bottom || toast.bottom <= frame.top,
+        `${when}: the toast lies across the tablet frame's edge: ${JSON.stringify(places)}`);
+    } else if (home === "fab") {
+      ok = Boolean(places.fab) && near(middle(toast), middle(places.root)) && near(toast.bottom, places.fab.top - 16);
+    } else {
+      ok = Boolean(places.edit) && near(toast.bottom, places.edit.bottom - 16) &&
+        toast.left >= places.edit.left && toast.right <= places.edit.right && toast.top >= places.edit.top;
+    }
+    check(ok, `${when}: the toast is not in its place (${home}): ${JSON.stringify(places)}`);
+  }
+
   // Keyboard focus is always shown, legible words, Home's numbers, the
   // first screen of the old dashboard, plain names and toasts that keep out
   // of the way.
@@ -3329,11 +3579,33 @@ function chains(realConfig) {
       check(first.hint.bottom <= first.height, `the hint is below the first screen (${first.hint.bottom} > ${first.height})`);
       const seen = Math.min(first.stage.bottom, first.height) - first.stage.top;
       check(seen >= (first.stage.bottom - first.stage.top) / 2, `less than half the picture is on the first screen (${JSON.stringify(first)})`);
+      // One notice line shows above the picture, the other two behind "+2
+      // more"; the picture is fitted to what is left each time.
+      const pictureWidth = (width, when) =>
+        r.waitFor(
+          `Math.abs(__j.find('[data-test="canvas"]').getBoundingClientRect().width - ${width}) <= 1`,
+          `the picture to be ${width} px wide ${when}`,
+          3000,
+        );
+      if (r.setup.device === "desktop") {
+        check((await r.count(".page-notice")) === 1, `${await r.count(".page-notice")} notice lines show`);
+        const more = await r.text('[data-test="notices-more"]');
+        check(more === "+2 more", `the notices button reads "${more}"`);
+        await pictureWidth(864, "with one notice line");
+        await openNotices(r);
+        check((await r.text('[data-test="notices-more"]')) === "Show fewer", "the notices button does not read Show fewer");
+        await pictureWidth(723, "with all three notices");
+      }
       for (const choice of ["sidebar-hide", "sidebar-keep", "use-whole-screen"]) {
         check((await r.count(`[data-test="${choice}"]`)) === 1, `the choice ${choice} is gone`);
       }
       await checkTextContrast(r, ['[data-test="not-shown-hint"] span', '[data-test="not-shown-go"]']);
       const shot = await r.screen("71-first-screen-hint");
+      if (r.setup.device === "desktop") {
+        await r.click('[data-test="notices-more"]');
+        await r.waitFor(`__j.find('[data-test="notices-more"][aria-expanded="false"]')`, "Show fewer to close the list");
+        await pictureWidth(864, "after Show fewer");
+      }
       await r.click('[data-test="not-shown-go"]');
       await sleep(200);
       const row = await r.eval(`(() => { const element = __j.active(); const rect = element.getBoundingClientRect();
@@ -3385,46 +3657,35 @@ function chains(realConfig) {
       await checkTextContrast(r, ['[data-test="accent-helper"]']);
       return r.screen("73-settings-words");
     }),
-    // A toast keeps clear of the card sheet, the control with focus and the
-    // selected card, and moves out of the way when they come under it.
+    // A toast has one home in each layout (build plan 2.11): over the stage
+    // column above the status strip, above the floating Add card on a
+    // phone, and inside the phone's edit mode while that is open.
     step("74", "toast-placement", async (r) => {
+      const phone = r.setup.device === "phone";
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.waitFor(`__j.find('[data-test="move-later"]')`, "the card form");
       await r.tap('[data-test="move-later"]');
       await r.waitFor(`__j.find('[data-test="toast"]')`, "the toast");
       await sleep(300);
-      await checkToastClear(r, "after Move later");
+      await checkToastHome(r, "after Move later", phone ? "edit" : "stage");
       // Typing into the form while the toast shows.
       await r.tap('[data-test="form-name"]');
       await r.type("Hall");
       await sleep(200);
-      await checkToastClear(r, "while typing the card's name");
+      await checkToastHome(r, "while typing the card's name", phone ? "edit" : "stage");
       const shot = await r.screen("74-toast-placement");
       await r.clearSelection();
       // A card removed from the keyboard: focus goes to the next card in the
-      // list. Scrolled to the bottom of the screen, where a toast starts, it
-      // is still not covered.
+      // list, and the toast is in the home of the layout without the form.
       await r.eval(`__j.find('[data-test="list-row"][data-source="0.1.1"]').focus(); true`);
       await r.key("Delete");
       await r.waitFor(`__j.find('[data-test="toast-undo"]')`, "the removal's toast");
       check((await focused(r)) === "list-row", `after removing, focus went to ${await focused(r)}`);
-      await r.eval(`(() => { const rect = __j.active().getBoundingClientRect(); scrollBy(0, rect.bottom - (innerHeight - 20)); return true; })()`);
       await sleep(400);
-      await checkToastClear(r, "with the focused card at the bottom of the screen");
+      await checkToastHome(r, "after removing a card from the list", phone ? "fab" : "stage");
       await r.screen("74-toast-out-of-the-way");
-      if (r.setup.mobile) {
-        // Zoomed in, only the top half of the screen is visible, as with the
-        // phone's keyboard open: the toast stays inside that part.
-        await r.eval(`(() => { scrollBy(0, __j.active().getBoundingClientRect().top - 150); return true; })()`);
-        await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
-        try {
-          await sleep(400);
-          await checkToastClear(r, "with only part of the page visible");
-        } finally {
-          await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
-        }
-      } else {
+      if (!phone) {
         await checkToastBesideSidebar(r);
       }
       return shot;
@@ -3479,6 +3740,7 @@ function chains(realConfig) {
         `beside the docked sidebar the toast spans ${Math.round(toast.left)}..${Math.round(toast.right)}, ` +
           `the panel ${Math.round(panel.left)}..${Math.round(panel.right)}`,
       );
+      await checkToastHome(r, "beside the docked sidebar", "fab");
       await r.screen("74-toast-beside-sidebar");
     } finally {
       await r.viewport();
@@ -3532,31 +3794,45 @@ function chains(realConfig) {
   ];
 
   // Undo in a toast puts focus on the card that came back, in view, rather
-  // than on the header's Redo button far above.
+  // than on the header's Redo button far above: on its row after a removal
+  // in the list, on the picture after a removal there (polish decision 13),
+  // where on a phone the page column stays put (decision 10).
   const undoFocus = [
     step("78", "focus-after-toast-undo", async (r) => {
       const count = (section) => `__j.designer()._history.present.views[0].sections[${section}].cards.length`;
+      const pictureTop = `__j.find('[data-test="canvas"]').getBoundingClientRect().top`;
       // Removes the card at 0.<section>.1 with Delete on `where` (a list row
       // or the card on the tablet picture), then presses the toast's Undo.
+      // Focus goes back to the same kind of control for the card.
       const removeThenUndo = async (where, section, when) => {
         const key = `0.${section}.1`;
         const before = await r.eval(count(section));
         await r.waitFor(`__j.find('[data-test="${where}"][data-source="${key}"]')`, `card ${key} ${when}`);
         await r.eval(`__j.find('[data-test="${where}"][data-source="${key}"]').focus(); true`);
+        const top = await r.eval(pictureTop);
         await r.key("Delete");
         await r.waitFor(`${count(section)} === ${before - 1}`, `the card to be removed ${when}`);
         await r.waitFor(`__j.find('[data-test="toast-undo"]')`, `the toast ${when}`);
         await r.eval(`__j.find('[data-test="toast-undo"]').focus(); true`);
         await r.key("Enter");
         await r.waitFor(`${count(section)} === ${before}`, `Undo to bring the card back ${when}`);
+        // The picture is drawn again with the card once the preview is in.
+        if (where === "hit") {
+          await r.waitSaved(when);
+          await sleep(500);
+        }
         const found = await r.eval(`(() => { const element = __j.active();
           if (!element || element === document.body) return null;
           const rect = element.getBoundingClientRect();
           return { test: element.dataset.test, source: element.dataset.source, top: rect.top, bottom: rect.bottom,
             height: innerHeight, visible: element.matches(":focus-visible"), ring: getComputedStyle(element).outlineStyle }; })()`);
-        check(found?.test === "list-row" && found.source === key, `${when}, Undo in the toast moved focus to ${JSON.stringify(found)}`);
-        check(found.top >= 0 && found.bottom <= found.height, `${when}, the card's row is off screen: ${JSON.stringify(found)}`);
-        check(found.visible && found.ring !== "none", `${when}, the card's row shows no focus ring: ${JSON.stringify(found)}`);
+        check(found?.test === where && found.source === key, `${when}, Undo in the toast moved focus to ${JSON.stringify(found)}`);
+        check(found.top >= 0 && found.bottom <= found.height, `${when}, the card is off screen: ${JSON.stringify(found)}`);
+        check(found.visible && found.ring !== "none", `${when}, the card shows no focus ring: ${JSON.stringify(found)}`);
+        if (where === "hit") {
+          const after = await r.eval(pictureTop);
+          check(Math.abs(after - top) <= 1, `${when}, Undo moved the picture's top from ${top} to ${after}`);
+        }
       };
       await openSample(r);
       // A light in the list, then a graph on the tablet picture's first screen.
@@ -3607,7 +3883,12 @@ function chains(realConfig) {
       // The new card is selected; the toast keeps clear of it, of its row
       // and of the card sheet.
       await sleep(400);
-      await checkToastClear(r, "after adding a card for one of several devices");
+      if (r.setup.device === "phone") {
+        // The new card's form is the edit mode, which holds the toast.
+        await checkToastHome(r, "after adding a card for one of several devices", "edit");
+      } else {
+        await checkToastClear(r, "after adding a card for one of several devices");
+      }
       const shot = await r.shot("79-card-for-several-devices");
 
       const second = await pick("apollo/fan");
@@ -3645,6 +3926,8 @@ function chains(realConfig) {
       await selectRow(r, "0.1.1");
       await r.click('[data-test="remove-card"]');
       await r.waitFor(`__j.find('[data-test="toast-undo"]')`, "the removal's toast");
+      await sleep(300);
+      await checkToastHome(r, "after Remove in the card's form", r.setup.device === "phone" ? "fab" : "stage");
       await selectRow(r, "0.1.0");
       check((await r.count('[data-test="toast-undo"]')) === 1, "choosing another card took the toast away");
       await r.click('[data-test="taller"]');
@@ -3702,7 +3985,10 @@ function chains(realConfig) {
     step("83", "focus-clear-of-sheet", async (r) => {
       // Tabs through every control from Back round to Back: the centre of
       // each one is on screen and not under anything else.
-      const walk = async (when) => {
+      // With the edit mode open (on a phone, or beside the docked sidebar) the
+      // page behind is inert: the walk goes through the top bar and the
+      // edit mode only.
+      const walk = async (when, least = 21) => {
         await r.eval(`scrollTo(0, 0); __j.find('[data-test="back"]').focus(); true`);
         let stops = 0;
         for (let press = 0; press < 160; press += 1) {
@@ -3728,11 +4014,11 @@ function chains(realConfig) {
           check(stop.on, `${when}: ${stop.name} has focus off screen at ${stop.x},${stop.y}`);
           check(!stop.covered, `${when}: ${stop.name} has focus under ${stop.by} at ${stop.x},${stop.y}`);
         }
-        check(stops > 20, `${when}: only ${stops} controls took focus`);
+        check(stops >= least, `${when}: only ${stops} controls took focus`);
       };
       await openSample(r);
       await selectRow(r, "0.1.0");
-      await walk("with a card selected");
+      await walk("with a card selected", (await inEditMode(r)) ? 12 : 21);
       const shot = await r.screen("83-focus-clear-of-sheet");
       if (!r.setup.mobile) {
         // Beside Home Assistant's docked sidebar the panel uses the
@@ -3748,7 +4034,7 @@ function chains(realConfig) {
           await dockSidebar(r);
           await r.waitFor(`__j.designer().getBoundingClientRect().left === 256 && __j.find('.root.compact')`, "the one-column layout");
           await selectRow(r, "0.1.0");
-          await walk("beside the docked sidebar with a card selected");
+          await walk("beside the docked sidebar with a card selected", (await inEditMode(r)) ? 12 : 21);
           await r.screen("83-focus-clear-of-sheet-docked");
         } finally {
           await r.viewport();
@@ -3759,9 +4045,30 @@ function chains(realConfig) {
     step("84", "whole-screen-by-keyboard", async (r) => {
       for (const selected of [null, "0.1.1"]) {
         await openSample(r);
+        if (selected && r.setup.device === "phone") {
+          // On a phone the notice is under the edit mode. The card's form
+          // has the same button once the card is as wide as the columns
+          // allow, so it is pressed there, with the card still selected.
+          await selectRow(r, selected);
+          for (let press = 0; press < 6 && !(await r.count('[data-test="card-whole-screen"]')); press += 1) {
+            await r.tap('[data-test="wider"]');
+            await sleep(200);
+          }
+          check((await r.count('[data-test="card-whole-screen"]')) === 1, "the card's form offers no Use the whole screen");
+          await r.eval(`__j.find('[data-test="card-whole-screen"]').focus(); true`);
+          await r.key("Enter");
+          await r.waitFor(`!__j.find('[data-test="card-whole-screen"]') && !__j.find('[data-test="use-whole-screen"]')`, "the advice to go from the card's form");
+          await sleep(300);
+          const now = await focused(r);
+          check(now, "after Use the whole screen in the card's form, focus fell to the page");
+          check(!REMOVING.includes(now), `after Use the whole screen in the card's form, focus went to ${now}`);
+          check(await r.count('[data-test="side"][data-mode="edit"]'), "after Use the whole screen in the card's form the card is no longer selected");
+          continue;
+        }
         if (selected) {
           await selectRow(r, selected);
         }
+        await openNotices(r);
         await r.eval(`__j.find('[data-test="use-whole-screen"]').focus(); true`);
         await r.key("Enter");
         await r.waitFor(`!__j.find('[data-test="use-whole-screen"]')`, "the advice to go");
@@ -3851,6 +4158,7 @@ function chains(realConfig) {
         saved.views[0].sections[0].cards.length === 4 && saved.views[1].sections[0].cards.length === 1,
         `after the move the pages hold ${saved.views[0].sections[0].cards.length} and ${saved.views[1].sections[0].cards.length} dials`,
       );
+      await leaveEditMode(r);
       await r.click('[data-test="page-tab"][data-view="0"]');
       await r.waitFor(
         `__j.count('[data-test="list-row"][data-shown="true"]') === 4 && !__j.find('[data-test="list-row"][data-shown="false"]')`,
@@ -3861,6 +4169,7 @@ function chains(realConfig) {
       await r.click('[data-test="undo"]');
       await r.waitFor(`${onPage(0)} === 5 && ${onPage(1)} === 0`, "Undo to bring the dial back");
       await r.waitFor(`__j.find('[data-test="row-move"]')`, "the dial left out again");
+      await leaveEditMode(r);
       await r.click('[data-test="row-move"]');
       await r.waitFor(`__j.active()?.dataset?.test === "move-page"`, "focus on Move to page again");
       await r.eval(`(() => { const field = __j.find('[data-test="move-page"]'); field.value = "new";
@@ -3891,7 +4200,7 @@ function chains(realConfig) {
       await checkSelectedCardVisible(r, "after choosing the dial left out");
       return r.shot("87-left-out-card-screen");
     }),
-    step("111", "left-out-only-card", async (r) => {
+    step("201", "left-out-only-card", async (r) => {
       const hit = '[data-test="hit"][data-source="0.0.0"]';
       await r.open({ seed: "none", graphs: "1" }, `${home} && __j.find('[data-test="create"]')`);
       await r.eval(`__apolloMockHass.addDashboard("graphs-1", "Graphs", ${JSON.stringify(GRAPHS_CONFIG)});
@@ -3918,7 +4227,7 @@ function chains(realConfig) {
       await r.click(hit);
       await r.waitFor(`__j.find('${hit}[aria-pressed="true"]')`, "the card left out to be chosen");
       await checkSelectedCardVisible(r, "after choosing the only card, which is left out");
-      const shot = await r.shot("111-left-out-only-card");
+      const shot = await r.shot("201-left-out-only-card");
       // The second page has no card: that one is empty.
       await r.clearSelection();
       await r.click('[data-test="page-tab"][data-view="1"]');
@@ -4120,7 +4429,9 @@ function chains(realConfig) {
         (await r.text('[data-test="shown-on"] .helper')) === (await uiString(r, "editor.on_tablet_helper")),
         "no helper line under the tablets",
       );
-      const problems = await r.eval(`__j.overflowProblems(__j.find('[data-test="side"]'))`);
+      // On a phone the settings are in the page column, in the idle holder.
+      const holder = r.setup.device === "phone" ? "idle" : "side";
+      const problems = await r.eval(`__j.overflowProblems(__j.find('[data-test="${holder}"]'))`);
       check(problems.length === 0, `the settings: ${problems.join("; ")}`);
       await checkTextContrast(r, [
         `[data-test="show-here"][data-mac="${HALLWAY}"]`,
@@ -4431,7 +4742,7 @@ function chains(realConfig) {
   // open keeps trying by itself and comes back without a reload.
   const SUBSCRIBED = (type) => `__apolloMockHass.subscriptions(${JSON.stringify(type)})`;
   const starting = [
-    step("112", "restart-with-cards-open", async (r) => {
+    step("202", "restart-with-cards-open", async (r) => {
       const card = `document.querySelector("apollo-tab-card").shadowRoot`;
       const status = `(${card}.querySelector(".status")?.textContent ?? null)`;
       const alerts = `__j.count('[data-test="tablets"] .alert')`;
@@ -4469,7 +4780,7 @@ function chains(realConfig) {
         const open = await r.eval(SUBSCRIBED(`apollo_tab/${type}/subscribe`));
         check(open === 0, `${open} ${type} subscriptions are open while Home Assistant does not know them`);
       }
-      const shot = await r.shot("112-restart-with-cards-open");
+      const shot = await r.shot("202-restart-with-cards-open");
 
       // The integration is set up. Nobody presses anything.
       await r.eval(`__apolloMockHass.unknownCommands(null); true`);
@@ -4479,10 +4790,10 @@ function chains(realConfig) {
       check((await r.eval(alerts)) === 0, "Home shows an error after Home Assistant has started");
       check((await r.eval(SUBSCRIBED("apollo_tab/card/subscribe"))) === 1, "the card is not subscribed again");
       check((await r.eval(SUBSCRIBED("apollo_tab/tablets/subscribe"))) === 1, "the tablets are not subscribed again once");
-      await r.shot("112-restart-over");
+      await r.shot("202-restart-over");
       return shot;
     }),
-    step("113", "tablets-known-later", async (r) => {
+    step("203", "tablets-known-later", async (r) => {
       const homeAlert = '[data-test="tablets"] .alert';
       const editorAlert = '[data-test="shown-on"] .alert';
       await r.open(threeTablets, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
@@ -4495,7 +4806,7 @@ function chains(realConfig) {
       await r.eval(`__apolloMockHass.unknownCommands("apollo_tab/tablet"); __apolloOpenPanel(""); true`);
       await waitText(r, homeAlert, failed, "Home to say the tablets cannot be loaded");
       check((await r.count('[data-test="tablet-row"]')) === 0, "Home lists tablets it could not load");
-      const shot = await r.shot("113-tablets-not-known");
+      const shot = await r.shot("203-tablets-not-known");
       // The editor says the same under "Shown on", and draws no lines.
       await r.eval(`__apolloOpenPanel("/edit/tab-1"); true`);
       await r.waitFor(editorReady, "the editor");
@@ -4511,7 +4822,7 @@ function chains(realConfig) {
       await r.waitFor(`${home} && __j.count('[data-test="tablet-row"]') === 3 && !__j.find('${homeAlert}')`, "Home to list the tablets");
       await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
       check((await r.eval(SUBSCRIBED("apollo_tab/tablets/subscribe"))) === 1, "the tablets are not subscribed once");
-      await r.shot("113-tablets-known-later");
+      await r.shot("203-tablets-known-later");
       return shot;
     }),
   ];
@@ -4862,7 +5173,14 @@ function chains(realConfig) {
         if (!button) return { gone: true };
         return { late: performance.now() - __apolloPanel._turnOnMovedAt.get(${JSON.stringify(mac)}),
           settling: button.hasAttribute("data-settling"), aria: button.getAttribute("aria-disabled"),
-          opacity: getComputedStyle(button).opacity, disabled: button.disabled }; })()`;
+          opacity: getComputedStyle(button).opacity, disabled: button.disabled,
+          look: getComputedStyle(button).backgroundColor + " " + getComputedStyle(button).color }; })()`;
+      // How a disabled filled button looks in the panel: a button that waits
+      // looks the same, so a press it ignores is seen to do nothing.
+      const disabledLook = await r.eval(`(() => { const probe = document.createElement("button");
+        probe.className = "primary"; probe.disabled = true; __apolloPanel.shadowRoot.append(probe);
+        const style = getComputedStyle(probe); const look = style.backgroundColor + " " + style.color;
+        probe.remove(); return look; })()`);
       // One press of a real double click: the first has clickCount 1, the
       // second clickCount 2.
       const press = async ({ x, y }, clickCount) => {
@@ -4893,7 +5211,8 @@ function chains(realConfig) {
         `the second press came ${Math.round(pressed.late)} ms after the porch button moved, too late to tell`,
       );
       check(
-        pressed.settling && pressed.aria === "true" && pressed.opacity === "0.55" && pressed.disabled === false,
+        pressed.settling && pressed.aria === "true" && pressed.look === disabledLook && pressed.opacity === "1" &&
+          pressed.disabled === false,
         `while it ignores presses the porch button is ${JSON.stringify(pressed)}`,
       );
       // A press without the mouse at that moment is ignored too.
@@ -4914,7 +5233,7 @@ function chains(realConfig) {
       await sleep(TURN_ON_SETTLE_MS + 100);
       const settled = await r.eval(lookOf(PORCH));
       check(
-        !settled.settling && settled.aria === null && settled.opacity === "1",
+        !settled.settling && settled.aria === null && settled.opacity === "1" && settled.look !== disabledLook,
         `a moment later the porch button is ${JSON.stringify(settled)}`,
       );
       // A line that comes in the patio tablet's row, above it, moves the
@@ -4924,7 +5243,7 @@ function chains(realConfig) {
       await r.click(turnOn(PORCH));
       const pushed = await r.eval(lookOf(PORCH));
       check(
-        pushed.late < TURN_ON_SETTLE_MS && pushed.settling && pushed.aria === "true" && pushed.opacity === "0.55",
+        pushed.late < TURN_ON_SETTLE_MS && pushed.settling && pushed.aria === "true" && pushed.look === disabledLook,
         `right after it moved the porch button is ${JSON.stringify(pushed)}`,
       );
       await sleep(200);
@@ -5164,6 +5483,1001 @@ function chains(realConfig) {
     }),
   ];
 
+  // The panel's visual system (build plan, package 1): one set of text
+  // sizes, control heights, one filled button per screen, states that show,
+  // bars in the sidebar's colours, a picture that scales and stays left to
+  // right in a right-to-left Home Assistant.
+  const foundation = [
+    step("111", "tokens-and-type", async (r) => {
+      const sizes = async (where) => {
+        const wrong = await r.eval(`__ui.textSizes().filter(([, size]) => ![12, 14, 16, 20].includes(size))`);
+        check(wrong.length === 0, `${where}: text at other sizes: ${JSON.stringify(wrong.slice(0, 6))}`);
+      };
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.eval(UI);
+      await sizes("the start screen");
+      await r.waitFor(`!__j.animating(__j.find('[data-test="create"]'))`, "the create button to settle");
+      const body = await r.eval(`getComputedStyle(__apolloPanel).fontSize`);
+      check(body === "14px", `body text is ${body}`);
+      const create = await r.eval(`(() => { const style = getComputedStyle(__j.find('[data-test="create"]'));
+        return [style.backgroundColor, style.color]; })()`);
+      check(
+        create[0] === "rgb(0, 123, 159)" && create[1] === "rgb(255, 255, 255)",
+        `"Create a dashboard" is ${create.join(" on ")}`,
+      );
+
+      await openSample(r);
+      await r.eval(UI);
+      await selectRow(r, "0.1.0");
+      await sizes("the editor with a card selected");
+      await leaveEditMode(r);
+      await r.click('[data-test="add-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      await sizes("the picker");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+
+      // Another accent reaches the editor and the picker, which inherit the
+      // values the panel works out for its own host.
+      const setAccent = (value) =>
+        r.eval(`(() => { const root = document.documentElement;
+          if (${JSON.stringify(value)}) root.style.setProperty("--primary-color", ${JSON.stringify(value)});
+          else root.style.removeProperty("--primary-color");
+          __apolloMockHass.themes = { theme: "default", accent: ${JSON.stringify(value)} };
+          __apolloPanel.hass = __apolloMockHass; return true; })()`);
+      const look = (selector) =>
+        `(() => { const node = __j.find('${selector}'); if (!node) return null;
+          const style = getComputedStyle(node); return [style.backgroundColor, style.color]; })()`;
+      try {
+        await setAccent("#f5b547");
+        await r.waitFor(`${look('[data-test="add-card"]')}?.[0] === "rgb(245, 181, 71)"`, "Add card in the new accent");
+        const add = await r.eval(look('[data-test="add-card"]'));
+        check(add[1] === "rgb(17, 17, 17)", `"Add card" has ${add[1]} words on ${add[0]}`);
+        const accentText = await r.eval(`getComputedStyle(__apolloPanel).getPropertyValue("--tab-accent-text").trim()`);
+        // On a phone Add card was read with the edit mode closed; the card's
+        // form opens again for "Change".
+        await selectRow(r, "0.1.0");
+        const change = await r.eval(`(() => { const node = __j.find('.side [data-test="change-device"]');
+          return node && [getComputedStyle(node).color, node.classList.contains("text"),
+            getComputedStyle(__j.find('.side .side-title')).color]; })()`);
+        check(change && change[1], `"Change" is not a text button: ${JSON.stringify(change)}`);
+        check(change[0] === accentText && change[0] !== change[2], `"Change" is ${change[0]}, the accent as text is ${accentText}`);
+        await leaveEditMode(r);
+        await r.click('[data-test="add-card"]');
+        await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+        await r.click('[data-test="tile"][data-component="community/room-summary"]');
+        await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
+        // Read as it is once the card has its devices: enabled, with no
+        // fade in between.
+        const pick = await r.eval(`(() => { const node = __j.find('[data-test="pick-add"]');
+          node.style.transition = "none"; node.disabled = false; const style = getComputedStyle(node);
+          const result = [style.backgroundColor, style.color]; node.disabled = true; node.style.transition = "";
+          return result; })()`);
+        check(
+          pick[0] === "rgb(245, 181, 71)" && pick[1] === "rgb(17, 17, 17)",
+          `"Add" in the picker is ${pick.join(" on ")}`,
+        );
+        const shot = await r.shot("111-tokens-and-type");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+        return shot;
+      } finally {
+        await setAccent(null);
+      }
+    }),
+    step("112", "control-sizes", async (r) => {
+      const phone = r.setup.device === "phone";
+      const measure = async (where) => {
+        const found = await r.eval(`__ui.controls()`);
+        check(found.length > 0, `${where}: nothing to press`);
+        const problems = [];
+        for (const control of found) {
+          if (phone) {
+            if (control.height < 43.5) problems.push(control);
+            continue;
+          }
+          if (control.height < 31.5) problems.push(control);
+          if (control.kind === "plain" && (control.minHeight !== "40px" || control.height < 39.5)) problems.push(control);
+          if (control.kind === "field" && (control.minHeight !== "40px" || control.height < 39.5)) problems.push(control);
+          // Tabs are as high as "Add page" beside them (polish decision 3).
+          if (control.kind === "tab" && Math.abs(control.height - 40) > 0.5) problems.push(control);
+          if (control.kind === "row" && control.height <= 40) problems.push(control);
+        }
+        check(problems.length === 0, `${where}: ${JSON.stringify(problems.slice(0, 5))}`);
+      };
+      await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await r.eval(UI);
+      await measure("the start screen");
+      await openSample(r);
+      await r.eval(UI);
+      await selectRow(r, "0.1.0");
+      await measure("the editor with a card selected");
+      await leaveEditMode(r);
+      await r.click('[data-test="add-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      await measure("the picker");
+      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
+      await measure("the picker's device step");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+      await r.clearSelection();
+      await r.click('[data-test="page-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question");
+      const confirm = await r.eval(`__ui.controls().filter((control) => control.test && control.test.startsWith("confirm"))`);
+      check(confirm.length === 2, `the question has ${JSON.stringify(confirm)}`);
+      for (const control of confirm) {
+        check(control.height >= (phone ? 43.5 : 39.5), `${control.test} is ${control.height} px high`);
+      }
+      const shot = await r.shot("112-control-sizes");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="confirm"]')`, "the question to close");
+      return shot;
+    }),
+    step("113", "one-filled-button", async (r) => {
+      const filled = async (where, expected) => {
+        const found = await r.eval(`__ui.filled()`);
+        check(
+          JSON.stringify(found.sort()) === JSON.stringify([...expected].sort()),
+          `${where}: the filled buttons are ${JSON.stringify(found)}, not ${JSON.stringify(expected)}`,
+        );
+      };
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.eval(UI);
+      await filled("the empty start screen", ["create"]);
+      await r.open({ seed: "sample", night: "1", tablets: "two-new" }, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      await r.eval(UI);
+      await filled("the start screen with two new tablets", ["tablet-turn-on", "tablet-turn-on"]);
+      const rows = await r.eval(`__j.all('[data-test="tablet-turn-on"].primary').filter((node) => __j.visible(node))
+        .map((node) => node.closest('[data-test="tablet-row"]')?.dataset.new)`);
+      check(JSON.stringify(rows) === JSON.stringify(["true", "true"]), `the filled buttons are in rows ${JSON.stringify(rows)}`);
+
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the empty editor");
+      await r.waitSaved("new dashboard");
+      await r.eval(UI);
+      await filled("the empty editor", ["add-first-card"]);
+
+      await openSample(r);
+      await r.eval(UI);
+      await filled("the editor with cards", ["add-card"]);
+      await r.click('[data-test="page-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question");
+      const inDialog = await r.eval(`__j.all('dialog[data-test="confirm"] button').filter((node) => __j.visible(node))
+        .filter((node) => node.classList.contains("primary") || node.classList.contains("danger")).map((node) => node.dataset.test)`);
+      check(JSON.stringify(inDialog) === JSON.stringify(["confirm-ok"]), `the question's next step is ${JSON.stringify(inDialog)}`);
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="confirm"]')`, "the question to close");
+
+      await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await selectRow(r, "0.1.0");
+      await r.click('[data-test="wider"]');
+      await r.waitFor(`__j.saveState() === "error" && __j.find('[data-test="save-retry"]')`, "the save to fail");
+      await filled("the editor after a failed save", ["save-retry"]);
+      await r.eval(`__apolloMockHass.failSaves(0); true`);
+      await r.click('[data-test="save-retry"]');
+      await r.waitSaved("after retry");
+      // On a phone Add card is hidden while the edit mode is open.
+      await leaveEditMode(r);
+      await filled("the editor after the retry", ["add-card"]);
+      await r.clearSelection();
+
+      await r.click('[data-test="add-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
+      const inPicker = await r.eval(`__j.all('dialog[data-test="picker"] button.primary').filter((node) => __j.visible(node))
+        .map((node) => node.dataset.test)`);
+      check(JSON.stringify(inPicker) === JSON.stringify(["pick-add"]), `the picker's filled buttons: ${JSON.stringify(inPicker)}`);
+      const shot = await r.shot("113-one-filled-button");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+      return shot;
+    }),
+    step(
+      "114",
+      "hover-and-focus",
+      async (r) => {
+        // What the pointer changes: the background (and its layer), the
+        // edge, the shadow.
+        const lookOf = (selector) => `(() => { const node = __j.find('${selector}'); const style = getComputedStyle(node);
+          return [style.backgroundColor, style.backgroundImage, style.borderTopColor, style.boxShadow, style.outlineStyle].join(" | "); })()`;
+        const away = async () => {
+          await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 799 });
+          await sleep(200);
+        };
+        const hover = async (selector) => {
+          await away();
+          const point = await r.eval(`__j.target('${selector}')`);
+          check(point && !point.error, point?.error || `cannot reach ${selector}`);
+          await away();
+          const before = await r.eval(lookOf(selector));
+          await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+          await sleep(250);
+          const after = await r.eval(lookOf(selector));
+          check(before !== after, `the pointer over ${selector} changes nothing (${after})`);
+        };
+        await openSample(r);
+        await hover('[data-test="page-tab"][aria-selected="false"]');
+        await hover('[data-test="list-row"][data-source="0.1.0"]');
+        await hover('[data-test="add-page"]');
+        const disabled = await r.eval(`(() => { const node = __j.find('[data-test="undo"]');
+          return [node.disabled, getComputedStyle(node).opacity]; })()`);
+        check(disabled[0] === true && disabled[1] === "1", `Undo while there is nothing to undo: ${JSON.stringify(disabled)}`);
+        await r.click('[data-test="add-card"]');
+        await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+        await sleep(300);
+        await hover('[data-test="tile"][data-component="apollo/fan"]');
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+        // Focus from the keyboard: one ring, 2 px wide and 2 px away.
+        await r.eval(`__j.find('[data-test="add-page"]').focus(); true`);
+        await r.key("Tab");
+        const ring = await r.eval(`(() => { const node = __j.active(); const style = getComputedStyle(node);
+          return { tag: node.tagName, test: node.dataset.test, width: style.outlineWidth, style: style.outlineStyle,
+            offset: style.outlineOffset }; })()`);
+        check(
+          ring.tag === "BUTTON" && ring.width === "2px" && ring.style === "solid" && ring.offset === "2px",
+          `a focused button has the ring ${JSON.stringify(ring)}`,
+        );
+        return r.shot("114-hover-and-focus");
+      },
+      { desktopOnly: true },
+    ),
+    step("115", "bars-follow-sidebar", async (r) => {
+      // Every element of the bar with words of its own has 4.5:1 against
+      // the bar, every icon 3:1; disabled buttons are left out.
+      const readable = async (bar, where) => {
+        const problems = await r.eval(`__ui.barProblems('${bar}')`);
+        check(problems.length === 0, `${where}: ${JSON.stringify(problems.slice(0, 5))}`);
+        const kinds = await r.eval(`__j.all('${bar} .primary, ${bar} .text, ${bar} .link').filter((node) => __j.visible(node))
+          .map((node) => __j.describe(node))`);
+        check(kinds.length === 0, `${where}: the bar holds ${JSON.stringify(kinds)}`);
+      };
+      const sidebar = (on) =>
+        r.eval(`(() => { const style = document.documentElement.style;
+          if (${on}) { style.setProperty("--sidebar-background-color", "#123456"); style.setProperty("--sidebar-text-color", "#fedcba"); }
+          else { style.removeProperty("--sidebar-background-color"); style.removeProperty("--sidebar-text-color"); }
+          return true; })()`);
+      const appHeader = (on) =>
+        r.eval(`(() => { const style = document.documentElement.style;
+          if (${on}) { style.setProperty("--app-header-background-color", "#ff00ff"); style.setProperty("--app-header-text-color", "#00ff00"); }
+          else { style.removeProperty("--app-header-background-color"); style.removeProperty("--app-header-text-color"); }
+          return true; })()`);
+      const colours = (bar) => `__j.all('${bar}, ${bar} *').filter((node) => __j.visible(node)).map((node) => {
+          const style = getComputedStyle(node); return style.backgroundColor + " " + style.color; }).join(";")`;
+      const check3 = async (bar, where) => {
+        const title = await r.eval(`__j.textContrast(__j.find('${bar} h1'))`);
+        check(title >= 4.5, `${where}: the title has ${title}`);
+        await readable(bar, where);
+        try {
+          await sidebar(true);
+          await r.waitFor(`!__j.all('${bar} *').some((node) => __j.animating(node))`, "the bar to settle");
+          const look = await r.eval(`(() => { const style = getComputedStyle(__j.find('${bar}'));
+            return [style.backgroundColor, style.color]; })()`);
+          check(
+            look[0] === "rgb(18, 52, 86)" && look[1] === "rgb(254, 220, 186)",
+            `${where} with the sidebar's colours: ${look.join(", ")}`,
+          );
+          await readable(bar, `${where} with the sidebar's colours`);
+        } finally {
+          await sidebar(false);
+        }
+        const before = await r.eval(colours(bar));
+        try {
+          await appHeader(true);
+          const after = await r.eval(colours(bar));
+          check(before === after, `${where} changes with the app header's colours`);
+        } finally {
+          await appHeader(false);
+        }
+      };
+      await r.open({ seed: "sample", tablets: "three" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await r.eval(UI);
+      await check3(".panel-header", "the start screen's bar");
+      await r.click('[data-test="open-advanced"]');
+      await r.waitFor(`__j.find('[data-test="advanced"]')`, "Advanced");
+      await check3(".panel-header", "Advanced's bar");
+      await openSample(r, { tablets: "three" });
+      await r.eval(UI);
+      await selectRow(r, "0.1.0");
+      await r.click('[data-test="wider"]');
+      await r.waitSaved("wider");
+      await check3(".ed-header", "the editor's bar");
+      return r.shot("115-bars-follow-sidebar");
+    }),
+    step(
+      "116",
+      "picture-scales",
+      async (r) => {
+        await openSample(r);
+        await r.waitFor(`__j.find('[data-test="theme"]')`, "the dashboard's theme list");
+        await r.eval(`(() => { const list = __j.find('[data-test="theme"]'); list.value = "mono";
+          list.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+        await r.waitSaved("theme");
+        const page = `__j.designer().shadowRoot.querySelector(".page-host").shadowRoot`;
+        await r.waitFor(
+          `(() => { const card = ${page}.querySelector(".at-card"); return card && getComputedStyle(card).getPropertyValue("--at-r").trim() === "8px"; })()`,
+          "the picture in the Mono theme",
+        );
+        const found = await r.eval(`(() => {
+          const stage = __j.find('[data-test="canvas"]').getBoundingClientRect();
+          const root = ${page};
+          const card = root.querySelector(".at-card");
+          // The sample's graphs have no values here, so a line is put into
+          // one of them for the moment it takes to read its width.
+          const chart = root.querySelector(".at-chart");
+          let stroke = null;
+          if (chart) {
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+            line.setAttribute("class", "at-chart-data at-chart-line");
+            line.setAttribute("points", "0,0 10,10");
+            chart.append(line);
+            stroke = parseFloat(getComputedStyle(line).strokeWidth);
+            line.remove();
+          }
+          const style = getComputedStyle(card);
+          return { scale: stage.width / 1280, radius: parseFloat(style.borderTopLeftRadius),
+            border: parseFloat(style.borderTopWidth), bw: style.getPropertyValue("--at-bw").trim(), stroke }; })()`);
+        check(found.bw === "2px", `the Mono theme's border is ${found.bw}`);
+        check(Math.abs(found.radius - 8 * found.scale) <= 0.5, `a card's corner is ${found.radius} px at scale ${found.scale}`);
+        check(Math.abs(found.border - 2 * found.scale) <= 1, `a card's border is ${found.border} px at scale ${found.scale}`);
+        check(found.stroke !== null, "no graph on the picture");
+        check(Math.abs(found.stroke - 3 * found.scale) <= 0.5, `the graph's line is ${found.stroke} px at scale ${found.scale}`);
+        await r.eval(`__j.find('[data-test="canvas"]').scrollIntoView({ block: "start" }); true`);
+        return r.shot("116-picture-scales");
+      },
+      { desktopOnly: true },
+    ),
+    step("117", "right-to-left", async (r) => {
+      const page = `__j.designer().shadowRoot.querySelector(".page-host").shadowRoot`;
+      const cards = () =>
+        r.eval(`(() => { const left = ${page}.querySelector(".at-page").getBoundingClientRect().left;
+          return [...${page}.querySelectorAll(".at-card")].map((card) =>
+            [card.innerText, Math.round(card.getBoundingClientRect().left - left)]); })()`);
+      const rtl = (on) => r.eval(`(() => { if (${on}) document.documentElement.setAttribute("dir", "rtl");
+        else document.documentElement.removeAttribute("dir"); return true; })()`);
+      try {
+        await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+        await rtl(true);
+        await sleep(200);
+        await checkNoSidewaysScroll(r);
+        await rtl(false);
+        await openSample(r);
+        const before = await cards();
+        check(before.length > 0, "no cards on the picture");
+        await rtl(true);
+        await sleep(300);
+        const after = await cards();
+        check(JSON.stringify(after) === JSON.stringify(before), `right to left the picture changes: ${JSON.stringify(after.slice(0, 3))} instead of ${JSON.stringify(before.slice(0, 3))}`);
+        await checkNoSidewaysScroll(r);
+        await r.click('[data-test="add-card"]');
+        await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+        await sleep(300);
+        await checkNoSidewaysScroll(r);
+        const shot = await r.shot("117-right-to-left");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+        return shot;
+      } finally {
+        await rtl(false);
+      }
+    }),
+    step(
+      "118",
+      "narrowest-phone",
+      async (r) => {
+        await r.browser.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 568, deviceScaleFactor: 1, mobile: true });
+        try {
+          const small = async (where) => {
+            await checkNoSidewaysScroll(r, 320);
+            const found = (await r.eval(`__ui.controls()`)).filter((control) => control.height < 43.5);
+            check(found.length === 0, `${where} at 320 px: ${JSON.stringify(found.slice(0, 5))}`);
+          };
+          await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+          await r.eval(UI);
+          await small("the start screen");
+          await openSample(r);
+          await r.eval(UI);
+          await selectRow(r, "0.1.0");
+          await small("the editor with a card selected");
+          await leaveEditMode(r);
+          await r.click('[data-test="add-card"]');
+          await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+          await sleep(300);
+          await small("the picker");
+          const shot = await r.shot("118-narrowest-phone");
+          await r.key("Escape");
+          await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+          return shot;
+        } finally {
+          await r.viewport();
+        }
+      },
+      { desktopOnly: true },
+    ),
+  ];
+
+  // The editor's workspace (build plan, package 2): a shell as tall as the
+  // window, the picture fitted to the free space, the drawer, the compact
+  // and short layouts, the edit mode, zoom and the toast's home.
+  const sizeTo = async (r, width, height, mobile = false) => {
+    await r.browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile });
+    await sleep(100);
+    await r.eval(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+  };
+  // The stand-in for Home Assistant's docked sidebar, 256 px, and its removal.
+  const dock = (r, on) =>
+    r.eval(`(() => { document.getElementById("ws-sidebar")?.remove();
+      __apolloPanel.style.marginLeft = ""; __apolloPanel.style.width = "";
+      if (${on}) { const bar = document.createElement("div"); bar.id = "ws-sidebar";
+        bar.style.cssText = "position:fixed;left:0;top:0;bottom:0;width:256px;background:#333;z-index:1";
+        document.body.prepend(bar); __apolloPanel.style.marginLeft = "256px"; __apolloPanel.style.width = "calc(100% - 256px)"; }
+      return true; })()`);
+  const shell = (r) =>
+    r.eval(`(() => { const d = __j.designer().shadowRoot; const box = (node) => {
+        if (!node || !node.getClientRects().length) return null; const rect = node.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }; };
+      const root = d.querySelector(".root");
+      return { band: ["wide", "medium", "compact", "short"].find((name) => root.classList.contains(name)) || null,
+        root: box(root), header: box(d.querySelector(".ed-header")), strip: box(d.querySelector(".tab-strip")),
+        main: box(d.querySelector(".main")), stage: box(d.querySelector('[data-test="canvas"]')),
+        area: box(d.querySelector(".stage-area")), side: box(d.querySelector('[data-test="side"]')),
+        blocking: box(d.querySelector(".root > .banners")), status: box(d.querySelector(".status-strip")),
+        doc: document.documentElement.scrollHeight, innerWidth, innerHeight }; })()`);
+  // The picture is `width` px wide (within 1 px) once the layout settled.
+  const pictureIs = async (r, width, when) => {
+    try {
+      await r.waitFor(
+        `(() => { const stage = __j.designer().shadowRoot.querySelector('[data-test="canvas"]');
+          return stage && Math.abs(stage.getBoundingClientRect().width - ${width}) <= 1; })()`,
+        `the picture to be ${width} px wide ${when}`,
+        4000,
+      );
+    } catch (error) {
+      throw new Error(`${error.message}; ${JSON.stringify((await shell(r)).stage)}`);
+    }
+  };
+  // A new dashboard with one light on it: no page notice above the picture.
+  const oneCard = async (r) => {
+    await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+    await r.click('[data-test="create"]');
+    await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's empty editor");
+    await r.addCard("add-first-card", "apollo/light-tile", "light.kitchen");
+    await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the light on the picture");
+    await r.waitSaved("the light added");
+    await leaveEditMode(r);
+    if (await r.count(pressed)) {
+      await r.clearSelection();
+    }
+    check((await r.count(".page-notice")) === 0, "the new dashboard has a page notice");
+  };
+
+  // The only card of the real dashboard that the tablet can draw (its
+  // heading) removed with Delete on the picture: focus goes to Add card,
+  // and is still there once the picture is drawn again without it (polish
+  // decision 13). `layout` puts the editor in the band to check.
+  const lastDrawnCardGone = async (r, layout, when) => {
+    await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
+    await layout();
+    await r.waitFor(`__j.count('[data-test="hit"]') === 1`, `the heading on the picture ${when}`);
+    await r.eval(`__j.find('[data-test="hit"]').focus(); true`);
+    await r.key("Delete");
+    await r.waitFor(`__j.find('[data-test="toast-undo"]')`, `the removal's toast ${when}`);
+    const isAdd = (focus) => focus === "add-card" || focus === "add-first-card";
+    const now = await focused(r);
+    check(isAdd(now), `${when}, after the last card on the picture was removed focus is on ${now}, not Add card`);
+    await r.waitSaved(`the heading removed ${when}`);
+    await r.waitFor(`__j.count('[data-test="hit"]') === 0`, `the picture without the heading ${when}`);
+    await sleep(500);
+    const later = await focused(r);
+    check(isAdd(later), `${when}, once the picture was drawn again focus is on ${later}, not Add card`);
+  };
+
+  const workspace = [
+    step("119", "shell-fits-window", async (r) => {
+      await openSample(r);
+      const fits = async (when) => {
+        const now = await shell(r);
+        check(now.doc <= now.innerHeight, `${when}: the document is ${now.doc} px tall in a ${now.innerHeight} px window`);
+        check(Math.abs(now.root.bottom - now.innerHeight) <= 1, `${when}: the editor ends at ${now.root.bottom}, the window at ${now.innerHeight}`);
+        check(!now.blocking, `${when}: a notice that blocks shows`);
+        check(Math.abs(now.main.top - now.strip.bottom) <= 1, `${when}: the stage column starts at ${now.main.top}, the page strip ends at ${now.strip.bottom}`);
+        return now;
+      };
+      const before = await fits("in the editor");
+      const shot = await r.shot("119-shell-fits-window");
+      if (r.setup.device === "desktop") {
+        check(before.side.bottom <= before.innerHeight + 1 && before.stage.bottom <= before.innerHeight, `the inspector or the picture ends below the window: ${JSON.stringify(before)}`);
+        await selectRow(r, "0.1.0");
+        // The form took the list's place, and the pressed row went with the
+        // list: the form's title has focus, not the page.
+        check((await focused(r)) === "side-title", `after a card was chosen in the list focus is on ${await focused(r)}, not the form's title`);
+        const selected = await fits("with a card selected");
+        check(selected.side.bottom <= selected.innerHeight + 1 && selected.stage.bottom <= selected.innerHeight, `with a card selected the inspector or the picture ends below the window: ${JSON.stringify(selected)}`);
+        // A pinch zoom changes neither the shell's height nor its layout.
+        await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
+        try {
+          await sleep(400);
+          const zoomed = await shell(r);
+          check(zoomed.root.height === selected.root.height && zoomed.band === selected.band,
+            `zoomed in, the editor is ${zoomed.root.height} px (${zoomed.band}), not ${selected.root.height} px (${selected.band})`);
+        } finally {
+          await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+        }
+        // From the form, Escape reaches the editor and lets the card go.
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('${pressed}')`, "Escape to let the card go after it was chosen in the list");
+        check(await focused(r), "after Escape focus fell to the page");
+      } else {
+        // The page column scrolls under the bars; they stay where they are.
+        await r.eval(`(() => { const main = __j.designer().shadowRoot.querySelector(".main"); main.scrollTop = main.scrollHeight; return true; })()`);
+        await sleep(300);
+        const scrolled = await fits("with the page column scrolled to its end");
+        check(scrolled.header.top === before.header.top && scrolled.strip.top === before.strip.top,
+          `the bars moved when the page column scrolled: ${JSON.stringify([before.header, before.strip, scrolled.header, scrolled.strip])}`);
+      }
+      // Pages added until the tabs scroll: the new page's tab is whole in
+      // the tab list, not under Add page or Add card.
+      const tabs = await r.count('[data-test="page-tab"]');
+      for (let added = 1; added <= 8; added += 1) {
+        await r.click('[data-test="add-page"]');
+        await r.waitFor(`__j.count('[data-test="page-tab"]') === ${tabs + added}`, `page ${tabs + added}`);
+      }
+      await sleep(300);
+      const strip = await r.eval(`(() => { const edges = (node) => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right }; };
+        const list = __j.designer().shadowRoot.querySelector(".tabs");
+        return { tab: edges(__j.find('[data-test="page-tab"][aria-selected="true"]')), list: edges(list),
+          scrolls: list.scrollWidth > list.clientWidth, add: edges(__j.find('[data-test="add-page"]')) }; })()`);
+      check(strip.scrolls, `the tabs do not scroll with ${tabs + 8} pages, so the check below means nothing`);
+      check(strip.tab.left >= strip.list.left - 1 && strip.tab.right <= strip.list.right + 1 && strip.tab.right <= strip.add.left + 1,
+        `the new page's tab is not whole in the tab list: ${JSON.stringify(strip)}`);
+      await checkNoSidewaysScroll(r);
+      return shot;
+    }),
+    step(
+      "120",
+      "fit-table",
+      async (r) => {
+        const sizes = [
+          [1280, 800, false, 879],
+          [1440, 800, true, 796],
+          [1280, 800, true, 960],
+          [1920, 1080, false, 1280],
+          [2560, 1440, false, 1280],
+          [1280, 720, false, 806],
+          [1366, 768, false, 883],
+        ];
+        let shot = null;
+        try {
+          await oneCard(r);
+          for (const [width, height, docked, picture] of sizes) {
+            await sizeTo(r, width, height);
+            await dock(r, docked);
+            const when = `at ${width} x ${height}${docked ? " with the sidebar docked" : ""}`;
+            await pictureIs(r, picture, when);
+            const now = await shell(r);
+            check(now.stage.width <= 1280 && now.stage.bottom <= now.innerHeight, `${when} the picture is ${JSON.stringify(now.stage)}`);
+            await checkNoSidewaysScroll(r, width);
+            if (width === 1920) {
+              shot = await r.screen("120-fit-table-1920");
+            }
+          }
+        } finally {
+          await dock(r, false);
+          await r.viewport();
+        }
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "121",
+      "medium-drawer",
+      async (r) => {
+        let shot = null;
+        try {
+          // A full row of lights, so a card ends at the row's right end.
+          await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+          await r.eval(`__apolloMockHass.addDashboard("row-1", "Row", ${JSON.stringify(ROW_CONFIG)});
+            __apolloOpenPanel("/edit/row-1"); true`);
+          await r.waitFor(`__j.count('[data-test="hit"]') >= 3`, "the row of lights");
+          await sizeTo(r, 1280, 800);
+          await dock(r, true);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium")`, "the medium layout");
+          check((await r.count(".page-notice")) === 0, "the row of lights has a page notice");
+          await pictureIs(r, 960, "with nothing selected");
+          const closed = await shell(r);
+          check(!closed.side || closed.side.left >= closed.root.right - 1, `the closed drawer shows: ${JSON.stringify(closed.side)}`);
+          // The card at the right end of the first row.
+          const key = await r.eval(`(() => { const hits = __j.all('[data-test="hit"]').map((hit) => [hit, hit.getBoundingClientRect()]);
+            const top = Math.min(...hits.map(([, rect]) => rect.top));
+            const row = hits.filter(([, rect]) => Math.abs(rect.top - top) < 2).sort((a, b) => b[1].right - a[1].right);
+            return row[0][0].dataset.source; })()`);
+          const card = `[data-test="hit"][data-source="${key}"]`;
+          await r.click(card);
+          await r.waitFor(`__j.find('${card}[aria-pressed="true"]') && __j.designer().shadowRoot.querySelector(".root.drawer-open")`, "the drawer to open");
+          await sleep(400);
+          await pictureIs(r, 960, "with the drawer open");
+          const clear = await r.eval(`(() => { const side = __j.designer().shadowRoot.querySelector('[data-test="side"]').getBoundingClientRect();
+            const hit = __j.find('${card}').getBoundingClientRect(); return { card: hit.right, drawer: side.left }; })()`);
+          check(clear.card <= clear.drawer - 16 + 0.5, `the card ends at ${clear.card}, the drawer starts at ${clear.drawer}`);
+          shot = await r.screen("121-medium-drawer");
+          // Made 5 wide, it slides only until its left edge is at the stage's padding.
+          for (let press = 0; press < 6 && !(await r.text('.size-value')).startsWith("5 wide"); press += 1) {
+            await r.click('[data-test="wider"]');
+            await sleep(150);
+          }
+          check((await r.text('.size-value')).startsWith("5 wide"), `the card is ${await r.text('.size-value')}`);
+          await r.waitSaved("made 5 wide");
+          await sleep(500);
+          const wide = await r.eval(`(() => { const area = __j.designer().shadowRoot.querySelector(".stage-area").getBoundingClientRect();
+            const hit = __j.find('[data-test="hit"][aria-pressed="true"]').getBoundingClientRect(); return { card: hit.left, area: area.left }; })()`);
+          check(Math.abs(wide.card - (wide.area + 16)) <= 1, `the 5 wide card starts at ${wide.card}, the stage's padding at ${wide.area + 16}`);
+          await r.click('[data-test="close-panel"]');
+          await r.waitFor(`!__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "the drawer to close");
+          await sleep(400);
+          const back = await r.eval(`getComputedStyle(__j.designer().shadowRoot.querySelector(".device")).transform`);
+          check(back === "none", `the picture is still moved: ${back}`);
+          // The list is in the closed drawer, out of reach: after Done focus
+          // is on the card on the picture, not on the page.
+          check((await focused(r)) === "hit", `after Done with the drawer closed focus is on ${await focused(r)}, not the card on the picture`);
+          await checkNoSidewaysScroll(r, 1280);
+          // The window made narrower and wider again with a card selected:
+          // focus stays in the editor (the edit mode's title, then the
+          // drawer's form), so Escape still lets the card go.
+          const first = '[data-test="hit"]';
+          await r.click(first);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "the drawer to open again");
+          await dock(r, false);
+          await sizeTo(r, 820, 800);
+          await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode at 820 px");
+          await r.waitFor(`__j.active()?.dataset?.test === "side-title"`, "focus on the edit mode's title after the window got narrower");
+          await sizeTo(r, 1280, 800);
+          await dock(r, true);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium.drawer-open")`, "the drawer again at 1024 px");
+          await sleep(300);
+          check(await focused(r), "after the window got wider again focus fell to the page");
+          await r.key("Escape");
+          await r.waitFor(`!__j.find('${pressed}') && !__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "Escape to let the card go and close the drawer");
+          check((await focused(r)) === "hit", `after Escape focus is on ${await focused(r)}, not the card on the picture`);
+          // Remove card in the drawer's form: the drawer closes with the list
+          // in it, so focus goes on to the next card on the picture.
+          await r.click(first);
+          await r.waitFor(`__j.find('[data-test="remove-card"]')`, "the card's form in the drawer");
+          const removedKey = await r.eval(`__j.find('[data-test="hit"][aria-pressed="true"]').dataset.source`);
+          await pressRemoving(r, '[data-test="remove-card"]', "hit", "removing a card in the drawer's form");
+          await r.waitSaved("after the removal in the drawer");
+          await sleep(400);
+          check((await focused(r)) === "hit", `once the picture was drawn again focus is on ${await focused(r)}`);
+          // Undo in the toast: the card comes back with focus on the picture,
+          // as the list is in the closed drawer (polish decision 13).
+          await r.eval(`__j.find('[data-test="toast-undo"]').focus(); true`);
+          await r.key("Enter");
+          await r.waitSaved("after Undo in the drawer layout");
+          await r.waitFor(`__j.active()?.dataset?.focus === "hit:${removedKey}"`, `focus on the card that came back (${removedKey}) after Undo`);
+          // A card moved in the list from the keyboard stays in the list,
+          // so it can be moved again: its form does not take the list's
+          // place. The card moved is the one made 5 wide, the only one that
+          // differs from the others.
+          await r.click('[data-test="open-cards"]');
+          await r.waitFor(`__j.find('[data-test="list-row"]')`, "the card list in the drawer");
+          const wideAt = async () => (await r.draft()).views[0].sections[0].cards.findIndex((card) => card.grid_options);
+          let at = await wideAt();
+          check(at >= 0, "no card with a size of its own is left to move");
+          const way = at >= 2 ? -1 : 1;
+          const arrow = { key: way < 0 ? "ArrowLeft" : "ArrowRight", windowsVirtualKeyCode: way < 0 ? 37 : 39, modifiers: 8 };
+          arrow.code = arrow.key;
+          await r.eval(`__j.find('[data-test="list-row"][data-source="0.0.${at}"]').focus(); true`);
+          for (const press of [1, 2]) {
+            await r.browser.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...arrow });
+            await r.browser.send("Input.dispatchKeyEvent", { type: "keyUp", ...arrow });
+            await sleep(300);
+            const now = await wideAt();
+            check(now === at + way, `press ${press} of Shift+${arrow.key} on a list row left the card at ${now}, not ${at + way}`);
+            at = now;
+            const row = await r.eval(`({ test: __j.active()?.dataset?.test || null, source: __j.active()?.dataset?.source || null })`);
+            check(row.test === "list-row" && row.source === `0.0.${at}`, `after moving a card in the list focus is on ${JSON.stringify(row)}, not its row`);
+          }
+          await r.waitSaved("after the moves in the list");
+          await r.key("Escape");
+          await r.waitFor(`!__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "Escape to close the card list");
+          await lastDrawnCardGone(r, async () => {
+            await sizeTo(r, 1280, 800);
+            await dock(r, true);
+            await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium")`, "the medium layout for the real dashboard");
+          }, "at 1024 px");
+          // With a pager, a failed picture and "Cards" together the status
+          // strip stays one line of 40 px, at 1024 and at 900 px.
+          await r.eval(`__apolloMockHass.addDashboard("spill-1", "Spill", ${JSON.stringify(SPILL_CONFIG)});
+            __apolloOpenPanel("/edit/spill-1"); true`);
+          for (const [width, docked] of [
+            [1280, true],
+            [900, false],
+          ]) {
+            await sizeTo(r, width, 800);
+            await dock(r, docked);
+            const when = docked ? "at 1024 px" : "at 900 px";
+            await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium") && __j.find('[data-test="screen-next"]')`, `the pager ${when}`);
+            await r.eval(`__apolloMockHass.failCalls("apollo_tab/layout/preview", 100); __j.designer()._requestPreview(); true`);
+            try {
+              await r.waitFor(`__j.find(".status-strip .alert")`, `the failed picture ${when}`);
+              const strip = await r.eval(`(() => { const d = __j.designer().shadowRoot; const cards = __j.find('[data-test="open-cards"]');
+                const words = cards.querySelector("span"); const line = parseFloat(getComputedStyle(words).lineHeight);
+                const sentence = d.querySelector(".status-strip .alert > span");
+                return { strip: d.querySelector(".status-strip").getBoundingClientRect().height,
+                  cards: cards.getBoundingClientRect().height, words: words.getBoundingClientRect().height, line,
+                  sentence: [sentence.scrollWidth, sentence.clientWidth],
+                  pager: d.querySelector(".status-strip .screens-brief")?.getClientRects().length > 0 }; })()`);
+              check(Math.round(strip.strip) === 40, `${when} the status strip is ${strip.strip} px high`);
+              check(strip.cards <= 40.5 && strip.words < strip.line * 1.5, `${when} "Cards" is not one line: ${JSON.stringify(strip)}`);
+              // The pager gives way to the failure: "1 / 2", so the failure's
+              // sentence is whole.
+              check(strip.pager && strip.sentence[0] <= strip.sentence[1] + 1, `${when} the failure's sentence is cut: ${JSON.stringify(strip)}`);
+              await checkNoSidewaysScroll(r, width);
+            } finally {
+              await r.eval(`__apolloMockHass.failCalls("apollo_tab/layout/preview", 0); __j.designer()._requestPreview(); true`);
+            }
+            await r.waitFor(`!__j.find(".status-strip .alert")`, `the picture back ${when}`);
+          }
+        } finally {
+          await dock(r, false);
+          await r.viewport();
+        }
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "122",
+      "compact-picture",
+      async (r) => {
+        try {
+          await oneCard(r);
+          await sizeTo(r, 820, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.compact")`, "the compact layout");
+          await pictureIs(r, 784, "at 820 x 800");
+          await checkNoSidewaysScroll(r, 820);
+          return await r.screen("122-compact-picture");
+        } finally {
+          await r.viewport();
+        }
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "123",
+      "edit-mode",
+      async (r) => {
+        await openSample(r);
+        const start = await shell(r);
+        check(start.stage.top <= 180, `the picture starts at ${start.stage.top}`);
+        await selectRow(r, "0.1.0");
+        const layer = await r.eval(`(() => { const side = __j.find('[data-test="side"][data-mode="edit"]'); if (!side) return null;
+          const rect = side.getBoundingClientRect(); const strip = __j.find('[data-test="edit-preview"]').getBoundingClientRect();
+          const header = __j.designer().shadowRoot.querySelector(".ed-header").getBoundingClientRect();
+          return { top: rect.top, bottom: rect.bottom, header: header.bottom, strip: strip.height, height: innerHeight }; })()`);
+        check(layer, "no edit mode");
+        check(Math.abs(layer.top - layer.header) <= 1 && Math.abs(layer.bottom - layer.height) <= 1, `the edit mode spans ${layer.top}..${layer.bottom}: ${JSON.stringify(layer)}`);
+        check(layer.strip >= 128 && layer.strip <= 240, `the edit mode's picture is ${layer.strip} px high`);
+        await checkSelectedCardVisible(r, "in the edit mode");
+        const shot = await r.screen("123-edit-mode");
+        const width = async () => (await r.draft()).views[0].sections[1].cards[0].grid_options?.columns;
+        const before = await width();
+        await r.tap('[data-test="wider"]');
+        await r.waitFor(`__j.designer()._history.past.length > 0`, "Wider to change the card");
+        await sleep(300);
+        await checkSelectedCardVisible(r, "after Wider");
+        await r.eval(`(() => { const form = __j.find(".edit-form"); form.scrollTop = form.scrollHeight; return true; })()`);
+        await sleep(300);
+        await checkSelectedCardVisible(r, "with the form scrolled to its end");
+        await r.click('[data-test="undo"]');
+        await r.waitFor(`__j.designer()._history.past.length === 0`, "Undo in the top bar");
+        check((await width()) === before, "Undo in the top bar did not undo Wider");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Escape to close the edit mode");
+        await r.click('[data-test="list-row"][data-source="0.1.0"]');
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode again");
+        await r.click('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done to close the edit mode");
+        await r.waitFor(`__j.active()?.dataset?.focus === "row:0.1.0"`, "focus on the card's row after Done");
+        // The same row pressed where it is, just above the window's bottom
+        // edge: after Done the page column has not moved.
+        await r.eval(`(() => { const main = __j.find(".main"); const row = __j.find('[data-test="list-row"][data-source="0.1.0"]');
+          main.scrollTop += row.getBoundingClientRect().bottom - (innerHeight - 8); return true; })()`);
+        await sleep(300);
+        const low = await r.eval(`__j.find(".main").scrollTop`);
+        await r.tap('[data-test="list-row"][data-source="0.1.0"]');
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode from a row at the bottom edge");
+        await r.tap('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done after a row at the bottom edge");
+        await sleep(300);
+        const kept = await r.eval(`({ scroll: __j.find(".main").scrollTop, focus: __j.active()?.dataset?.focus })`);
+        check(Math.abs(kept.scroll - low) <= 1, `after Done the page column moved from ${low} to ${kept.scroll}`);
+        check(kept.focus === "row:0.1.0", `after Done focus is on ${kept.focus}, not the card's row`);
+        // A card pressed on the picture whose row is below the fold: after
+        // Done the picture is where it was and the card has focus.
+        // Focus leaves the row first: a redraw gives focus back to it, which
+        // would scroll the row into view again.
+        await r.eval(`(() => { __j.active()?.blur(); __j.find(".main").scrollTop = 0; return true; })()`);
+        await sleep(600);
+        const last = await r.eval(`(() => { const rows = [...__j.designer().shadowRoot.querySelectorAll('[data-test="list-row"]')];
+          const row = rows[rows.length - 1]; return { source: row.dataset.source, top: row.getBoundingClientRect().top,
+          picture: __j.find('[data-test="canvas"]').getBoundingClientRect().top, height: innerHeight }; })()`);
+        check(last.top > last.height, `the last card's row is in view at ${last.top}, so the check below means nothing`);
+        await r.tap(`[data-test="hit"][data-source="${last.source}"]`);
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode from the picture");
+        await r.tap('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done after a card pressed on the picture");
+        await sleep(300);
+        const after = await r.eval(`({ picture: __j.find('[data-test="canvas"]').getBoundingClientRect().top, focus: __j.active()?.dataset?.focus })`);
+        check(Math.abs(after.picture - last.picture) <= 1, `after Done the picture's top moved from ${last.picture} to ${after.picture}`);
+        check(after.focus === `hit:${last.source}`, `after Done focus is on ${after.focus}, not the card on the picture`);
+        // Where the picture is and what has focus; null when focus fell to
+        // the page.
+        const place = () =>
+          r.eval(`(() => { const active = __j.active();
+            return { picture: __j.find('[data-test="canvas"]').getBoundingClientRect().top,
+              focus: active && active !== document.body ? active.dataset.focus || active.dataset.test || active.tagName : null }; })()`);
+        const onPicture = (focus) => /^(hit:|add-card$|add-first-card$)/.test(focus || "");
+        // Remove card in an edit mode opened from the picture, for a card
+        // whose follower's row is below the fold: the picture stays where it
+        // was, and focus goes on on the picture (the card that took its
+        // place, or Add card), not to that row and not to the page.
+        const gone = await r.eval(`(() => { const rows = [...__j.designer().shadowRoot.querySelectorAll('[data-test="list-row"]')];
+          const hits = new Set(__j.all('[data-test="hit"]').map((hit) => hit.dataset.source));
+          for (let index = rows.length - 2; index >= 0; index -= 1) {
+            if (hits.has(rows[index].dataset.source) && rows[index + 1].getBoundingClientRect().top > innerHeight) {
+              return { source: rows[index].dataset.source, rows: rows.length };
+            }
+          }
+          return null; })()`);
+        check(gone, "no card on the picture is followed by a row below the fold, so the check below means nothing");
+        await r.tap(`[data-test="hit"][data-source="${gone.source}"]`);
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode from the picture, to remove the card");
+        await r.eval(`(() => { const form = __j.find(".edit-form"); form.scrollTop = form.scrollHeight; return true; })()`);
+        await sleep(300);
+        await r.tap('[data-test="remove-card"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]') && __j.find('[data-test="toast-undo"]')`, "the card to be removed");
+        const removed = await place();
+        check(Math.abs(removed.picture - last.picture) <= 1, `after Remove card the picture's top moved from ${last.picture} to ${removed.picture}`);
+        check(onPicture(removed.focus), `after Remove card focus is on ${removed.focus}, not on the picture`);
+        // The same once the picture was drawn again without the card.
+        await r.waitSaved("after Remove card");
+        await r.waitFor(`__j.designer().shadowRoot.querySelectorAll('[data-test="list-row"]').length === ${gone.rows - 1}`, "the list without the card");
+        await sleep(500);
+        const drawn = await place();
+        check(Math.abs(drawn.picture - last.picture) <= 1, `once the picture was drawn again its top moved from ${last.picture} to ${drawn.picture}`);
+        check(onPicture(drawn.focus), `once the picture was drawn again focus is on ${drawn.focus}, not on the picture`);
+        await r.screen("123-edit-mode-removed");
+        // Add card with the floating button, then Done: the picture is
+        // where it was, with focus on the new card there, not at the end of
+        // the list.
+        await r.eval(`(() => { __j.active()?.blur(); __j.find(".main").scrollTop = 0; return true; })()`);
+        await sleep(300);
+        const fresh = await place();
+        await r.addCard("add-card", "apollo/light-tile", "light.kitchen");
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode for the new card");
+        await r.waitSaved("the new card");
+        const added = await r.eval(`__j.designer()._selected.join(".")`);
+        await r.waitFor(`__j.designer().shadowRoot.querySelector('[data-test="hit"][data-source="${added}"]')`, "the new card on the picture");
+        await r.tap('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done after Add card");
+        await sleep(300);
+        const done = await place();
+        check(Math.abs(done.picture - fresh.picture) <= 1, `after Add card and Done the picture's top moved from ${fresh.picture} to ${done.picture}`);
+        check(done.focus === `hit:${added}`, `after Add card and Done focus is on ${done.focus}, not the new card on the picture`);
+        await lastDrawnCardGone(r, async () => {}, "on a phone");
+        return shot;
+      },
+      { phoneOnly: true },
+    ),
+    step(
+      "124",
+      "short-screens",
+      async (r) => {
+        let shot = null;
+        try {
+          await oneCard(r);
+          for (const [width, height, picture, tall] of [
+            [844, 390, 412, 258],
+            [640, 400, 324, 202],
+          ]) {
+            await sizeTo(r, width, height, width === 844);
+            const when = `at ${width} x ${height}`;
+            await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.short")`, `the short layout ${when}`);
+            await pictureIs(r, picture, when);
+            const now = await shell(r);
+            check(Math.abs(now.stage.height - tall) <= 1, `${when} the picture is ${now.stage.height} px high`);
+            check(now.stage.left >= 0 && now.stage.top >= 0 && now.stage.right <= now.innerWidth && now.stage.bottom <= now.innerHeight, `${when} the picture is not wholly in the window: ${JSON.stringify(now.stage)}`);
+            check(now.side.width >= 280 && Math.min(now.side.bottom, now.innerHeight) - now.side.top >= 250, `${when} the inspector is ${JSON.stringify(now.side)}`);
+            check(Math.round(now.header.height) === 48 && Math.round(now.strip.height) === 48, `${when} the bars are ${now.header.height} and ${now.strip.height} px high`);
+            await checkNoSidewaysScroll(r, width);
+            if (width === 844) {
+              await r.eval(UI);
+              const small = await r.eval(`__ui.controls().filter((control) => control.height < 43.5)`);
+              const inBars = await r.eval(`(() => { const d = __j.designer().shadowRoot;
+                return [...d.querySelectorAll(".ed-header button, .tab-strip button")].filter((node) => node.getClientRects().length)
+                  .map((node) => [__j.describe(node), node.getBoundingClientRect().height]).filter(([, h]) => h < 43.5); })()`);
+              check(inBars.length === 0, `${when} controls in the bars under 44 px: ${JSON.stringify(inBars)} (${JSON.stringify(small.slice(0, 3))})`);
+              shot = await r.screen("124-short-screens");
+            }
+          }
+          // The layout holds while a text field has focus.
+          await sizeTo(r, 1280, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.wide")`, "the wide layout");
+          await r.click('[data-test="hit"]');
+          await r.waitFor(`__j.find('[data-test="form-name"]')`, "the card's form");
+          await r.eval(`__j.find('[data-test="form-name"]').focus(); true`);
+          await sizeTo(r, 1280, 500);
+          await sleep(300);
+          check(await r.eval(`Boolean(__j.designer().shadowRoot.querySelector(".root.wide"))`), "the layout changed while the name field had focus");
+          await r.eval(`__j.active().blur(); true`);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.short")`, "the short layout once the field lost focus");
+          // The keyboard changes only the height: a change of width is
+          // followed at once, also with a text field in focus.
+          await sizeTo(r, 1280, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.wide")`, "the wide layout again");
+          if (!(await r.count('[data-test="form-name"]'))) {
+            await r.click('[data-test="hit"]');
+          }
+          await r.waitFor(`__j.find('[data-test="form-name"]')`, "the card's form again");
+          await r.eval(`__j.find('[data-test="form-name"]').focus(); true`);
+          await sizeTo(r, 1000, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium")`, "the medium layout when the width changed with the name field in focus");
+        } finally {
+          await r.viewport();
+        }
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "125",
+      "zoom",
+      async (r) => {
+        await oneCard(r);
+        await pictureIs(r, 879, "at the start");
+        const caption = await r.text(".zoom-caption");
+        check(caption === "1280 x 800 · 69 %", `the caption reads "${caption}"`);
+        await r.click('[data-test="hit"]');
+        await r.waitFor(`__j.find('[data-test="hit"][aria-pressed="true"]')`, "the card to be selected");
+        await r.click('[data-test="zoom-100"]');
+        await pictureIs(r, 1280, "at 100 %");
+        const seen = await r.eval(`(() => { const area = __j.designer().shadowRoot.querySelector(".stage-area").getBoundingClientRect();
+          const hit = __j.find('[data-test="hit"][aria-pressed="true"]').getBoundingClientRect();
+          return hit.left >= area.left && hit.top >= area.top && hit.right <= area.right && hit.bottom <= area.bottom; })()`);
+        check(seen, "at 100 % the selected card is not in view");
+        const shot = await r.screen("125-zoom");
+        await r.click('[data-test="zoom-fit"]');
+        await pictureIs(r, 879, "after Fit");
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step("126", "toast-home", async (r) => {
+      const phone = r.setup.device === "phone";
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await r.click('[data-test="remove-card"]');
+      await r.waitFor(`__j.find('[data-test="toast-undo"]')`, "the removal's toast");
+      await sleep(300);
+      await checkToastHome(r, "after a card was removed", phone ? "fab" : "stage");
+      const shot = await r.screen("126-toast-home");
+      await selectRow(r, "0.1.0");
+      await r.waitFor(`__j.find('[data-test="move-page"]')`, "Move to page");
+      await r.eval(`(() => { const field = __j.find('[data-test="move-page"]'); field.value = "new";
+        field.dispatchEvent(new Event("change")); return true; })()`);
+      await r.tap('[data-test="move-page-go"]');
+      await r.waitFor(`__j.text('[data-test="toast"] span').startsWith("Moved to")`, "the toast saying where the card went");
+      await sleep(300);
+      await checkToastHome(r, "after Move to page", phone ? "edit" : "stage");
+      await r.screen("126-toast-home-edit");
+      return shot;
+    }),
+  ];
+
   return [
     first,
     real,
@@ -5214,6 +6528,8 @@ function chains(realConfig) {
     tabletsPairAgain,
     tabletsNewGuards,
     tabletsTurnOn,
+    foundation,
+    workspace,
   ];
 }
 
@@ -5223,8 +6539,9 @@ async function runSetup(browser, setup, shotsDir, realConfig, steps = null) {
   const results = [];
   for (const chain of chains(realConfig)) {
     let failed = null;
-    for (const { n, name, run: body, desktopOnly } of chain) {
+    for (const { n, name, run: body, desktopOnly, phoneOnly } of chain) {
       if (desktopOnly && setup.device !== "desktop") continue;
+      if (phoneOnly && setup.device === "desktop") continue;
       if (steps && !steps.includes(n)) continue;
       const result = { n, name, ok: false };
       if (failed) {

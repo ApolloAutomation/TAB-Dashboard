@@ -31,7 +31,9 @@ BUILTIN_DIR = (
 )
 
 # The 16 files of schema 1, normalised and hashed as the library does it.
-# Taken before schema 2 was added: none of them may change.
+# Taken before schema 2 was added: none of them may change. The camera,
+# media and presence cards are pinned as their plain description lines left
+# them (a description reaches no layout).
 BUILTIN_HASHES = {
     "apollo/alarm-panel": (
         "1b0803db90cf315467a0317fc4234b4c1b2588c5f46c083a32f0edca15632fce"
@@ -40,7 +42,7 @@ BUILTIN_HASHES = {
         "8e517f1dea3c12044b7c38f63b3d223a9a117e0e44e51573394831e8b93c963e"
     ),
     "apollo/camera-snapshot": (
-        "329cb9803d0f33494f6272e033f4557218569c848780a482cfeef2b7aa8bfd84"
+        "0dedff5df47e17eff92320125cb59d7adfc5fc4194b0413994e1bfdc1ed87847"
     ),
     "apollo/fan": ("a258756fc499d891e48ab67b50adc39b55ae320f74996edb134684935fb9236f"),
     "apollo/light-slider": (
@@ -51,7 +53,7 @@ BUILTIN_HASHES = {
     ),
     "apollo/lock": ("ab9f9c3b49fcabf1712c77fe4f290b59fb96233f9ffccf2da87e9cff1abf77fe"),
     "apollo/media-player": (
-        "174dce1a1d9deb27d8db3d2984a76349d755f62f305f6c2b0d2aa304779ad52d"
+        "46e40c0d9a86fa406b0872e5e63547e3d95afc7c121f0dd6f93afb012b0e0d35"
     ),
     "apollo/scene-row": (
         "6cec8a5e23c91704ca2b20b9821c08a8395fec8c04b3026bcf18b287ac6baae9"
@@ -72,7 +74,7 @@ BUILTIN_HASHES = {
         "ae753cd4acd53079f892195895112df5a5faf91a3802d753ff4753e4468ed6b1"
     ),
     "community/presence-chips": (
-        "70069e6f352e646d013c31287bca4adad85c27635a0a3f6fe3449b91207f7a9b"
+        "e85144c4a88fdbc98e4ee2efb7b6f2222717774508e53492d4221af580531de0"
     ),
     "community/room-summary": (
         "e2c2836bee05610c9749c3491f3bd92bbf7632ca9c946e4cda1c70658b4a22e8"

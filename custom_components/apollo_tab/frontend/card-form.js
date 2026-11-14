@@ -1,5 +1,14 @@
 import { t } from "./api.js";
-import { formToStyle, isIcon, styleToForm } from "./logic.js";
+import {
+  accentGrounds,
+  accentInk,
+  accentText,
+  formToStyle,
+  isIcon,
+  parseCssColour,
+  styleToForm,
+  switchKnob,
+} from "./logic.js";
 import {
   MAX_ENTITIES,
   MAX_UNITS_HIGH,
@@ -31,11 +40,28 @@ export function el(tag, className, text) {
   return node;
 }
 
+// The kinds of button besides the plain (tonal) one. Each only sets a
+// class; "primary" is the filled one.
+const BUTTON_KINDS = ["primary", "tonal", "text", "link", "icon", "danger"];
+
 // data-focus names a control so it can get focus back after its region is
-// drawn again; data-test is what the scripted browser run looks for.
+// drawn again; data-test is what the scripted browser run looks for. kind
+// is one of BUTTON_KINDS; a danger button gets a bin icon before its words.
+// A link button's words are in a span, which takes its focus ring.
 export function makeButton(label, options = {}) {
-  const button = el("button", options.className, label);
+  const button = el("button", options.className);
   button.type = "button";
+  if (BUTTON_KINDS.includes(options.kind)) {
+    button.classList.add(options.kind);
+  }
+  if (label !== undefined && label !== null && button.classList.contains("link")) {
+    button.append(el("span", null, label));
+  } else if (label !== undefined && label !== null) {
+    button.textContent = label;
+  }
+  if (options.kind === "danger") {
+    button.prepend(icon("mdi:trash-can-outline"));
+  }
   if (options.test) {
     button.dataset.test = options.test;
   }
@@ -136,15 +162,93 @@ function textInput({ label, value, maxLength, test, focus, helper, onInput }) {
   return { field, input };
 }
 
-function checkbox({ label, checked, focus, onChange }) {
+// A yes or no setting, drawn as a switch at the end of a row of words.
+// The helper line, when there is one, goes right after the row; the switch
+// names it as its description.
+export function switchRow({ label, help, checked, disabled, focus, test, onChange }) {
   const field = el("label", "check");
   const input = document.createElement("input");
   input.type = "checkbox";
+  input.setAttribute("role", "switch");
   input.checked = Boolean(checked);
-  input.dataset.focus = focus;
+  input.disabled = Boolean(disabled);
+  if (focus) {
+    input.dataset.focus = focus;
+  }
+  if (test) {
+    input.dataset.test = test;
+  }
   input.addEventListener("change", () => onChange(input.checked));
-  field.append(input, el("span", null, label));
-  return { field, input };
+  field.append(el("span", null, label), input);
+  let helper = null;
+  if (help) {
+    helper = el("p", "helper", help);
+    helper.id = uid("switch-help");
+    input.setAttribute("aria-describedby", helper.id);
+  }
+  return { field, input, helper };
+}
+
+// Reads a colour token of the host as numbers. A custom property's own
+// value is its text as written, which may be a name or a color-mix(); an
+// element's colour always comes back as numbers, so the token is mixed with
+// itself into the colour of a hidden span.
+function readColour(probe, token) {
+  probe.style.color = `color-mix(in srgb, var(${token}), var(${token}))`;
+  return parseCssColour(getComputedStyle(probe).color);
+}
+
+const toCss = (rgb) => `rgb(${rgb.join(", ")})`;
+
+// Sets the four accent values on the host (a filled button, its words, the
+// accent as text and the focus ring of the picture), each made readable on
+// the theme's own colours, and the knob of a switch that is off. When the
+// accent or the surface cannot be read, the token block's fallbacks hold.
+export function applyAccent(host) {
+  const root = host?.shadowRoot;
+  if (!root || typeof getComputedStyle !== "function") {
+    return;
+  }
+  const names = ["--tab-accent-fill", "--tab-accent-ink", "--tab-accent-text", "--tab-ring", "--tab-knob"];
+  const probe = document.createElement("span");
+  probe.hidden = true;
+  root.append(probe);
+  try {
+    const accent = readColour(probe, "--tab-accent");
+    const surface = readColour(probe, "--tab-surface");
+    if (!accent || !surface) {
+      for (const name of names) {
+        host.style.removeProperty(name);
+      }
+      return;
+    }
+    const text = readColour(probe, "--tab-text");
+    const grounds = accentGrounds({
+      surface,
+      page: readColour(probe, "--tab-bg"),
+      stage: readColour(probe, "--tab-stage"),
+      text,
+      accent,
+      tones: {
+        ok: readColour(probe, "--tab-ok"),
+        warn: readColour(probe, "--tab-warn"),
+        err: readColour(probe, "--tab-err"),
+        info: readColour(probe, "--tab-info"),
+      },
+    });
+    const { fill, ink } = accentInk(accent);
+    host.style.setProperty("--tab-accent-fill", toCss(fill));
+    host.style.setProperty("--tab-accent-ink", toCss(ink));
+    host.style.setProperty("--tab-accent-text", toCss(accentText(accent, grounds)));
+    host.style.setProperty("--tab-ring", toCss(accentText(accent, [[255, 255, 255]])));
+    if (text) {
+      host.style.setProperty("--tab-knob", toCss(switchKnob(surface, text)));
+    } else {
+      host.style.removeProperty("--tab-knob");
+    }
+  } finally {
+    probe.remove();
+  }
 }
 
 function select({ label, options, value, focus, test, onChange }) {
@@ -288,6 +392,7 @@ function entityField({ hass, field, value, collapsed, onChange }) {
     const action = names ? t("form.change_device") : t("form.choose_device");
     row.append(
       makeButton(action, {
+        kind: names ? "text" : undefined,
         test: "change-device",
         focus: `change-device:${field.name}`,
         ariaLabel: `${action}: ${label}`,
@@ -483,7 +588,7 @@ export function fillItemNotes(container, row, { onOpenAdvanced } = {}) {
     container.append(line);
     if (row.reason === "needs_approval" && onOpenAdvanced) {
       container.append(
-        makeButton(t("advanced.open"), { test: "open-advanced", onClick: onOpenAdvanced }),
+        makeButton(t("advanced.open"), { kind: "link", test: "open-advanced", onClick: onOpenAdvanced }),
       );
     }
   }
@@ -596,7 +701,12 @@ export function buildCardForm(ctx) {
   form.append(sizeBlock(ctx), lookBlock(ctx));
   form.append(positionBlock(ctx));
   form.append(
-    makeButton(t("form.remove"), { test: "remove-card", focus: "remove-card", onClick: ctx.onRemove }),
+    makeButton(t("form.remove"), {
+      kind: "danger",
+      test: "remove-card",
+      focus: "remove-card",
+      onClick: ctx.onRemove,
+    }),
   );
   return form;
 }
@@ -675,6 +785,7 @@ function sizeBlock(ctx) {
     block.append(
       height,
       makeButton(t("form.size_reset"), {
+        kind: "text",
         test: "size-reset",
         focus: "size-reset",
         onClick: () => resize(Number(own[0]) || 1, Number(own[1]) || 1),
@@ -719,7 +830,7 @@ function lookBlock(ctx) {
     block.append(themeField);
 
     block.append(
-      checkbox({
+      switchRow({
         label: t("form.use_color"),
         checked: data.use_color,
         focus: "look-use-color",
@@ -771,8 +882,12 @@ function lookBlock(ctx) {
     range.value = String(data.transparency || 0);
     range.dataset.focus = "look-transparency";
     const output = el("output", null, range.value);
+    // The track is filled up to the knob (see input[type="range"] in styles.js).
+    const fill = () => range.style.setProperty("--tab-range-fill", String(Number(range.value) / 100));
+    fill();
     range.addEventListener("input", () => {
       output.textContent = range.value;
+      fill();
       change({ transparency: Number(range.value) }, "transparency", true);
     });
     row.append(range, output);
@@ -785,16 +900,14 @@ function lookBlock(ctx) {
 
     // What the highlight colour changes on the tablet (see resolve_style in
     // maker/style.py and the "is-on" rules of the card styles).
-    const accentHelper = el("p", "helper", t("form.accent_helper"));
-    accentHelper.id = uid("accent-helper");
-    accentHelper.dataset.test = "accent-helper";
-    const { field: accentField, input: accentInput } = checkbox({
+    const { field: accentField, helper: accentHelper } = switchRow({
       label: t("form.use_accent"),
+      help: t("form.accent_helper"),
       checked: data.use_accent,
       focus: "look-use-accent",
       onChange: (checked) => change({ use_accent: checked }, "use_accent"),
     });
-    accentInput.setAttribute("aria-describedby", accentHelper.id);
+    accentHelper.dataset.test = "accent-helper";
     block.append(accentField, accentHelper);
     if (data.use_accent) {
       block.append(
@@ -834,6 +947,7 @@ export function buildHeadingForm(ctx) {
   }
   form.append(
     makeButton(t("form.remove_heading"), {
+      kind: "danger",
       test: "remove-heading",
       focus: "remove-heading",
       onClick: ctx.onRemove,
@@ -857,7 +971,7 @@ export function buildOtherForm(ctx) {
   }
   form.append(el("div", "item-notes"));
   if (!ctx.readOnly) {
-    form.append(makeButton(t("list.remove"), { test: "remove-item", onClick: ctx.onRemove }));
+    form.append(makeButton(t("list.remove"), { kind: "danger", test: "remove-item", onClick: ctx.onRemove }));
   }
   return form;
 }
@@ -929,6 +1043,7 @@ export function buildPageSettings(ctx) {
 
   block.append(
     makeButton(t("page.delete"), {
+      kind: "danger",
       test: "page-delete",
       focus: "page-delete",
       disabled: ctx.count <= 1,
@@ -999,10 +1114,16 @@ export function buildDashboardSettings(ctx) {
 
     const sidebarAlert = el("p", "alert");
     sidebarAlert.setAttribute("role", "alert");
-    const { field: sidebarField, input: sidebarInput } = checkbox({
+    const {
+      field: sidebarField,
+      input: sidebarInput,
+      helper: sidebarHelper,
+    } = switchRow({
       label: t("settings.sidebar"),
+      help: t("settings.sidebar_helper"),
       checked: ctx.showInSidebar,
       focus: "dashboard-sidebar",
+      test: "sidebar-checkbox",
       onChange: async (checked) => {
         try {
           await ctx.onSidebar(checked);
@@ -1013,8 +1134,7 @@ export function buildDashboardSettings(ctx) {
         }
       },
     });
-    sidebarInput.dataset.test = "sidebar-checkbox";
-    block.append(sidebarField, el("p", "helper", t("settings.sidebar_helper")), sidebarAlert);
+    block.append(sidebarField, sidebarHelper, sidebarAlert);
   }
 
   // There is deliberately no link to the dashboard in Home Assistant: its
@@ -1033,6 +1153,7 @@ export function buildDashboardSettings(ctx) {
     deleteAlert.setAttribute("role", "alert");
     block.append(
       makeButton(t("settings.delete"), {
+        kind: "danger",
         test: "dashboard-delete",
         focus: "dashboard-delete",
         onClick: async () => {

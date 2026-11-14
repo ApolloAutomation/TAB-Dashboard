@@ -2,7 +2,7 @@ schema: 1
 id: apollo/media-player
 version: 1.0.0
 name: Media player
-description: What is playing, with its picture, play, pause and skip buttons, and the volume.
+description: What is playing, with play, pause and skip buttons, and the volume. The tablet shows an icon, not the picture of what is playing.
 icon: mdi:speaker
 header: false
 size: 2x1

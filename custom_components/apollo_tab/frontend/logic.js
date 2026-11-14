@@ -500,3 +500,167 @@ export function warningBoxKind(warning) {
 
   return WARNING_BOX_KINDS[warning.code];
 }
+
+// ---- the accent colour, made readable --------------------------------
+// Home Assistant's accent is a mid colour: white words on the default
+// #009ac7 have only 3.26:1. These pick a fill, its words and a text colour
+// from the theme's own colours, so each has 4.5:1 where it is drawn.
+
+// "rgb(0, 154, 199)" or "color(srgb 0 0.6 0.78)" -> [r, g, b] (0..255, each
+// channel clamped and rounded). null for anything else, and for a colour
+// that is not fully opaque.
+export function parseCssColour(text) {
+  if (typeof text !== "string") {
+    return null;
+  }
+  const value = text.trim();
+  let parts = null;
+  let scale = 1;
+  let match = /^rgba?\(([^)]*)\)$/i.exec(value);
+  if (match) {
+    parts = match[1].split(/[\s,/]+/).filter(Boolean);
+  } else {
+    match = /^color\(\s*srgb\s+([^)]*)\)$/i.exec(value);
+    if (!match) {
+      return null;
+    }
+    parts = match[1].split(/[\s/]+/).filter(Boolean);
+    scale = 255;
+  }
+  if (parts.length !== 3 && parts.length !== 4) {
+    return null;
+  }
+  const numbers = parts.map((part) => (part.endsWith("%") ? Number(part.slice(0, -1)) / 100 : Number(part)));
+  if (!numbers.every(Number.isFinite)) {
+    return null;
+  }
+  if (parts.length === 4) {
+    // A percentage alpha is already a share; a number may be one too.
+    if (numbers[3] < 1) {
+      return null;
+    }
+  }
+  return numbers.slice(0, 3).map((channel, index) => {
+    const share = parts[index].endsWith("%") ? channel * 255 : channel * scale;
+    return Math.max(0, Math.min(255, Math.round(share)));
+  });
+}
+
+// Relative luminance as WCAG 2 defines it.
+function luminance(rgb) {
+  const [r, g, b] = rgb.map((value) => {
+    const c = value / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// Moves each channel `share` of the way from a to b, halves rounded up.
+function mix(a, b, share) {
+  return a.map((value, index) => Math.floor(value + (b[index] - value) * share + 0.5));
+}
+
+const BLACK = [0, 0, 0];
+const WHITE = [255, 255, 255];
+const DARK_INK = [17, 17, 17];
+
+// The filled button for an accent: { fill: [r, g, b], ink: [r, g, b] }.
+export function accentInk(colour) {
+  if (luminance(colour) > 0.4 && contrast(DARK_INK, colour) >= 4.5) {
+    return { fill: [...colour], ink: DARK_INK };
+  }
+  for (let step = 0; step <= 25; step += 1) {
+    const fill = mix(colour, BLACK, 0.04 * step);
+    if (contrast(WHITE, fill) >= 4.5) {
+      return { fill, ink: WHITE };
+    }
+  }
+  return { fill: BLACK, ink: WHITE };
+}
+
+// The grounds a link or a text button can sit on, from the theme's colours:
+// [surface, page, stage, accent-soft, tonal, and the four notice grounds],
+// each [r, g, b]. The surface is first. A colour that is missing is left
+// out, and so is every ground made from it.
+export function accentGrounds({ surface, page, stage, text, accent, tones = {} }) {
+  const grounds = [surface, page, stage];
+  if (accent) {
+    grounds.push(mix(surface, accent, 0.14));
+  }
+  if (text) {
+    grounds.push(mix(surface, text, 0.08));
+  }
+  for (const tone of [tones.ok, tones.warn, tones.err, tones.info]) {
+    if (tone) {
+      grounds.push(mix(surface, tone, 0.12));
+    }
+  }
+  return grounds.filter(Boolean);
+}
+
+// The knob of a switch that is off: the surface on a light theme, the text
+// colour on a dark one, so it is lighter than its track in both and never
+// reads as a hole. [r, g, b].
+export function switchKnob(surface, text) {
+  return luminance(surface) > 0.4 ? [...surface] : [...text];
+}
+
+// The accent as text that has 4.5:1 on every ground: [r, g, b]. It moves
+// toward black on a light surface and toward white on a dark one.
+export function accentText(colour, grounds) {
+  const target = luminance(grounds[0]) > 0.4 ? BLACK : WHITE;
+  for (let step = 0; step <= 25; step += 1) {
+    const text = mix(colour, target, 0.04 * step);
+    if (grounds.every((ground) => contrast(text, ground) >= 4.5)) {
+      return text;
+    }
+  }
+  return target;
+}
+
+// ---- the editor's layout ------------------------------------------------
+
+// The editor's layout for its own width and the window's height (both in
+// px): "wide" (the inspector docked on the right), "medium" (the inspector a
+// drawer over the picture), "compact" (one column) or "short" (two columns
+// in a low window, such as a phone on its side).
+export function layoutBand(width, height) {
+  if (height < 560) {
+    return width >= 600 ? "short" : "compact";
+  }
+  if (width >= 1160) {
+    return "wide";
+  }
+  return width >= 900 ? "medium" : "compact";
+}
+
+// The height of the editor's shell in px. `visual` is the browser's
+// visualViewport ({ height, offsetTop, scale }) or null; `top` is the
+// root's top edge in the window. Above a phone's on-screen keyboard it ends
+// where the visible part ends; pinch zoom does not make it smaller.
+export function shellHeight({ innerHeight, visual, top }) {
+  const zoomed = visual && Math.abs(visual.scale - 1) > 0.01;
+  const bottom = visual && !zoomed ? visual.height + visual.offsetTop : innerHeight;
+  return Math.max(0, Math.floor(bottom - top));
+}
+
+// The picture's width in px for the free space around it: as large as fits,
+// never above the tablet's own 1280 x 800.
+export function fitStage(availW, availH) {
+  return Math.max(0, Math.floor(Math.min(availW, availH * 1.6, 1280)));
+}
+
+// How far (px) the picture moves left so the card clears the drawer.
+// All four are x positions on screen. The card never moves past minLeft.
+export function drawerShift(cardLeft, cardRight, drawerLeft, minLeft) {
+  const need = cardRight + 16 - drawerLeft;
+  if (need <= 0) {
+    return 0;
+  }
+  return Math.min(need, Math.max(0, cardLeft - minLeft));
+}

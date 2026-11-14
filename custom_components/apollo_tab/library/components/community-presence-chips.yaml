@@ -2,7 +2,7 @@ schema: 1
 id: community/presence-chips
 version: 1.0.0
 name: Presence chips
-description: Who is home, with a picture for each person.
+description: Who is home. The tablet shows an icon for each person, not their photo.
 icon: mdi:account-multiple
 header: false
 size: 2x1

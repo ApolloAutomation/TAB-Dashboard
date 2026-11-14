@@ -2,7 +2,7 @@ schema: 1
 id: apollo/camera-snapshot
 version: 1.0.0
 name: Camera snapshot
-description: A still image from a camera that refreshes every few seconds.
+description: A camera's name. The tablet cannot show the camera's picture yet, so it shows an icon in its place.
 icon: mdi:cctv
 header: false
 size: 2x1

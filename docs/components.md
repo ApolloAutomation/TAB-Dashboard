@@ -199,6 +199,20 @@ card whose entities are not chosen yet. `preview.params` maps param names to
 values of the param's type. `preview.inputs` maps input names to a string,
 number, boolean or list of numbers.
 
+## Picker groups and search words
+
+The built-in cards get their group in the card picker and their extra
+search words from `library/picker.json`, one entry per card id. The group is
+one of `lights`, `climate`, `covers`, `security`, `media`, `sensors`, `home`
+and `more`. A card has at most 8 search words, each in lower case and at
+most 24 characters, best words that are not in its name or description
+("lamp", "tv"). An entry that breaks these rules is left out and logged, and
+an entry for a card that is not there is not used. A card file of the
+second schema names its own group with `group` (`more` when it has none),
+and that wins over the entry, which then only gives its search words. A card
+you write in this format has no entry, so the picker places it by the kind
+of device it controls.
+
 ## Templates
 
 Templates run in Home Assistant's template engine. The limits below are
