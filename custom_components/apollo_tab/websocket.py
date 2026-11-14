@@ -196,6 +196,7 @@ async def websocket_library_approve(
         probatio.Required("type"): "apollo_tab/card/subscribe",
         probatio.Required("card"): dict,
         probatio.Optional("dashboard"): probatio.Any(str, None),
+        probatio.Optional("detail", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -232,6 +233,8 @@ async def websocket_card_subscribe(
         probatio.Required("event"): probatio.In(["tap", "change"]),
         probatio.Optional("value"): probatio.Any(bool, int, float, str),
         probatio.Optional("confirmed", default=False): bool,
+        probatio.Optional("dashboard"): probatio.Any(str, None),
+        probatio.Optional("detail", default=False): bool,
     }
 )
 @websocket_api.async_response

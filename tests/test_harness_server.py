@@ -60,6 +60,9 @@ def test_preview_response_for_the_real_dashboard():
         b'{"config": "views: []"}',
         b'{"config": null}',
         b'{"config": {}, "padding": "' + b"x" * MAX_BODY + b'"}',
+        b'{"config": {}, "dl": 3}',
+        b'{"config": {}, "dl": true}',
+        b'{"config": {}, "dl": "2"}',
     ],
 )
 def test_handle_preview_body_rejects_bad_input(body):
@@ -76,6 +79,15 @@ def test_handle_preview_body_answers_a_good_request():
     status, payload = handle_preview_body(body)
     assert status == 200
     assert payload == preview_response(_sample_dashboard())
+
+
+def test_preview_asks_for_layout_version_2():
+    """Asking for dl 2 makes layout version 2, as the editor asks for it."""
+    body = json.dumps({"config": _sample_dashboard(), "dl": 2}).encode("utf-8")
+    status, payload = handle_preview_body(body)
+    assert status == 200
+    assert payload["layout"]["v"] == 2
+    assert preview_response(_sample_dashboard())["layout"]["v"] == 1
 
 
 @pytest.mark.parametrize(("token", "expected"), [("run-1", [b"run-1"]), ("", [])])

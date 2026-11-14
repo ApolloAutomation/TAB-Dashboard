@@ -35,8 +35,10 @@ sys.dont_write_bytecode = True
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from custom_components.apollo_tab.library import _read_status  # noqa: E402
 from custom_components.apollo_tab.maker.convert import convert_dashboard  # noqa: E402
 from custom_components.apollo_tab.maker.schema import validate_component  # noqa: E402
+from custom_components.apollo_tab.protocol import load_contract  # noqa: E402
 from tests.harness.build_fixtures import (  # noqa: E402
     load_components,
     load_theme_entries,
@@ -78,11 +80,27 @@ def _library() -> tuple[dict, dict]:
     return components, themes
 
 
-def preview_response(config: dict) -> dict:
-    """Convert a dashboard config and return the preview command's answer."""
+@functools.cache
+def _icons_and_status() -> tuple[dict, dict]:
+    """Return the contract's icons and the status colours, loaded once."""
+    return load_contract()[1], _read_status()
+
+
+def preview_response(config: dict, dl: int = 1) -> dict:
+    """Convert a dashboard config and return the preview command's answer.
+
+    dl is the layout version to make, as apollo_tab/layout/preview takes it.
+    """
     components, themes = _library()
+    icons, status = _icons_and_status()
     result = convert_dashboard(
-        config, components=components, themes=themes, approved=set()
+        config,
+        components=components,
+        themes=themes,
+        approved=set(),
+        dl=dl,
+        icons=icons,
+        status=status,
     )
     return {
         "layout": result["layout"],
@@ -102,8 +120,11 @@ def handle_preview_body(body: bytes) -> tuple[int, dict]:
         return HTTPStatus.BAD_REQUEST, {"error": "The request is not valid JSON"}
     if not isinstance(data, dict) or not isinstance(data.get("config"), dict):
         return HTTPStatus.BAD_REQUEST, {"error": "config must be a JSON object"}
+    dl = data.get("dl", 1)
+    if dl not in (1, 2) or isinstance(dl, bool):
+        return HTTPStatus.BAD_REQUEST, {"error": "dl must be 1 or 2"}
     try:
-        return HTTPStatus.OK, preview_response(data["config"])
+        return HTTPStatus.OK, preview_response(data["config"], dl)
     except Exception:
         # The converter never raises for bad dashboards, so this is a bug;
         # print it and answer the way the integration would.

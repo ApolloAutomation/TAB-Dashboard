@@ -761,7 +761,8 @@ export function pageScreens(preview, vi) {
 
   const result = [];
   preview.layout.pages.forEach((page, index) => {
-    if (isPlainObject(page) && page.view === vi) {
+    // A detail page carries its card's view, but it is no screen of it.
+    if (isPlainObject(page) && page.view === vi && !(index > 0 && page.sub === 1)) {
       result.push(index);
     }
   });

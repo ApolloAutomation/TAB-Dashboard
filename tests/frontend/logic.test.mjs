@@ -103,6 +103,18 @@ test("subscriptionKey ignores key order and unrelated keys", () => {
   assert.equal(first, second);
 });
 
+test("subscriptionKey tells schema 2 cards apart by look, settings and detail", () => {
+  const base = { component: "apollo/light", params: { entity: "light.den" } };
+  const keys = [
+    logic.subscriptionKey(base, "tab-1"),
+    logic.subscriptionKey({ ...base, variant: "tile" }, "tab-1"),
+    logic.subscriptionKey({ ...base, variant: "wide" }, "tab-1"),
+    logic.subscriptionKey({ ...base, options: { show_white: false } }, "tab-1"),
+    logic.subscriptionKey(base, "tab-1", true),
+  ];
+  assert.equal(new Set(keys).size, keys.length);
+});
+
 test("formToStyle drops empty parts", () => {
   assert.equal(logic.formToStyle({
     theme: "",
@@ -507,4 +519,37 @@ test("shellHeight follows the keyboard and ignores a pinch zoom", () => {
   assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 400, offsetTop: 120, scale: 2 }, top: 10 }), 790);
   assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 640.6, offsetTop: 0, scale: 1.005 }, top: 0.4 }), 640);
   assert.equal(logic.shellHeight({ innerHeight: 300, visual: null, top: 400 }), 0);
+});
+
+test("compactCard cuts the empty band of a detail copy down to one gap", () => {
+  const card = {
+    w: 568,
+    h: 696,
+    header: { r: [16, 16, 536, 48] },
+    widgets: [
+      { i: 0, t: "switch", r: [488, 22, 64, 36] },
+      { i: 1, t: "slider", r: [16, 540, 536, 56] },
+      { i: 2, t: "slider", r: [16, 604, 536, 76] },
+      { i: 3, t: "label", r: [16, 604, 0, 0] },
+    ],
+  };
+  const out = logic.compactCard(card);
+  // 64 to 540 is empty: 468 of it go, 8 stay.
+  assert.equal(out.h, 696 - 468);
+  assert.deepEqual(out.header.r, [16, 16, 536, 48]);
+  assert.deepEqual(out.widgets.map((widget) => widget.r), [
+    [488, 22, 64, 36],
+    [16, 72, 536, 56],
+    [16, 136, 536, 76],
+    [16, 136, 0, 0],
+  ]);
+  // The input is not changed.
+  assert.equal(card.h, 696);
+  assert.deepEqual(card.widgets[1].r, [16, 540, 536, 56]);
+  // Gaps of 16 or less stay, and a device layout is left as it is.
+  const tight = { w: 100, h: 100, widgets: [{ r: [0, 0, 10, 10] }, { r: [0, 26, 10, 10] }] };
+  assert.equal(logic.compactCard(tight), tight);
+  const layout = { w: [], r: [0, 0, 10, 10] };
+  assert.equal(logic.compactCard(layout), layout);
+  assert.equal(logic.compactCard(null), null);
 });

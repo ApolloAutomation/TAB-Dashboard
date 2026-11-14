@@ -411,6 +411,8 @@ function beginSubscription(record) {
         type: "apollo_tab/card/subscribe",
         card: record.card,
         dashboard: record.dashboard ?? null,
+        // The copy for the card's detail page, shown in a dialog.
+        ...(record.detail ? { detail: true } : {}),
       },
       ...record.ready.options,
     );
@@ -480,8 +482,8 @@ function watchCardConnection(record) {
   });
 }
 
-export function subscribeCard(conn, card, dashboard, listener) {
-  const key = subscriptionKey(card, dashboard);
+export function subscribeCard(conn, card, dashboard, listener, detail = false) {
+  const key = subscriptionKey(card, dashboard, detail);
   let record = cardSubscriptions.get(key);
 
   if (!record) {
@@ -490,6 +492,7 @@ export function subscribeCard(conn, card, dashboard, listener) {
       conn,
       card,
       dashboard,
+      detail: Boolean(detail),
       listeners: new Set(),
       unsubscribe: null,
       starting: false,
@@ -562,7 +565,8 @@ export function subscribeCard(conn, card, dashboard, listener) {
   };
 }
 
-export function callCard(conn, card, widget, event, value, confirmed = false) {
+// widget -1 is the card itself. detail: a control of the detail copy.
+export function callCard(conn, card, widget, event, value, confirmed = false, detail = false) {
   const message = {
     type: "apollo_tab/card/call",
     card,
@@ -570,6 +574,9 @@ export function callCard(conn, card, widget, event, value, confirmed = false) {
     event,
     confirmed: Boolean(confirmed),
   };
+  if (detail) {
+    message.detail = true;
+  }
   if (value !== undefined) {
     message.value = value;
   }
@@ -577,8 +584,9 @@ export function callCard(conn, card, widget, event, value, confirmed = false) {
 }
 
 // Converts a config that is not saved; resolves to {layout, warnings, values, sources}.
+// Drawn as layout version 2, as a tablet with the newer software shows it.
 export function previewLayout(conn, config) {
-  return conn.sendMessagePromise({ type: "apollo_tab/layout/preview", config });
+  return conn.sendMessagePromise({ type: "apollo_tab/layout/preview", config, dl: 2 });
 }
 
 // ---- tablets --------------------------------------------------------------

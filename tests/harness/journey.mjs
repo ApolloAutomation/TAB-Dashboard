@@ -705,7 +705,7 @@ export class Run {
   }
 
   async key(key) {
-    const codes = { Tab: 9, Enter: 13, Escape: 27, Delete: 46, Backspace: 8, ArrowUp: 38, ArrowDown: 40 };
+    const codes = { Tab: 9, Enter: 13, Escape: 27, Delete: 46, Backspace: 8, ArrowUp: 38, ArrowDown: 40, ContextMenu: 93 };
     const event = { key, code: key, windowsVirtualKeyCode: codes[key] || 0 };
     await this.browser.send("Input.dispatchKeyEvent", {
       type: "keyDown",
@@ -6478,6 +6478,140 @@ function chains(realConfig) {
     }),
   ];
 
+  // Layout version 2 as the tablet draws it: the contract's kit page by
+  // page, and schema 2 cards in a browser with their own tap and hold.
+  const card2 = (component, variant) =>
+    `document.querySelector('apollo-tab-card[data-component="${component}"][data-variant="${variant}"]')`;
+  const openView = async (r, params, ready) => {
+    const query = new URLSearchParams({ ha: r.setup.ha, ...params });
+    await r.browser.send("Page.navigate", { url: `${r.browser.base}/tests/harness/index.html?${query}` });
+    await r.waitFor(`document.readyState === "complete" && (${ready})`, `the ${params.view} view`);
+  };
+  const drawing = [
+    step("204", "kit-pages", async (r) => {
+      let first = null;
+      const pages = [];
+      for (let page = 0; page < 5; page += 1) {
+        await openView(r, { view: "kit", page: String(page) }, `document.querySelector('[data-test="kit-page"][data-ready="1"]')`);
+        pages.push(await r.eval(`(() => {
+          const host = document.querySelector('[data-test="kit-page"]');
+          const wall = host.querySelector(".at-page");
+          return {
+            nav: host.querySelectorAll(".at-nav-button").length,
+            back: host.querySelectorAll(".at-nav-button.back").length,
+            wall: wall.style.getPropertyValue("--at-wall"),
+            cards: host.querySelectorAll(".at-card").length,
+            lit: host.querySelectorAll(".at-card.is-on, .at-card.is-lit, .at-card.is-outline").length,
+          };
+        })()`));
+        const shot = await r.screen(`204-kit-page${page}`);
+        first ||= shot;
+      }
+      // The detail page's entry is not drawn on the other pages.
+      check(pages[0].nav === 3 && pages[0].back === 0, `page 0 has ${pages[0].nav} side bar entries`);
+      // Detail pages draw only the back entry.
+      check(pages[3].nav === 1 && pages[3].back === 1, "the detail page does not show one back entry");
+      check(pages[4].nav === 1 && pages[4].back === 1, "the second detail page does not show one back entry");
+      // The climate page has a theme of its own.
+      check(pages[1].wall && pages[1].wall !== pages[0].wall, "the climate page does not use its own theme");
+      check(pages[0].cards > 0 && pages[0].lit > 0, "the kit page shows no lit card");
+      return first;
+    }, { desktopOnly: true }),
+    step("205", "cards-v2-in-browser", async (r) => {
+      await openView(r, { view: "cards2" }, `${card2("apollo/light", "tile")}?.shadowRoot?.querySelector(".at-card .at-slider")`);
+      await sleep(200);
+      const look = await r.eval(`(() => {
+        const root = ${card2("apollo/light", "tile")}.shadowRoot;
+        const card = root.querySelector(".at-card");
+        return {
+          on: card.classList.contains("is-on"),
+          tint: card.style.getPropertyValue("--at-onbg"),
+          bar: Boolean(root.querySelector(".at-slider.bar")),
+          error: Boolean(root.querySelector(".status")),
+        };
+      })()`);
+      check(!look.error, "the light card shows an error in a browser");
+      check(look.on && look.tint && look.bar, `the light card is not drawn as layout version 2 (${JSON.stringify(look)})`);
+      const errors = await r.eval(`[...document.querySelectorAll('apollo-tab-card')].filter((card) => card.shadowRoot.querySelector(".status")).map((card) => card.dataset.component + " " + card.dataset.variant)`);
+      check(errors.length === 0, `cards show an error: ${errors.join(", ")}`);
+      const shot = await r.shot("205-cards-v2");
+
+      // A tap on the card's name is the card's: widget -1.
+      const spot = await r.eval(`(() => {
+        const host = ${card2("apollo/light", "tile")};
+        host.scrollIntoView({ block: "center" });
+        const label = host.shadowRoot.querySelector(".at-label");
+        const box = label.getBoundingClientRect();
+        return { x: box.left + 8, y: box.top + box.height / 2 };
+      })()`);
+      const before = (await r.calls("apollo_tab/card/call")).length;
+      await r.clickAt(spot.x, spot.y);
+      await r.waitFor(`__apolloMockHass.calls.filter((call) => call.type === "apollo_tab/card/call").length > ${before}`, "the card's tap");
+      const [tap] = (await r.calls("apollo_tab/card/call")).slice(before);
+      check(tap.widget === -1 && tap.event === "tap", `the tap went to widget ${tap.widget}`);
+
+      // A hold opens its controls in a dialog.
+      await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: spot.x, y: spot.y });
+      await r.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: spot.x, y: spot.y, button: "left", buttons: 1, clickCount: 1 });
+      await sleep(650);
+      await r.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: spot.x, y: spot.y, button: "left", buttons: 0, clickCount: 1 });
+      await r.waitFor(`document.querySelector('[role="dialog"] apollo-tab-card')?.shadowRoot?.querySelector(".at-card")`, "the detail dialog");
+      check((await r.calls("apollo_tab/card/call")).length === before + 1, "the hold also sent a tap");
+      const detail = await r.eval(`(() => {
+        const card = document.querySelector('[role="dialog"] apollo-tab-card');
+        return { sliders: card.shadowRoot.querySelectorAll(".at-slider").length, error: Boolean(card.shadowRoot.querySelector(".status")) };
+      })()`);
+      check(!detail.error && detail.sliders >= 2, `the detail dialog does not show the light's controls (${JSON.stringify(detail)})`);
+      // The dialog has its title and close button inside its frame, stays
+      // within the window, and leaves no empty band above the controls.
+      const frame = await r.eval(`(() => {
+        const box = document.querySelector('[role="dialog"]');
+        const close = box.querySelector("button");
+        const card = box.querySelector("apollo-tab-card");
+        const b = box.getBoundingClientRect();
+        const c = close.getBoundingClientRect();
+        const header = card.shadowRoot.querySelector(".at-header, .at-label");
+        const first = [...card.shadowRoot.querySelectorAll(".at-slider")].map((el) => el.getBoundingClientRect().top).sort((x, y) => x - y)[0];
+        return {
+          title: box.querySelector("h2")?.textContent || "",
+          label: box.getAttribute("aria-labelledby") === box.querySelector("h2")?.id,
+          closeInside: c.top >= b.top && c.right <= b.right && c.bottom <= b.bottom,
+          inWindow: b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth,
+          band: first - header.getBoundingClientRect().bottom,
+          scale: card.getBoundingClientRect().width / 568,
+        };
+      })()`);
+      check(frame.title && frame.label, `the detail dialog has no title (${JSON.stringify(frame)})`);
+      check(frame.closeInside, "the dialog's close button is outside its frame");
+      check(frame.inWindow, `the detail dialog does not fit the window (${JSON.stringify(frame)})`);
+      check(frame.band < 120 * frame.scale, `the detail dialog leaves an empty band above its controls (${JSON.stringify(frame)})`);
+      await r.screen("205-detail-dialog");
+      await r.key("Escape");
+      await r.waitFor(`!document.querySelector('[role="dialog"]')`, "the dialog to close");
+
+      // From the keyboard: Enter taps the card, the menu key opens its
+      // controls, and Escape brings the focus back to the card.
+      await r.eval(`${card2("apollo/light", "tile")}.shadowRoot.querySelector(".at-card").focus()`);
+      const role = await r.eval(`(() => {
+        const card = ${card2("apollo/light", "tile")}.shadowRoot.querySelector(".at-card");
+        return { role: card.getAttribute("role"), name: card.getAttribute("aria-label"), focused: card.matches(":focus") };
+      })()`);
+      check(role.role === "button" && role.name && role.focused, `the card cannot take the keyboard's focus (${JSON.stringify(role)})`);
+      const keyed = (await r.calls("apollo_tab/card/call")).length;
+      await r.key("Enter");
+      await r.waitFor(`__apolloMockHass.calls.filter((call) => call.type === "apollo_tab/card/call").length > ${keyed}`, "the card's tap from the keyboard");
+      const [enter] = (await r.calls("apollo_tab/card/call")).slice(keyed);
+      check(enter.widget === -1 && enter.event === "tap", `Enter went to widget ${enter.widget}`);
+      await r.key("ContextMenu");
+      await r.waitFor(`document.querySelector('[role="dialog"] apollo-tab-card')?.shadowRoot?.querySelector(".at-card")`, "the detail dialog from the keyboard");
+      await r.key("Escape");
+      await r.waitFor(`!document.querySelector('[role="dialog"]')`, "the dialog to close");
+      const back = await r.eval(`${card2("apollo/light", "tile")}.shadowRoot.querySelector(".at-card").matches(":focus")`);
+      check(back, "the focus does not go back to the card when its dialog closes");
+      return shot;
+    }),
+  ];
+
   return [
     first,
     real,
@@ -6530,6 +6664,7 @@ function chains(realConfig) {
     tabletsTurnOn,
     foundation,
     workspace,
+    drawing,
   ];
 }
 

@@ -1,6 +1,7 @@
 import test, { mock } from "node:test";
 import assert from "node:assert";
 import {
+  callCard,
   onLayoutChanged,
   onLibraryChanged,
   previewLayout,
@@ -861,5 +862,38 @@ test("previewLayout sends the config and returns the answer", async () => {
   };
 
   assert.equal(await previewLayout(conn, config), answer);
-  assert.deepEqual(sent, [{ type: "apollo_tab/layout/preview", config }]);
+  // The editor draws layout version 2, as a tablet with the newer software.
+  assert.deepEqual(sent, [{ type: "apollo_tab/layout/preview", config, dl: 2 }]);
+});
+
+test("callCard names the card itself as widget -1, and a detail copy's controls", async () => {
+  const sent = [];
+  const conn = {
+    sendMessagePromise(message) {
+      sent.push(message);
+      return Promise.resolve({ ok: true });
+    },
+  };
+  const card = { component: "apollo/light" };
+  await callCard(conn, card, -1, "tap", undefined, false);
+  await callCard(conn, card, 4, "change", 50, true, true);
+  assert.deepEqual(sent, [
+    { type: "apollo_tab/card/call", card, widget: -1, event: "tap", confirmed: false },
+    { type: "apollo_tab/card/call", card, widget: 4, event: "change", confirmed: true, value: 50, detail: true },
+  ]);
+});
+
+test("subscribeCard asks for the detail copy apart from the card", async () => {
+  const conn = makeConnection(["resolve", "resolve"]);
+  const card = { component: "detail-test" };
+  subscribeCard(conn, card, null, () => {});
+  subscribeCard(conn, card, null, () => {}, true);
+  assert.equal(conn.calls.length, 2);
+  assert.deepEqual(conn.calls[1].message, {
+    type: "apollo_tab/card/subscribe",
+    card,
+    dashboard: null,
+    detail: true,
+  });
+  await flush();
 });

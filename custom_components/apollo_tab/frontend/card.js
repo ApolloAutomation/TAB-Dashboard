@@ -9,6 +9,7 @@ import {
 import { openConfirm } from "./confirm.js";
 import {
   aliasTag,
+  compactCard,
   dashboardFromPath,
   feedbackReduce,
   isOn,
@@ -16,7 +17,7 @@ import {
   subscriptionKey,
 } from "./logic.js";
 import { cardTokens, renderCard } from "./render.js";
-import { cardStyles, rendererStyles } from "./styles.js";
+import { cardStyles, detailDialogStyles, rendererStyles } from "./styles.js";
 
 function makeElement(tag, className) {
   const element = document.createElement(tag);
@@ -52,6 +53,31 @@ function errorText(event, config) {
     return t("card.waiting");
   }
   return t("card.invalid", { message: event.message || event.code || "" });
+}
+
+// Tab and Shift+Tab stay inside the dialog.
+function trapFocus(event, box) {
+  const inner = box.querySelector("apollo-tab-card")?.shadowRoot;
+  const items = [
+    ...box.querySelectorAll("button"),
+    ...(inner ? inner.querySelectorAll("button:not(:disabled), input, [tabindex='0']") : []),
+  ];
+  if (!items.length) {
+    return;
+  }
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function widgetKey(widget) {
@@ -107,6 +133,12 @@ export class ApolloTabCard extends HTMLElement {
     this._lastValues = {};
     this._confirmKeys = new Set();
     this._confirming = new Set();
+    // The copy for a card's detail page, shown in a dialog by its card.
+    this._detail = false;
+    this._dialog = null;
+    // When each slot's value last changed, for clocks and moving sliders.
+    this._valueTimes = {};
+    this._ageTimer = null;
   }
 
   setConfig(config) {
@@ -145,6 +177,10 @@ export class ApolloTabCard extends HTMLElement {
     if (first && this.isConnected && this._config) {
       this._subscribe();
       return;
+    }
+
+    if (this._dialog) {
+      this._dialog.card.hass = value;
     }
 
     if (this._compiled) {
@@ -202,6 +238,9 @@ export class ApolloTabCard extends HTMLElement {
     clearTimeout(this._messageTimer);
     clearInterval(this._tickTimer);
     this._tickTimer = null;
+    clearInterval(this._ageTimer);
+    this._ageTimer = null;
+    this._closeDetail();
   }
 
   getGridOptions() {
@@ -264,6 +303,7 @@ export class ApolloTabCard extends HTMLElement {
       this._config,
       dashboard,
       (event) => this._handleEvent(event),
+      this._detail,
     );
   }
 
@@ -281,7 +321,7 @@ export class ApolloTabCard extends HTMLElement {
     this._firstEvent = true;
 
     if (event.type === "init") {
-      this._compiled = event.card;
+      this._compiled = this._detail ? compactCard(event.card) : event.card;
       this._demo = Boolean(event.card?.demo);
       this._tokens = cardTokens(event.theme || {}, event.style || {});
       this._values = {};
@@ -289,6 +329,8 @@ export class ApolloTabCard extends HTMLElement {
       this._lastValues = {};
       this._feedback = new Map();
       this._confirmKeys = new Set();
+      this._valueTimes = {};
+      this._manageAges();
 
       for (const widget of event.card?.widgets || []) {
         this._feedback.set(widgetKey(widget), {
@@ -307,6 +349,17 @@ export class ApolloTabCard extends HTMLElement {
       const previous = this._lastValues;
       this._values = event.values || {};
       this._errors = event.errors || {};
+      const now = Date.now();
+      for (const [slot, value] of Object.entries(this._values)) {
+        if (!Object.hasOwn(previous, slot) || previous[slot] !== value) {
+          this._valueTimes[slot] = now;
+        }
+      }
+      // The card's own optimistic look ends when its "on" value comes.
+      const onSlot = valueSlot({ value: this._compiled?.on });
+      if (onSlot !== null && Object.hasOwn(this._values, onSlot) && previous[onSlot] !== this._values[onSlot]) {
+        this._reduceFeedback(-1, { type: "value", now });
+      }
 
       for (const widget of this._compiled?.widgets || []) {
         const slot = valueSlot(widget);
@@ -377,6 +430,12 @@ export class ApolloTabCard extends HTMLElement {
     // A host left at its minimum height gets none from its parent (masonry
     // views), so it takes the card's shape. Measuring both ways in one pass
     // keeps the answer stable from one resize to the next.
+    if (this._detail) {
+      // The dialog takes the card's width and keeps it within the window.
+      const { w, h } = this._compiled;
+      this.parentElement?.style.setProperty("--at-detail-w", `${w}px`);
+      this.parentElement?.style.setProperty("--at-detail-ratio", String(w / h));
+    }
     this.style.removeProperty("aspect-ratio");
     let rect = this.getBoundingClientRect();
     if (rect.height <= 56) {
@@ -406,6 +465,9 @@ export class ApolloTabCard extends HTMLElement {
           onDrag: (active) => {
             this._dragging = active;
           },
+          onCardTap: () => this._cardTap(),
+          onHold: (widget) => this._hold(widget),
+          label: this._cardName(),
         },
       );
     } else {
@@ -416,12 +478,140 @@ export class ApolloTabCard extends HTMLElement {
   }
 
   _renderState() {
+    const card = this._feedbackState(-1);
     return {
       values: this._values,
       errors: this._errors,
       tokens: this._tokens,
       feedback: this._feedback,
+      // A tap on the card shows its new look before the answer comes.
+      cardOn: card.phase === "pending" && card.value !== undefined ? card.value : undefined,
+      // Seconds since a slot's value last changed (contract 4.4).
+      age: (slot) => (this._valueTimes[slot] ? (Date.now() - this._valueTimes[slot]) / 1000 : 0),
     };
+  }
+
+  // Clocks and sliders that move by themselves are drawn again each second.
+  _manageAges() {
+    const moving = (this._compiled?.widgets || []).some(
+      (widget) => widget.clk || (widget.t === "slider" && widget.rate !== undefined && !widget.change),
+    );
+    if (moving && !this._ageTimer) {
+      this._ageTimer = setInterval(() => this._patchRenderer(), 1000);
+    } else if (!moving && this._ageTimer) {
+      clearInterval(this._ageTimer);
+      this._ageTimer = null;
+    }
+  }
+
+  // Whether the card is shown as not available (un): it then sends nothing.
+  _unavailable() {
+    const un = this._compiled?.un;
+    return un !== undefined && un !== null && isOn(resolveBound(un, this._values));
+  }
+
+  // A tap on the card itself: widget -1 on the server.
+  async _cardTap() {
+    const card = this._compiled;
+    if (!card?.tap) {
+      return;
+    }
+    if (card.tap.local) {
+      this._localAction(card.tap);
+      return;
+    }
+    const pseudo = { i: -1, t: "card", tap: card.tap, confirm: card.confirm };
+    const optimistic =
+      card.tap.policy === "optimistic" && card.on !== undefined && card.on !== null
+        ? !isOn(resolveBound(card.on, this._values))
+        : undefined;
+    await this._perform(pseudo, "tap", undefined, optimistic);
+  }
+
+  // A hold, or a right click: the card's own (widget null) or a widget's.
+  _hold(widget) {
+    const hold = widget ? widget.hold : this._compiled?.hold;
+    if (hold?.local) {
+      this._localAction(hold);
+    }
+  }
+
+  // The card's name for a screen reader and the dialog's title: its own
+  // name, else its first device's name, else the card's.
+  _cardName() {
+    const entity = this._compiled?.entities?.[0];
+    return (
+      this._config?.name ||
+      this._hass?.states?.[entity]?.attributes?.friendly_name ||
+      this._compiled?.name ||
+      ""
+    );
+  }
+
+  // The detail page in a dialog: a title row with a close button, and the
+  // card's controls sized to fit the window.
+  _openDetail() {
+    if (this._detail || this._dialog || !this._config) {
+      return;
+    }
+    const opener = this.canvas.querySelector(".at-card");
+    const backdrop = makeElement("div", "apollo-tab-detail");
+    const style = document.createElement("style");
+    style.textContent = detailDialogStyles;
+    const box = makeElement("div", "apollo-tab-detail-box");
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    const head = makeElement("div", "apollo-tab-detail-head");
+    const title = makeElement("h2", "apollo-tab-detail-title");
+    title.id = `apollo-tab-detail-${Math.random().toString(36).slice(2)}`;
+    title.textContent = this._cardName();
+    box.setAttribute("aria-labelledby", title.id);
+    const close = makeElement("button", "apollo-tab-detail-close");
+    close.type = "button";
+    close.setAttribute("aria-label", t("picker.close"));
+    close.title = t("picker.close");
+    const icon = document.createElement("ha-icon");
+    icon.icon = "mdi:close";
+    close.append(icon);
+    head.append(title, close);
+    const card = document.createElement(this.localName);
+    card._detail = true;
+    card._closeDialog = () => this._closeDetail();
+    card.setConfig(this._config);
+    box.append(head, card);
+    backdrop.append(style, box);
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        this._closeDetail();
+      } else if (event.key === "Tab") {
+        trapFocus(event, box);
+      }
+    };
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        this._closeDetail();
+      }
+    });
+    close.addEventListener("click", () => this._closeDetail());
+    document.addEventListener("keydown", onKey);
+    this._dialog = { backdrop, card, opener, onKey };
+    document.body.append(backdrop);
+    card.hass = this._hass;
+    close.focus();
+  }
+
+  _closeDetail() {
+    if (!this._dialog) {
+      return;
+    }
+    const { backdrop, opener, onKey } = this._dialog;
+    this._dialog = null;
+    document.removeEventListener("keydown", onKey);
+    backdrop.remove();
+    // Focus goes back to the card that opened the dialog.
+    if (opener?.isConnected) {
+      opener.focus?.();
+    }
   }
 
   _patchRenderer() {
@@ -540,6 +730,17 @@ export class ApolloTabCard extends HTMLElement {
   }
 
   _localAction(action) {
+    if (action.local === "detail") {
+      this._openDetail();
+      return;
+    }
+
+    // Back works on a detail page only (4.6): it closes the dialog.
+    if (action.local === "back") {
+      this._closeDialog?.();
+      return;
+    }
+
     if ((action.local === "open_details" || action.local === "open_live") && action.entity) {
       this.dispatchEvent(
         new CustomEvent("hass-more-info", {
@@ -570,6 +771,11 @@ export class ApolloTabCard extends HTMLElement {
     const policy = action.policy || "pulse";
     const key = widgetKey(widget);
     const confirmKey = `${key}:${eventName}`;
+
+    // A card shown as not available takes no press (contract 4.7).
+    if (this._unavailable()) {
+      return;
+    }
 
     if (this._demo) {
       this._reduceFeedback(key, {
@@ -610,6 +816,7 @@ export class ApolloTabCard extends HTMLElement {
         eventName,
         value,
         false,
+        this._detail,
       );
       this._reduceFeedback(key, { type: "ok", now: Date.now() });
     } catch (error) {
@@ -662,6 +869,7 @@ export class ApolloTabCard extends HTMLElement {
           eventName,
           value,
           true,
+          this._detail,
         );
         this._reduceFeedback(key, { type: "ok", now: Date.now() });
       } catch (error) {

@@ -91,6 +91,13 @@ export class FakeElement {
     }
   }
 
+  prepend(...nodes) {
+    const rest = this.children;
+    this.children = [];
+    this.append(...nodes);
+    this.children.push(...rest.filter((child) => !nodes.includes(child)));
+  }
+
   removeChild(node) {
     this.children = this.children.filter((child) => child !== node);
     node.parentElement = null;

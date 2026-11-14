@@ -220,7 +220,67 @@
       });
     }
 
-    if (view === "cards") {
+    // The tablet drawing of the contract's layout_v2_kit, one page at a time,
+    // to set beside the engine's own pictures of it.
+    async function renderKit() {
+      const { renderPage } = await import("../../custom_components/apollo_tab/frontend/render.js");
+      const { rendererStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
+      const kit = await getJson("../contract/fixtures/layout_v2_kit.source.json");
+      const style = document.createElement("style");
+      style.textContent = rendererStyles;
+      document.head.append(style);
+      document.body.style.margin = "0";
+      app.style.padding = "0";
+      const host = document.createElement("div");
+      host.dataset.test = "kit-page";
+      app.append(host);
+      const page = Number(query.get("page") || 0);
+      renderPage(host, kit.layout, page, { values: kit.values, errors: {} }, { sx: 1, sy: 1, tablet: true });
+      // Drawn again once the tablet's font is there.
+      await document.fonts?.ready;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      renderPage(host, kit.layout, page, { values: kit.values, errors: {} }, { sx: 1, sy: 1, tablet: true });
+      host.dataset.ready = "1";
+    }
+
+    // Every schema 2 card variant in a browser, with its devices picked.
+    function renderCards2() {
+      document.body.style.background = theme.wall;
+      const grid = document.createElement("div");
+      grid.className = "cards-grid";
+      for (const fixture of fixtures.cards_v2 || []) {
+        for (const [name, variant] of Object.entries(fixture.variants || {})) {
+          if (name === "full") continue;
+          const wrap = document.createElement("section");
+          wrap.className = "sample";
+          const label = document.createElement("div");
+          label.className = "sample-label";
+          label.textContent = `${fixture.name} (${name})`;
+          const card = document.createElement("apollo-tab-card");
+          card.dataset.test = "card2";
+          card.dataset.component = fixture.id;
+          card.dataset.variant = name;
+          // As wide as the card, or the screen on a phone; the card scales.
+          card.style.width = `min(${variant.init.w}px, calc(100vw - 40px))`;
+          card.style.aspectRatio = `${variant.init.w} / ${variant.init.h}`;
+          const params = {};
+          for (const [key, spec] of Object.entries(fixture.form?.params || {})) {
+            if (spec.kind === "entity") params[key] = `${spec.domains?.[0] || "light"}.sample`;
+          }
+          card.setConfig({ ...variant.card, component: fixture.id, variant: name, params });
+          card.hass = mock;
+          wrap.append(label, card);
+          grid.append(wrap);
+        }
+      }
+      app.append(grid);
+    }
+
+    if (view === "cards2") {
+      renderCards2();
+    } else if (view === "kit") {
+      await renderKit();
+    } else if (view === "cards") {
       renderCards();
     } else if (view === "states") {
       renderStates();

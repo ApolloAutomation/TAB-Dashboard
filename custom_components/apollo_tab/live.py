@@ -28,6 +28,7 @@ from homeassistant.util import dt as dt_util
 
 from .maker import outputs as out2
 from .maker.compile import compile_card, public_card
+from .maker.compile2 import compile_card2, role_table, validate_card_config2
 from .maker.const import (
     COLOUR_DATA_KEYS,
     CONFIRM_COVER_CLASSES,
@@ -37,7 +38,7 @@ from .maker.const import (
 from .maker.errors import MakerError
 from .maker.schema import is_allowed_action, validate_card_config
 from .maker.schema2 import check_option_value
-from .maker.style import resolve_style
+from .maker.style import resolve_style, status_for
 from .sandbox import ComponentTemplate, limit_error
 from .sources import (
     CLOCK_RESEND_S,
@@ -578,9 +579,13 @@ def _compile_card(
     connection: ActiveConnection,
     card_config: dict,
     dashboard: str | None,
+    *,
+    detail: bool = False,
 ) -> tuple[dict, dict, dict, dict, dict]:
     """Validate and compile a card for this connection.
 
+    A schema 2 card is made as for layout version 2, with its roles and
+    the facts of its devices; detail makes the copy for its detail page.
     Raises CallError with the websocket error code from the API.
     """
     component_id = card_config.get("component")
@@ -594,25 +599,51 @@ def _compile_card(
         raise CallError("unknown_component", f"Unknown component '{component_id}'")
     if not data.library.is_approved(component_id):
         raise CallError("needs_approval", f"Component '{component_id}' is not approved")
+    schema2 = component.get("schema") == 2
+    if detail and not (schema2 and component.get("detail")):
+        raise CallError("invalid_card", "This card has no detail page")
     try:
-        card = validate_card_config(component, card_config)
+        if schema2:
+            card = validate_card_config2(component, card_config)
+        else:
+            card = validate_card_config(component, card_config)
     except MakerError as err:
         raise CallError("invalid_card", str(err)) from err
     if card["columns"] == "full":
         card["columns"] = 12
-    for entity_id in _param_entities(component, card["params"]):
+    entities = _param_entities(component, card["params"])
+    for entity_id in entities:
         if not connection.user.permissions.check_entity(entity_id, POLICY_READ):
             raise CallError("unauthorized", f"Not allowed to read {entity_id}")
-    try:
-        compiled = compile_card(component, card)
-    except MakerError as err:
-        raise CallError(err.code, str(err)) from err
     themes = data.library.themes
     dashboard_theme_id = data.manager.theme_for(dashboard)
     theme = themes.get(dashboard_theme_id, {})
-    element_theme = themes.get(card["style"].get("theme", dashboard_theme_id), theme)
-    style = resolve_style(element_theme, card["style"], theme.get("wall", ""))
+    card_style = card.get("style") or {}
+    style_theme_id = card_style.get("theme", dashboard_theme_id)
+    element_theme = themes.get(style_theme_id, theme)
+    style = resolve_style(element_theme, card_style, theme.get("wall", ""))
+    try:
+        if schema2:
+            if style_theme_id not in themes:
+                style_theme_id = dashboard_theme_id
+            status = status_for(
+                data.library.status, style_theme_id, bool(element_theme.get("dark"))
+            )
+            roles = role_table({**element_theme, **style}, status)
+            facts = data.facts.facts_for(dict.fromkeys(entities))
+            compiled = compile_card2(
+                component, card, facts, 2, roles=roles, detail=detail
+            )
+        else:
+            compiled = compile_card(component, card)
+    except MakerError as err:
+        raise CallError(err.code, str(err)) from err
     return component, card, compiled, theme, style
+
+
+def browser_card(compiled: dict) -> dict:
+    """Return what a browser gets of a compiled card: no slots, actions or call."""
+    return {key: value for key, value in public_card(compiled).items() if key != "call"}
 
 
 class CardSubscription:
@@ -662,6 +693,7 @@ class CardSubscription:
                 self.connection,
                 self.msg["card"],
                 self.msg.get("dashboard"),
+                detail=bool(self.msg.get("detail")),
             )
         except CallError as err:
             self._send({"type": "error", "code": err.code, "message": str(err)})
@@ -669,7 +701,7 @@ class CardSubscription:
         self._send(
             {
                 "type": "init",
-                "card": json_safe(public_card(compiled)),
+                "card": json_safe(browser_card(compiled)),
                 "theme": json_safe(theme),
                 "style": json_safe(style),
             }
@@ -1283,32 +1315,92 @@ async def async_run_output(
         raise CallError("service_error", str(err)) from err
 
 
+async def _browser_change_allowed(
+    hass: HomeAssistant,
+    data: ApolloTabData,
+    compiled: dict,
+    widget: dict,
+    action_ref: dict,
+    value: Any,
+) -> bool:
+    """Check a schema 2 change from a browser as a tablet's (contract 7.3).
+
+    Range and step, or a choice's options. Live limits count as Home
+    Assistant's own values of their slots; without one it is refused.
+    """
+    if widget.get("t") == "choice":
+        options = action_ref.get("options")
+        return out2.check_choice(
+            value, len(options) if isinstance(options, list) else 0
+        )
+    slots = {
+        slot.get("n"): slot
+        for slot in compiled.get("slots") or []
+        if isinstance(slot, dict)
+    }
+    known: dict = {}
+    for key in ("min", "max", "step"):
+        field = widget.get(key)
+        if isinstance(field, dict) and field.get("s") in slots:
+            number = field["s"]
+            known[number] = await async_input_value(hass, data.slot_hub, slots[number])
+    return out2.check_change(widget, value, known.get)
+
+
 async def async_call_output(
     hass: HomeAssistant,
     data: ApolloTabData,
     connection: ActiveConnection,
     msg: dict,
 ) -> None:
-    """Run a card's output for the browser. Raises CallError(code, message)."""
+    """Run a card's output for the browser. Raises CallError(code, message).
+
+    Widget -1 is the card itself, for a schema 2 card's own tap.
+    """
     component, card, compiled, _theme, _style = _compile_card(
-        data, connection, msg["card"], msg.get("dashboard")
+        data,
+        connection,
+        msg["card"],
+        msg.get("dashboard"),
+        detail=bool(msg.get("detail")),
     )
     if compiled["demo"]:
         raise CallError("demo", "Example cards cannot call services")
-    widget = next(
-        (item for item in compiled["widgets"] if item["i"] == msg["widget"]), None
-    )
+    schema2 = compiled.get("schema") == 2
+    if schema2 and msg["widget"] == -1:
+        widget = {"i": -1, "t": "card", "tap": compiled.get("tap")}
+        key = f"card:{msg['event']}"
+        if msg["event"] != "tap":
+            raise CallError("unknown_widget", "The card itself takes taps only")
+    else:
+        widget = next(
+            (item for item in compiled["widgets"] if item["i"] == msg["widget"]), None
+        )
+        key = f"{msg['widget']}:{msg['event']}"
     if widget is None:
         raise CallError("unknown_widget", f"Unknown widget {msg['widget']}")
-    action_ref = compiled["actions"].get(f"{msg['widget']}:{msg['event']}")
+    action_ref = compiled["actions"].get(key)
     if action_ref is None:
         # The compiler records action outputs only, so a local tap has no entry.
-        if msg["event"] == "tap" and "local" in widget.get("tap", {}):
+        tap = widget.get("tap")
+        if msg["event"] == "tap" and isinstance(tap, dict) and "local" in tap:
             raise CallError("local_action", "Local outputs run in the browser")
         raise CallError(
             "unknown_widget",
             f"Widget {msg['widget']} has no {msg['event']} action",
         )
+    if schema2:
+        # What the call reads besides the output, kept server side (C.2.8).
+        action_ref = dict(action_ref)
+        call = compiled.get("call") if isinstance(compiled.get("call"), dict) else {}
+        if "values" in call:
+            action_ref["values"] = call["values"]
+        if key in (call.get("uses") or {}):
+            action_ref["uses"] = call["uses"][key]
+        if msg["event"] == "change" and not await _browser_change_allowed(
+            hass, data, compiled, widget, action_ref, msg.get("value")
+        ):
+            raise CallError("invalid_value", "The value is not one this control gives")
     await async_run_output(
         hass,
         component=component,
@@ -1320,4 +1412,5 @@ async def async_call_output(
         value=msg.get("value"),
         confirmed=msg["confirmed"],
         context=connection.context(msg),
+        slot_hub=data.slot_hub,
     )

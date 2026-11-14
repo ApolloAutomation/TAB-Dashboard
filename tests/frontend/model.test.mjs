@@ -1782,6 +1782,19 @@ test("pageScreens lists the screens of one page", () => {
   assert.deepStrictEqual(model.pageScreens(null, 0), []);
 });
 
+test("pageScreens leaves out the detail pages of a page's cards", () => {
+  const preview = {
+    layout: {
+      pages: [
+        { id: "home", view: 0, w: [] },
+        { id: "home-light", view: 0, sub: 1, w: [] },
+        { id: "home-2", view: 0, w: [] },
+      ],
+    },
+  };
+  assert.deepStrictEqual(model.pageScreens(preview, 0), [0, 2]);
+});
+
 // A card over the chart or dial budget is left out even when it is the only
 // card of its page (tests/test_maker_convert.py pins that), so the page's w
 // is empty and the warning is all there is to draw.

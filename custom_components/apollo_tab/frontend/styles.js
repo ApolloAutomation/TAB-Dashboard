@@ -3006,6 +3006,9 @@ export const rendererStyles = `
   unicode-bidi: isolate;
   text-size-adjust: 100%;
   -webkit-text-size-adjust: 100%;
+  /* Light text on dark as thin as the tablet's. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 .at-card {
   position: absolute;
@@ -3043,6 +3046,17 @@ export const rendererStyles = `
 }
 .at-header {
   overflow: hidden;
+}
+/* An icon's box is its glyph's box. Home Assistant's glyph is an inline box
+   inside ha-icon; with a flex host it sits on no text line, so the text's
+   line height cannot push it down and out of a small box. */
+.at-card ha-icon,
+.at-page ha-icon,
+.at-heading ha-icon,
+.at-nav ha-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .at-header ha-icon {
   flex: 0 0 auto;
@@ -3132,27 +3146,38 @@ export const rendererStyles = `
 }
 .at-slider {
   position: absolute;
-  display: flex;
-  align-items: center;
   touch-action: none;
 }
+/* The parts of a slider are placed by render.js in the slider's box. */
+.at-slider-track,
+.at-slider-fill,
+.at-slider-knob,
+.at-slider-handle,
+.at-slider-mark,
+.at-slider-icon {
+  position: absolute;
+  box-sizing: border-box;
+}
 .at-slider-track {
-  position: relative;
-  width: 100%;
   background: var(--at-card2);
 }
 .at-slider-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: inherit;
   background: var(--at-acc);
 }
 .at-slider-knob {
-  position: absolute;
-  top: 50%;
   border-radius: 50%;
   background: var(--at-tx);
-  translate: -50% -50%;
+}
+.at-slider-handle {
+  background: var(--at-acct);
+}
+.at-slider-mark {
+  border-style: solid;
+}
+.at-slider-icon {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 .at-thermostat {
   position: absolute;
@@ -3294,9 +3319,6 @@ export const rendererStyles = `
 .at-card.is-on .at-header ha-icon {
   color: var(--at-ion, var(--at-acc));
 }
-.at-card.is-on .at-label-s {
-  color: var(--at-ontx);
-}
 .at-card.is-on .at-switch.on {
   background: var(--at-ion, var(--at-acc));
 }
@@ -3319,5 +3341,197 @@ export const rendererStyles = `
 .at-card.is-on .at-button.busy,
 .at-card.is-on .at-switch.busy {
   outline-color: var(--at-ion, var(--at-acc));
+}
+.at-card.is-on .at-label-s {
+  color: var(--at-onsm, var(--at-ontx));
+}
+/* Lit 1: the icons in the accent. Lit 2: an outline in the accent. */
+.at-card.is-outline {
+  border-color: var(--at-acc, #F5B547);
+}
+/* un: the whole card at 40%, once (contract 4.7). */
+.at-card.is-un > .at-card-body {
+  opacity: 0.4;
+}
+.at-card.at-pressable {
+  cursor: pointer;
+}
+.at-card.pressed {
+  background: var(--at-press, var(--at-card_pr, #232833));
+}
+.at-card[role="button"]:focus-visible {
+  outline: calc(2px * var(--at-f, 1)) solid var(--primary-color, var(--at-acc));
+  outline-offset: calc(2px * var(--at-f, 1));
+}
+/* Pressed looks in a browser card (4.7). The editor's picture has no live
+   controls, so it never shows them. --at-wpr is card2_pr (on: onbg_pr). */
+.at-button:not(:disabled):active {
+  background: var(--at-bpr, var(--at-wpr, var(--at-card2_pr))) !important;
+}
+.at-choice-cell:not(:disabled):active > .at-choice-face {
+  background: var(--at-fpr, var(--at-wpr, var(--at-card2_pr))) !important;
+}
+.at-image.bare.at-pressable:active {
+  background: var(--at-wpr, var(--at-card2_pr));
+}
+/* vis 0: not drawn, and no press. */
+.at-hidden {
+  display: none !important;
+}
+/* A label line higher than its box starts at the top (contract 4.7). */
+.at-label.at-tall {
+  align-items: flex-start;
+}
+.at-button.round {
+  border-radius: 50%;
+  padding: 0;
+}
+.at-button.bare {
+  background: transparent;
+}
+.at-button.selected {
+  background: var(--at-accf, var(--at-acc));
+  color: var(--at-acct);
+}
+.at-arc-mark {
+  fill: var(--at-tx);
+}
+.at-chart-step {
+  fill: var(--at-acc2);
+}
+.at-chart-bar.at-bar-acc {
+  fill: var(--at-acc);
+}
+.at-chart-bar.at-bar-card2 {
+  fill: var(--at-card2);
+}
+.at-image.badge {
+  border-radius: 50%;
+}
+.at-image.bare {
+  background: transparent;
+}
+.at-image.at-pressable {
+  cursor: pointer;
+}
+.at-choice {
+  position: absolute;
+}
+.at-choice-cell {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.at-choice-face {
+  position: absolute;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 calc(6px * var(--at-f, 1));
+  border-radius: calc(var(--at-r2, 10px) * var(--at-f, 1));
+  background: var(--at-card2);
+  font-weight: 500;
+}
+.at-choice-face.vertical {
+  flex-direction: column;
+}
+.at-choice-face.dot {
+  padding: 0;
+  border-radius: 50%;
+}
+.at-choice.busy {
+  outline: calc(2px * var(--at-f, 1)) solid var(--at-acc);
+}
+.at-nav-button.back {
+  background: var(--at-onbg);
+  color: var(--at-acc);
+}
+`;
+
+// The browser card's detail dialog. It sits in the page, outside the card's
+// own styles, so every rule starts with its class.
+export const detailDialogStyles = `
+.apollo-tab-detail {
+  /* The room the dialog's frame takes from the window's height. */
+  --at-detail-chrome: 120px;
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.apollo-tab-detail-box {
+  box-sizing: border-box;
+  width: min(
+    100%,
+    calc(var(--at-detail-w, 568px) + 32px),
+    calc((100dvh - var(--at-detail-chrome)) * var(--at-detail-ratio, 10) + 32px)
+  );
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 4px 16px 16px;
+  border-radius: var(--ha-dialog-border-radius, 24px);
+  background: var(--ha-dialog-surface-background, var(--mdc-theme-surface, var(--card-background-color, #1c1c1c)));
+  color: var(--primary-text-color, #e1e1e1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.apollo-tab-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+}
+.apollo-tab-detail-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--ha-font-family-body, Roboto, system-ui, sans-serif);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.apollo-tab-detail-close {
+  display: grid;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin-right: -8px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.apollo-tab-detail-close:hover {
+  background: rgba(127, 127, 127, 0.16);
+}
+.apollo-tab-detail-close:focus-visible {
+  outline: 2px solid var(--primary-color, #03a9f4);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .apollo-tab-detail {
+    --at-detail-chrome: 104px;
+    padding: 8px;
+  }
+  .apollo-tab-detail-box {
+    max-height: calc(100dvh - 16px);
+    padding: 0 12px 12px;
+  }
 }
 `;

@@ -9,7 +9,32 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { format } from "../../custom_components/apollo_tab/frontend/logic.js";
+import {
+  barMarks,
+  blendOf,
+  cardColours,
+  cardColourTokens,
+  choiceAt,
+  choiceCells,
+  clockText,
+  contrastOf,
+  format,
+  imageLook,
+  LINEAR,
+  labelSize,
+  legible,
+  linePoints,
+  lum,
+  mix,
+  readable,
+  sliderAmount,
+  sliderGeometry,
+  sliderLength,
+  sliderValue,
+  stepRects,
+  toColour,
+  trackPieces,
+} from "../../custom_components/apollo_tab/frontend/logic.js";
 import * as tablets from "../../custom_components/apollo_tab/frontend/tablets.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -714,4 +739,145 @@ test("the stand-in answers unknown_command for commands Home Assistant does not 
   assert.deepEqual(events, []);
   assert.deepEqual((await hass.callWS({ type: "apollo_tab/tablets" })).tablets, hass.getTablets());
   await new Promise((resolve) => setTimeout(resolve, 60));
+});
+
+// ------------------------------------------- the rules of contract 4.7 (v2)
+// The editor's picture draws with the same numbers as the tablet: every
+// vector of the contract's fixtures/maths.json, against logic.js.
+
+const MATHS = JSON.parse(fs.readFileSync(path.join(root, "tests/contract/fixtures/maths.json"), "utf8"));
+
+test("logic.js holds the contract's table of linear values, number for number", () => {
+  assert.equal(LINEAR.length, 256);
+  assert.equal(MATHS.linear.length, 256);
+  MATHS.linear.forEach((value, index) => assert.ok(Object.is(LINEAR[index], value), `linear[${index}]`));
+});
+
+test("mix, lum, contrast, readable, legible and blend give the contract's answers", () => {
+  for (const [a, b, p, expect] of MATHS.mix) {
+    assert.equal(mix(a, b, p), expect, `mix(${a}, ${b}, ${p})`);
+  }
+  for (const [weight, cases] of Object.entries(MATHS.mix_halves)) {
+    for (const [a, b, expect] of cases) {
+      assert.equal(mix(a, b, Number(weight)), expect, `mix of channels ${a}, ${b} at ${weight}`);
+    }
+  }
+  for (const [c, expect] of MATHS.lum) {
+    assert.ok(Object.is(lum(c), expect), `lum(${c})`);
+  }
+  for (const [a, b, expect] of MATHS.contrast) {
+    assert.ok(Object.is(contrastOf(a, b), expect), `contrast(${a}, ${b})`);
+  }
+  for (const [c, expect] of MATHS.readable) {
+    assert.equal(readable(c), expect, `readable(${c})`);
+  }
+  for (const [c, b, t, expect] of MATHS.legible) {
+    assert.equal(legible(c, b, t), expect, `legible(${c}, ${b}, ${t})`);
+  }
+  for (const [a, b, expect] of MATHS.blend.cases) {
+    assert.equal(blendOf(a, b, 0.82), expect, `blend(${a}, ${b})`);
+  }
+});
+
+test("a card's colours follow the contract for every theme, style, tint, on and lit", () => {
+  assert.ok(MATHS.card.length > 100);
+  for (const entry of MATHS.card) {
+    const tokens = cardColourTokens(MATHS.themes[entry.theme], MATHS.styles[entry.style]);
+    for (const [key, value] of Object.entries(entry.tokens)) {
+      assert.equal(tokens[key], value, `${entry.theme}/${entry.style} token ${key}`);
+    }
+    const got = cardColours(tokens, Boolean(entry.on), entry.lit, entry.tint);
+    assert.deepEqual(got, entry.expect, JSON.stringify({ ...entry, expect: undefined }));
+  }
+});
+
+test("an image's box, badge and bare looks follow the contract", () => {
+  assert.ok(MATHS.image.length > 100);
+  for (const entry of MATHS.image) {
+    const tokens = cardColourTokens(MATHS.themes[entry.theme], {});
+    const card = cardColours(tokens, Boolean(entry.on), entry.lit, entry.tint);
+    const got = imageLook(tokens, card, Boolean(entry.on), entry.lit, entry.look, entry.w, entry.h, entry.c);
+    assert.deepEqual(got, entry.expect, JSON.stringify({ ...entry, expect: undefined }));
+  }
+});
+
+test("a label's size and a clock's text follow the contract", () => {
+  for (const entry of MATHS.label) {
+    assert.deepEqual(labelSize(entry.px, entry.text, entry.size), entry.expect, JSON.stringify(entry));
+  }
+  for (const entry of MATHS.clock) {
+    assert.equal(clockText(entry.value, entry.age_s, entry.clk), entry.expect, JSON.stringify(entry));
+  }
+});
+
+test("a slider's amounts, values and shapes follow the contract in every look and direction", () => {
+  assert.ok(MATHS.slider.length > 100);
+  for (const entry of MATHS.slider) {
+    const { rect, look, dir, track, r2 } = entry;
+    for (const [x, y, amount, value] of entry.presses) {
+      const got = sliderAmount(rect, look, dir, track, r2, x, y);
+      assert.ok(Object.is(got, amount) || got === amount, `${entry.rect_name} ${look}/${dir}/${track} amount at ${x},${y}: ${got}`);
+      const length = sliderLength(rect, look, dir, track, r2);
+      assert.equal(sliderValue(got, entry.min, entry.max, entry.step, length), value, `${entry.rect_name} value at ${x},${y}`);
+    }
+    for (const shape of entry.shapes) {
+      const got = sliderGeometry(rect, look, dir, track, r2, shape.value, entry.min, entry.max, Boolean(shape.change));
+      assert.deepEqual(got, shape.expect, `${entry.rect_name} ${look}/${dir}/${track} at ${shape.value}`);
+    }
+  }
+  for (const entry of MATHS.track) {
+    assert.deepEqual(trackPieces(entry.n, entry.x0, entry.x1), entry.expect, JSON.stringify(entry));
+  }
+});
+
+test("a choice's cells and the option under a point follow the contract", () => {
+  for (const entry of MATHS.choice) {
+    const cells = choiceCells(entry.n, entry.rows, entry.w, entry.h, entry.look);
+    assert.deepEqual(cells, entry.cells, JSON.stringify({ ...entry, cells: undefined }));
+    for (const [x, y, expect] of entry.presses) {
+      assert.equal(choiceAt(cells, x, y), expect, `${JSON.stringify(entry.cells)} at ${x},${y}`);
+    }
+  }
+});
+
+test("a chart's steps and the colour of each bar follow the contract", () => {
+  for (const entry of MATHS.steps) {
+    const points = linePoints(entry.values, entry.w, entry.h, 4);
+    assert.deepEqual(points, entry.points, JSON.stringify(entry.values));
+    assert.deepEqual(stepRects(points), entry.expect, JSON.stringify(entry.values));
+  }
+  for (const entry of MATHS.bars) {
+    assert.deepEqual(barMarks(entry.n, entry.mark), entry.expect, JSON.stringify(entry));
+  }
+});
+
+test("a colour value counts as the contract says, with a card's roles", () => {
+  const roles = { good: "#4CC38A", bad: 0xff6b5e };
+  const cases = [
+    [[255, 167, 87], 0xffa757],
+    [[254.5, 0, 0.4], 0xff0000],
+    [[255.5, 0, 0], null],
+    [[1, 2], null],
+    [[1, 2, 3, 4], null],
+    [[true, 0, 0], null],
+    ["#ff453a", 0xff453a],
+    ["#FF453A", 0xff453a],
+    ["#FFF", null],
+    ["red", null],
+    ["good", 0x4cc38a],
+    ["bad", 0xff6b5e],
+    [16711680, 0xff0000],
+    [16711680.0, 0xff0000],
+    [16777216, null],
+    [-1, null],
+    [0.5, null],
+    [true, null],
+    [null, null],
+    [undefined, null],
+  ];
+  for (const [value, expect] of cases) {
+    assert.equal(toColour(value, roles), expect, JSON.stringify(value));
+  }
+  // A role name is a colour only where the card has that role.
+  assert.equal(toColour("good"), null);
 });

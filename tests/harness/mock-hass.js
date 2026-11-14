@@ -231,6 +231,32 @@ function scenarioEvents(fixture, card, themes) {
   ];
 }
 
+// A schema 2 card as the integration sends it to a browser: its variant (or
+// the detail copy, which is its "full" variant here) without "call".
+function cardEvents2(fixture, card, themes, detail) {
+  const variants = fixture.variants || {};
+  const name = detail ? "full" : card.variant || Object.keys(variants)[0];
+  const variant = variants[name];
+  if (!variant || (detail && !fixture.form?.has_detail)) {
+    return [{ type: "error", code: "invalid_card", message: "This card has no detail page" }];
+  }
+  const init = structuredClone(variant.init);
+  delete init.call;
+  if (detail) {
+    delete init.hold;
+    delete init.tap;
+  }
+  if (hasParams(card)) {
+    init.demo = false;
+  }
+  const query = new URLSearchParams(location.search);
+  const theme = themes.find((entry) => entry.id === query.get("theme")) || themes[0] || {};
+  return [
+    { type: "init", card: init, theme, style: plainStyle(theme) },
+    { type: "values", values: structuredClone(variant.values || {}), errors: {} },
+  ];
+}
+
 function fail(code, message = code) {
   return Object.assign(new Error(message), { code });
 }
@@ -652,11 +678,11 @@ export function createMockHass(fixtures, options = {}) {
     };
   };
 
-  const preview = async (config) => {
+  const preview = async (config, dl = 1) => {
     const response = await fetch(`${location.origin}/api/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config }),
+      body: JSON.stringify({ config, dl }),
     });
     if (!response.ok) {
       throw fail("conversion_failed", "The dashboard could not be converted");
@@ -734,7 +760,7 @@ export function createMockHass(fixtures, options = {}) {
           }
           return fixtures.layout;
         case "apollo_tab/layout/preview":
-          return preview(message.config);
+          return preview(message.config, message.dl ?? 1);
         case "apollo_tab/card/call":
           return { ok: true };
         case "apollo_tab/tablets":
@@ -852,6 +878,13 @@ export function createMockHass(fixtures, options = {}) {
 
         if (message.type === "apollo_tab/card/subscribe") {
           queueMicrotask(() => {
+            const second = (fixtures.cards_v2 || []).find((entry) => entry.id === message.card.component);
+            if (second) {
+              for (const event of cardEvents2(second, message.card, fixtures.themes || [], message.detail)) {
+                callback(event);
+              }
+              return;
+            }
             const fixture =
               fixtures.cards.find((entry) => entry.id === message.card.component) ||
               fixtures.cards[0];

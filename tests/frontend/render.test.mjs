@@ -15,6 +15,7 @@ import {
   thermostatFit,
   thermostatText,
 } from "../../custom_components/apollo_tab/frontend/render.js";
+import { cardColours, hexOf, legible, mix, readable } from "../../custom_components/apollo_tab/frontend/logic.js";
 import { rendererStyles } from "../../custom_components/apollo_tab/frontend/styles.js";
 import { FakeElement, installFakeDom } from "./fake-dom.mjs";
 
@@ -506,6 +507,513 @@ test("the editor and the tablet preview ask for the tablet drawing", () => {
   assert.doesNotMatch(card, /tablet: true/);
 });
 
+// ---- layout version 2: every new key, as the tablet draws it -----------
+
+const MID = numberTheme(midnight);
+
+function numberTheme(theme) {
+  const out = {};
+  for (const [key, value] of Object.entries(theme)) {
+    out[key] = typeof value === "string" && value.startsWith("#") ? Number.parseInt(value.slice(1), 16) : value;
+  }
+  out.bg = out.card;
+  return out;
+}
+
+// Draws one card of layout version 2 in a fake DOM. Returns the host, the
+// renderer and what the card sent.
+function drawCard2(card, values = {}, options = {}, tokens = midnight) {
+  const uninstall = installFakeDom();
+  try {
+    const host = document.createElement("div");
+    const sent = [];
+    const state = (next, extra = {}) => ({
+      values: next,
+      errors: {},
+      tokens: { ...tokens, bg: tokens.card },
+      feedback: new Map(),
+      ...extra,
+    });
+    const renderer = renderCard(host, { t: "card", r: [0, 0, 376, 248], ...card }, state(values, options.state), {
+      sx: 1,
+      sy: 1,
+      interactive: Boolean(options.interactive),
+      onTap: (widget) => sent.push(["tap", widget.id]),
+      onChange: (widget, value, final) => sent.push(["change", widget.id, value, final]),
+      onCardTap: () => sent.push(["card"]),
+      onHold: (widget) => sent.push(["hold", widget ? widget.id : "card"]),
+      ...options.render,
+    });
+    // update may make elements too, so it gets the fake DOM again.
+    const update = (next) => {
+      const again = installFakeDom();
+      try {
+        renderer.update(next);
+      } finally {
+        again();
+      }
+    };
+    return { host, renderer: { update }, sent, state, card: host.querySelector(".at-card") };
+  } finally {
+    uninstall();
+  }
+}
+
+const HEADER = { hr: [16, 16, 344, 24], icon: "mdi:lightbulb", title: "Lamp" };
+
+test("v2 card: a tint makes the card's own accent and on colours", () => {
+  const { card } = drawCard2({ ...HEADER, on: { s: 1 }, tint: { s: 2 } }, { 1: "on", 2: "#FF453A" });
+  const expected = cardColours(MID, true, 0, 0xff453a);
+  assert.ok(card.classList.contains("is-on"));
+  assert.equal(card.style.getPropertyValue("--at-onbg"), hexOf(expected.F));
+  assert.equal(card.style.getPropertyValue("--at-acc"), hexOf(expected.A));
+  assert.equal(card.style.getPropertyValue("--at-ion"), hexOf(expected.FI));
+  assert.equal(card.style.getPropertyValue("--at-onsm"), hexOf(expected.FS));
+  // An HA colour as a list of three numbers is the same colour.
+  const list = drawCard2({ ...HEADER, on: { s: 1 }, tint: { s: 2 } }, { 1: "on", 2: [255, 69, 58] });
+  assert.equal(list.card.style.getPropertyValue("--at-onbg"), hexOf(expected.F));
+  // No tint value: the theme's own colours.
+  const plain = drawCard2({ ...HEADER, on: { s: 1 }, tint: { s: 2 } }, { 1: "on", 2: null });
+  assert.equal(plain.card.style.getPropertyValue("--at-onbg"), "#33291A");
+});
+
+test("v2 card: lit 1 lights the icon, lit 2 adds an outline, lit 3 keeps the off look", () => {
+  const one = drawCard2({ ...HEADER, on: { s: 1 }, lit: 1 }, { 1: 1 });
+  assert.ok(!one.card.classList.contains("is-on"));
+  assert.ok(one.card.classList.contains("is-lit"));
+  assert.equal(one.card.querySelector("ha-icon").style.color, "#F5B547");
+  const two = drawCard2({ ...HEADER, on: { s: 1 }, lit: 2 }, { 1: 1 });
+  assert.ok(two.card.classList.contains("is-outline"));
+  assert.equal(two.card.style.getPropertyValue("--at-bw"), "2px");
+  assert.match(rule(".at-card.is-outline"), /border-color: var\(--at-acc/);
+  const three = drawCard2({ ...HEADER, on: { s: 1 }, lit: 3 }, { 1: 1 });
+  assert.ok(!three.card.classList.contains("is-on"));
+  assert.ok(!three.card.classList.contains("is-lit"));
+  assert.equal(three.card.querySelector("ha-icon").style.color, "#9AA0A8");
+  // Off: lit does nothing.
+  const off = drawCard2({ ...HEADER, on: { s: 1 }, lit: 2 }, { 1: 0 });
+  assert.ok(!off.card.classList.contains("is-outline"));
+});
+
+test("v2 card: un dims the whole card once, at 40%", () => {
+  const { card, renderer, state } = drawCard2({ ...HEADER, un: { s: 1 } }, { 1: 1 });
+  assert.ok(card.classList.contains("is-un"));
+  assert.match(rule(".at-card.is-un > .at-card-body"), /opacity: 0\.4;/);
+  renderer.update(state({ 1: 0 }));
+  assert.ok(!card.classList.contains("is-un"));
+});
+
+test("v2 card: ic replaces the header icon while it has an icon", () => {
+  const { card, renderer, state } = drawCard2({ ...HEADER, ic: { s: 1 } }, { 1: "mdi:fan" });
+  assert.equal(card.querySelector("ha-icon").icon, "mdi:fan");
+  renderer.update(state({ 1: null }));
+  assert.equal(card.querySelector("ha-icon").icon, "mdi:lightbulb");
+});
+
+test("v2 card: a tap on the card, a hold, and who gets a press", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const button = { id: 3, t: "button", r: [16, 60, 100, 40], text: "Go", tap: { p: 0 } };
+  const label = { id: 4, t: "label", r: [16, 120, 100, 20], text: "Hi" };
+  const { card, sent } = drawCard2({ tap: { p: 0 }, hold: { p: 1 }, w: [button, label] }, {}, { interactive: true });
+  const fire = (type, target, x = 0, y = 0) => {
+    for (const listener of card.listeners.get(type) || []) {
+      listener({ button: 0, clientX: x, clientY: y, target, preventDefault() {} });
+    }
+  };
+  const labelEl = card.querySelector(".at-label");
+  const buttonEl = card.querySelector(".at-button");
+  // A tap on a label is the card's.
+  fire("pointerdown", labelEl);
+  fire("pointerup", labelEl);
+  assert.deepEqual(sent, [["card"]]);
+  // A tap on a button is the button's own.
+  sent.length = 0;
+  fire("pointerdown", buttonEl);
+  fire("pointerup", buttonEl);
+  assert.deepEqual(sent, []);
+  // A press that moved 12 px is neither.
+  fire("pointerdown", labelEl, 0, 0);
+  fire("pointermove", labelEl, 12, 0);
+  fire("pointerup", labelEl, 12, 0);
+  assert.deepEqual(sent, []);
+  // Held 500 ms: a hold, and no tap after it.
+  fire("pointerdown", labelEl);
+  t.mock.timers.tick(499);
+  assert.deepEqual(sent, []);
+  t.mock.timers.tick(1);
+  fire("pointerup", labelEl);
+  assert.deepEqual(sent, [["hold", "card"]]);
+  // A hold that begins on a button without its own hold is the card's.
+  sent.length = 0;
+  fire("pointerdown", buttonEl);
+  t.mock.timers.tick(500);
+  assert.deepEqual(sent, [["hold", "card"]]);
+  // A right click is a hold.
+  sent.length = 0;
+  fire("contextmenu", labelEl);
+  assert.deepEqual(sent, [["hold", "card"]]);
+  // A card without tap does not take one.
+  const still = drawCard2({ w: [label] }, {}, { interactive: true });
+  assert.equal(still.card.listeners.get("pointerdown"), undefined);
+});
+
+test("v2 card: from the keyboard, Enter or Space taps the card and the menu key holds it", () => {
+  const button = { id: 3, t: "button", r: [16, 60, 100, 40], text: "Go", tap: { p: 0 } };
+  const { card, sent } = drawCard2(
+    { tap: { p: 0 }, hold: { p: 1 }, w: [button] },
+    {},
+    { interactive: true, render: { label: "Lamp" } },
+  );
+  assert.equal(card.getAttribute("tabindex"), "0");
+  assert.equal(card.getAttribute("role"), "button");
+  assert.equal(card.getAttribute("aria-label"), "Lamp");
+  const key = (keyName, target = card, extra = {}) => {
+    let stopped = false;
+    for (const listener of card.listeners.get("keydown") || []) {
+      listener({ key: keyName, target, preventDefault() { stopped = true; }, ...extra });
+    }
+    return stopped;
+  };
+  assert.ok(key("Enter"));
+  assert.ok(key(" "));
+  assert.deepEqual(sent, [["card"], ["card"]]);
+  sent.length = 0;
+  assert.ok(key("ContextMenu"));
+  assert.ok(key("F10", card, { shiftKey: true }));
+  assert.deepEqual(sent, [["hold", "card"], ["hold", "card"]]);
+  // Keys on a control inside the card are that control's, and a held key
+  // does not tap again.
+  sent.length = 0;
+  assert.ok(!key("Enter", card.querySelector(".at-button")));
+  assert.ok(!key("Enter", card, { repeat: true }));
+  assert.ok(!key("F10"));
+  assert.deepEqual(sent, []);
+  // Hold only: Enter does nothing. Neither: the card is not a button at all.
+  const holdOnly = drawCard2({ hold: { p: 1 }, w: [button] }, {}, { interactive: true });
+  for (const listener of holdOnly.card.listeners.get("keydown")) {
+    listener({ key: "Enter", target: holdOnly.card, preventDefault() {} });
+  }
+  assert.deepEqual(holdOnly.sent, []);
+  const widgetHold = drawCard2({ w: [{ ...button, hold: { p: 1 } }] }, {}, { interactive: true });
+  assert.equal(widgetHold.card.getAttribute("tabindex"), null);
+  assert.equal(widgetHold.card.listeners.get("keydown"), undefined);
+  // The editor's picture is not a button.
+  const picture = drawCard2({ tap: { p: 0 }, w: [button] });
+  assert.equal(picture.card.getAttribute("role"), null);
+  assert.match(rule('.at-card[role="button"]:focus-visible'), /outline: calc\(2px \* var\(--at-f, 1\)\)/);
+});
+
+test("v2 card: pressed looks of buttons, choice cells and bare images in a browser card", () => {
+  const plain = { id: 3, t: "button", r: [16, 60, 100, 40], text: "Go", tap: { p: 0 } };
+  const chosen = { id: 4, t: "button", r: [16, 110, 100, 40], text: "On", tap: { p: 0 }, value: { s: 1 } };
+  const swatch = { id: 5, t: "button", r: [16, 160, 100, 40], tap: { p: 0 }, c: 0xff0000 };
+  const choice = { id: 6, t: "choice", r: [130, 60, 200, 40], texts: ["A", "B"], value: { s: 2 }, change: { p: 1 } };
+  const { card } = drawCard2({ w: [plain, chosen, swatch, choice] }, { 1: 1, 2: 0 }, { interactive: true });
+  // The card's own pressed colour for a control: card2_pr off, onbg_pr on.
+  assert.equal(card.style.getPropertyValue("--at-wpr").toUpperCase(), midnight.card2_pr.toUpperCase());
+  const [plainEl, chosenEl, swatchEl] = card.querySelectorAll(".at-button");
+  assert.equal(plainEl.style.getPropertyValue("--at-bpr"), "");
+  assert.ok(chosenEl.style.getPropertyValue("--at-bpr"));
+  assert.ok(swatchEl.style.getPropertyValue("--at-bpr"));
+  const faces = card.querySelectorAll(".at-choice-face");
+  assert.ok(faces[0].style.getPropertyValue("--at-fpr"));
+  assert.equal(faces[1].style.getPropertyValue("--at-fpr"), "");
+  assert.match(rule(".at-button:not(:disabled):active"), /var\(--at-bpr, var\(--at-wpr/);
+  assert.match(rule(".at-choice-cell:not(:disabled):active > .at-choice-face"), /var\(--at-fpr, var\(--at-wpr/);
+  assert.match(rule(".at-image.bare.at-pressable:active"), /var\(--at-wpr/);
+  const on = drawCard2({ on: { s: 1 }, w: [plain] }, { 1: 1 }, { interactive: true });
+  assert.notEqual(on.card.style.getPropertyValue("--at-wpr"), card.style.getPropertyValue("--at-wpr"));
+});
+
+test("v2 label: px, al, c and clocks", () => {
+  const label = (extra) => ({ id: 2, t: "label", r: [16, 16, 300, 120], text: "21", ...extra });
+  const big = drawCard2({ w: [label({ px: 100 })] }).card.querySelector(".at-label");
+  assert.equal(big.style.fontSize, "96px");
+  const small = drawCard2({ w: [label({ px: 15, text: "Hall" })] }).card.querySelector(".at-label");
+  assert.equal(small.style.fontSize, "15px");
+  assert.ok(small.classList.contains("at-label-s"));
+  assert.equal(small.style.color, "#9AA0A8");
+  const right = drawCard2({ w: [label({ al: 2 })] }).card.querySelector(".at-label");
+  assert.equal(right.style.justifyContent, "flex-end");
+  const red = drawCard2({ w: [label({ c: { s: 1, roles: { bad: "#FF453A" } } })] }, { 1: "bad" });
+  assert.equal(red.card.querySelector(".at-label").style.color, hexOf(legible(0xff453a, MID.card, MID.tx)));
+  // A clock counts the age of its value.
+  const clock = label({ clk: 1, value: { s: 1 }, text: undefined });
+  let age = 0;
+  const drawn = drawCard2({ w: [clock] }, { 1: 605.5 }, { state: { age: () => age } });
+  assert.equal(drawn.card.querySelector(".at-text").textContent, "10:05");
+  age = 60;
+  drawn.renderer.update(drawn.state({ 1: 605.5 }, { age: () => age }));
+  assert.equal(drawn.card.querySelector(".at-text").textContent, "10:06");
+  const twelve = drawCard2({ w: [{ ...clock, clk: 2 }] }, { 1: 30 });
+  assert.equal(twelve.card.querySelector(".at-text").textContent, "12:30");
+  const none = drawCard2({ w: [clock] }, { 1: null });
+  assert.equal(none.card.querySelector(".at-text").textContent, "--:--");
+});
+
+test("v2 button: value, c, shape, isz and ic", () => {
+  const base = { id: 2, t: "button", r: [16, 16, 120, 120], icon: "mdi:power", text: "Go", tap: { p: 0 } };
+  const selected = drawCard2({ w: [{ ...base, value: { s: 1 } }] }, { 1: 1 }).card.querySelector(".at-button");
+  assert.ok(selected.classList.contains("selected"));
+  assert.equal(selected.style.background, "#F5B547");
+  assert.equal(selected.style.color, "#0E1116");
+  assert.equal(selected.getAttribute("aria-pressed"), "true");
+  const swatch = drawCard2({ w: [{ ...base, c: "#2050FF", value: { s: 1 } }] }, { 1: 1 }).card.querySelector(".at-button");
+  assert.equal(swatch.style.background, "#2050FF");
+  assert.equal(swatch.style.color, hexOf(readable(0x2050ff)));
+  assert.equal(swatch.style.boxShadow, "inset 0 0 0 3px #E8EAED");
+  const round = drawCard2({ w: [{ ...base, r: [16, 16, 120, 60], shape: 1 }] }).card.querySelector(".at-button");
+  assert.ok(round.classList.contains("round"));
+  assert.equal(round.style.width, "60px");
+  assert.equal(round.style.left, "46px");
+  assert.equal(round.querySelector(".at-button-text"), null);
+  const bare = drawCard2({ w: [{ ...base, shape: 2 }] }).card.querySelector(".at-button");
+  assert.ok(bare.classList.contains("bare"));
+  const large = drawCard2({ w: [{ ...base, isz: 1 }] }).card.querySelector("ha-icon");
+  assert.equal(large.style.getPropertyValue("--mdc-icon-size"), "48px");
+  const own = drawCard2({ w: [{ ...base, ic: { s: 1 } }] }, { 1: "mdi:fan" }).card.querySelector("ha-icon");
+  assert.equal(own.icon, "mdi:fan");
+});
+
+test("v2 switch: c colours the track at value 1", () => {
+  const sw = { id: 2, t: "switch", r: [16, 16, 64, 36], value: { s: 1 }, c: "#30D158" };
+  const on = drawCard2({ w: [sw] }, { 1: 1 }).card.querySelector(".at-switch");
+  const track = legible(0x30d158, MID.card, MID.tx);
+  assert.equal(on.style.background, hexOf(track));
+  assert.equal(on.querySelector(".at-switch-knob").style.background, hexOf(readable(track)));
+  const off = drawCard2({ w: [sw] }, { 1: 0 }).card.querySelector(".at-switch");
+  assert.equal(off.style.background, undefined);
+});
+
+test("v2 slider: bar look along dir 1, its handle and icon, and c", () => {
+  const bar = {
+    id: 2,
+    t: "slider",
+    r: [16, 16, 60, 200],
+    value: { s: 1 },
+    min: 0,
+    max: 100,
+    step: 1,
+    look: 1,
+    dir: 1,
+    icon: "mdi:brightness-6",
+    c: "#FF9F0A",
+    change: { p: 1 },
+  };
+  const { card } = drawCard2({ w: [bar] }, { 1: 50 });
+  const slider = card.querySelector(".at-slider");
+  assert.ok(slider.classList.contains("bar"));
+  const fill = slider.querySelector(".at-slider-fill");
+  // From the bottom edge, 100 long.
+  assert.equal(fill.style.top, "100px");
+  assert.equal(fill.style.height, "100px");
+  assert.equal(fill.style.width, "60px");
+  const fillColour = legible(0xff9f0a, MID.card2, MID.tx);
+  assert.equal(fill.style.background, hexOf(fillColour));
+  // The handle's far edge 8 before the end of the fill: rows 92 to 88 from
+  // the start, so 108 to 112 from the top.
+  const handle = slider.querySelector(".at-slider-handle");
+  assert.equal(handle.style.top, "108px");
+  assert.equal(handle.style.height, "4px");
+  assert.equal(handle.style.background, hexOf(readable(fillColour)));
+  const icon = slider.querySelector("ha-icon");
+  assert.equal(icon.style.top, "164px");
+  assert.equal(icon.style.color, hexOf(readable(fillColour)));
+  assert.equal(slider.getAttribute("aria-orientation"), "vertical");
+});
+
+test("v2 slider: a track of colours with its mark", () => {
+  const tracked = {
+    id: 2,
+    t: "slider",
+    r: [16, 16, 200, 40],
+    value: { s: 1 },
+    min: 0,
+    max: 100,
+    track: ["#FF0000", "#00FF00", "#0000FF"],
+  };
+  const slider = drawCard2({ w: [tracked] }, { 1: 50 }).card.querySelector(".at-slider");
+  const track = slider.querySelector(".at-slider-track");
+  assert.match(track.style.background, /^linear-gradient\(to right, #FF0000 0px, #FF0000 7px, #FF0000 7px, #00FF00 100px, #00FF00 100px, #0000FF 193px, #0000FF 193px, #0000FF 200px\)$/);
+  assert.equal(track.style.height, "14px");
+  const mark = slider.querySelector(".at-slider-mark");
+  assert.equal(mark.hidden, false);
+  assert.equal(mark.style.left, "89px");
+  assert.equal(mark.style.width, "22px");
+  assert.equal(mark.style.background, "#FFFFFF");
+  assert.equal(mark.style.borderColor, "#15181D");
+  // No fill on a track.
+  assert.equal(slider.querySelector(".at-slider-fill"), null);
+});
+
+test("v2 slider: nv keeps it at full strength with its track only; rate moves it", () => {
+  const nv = { id: 2, t: "slider", r: [16, 16, 200, 40], value: { s: 1 }, min: 0, max: 100, nv: 1, change: { p: 1 } };
+  const empty = drawCard2({ w: [nv] }, { 1: null }, { interactive: true }).card.querySelector(".at-slider");
+  assert.ok(!empty.classList.contains("at-none"));
+  assert.equal(empty.querySelector(".at-slider-fill").hidden, true);
+  assert.equal(empty.querySelector(".at-slider-knob").hidden, true);
+  assert.equal(empty.tabIndex, 0);
+  const moving = { id: 2, t: "slider", r: [16, 16, 200, 40], value: { s: 1 }, rate: { s: 2 }, min: 0, max: 100 };
+  const ages = { 1: 5 };
+  const drawn = drawCard2({ w: [moving] }, { 1: 10, 2: 2 }, { state: { age: (slot) => ages[slot] ?? 0 } });
+  const slider = drawn.card.querySelector(".at-slider");
+  assert.equal(slider.getAttribute("aria-valuenow"), "20");
+  // Clamped to max.
+  ages[1] = 1000;
+  drawn.renderer.update(drawn.state({ 1: 10, 2: 2 }, { age: (slot) => ages[slot] ?? 0 }));
+  assert.equal(slider.getAttribute("aria-valuenow"), "100");
+  // A rate without a value counts as 0.
+  drawn.renderer.update(drawn.state({ 1: 10, 2: null }, { age: (slot) => ages[slot] ?? 0 }));
+  assert.equal(slider.getAttribute("aria-valuenow"), "10");
+});
+
+test("v2 thermostat: c, mark and bs", () => {
+  const thermo = {
+    id: 2,
+    t: "thermostat",
+    r: [16, 16, 200, 200],
+    value: { s: 1 },
+    mark: { s: 2 },
+    min: 10,
+    max: 30,
+    step: 0.5,
+    c: "#FF453A",
+    bs: 48,
+    change: { p: 1 },
+  };
+  const { card } = drawCard2({ w: [thermo] }, { 1: 21, 2: 20 });
+  assert.equal(card.querySelector(".at-arc-value").style.stroke, hexOf(legible(0xff453a, MID.card, MID.tx)));
+  const dot = card.querySelector(".at-arc-mark");
+  // 20 is halfway: 270 degrees, straight up.
+  assert.ok(Math.abs(Number(dot.getAttribute("cx")) - 100) < 1e-9);
+  assert.ok(Math.abs(Number(dot.getAttribute("cy")) - 28) < 1e-9);
+  // Arc width 14.28 * 200 / 200; diameter max(6, w - 4).
+  assert.ok(Math.abs(Number(dot.getAttribute("r")) - (200 / 14 - 4) / 2) < 1e-9);
+  assert.equal(dot.style.fill, "#E8EAED");
+  assert.equal(card.querySelector(".plus").style.width, "48px");
+  // The mark shows while the value has none, and not outside min to max.
+  const off = drawCard2({ w: [thermo] }, { 1: null, 2: 20 }).card;
+  assert.equal(off.querySelector(".at-arc-mark").style.display, "");
+  const outside = drawCard2({ w: [thermo] }, { 1: 21, 2: 40 }).card;
+  assert.equal(outside.querySelector(".at-arc-mark").style.display, "none");
+});
+
+test("v2 chart: c, steps and the bar of now", () => {
+  const steps = { id: 2, t: "chart", r: [16, 16, 100, 50], value: { s: 1 }, kind: "line", st: 1, c: "#30D158" };
+  const card = drawCard2({ w: [steps] }, { 1: [1, 3, 2] }).card;
+  const rects = card.querySelectorAll(".at-chart-step");
+  assert.equal(rects.length, 4);
+  assert.equal(rects[0].style.fill, hexOf(legible(0x30d158, MID.card, MID.tx)));
+  assert.equal(rects[0].getAttribute("height"), "3");
+  const bars = { id: 2, t: "chart", r: [16, 16, 100, 50], value: { s: 1 }, kind: "bars", mark: { s: 2 } };
+  const marked = drawCard2({ w: [bars] }, { 1: [1, 2, 3, 4], 2: 1.4 }).card;
+  const drawn = marked.querySelectorAll(".at-chart-bar").map((bar) => bar.getAttribute("class").split(" ").at(-1));
+  assert.deepEqual(drawn, ["at-bar-acc2", "at-bar-acc", "at-bar-card2", "at-bar-card2"]);
+  const past = drawCard2({ w: [bars] }, { 1: [1, 2, 3, 4], 2: 4 }).card;
+  assert.ok(past.querySelectorAll(".at-chart-bar").every((bar) => bar.getAttribute("class").endsWith("at-bar-acc2")));
+});
+
+test("v2 image: badge and bare looks", () => {
+  const image = { id: 2, t: "image", r: [16, 16, 120, 80], value: { s: 1 }, look: 1 };
+  const plain = drawCard2({ on: { s: 2 }, w: [image] }, { 1: "mdi:fan", 2: 0 }).card.querySelector(".at-image");
+  assert.ok(plain.classList.contains("badge"));
+  assert.equal(plain.style.left, "36px");
+  assert.equal(plain.style.width, "80px");
+  assert.equal(plain.style.background, "#232833");
+  assert.equal(plain.style.color, "#9AA0A8");
+  assert.equal(plain.querySelector("ha-icon").style.getPropertyValue("--mdc-icon-size"), "48px");
+  const filled = drawCard2({ on: { s: 2 }, w: [image] }, { 1: "mdi:fan", 2: 1 }).card.querySelector(".at-image");
+  const colours = cardColours(MID, true, 0, null);
+  const wash = mix(colours.FI, colours.background, 80);
+  assert.equal(filled.style.background, hexOf(wash));
+  assert.equal(filled.style.color, hexOf(legible(colours.FI, wash, colours.text)));
+  const bare = drawCard2({ w: [{ ...image, look: 2 }] }, { 1: "mdi:fan" }).card.querySelector(".at-image");
+  assert.ok(bare.classList.contains("bare"));
+  assert.equal(bare.querySelector("ha-icon").style.getPropertyValue("--mdc-icon-size"), "72px");
+});
+
+test("v2 choice: cells, the selected option, swatches, dots and taps", () => {
+  const choice = { id: 2, t: "choice", r: [16, 16, 200, 40], value: { s: 1 }, texts: ["A", "B", "C"], change: { p: 0 } };
+  const { card, sent } = drawCard2({ w: [choice] }, { 1: 1 }, { interactive: true });
+  const cells = card.querySelectorAll(".at-choice-cell");
+  assert.equal(cells.length, 3);
+  assert.deepEqual([cells[1].style.left, cells[1].style.width], ["69px", "61px"]);
+  assert.equal(cells[1].getAttribute("aria-pressed"), "true");
+  assert.equal(cells[1].querySelector(".at-choice-face").style.background, "#F5B547");
+  assert.equal(cells[0].querySelector(".at-choice-face").style.background, "#232833");
+  for (const listener of cells[2].listeners.get("click")) listener();
+  assert.deepEqual(sent, [["change", 2, 2, true]]);
+  // A fraction selects nothing.
+  const none = drawCard2({ w: [choice] }, { 1: 1.5 }).card.querySelectorAll(".at-choice-cell");
+  assert.ok(none.every((cell) => cell.getAttribute("aria-pressed") === "false"));
+  const swatches = drawCard2({ w: [{ ...choice, texts: undefined, cols: ["#FF0000", "#00FF00"], look: 1 }] }, { 1: 0 }).card;
+  const faces = swatches.querySelectorAll(".at-choice-face");
+  assert.equal(faces[0].style.background, "#FF0000");
+  assert.equal(faces[0].style.boxShadow, "inset 0 0 0 3px #E8EAED");
+  assert.ok(faces[0].classList.contains("dot"));
+  assert.equal(faces[0].style.width, "40px");
+  // Two rows of cells below 1 px high are not drawn.
+  const tiny = drawCard2({ w: [{ ...choice, r: [16, 16, 200, 8], rows: 2 }] }).card;
+  assert.ok(tiny.querySelector(".at-choice").classList.contains("at-hidden"));
+});
+
+test("v2 vis: a widget with vis 0 or no value is not drawn", () => {
+  const label = { id: 2, t: "label", r: [16, 16, 100, 20], text: "Hi", vis: { s: 1 } };
+  const { card, renderer, state } = drawCard2({ w: [label] }, { 1: 1 });
+  const element = card.querySelector(".at-label");
+  assert.ok(!element.classList.contains("at-hidden"));
+  renderer.update(state({ 1: 0 }));
+  assert.ok(element.classList.contains("at-hidden"));
+  renderer.update(state({ 1: null }));
+  assert.ok(element.classList.contains("at-hidden"));
+  assert.match(rule(".at-hidden"), /display: none/);
+});
+
+function drawLayout2(pageIndex) {
+  const uninstall = installFakeDom();
+  try {
+    const host = document.createElement("div");
+    const layout = {
+      v: 2,
+      screen: [1280, 800],
+      theme: { ...midnight },
+      nav: [
+        { page: "home", icon: "mdi:home" },
+        { page: "light", icon: "mdi:lightbulb" },
+        { page: "more", icon: "mdi:cog" },
+      ],
+      pages: [
+        { id: "home", w: [{ t: "heading", r: [120, 20, 300, 32], text: "Rooms", icon: "mdi:sofa", c: "#FF453A" }] },
+        { id: "light", sub: 1, w: [] },
+        { id: "more", theme: { wall: "#F2F2F7", card: "#FFFFFF" }, w: [] },
+      ],
+    };
+    renderPage(host, layout, pageIndex, { values: {}, errors: {} }, { sx: 1, sy: 1 });
+    return host;
+  } finally {
+    uninstall();
+  }
+}
+
+test("v2 page: detail pages, the back entry, page themes and heading colour", () => {
+  const home = drawLayout2(0);
+  const buttons = home.querySelectorAll(".at-nav-button");
+  // The detail page's entry is not drawn; the others keep their places.
+  assert.equal(buttons.length, 2);
+  assert.equal(buttons[1].style.top, "160px");
+  assert.equal(home.querySelector(".at-heading").style.color, hexOf(legible(0xff453a, MID.wall, MID.tx)));
+  const detail = drawLayout2(1);
+  const [back] = detail.querySelectorAll(".at-nav-button");
+  assert.equal(detail.querySelectorAll(".at-nav-button").length, 1);
+  assert.ok(back.classList.contains("back"));
+  assert.ok(back.classList.contains("active"));
+  assert.equal(back.querySelector("ha-icon").icon, "mdi:arrow-left");
+  assert.equal(back.style.top, "16px");
+  const themed = drawLayout2(2);
+  assert.equal(themed.querySelector(".at-page").style.getPropertyValue("--at-wall"), "#F2F2F7");
+  assert.equal(themed.querySelector(".at-nav").style.getPropertyValue("--at-bg"), "#FFFFFF");
+});
+
 // Last in the file: it loads the tablet's font, which stays loaded for the
 // rest of this module, and the tests above expect it not to be.
 test("a fitted line is drawn in whole tablet pixels, no wider than its box", async () => {
@@ -829,11 +1337,34 @@ test("the renderer's styles scale radius, border and outline with the picture", 
     if (/^ ?(0|999px|50%|inherit)$/.test(value)) continue;
     assert.match(value, /var\(--at-f/, `${property}:${value} does not scale with the picture`);
   }
+  // Paddings, gaps, margins, places and sizes scale too.
+  const spacing =
+    /^\s*(padding(?:-[a-z]+)*|margin(?:-[a-z]+)*|(?:row-|column-)?gap|top|left|right|bottom|width|height|font-size|outline-offset):([^;]*);/gm;
+  let seen = 0;
+  for (const [, property, value] of rendererStyles.matchAll(spacing)) {
+    if (!/\dpx/.test(value)) continue;
+    seen += 1;
+    assert.match(value, /var\(--at-f/, `${property}:${value} does not scale with the picture`);
+  }
+  assert.ok(seen >= 8, `only ${seen} spacing lengths found`);
+});
+
+// Home Assistant's glyph is an inline box inside ha-icon. A flex host keeps
+// it off a text line, so a small icon is not pushed down out of its badge.
+test("an icon's glyph sits in the icon's own box", () => {
+  const icons = rule(".at-card ha-icon,\n.at-page ha-icon,\n.at-heading ha-icon,\n.at-nav ha-icon");
+  assert.match(icons, /display: inline-flex;/);
+  assert.match(icons, /align-items: center;/);
+  assert.match(icons, /justify-content: center;/);
 });
 
 test("every tablet picture is left to right", () => {
   const base = rule(".at-card,\n.at-page,\n.at-heading,\n.at-nav");
-  for (const declaration of ["direction: ltr;", "unicode-bidi: isolate;", "text-size-adjust: 100%;", "-webkit-text-size-adjust: 100%;"]) {
+  for (const declaration of [
+    "direction: ltr;", "unicode-bidi: isolate;", "text-size-adjust: 100%;", "-webkit-text-size-adjust: 100%;",
+    // Grey-scale edges, as thin as the tablet's text (design review, round 2).
+    "-webkit-font-smoothing: antialiased;", "-moz-osx-font-smoothing: grayscale;",
+  ]) {
     assert.ok(base.includes(declaration), declaration);
   }
 });
