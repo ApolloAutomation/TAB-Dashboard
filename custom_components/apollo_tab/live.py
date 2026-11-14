@@ -186,6 +186,8 @@ async def async_evaluate_slot(hass: HomeAssistant, slot: dict) -> Any:
         )
     if slot["kind"] == "history":
         return jsonable(await async_fetch_history(hass, slot["entity"], slot["hours"]))
+    if slot["kind"] != "action":
+        raise HomeAssistantError(f"no value for a {slot['kind']} slot yet")
     return jsonable(await async_fetch_action(hass, slot))
 
 
@@ -419,6 +421,10 @@ class SlotTracker:
                 self._removers.append(
                     self._hub.async_subscribe(slot, partial(self._deliver, slot))
                 )
+                continue
+            if slot["kind"] not in ("history", "action"):
+                # A source of schema 2 (colour, clock and the rest) has no
+                # value here yet; the tablet shows no value for it.
                 continue
             first_fetches.append(self._async_fetch(slot))
             seconds = (

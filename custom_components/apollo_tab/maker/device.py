@@ -50,6 +50,31 @@ CAPS_DEFAULTS: dict[str, Any] = {
     "max_stored": MAX_STORED_BYTES,
 }
 
+# What a tablet with engine 0.2.0 answers (contract.json engine_caps). The
+# converter fits a layout v2 to these when it is not told a tablet's caps.
+ENGINE_CAPS_V2: dict[str, Any] = {
+    "w": [
+        "heading",
+        "card",
+        "label",
+        "button",
+        "switch",
+        "slider",
+        "thermostat",
+        "chart",
+        "image",
+        "choice",
+    ],
+    "icons": 2,
+    "screen": [1280, 800],
+    "max_pages": 64,
+    "max_layout": MAX_LAYOUT_BYTES,
+    "max_stored": MAX_STORED_BYTES,
+    "max_chunk": CHUNK_BYTES,
+    "max_slots": MAX_SLOTS,
+    "max_widgets": MAX_WIDGETS,
+}
+
 WIDGET_KINDS = (
     "heading",
     "card",

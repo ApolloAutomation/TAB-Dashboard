@@ -491,6 +491,8 @@ async def websocket_layout_get(
     {
         probatio.Required("type"): "apollo_tab/layout/preview",
         probatio.Required("config"): dict,
+        # The layout version to make; the editor asks for 2 once it draws it.
+        probatio.Optional("dl", default=1): probatio.In([1, 2]),
     }
 )
 @websocket_api.async_response
@@ -504,7 +506,7 @@ async def websocket_layout_preview(
     if (data := _loaded_data(hass, connection, msg["id"])) is None:
         return
     try:
-        preview = await data.manager.async_preview(msg["config"])
+        preview = await data.manager.async_preview(msg["config"], msg["dl"])
     except Exception:
         _LOGGER.exception("Preview conversion failed")
         connection.send_error(

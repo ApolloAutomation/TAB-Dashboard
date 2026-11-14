@@ -117,8 +117,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ApolloTabConfigEntry) ->
     slot_hub = SlotHub(hass, library)
     facts = FactKeeper(hass)
     await facts.async_load()
-    manager = DashboardManager(hass, library, facts)
     _contract, icons = await hass.async_add_executor_job(load_contract)
+    manager = DashboardManager(hass, library, facts, icons)
     assignments = Assignments(hass, manager)
     await assignments.async_load()
     sender = TabletSender(

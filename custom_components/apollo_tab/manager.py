@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -32,15 +33,29 @@ class DashboardManager:
     """Convert TAB-1 dashboards and serve their layouts and live values."""
 
     def __init__(
-        self, hass: HomeAssistant, library: Library, facts: FactKeeper | None = None
+        self,
+        hass: HomeAssistant,
+        library: Library,
+        facts: FactKeeper | None = None,
+        icons: dict | None = None,
     ) -> None:
-        """Initialise the manager."""
+        """Initialise the manager.
+
+        icons is the contract's icons.json: version 1 forms of schema 2
+        cards keep only its icons of level 1, and a layout v2 is fitted to
+        a tablet with it.
+        """
         self._hass = hass
         self.library = library
+        self.icons = icons
         # What the devices can do; only this manager's conversions of saved
         # dashboards write it.
         self.facts = facts if facts is not None else FactKeeper(hass)
         self.layouts: dict[str, dict] = {}
+        # What each stored layout was made from, and the layouts v2 made
+        # from the same for the tablets that take them, by their caps.
+        self._made_from: dict[str, dict] = {}
+        self._versions: dict[str, dict[str, dict]] = {}
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.layouts")
         self._listeners: list[Callable[[str, str], None]] = []
         self._unsubscribers: list[Callable[[], None]] = []
@@ -207,17 +222,28 @@ class DashboardManager:
         components = self.library.components
         named = dashboard_facts(config, components)
         facts = self.facts.facts_for(named)
+        approved = self.library.approved_ids()
+        themes = self.library.themes
         try:
             result = convert_dashboard(
                 config,
                 components=components,
-                themes=self.library.themes,
-                approved=self.library.approved_ids(),
+                themes=themes,
+                approved=approved,
                 facts=facts,
+                icons=self.icons,
             )
         except Exception:
             _LOGGER.exception("Conversion of dashboard %s failed", url_path)
             return
+        self._made_from[url_path] = {
+            "config": config,
+            "components": components,
+            "themes": themes,
+            "approved": approved,
+            "facts": facts,
+        }
+        self._versions[url_path] = {}
         self.facts.async_converted(url_path, named, facts)
         layout: dict = result["layout"]
         theme = layout.get("theme", {}).get("id", DEFAULT_THEME)
@@ -234,9 +260,58 @@ class DashboardManager:
             "title": info.get("title", url_path),
             "mode": info.get("mode", "storage"),
             "theme": theme,
+            # Cards of schema 2 that a version 1 tablet shows simpler.
+            "simpler": result.get("simpler", 0),
         }
         self._async_save()
         self._notify("converted", url_path)
+
+    def layout_for(
+        self, url_path: str, dl: int, caps: dict[str, Any] | None = None
+    ) -> dict:
+        """Return the stored layout of a dashboard for one layout version.
+
+        Version 1 is the stored layout. Version 2 is made from the same
+        dashboard, facts and library the first time a tablet that takes it
+        asks, fitted to that tablet's caps, and kept until the dashboard is
+        converted again (C.4: a second run happens only while a tablet of
+        the other version is assigned). If that run fails, the version 1
+        layout stands in: a tablet that takes version 2 takes version 1 too.
+        Raises KeyError for a dashboard with no stored layout.
+        """
+        entry = self.layouts[url_path]
+        made_from = self._made_from.get(url_path)
+        if dl != 2 or made_from is None:
+            return entry
+        key = json.dumps(caps or {}, sort_keys=True, default=str)
+        versions = self._versions.setdefault(url_path, {})
+        if key in versions:
+            return versions[key]
+        try:
+            result = convert_dashboard(
+                made_from["config"],
+                components=made_from["components"],
+                themes=made_from["themes"],
+                approved=made_from["approved"],
+                facts=made_from["facts"],
+                dl=2,
+                icons=self.icons,
+                caps=caps,
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Conversion of dashboard %s for version 2 failed", url_path
+            )
+            return entry
+        versions[key] = {
+            **entry,
+            "layout": result["layout"],
+            "bindings": result["bindings"],
+            "warnings": result["warnings"],
+            "simpler": 0,
+            "dl": 2,
+        }
+        return versions[key]
 
     async def async_convert_all(self) -> None:
         """Convert every dashboard and forget dashboards that are gone."""
@@ -275,10 +350,11 @@ class DashboardManager:
             return {}
         return await self._async_evaluate_slots(entry["bindings"])
 
-    async def async_preview(self, config: dict) -> dict[str, Any]:
+    async def async_preview(self, config: dict, dl: int = 1) -> dict[str, Any]:
         """Convert a config that is not saved and evaluate its slots once.
 
-        Nothing is stored and no listener is told.
+        dl is the layout version to make (1 or 2). Nothing is stored and no
+        listener is told.
         """
         components = self.library.components
         result = convert_dashboard(
@@ -288,6 +364,8 @@ class DashboardManager:
             approved=self.library.approved_ids(),
             # Read only: a preview never writes the facts store.
             facts=self.facts.facts_for(dashboard_facts(config, components)),
+            dl=dl,
+            icons=self.icons,
         )
         return {
             "layout": result["layout"],
@@ -337,6 +415,8 @@ class DashboardManager:
             self._notify("absent", url_path)
             return
         del self.layouts[url_path]
+        self._made_from.pop(url_path, None)
+        self._versions.pop(url_path, None)
         self._async_save()
         self._notify("removed", url_path)
 

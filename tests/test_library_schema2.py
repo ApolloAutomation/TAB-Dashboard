@@ -349,8 +349,11 @@ async def test_a_schema_1_card_in_the_form_data(hass: HomeAssistant) -> None:
     }
 
 
-def test_a_schema_2_card_is_left_out_of_a_layout_for_now() -> None:
-    """Until its compiler exists, a schema 2 card on a dashboard is left out."""
+def test_a_schema_2_card_gets_its_version_1_form_in_a_layout_v1() -> None:
+    """A schema 2 card on a dashboard is drawn, in a layout v1 in its v1 form.
+
+    Its old cards are not loaded here, so it is its own form (C.6, rule 2).
+    """
     from custom_components.apollo_tab.maker.schema import validate_component
 
     component = validate_component(yaml.safe_load(LIGHT))
@@ -387,7 +390,12 @@ def test_a_schema_2_card_is_left_out_of_a_layout_for_now() -> None:
         approved=set(),
     )
     codes = [warning["code"] for warning in result["warnings"]]
-    assert "invalid_card" in codes
+    assert "invalid_card" not in codes
+    assert result["simpler"] == 1
+    layout = result["layout"]
+    assert layout["v"] == 1
+    [card] = layout["pages"][0]["w"]
+    assert card["component"] == "apollo/light"
 
 
 def _schema2_files() -> list[tuple[str, dict]]:

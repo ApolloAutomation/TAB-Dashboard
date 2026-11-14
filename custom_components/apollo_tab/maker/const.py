@@ -85,6 +85,13 @@ MAX_ARCS_PER_PAGE = 4
 MAX_H_GRADIENTS_PER_PAGE = 4
 MAX_PAGES = 20
 MAX_NAV = 8
+# Layout v2 only (C.3, C.4 of the cards spec). Home Assistant's own numbers,
+# below the tablet's: 12 sliders with a track a page, 64 pages.
+MAX_TRACKS_PER_PAGE = 6
+MAX_DETAIL_PAGES = 44
+DETAIL_TTL_S = 60
+# What a version 1 tablet shows for a card it cannot draw (C.6, rule 3).
+UPDATE_NOTE = "Update this tablet to show this card"
 
 THEME_IDS = ("midnight", "daylight", "warm", "soft", "mono", "glass")
 DEFAULT_THEME = "midnight"

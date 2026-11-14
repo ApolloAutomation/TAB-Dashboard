@@ -47,6 +47,7 @@ from .live import (
     output_confirm_text,
 )
 from .maker.device import (
+    CAPS_DEFAULTS,
     CHUNK_BYTES,
     ContractError,
     bindings_digest,
@@ -290,6 +291,13 @@ class TabletSession:
         self.boot: int | None = None
         self.last_counter = 0
         self.caps: dict[str, Any] = {}
+        # The device layout version this tablet gets: 2 when its proto
+        # includes 2 (contract section 3).
+        self.dl = 1
+        # Cards this tablet shows in a version 1 form or as the note, and
+        # whether its layout is too big to be kept across a restart.
+        self.simpler = 0
+        self.not_kept = False
         self.shown: str | None = None
         # A hash HA committed that the tablet may still be building: neither
         # confirmed on screen nor reported as ended. Kept across connections,
@@ -663,8 +671,11 @@ class TabletSession:
             self._set_status(STATUS_OFFLINE)
 
     def _compile(self, url_path: str) -> Compiled:
-        """Compile the dashboard for this tablet's caps; cached per layout."""
-        stored = self.sender.manager.layouts[url_path]
+        """Compile the dashboard for this tablet's caps; cached per layout.
+
+        The layout is of the version the tablet takes (C.5).
+        """
+        stored = self.sender.manager.layout_for(url_path, self.dl, self.caps)
         layout = stored["layout"]
         caps_key = repr(sorted(self.caps.items()))
         confirm = self._cover_questions(stored["bindings"])
@@ -680,6 +691,9 @@ class TabletSession:
             return cache[3]
         icons = self.sender.icons
         result = compile_device_layout(layout, icons, self.caps, confirm=confirm)
+        caps = {**CAPS_DEFAULTS, **self.caps}
+        self.not_kept = result["size"] > int(caps["max_stored"])
+        self.simpler = int(stored.get("simpler", 0) or 0)
         compiled = Compiled(
             url_path=url_path,
             hash=result["hash"],
@@ -900,6 +914,7 @@ class TabletSession:
         boot = response.get("boot")
         self.boot = boot if isinstance(boot, int) else None
         self.caps = tp.caps_of(response)
+        self.dl = 2 if tp.layout_version(response) == 2 else 1
         layout = response.get("layout")
         self.shown = layout if isinstance(layout, str) else ""
         if self.staged is not None and self.staged == self.shown:
