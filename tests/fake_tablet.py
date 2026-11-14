@@ -241,6 +241,9 @@ class FakeTablet:
             if self.transfer and self.transfer["hash"] == hash:
                 self.transfer = None
             return {}
+        if self.staged and hash == self.staged:
+            # Still being built: success, and the build carries on (contract 5).
+            return {}
         transfer = self.transfer
         if (
             transfer is None

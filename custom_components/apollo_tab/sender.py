@@ -186,6 +186,8 @@ class Compiled:
     data: bytes
     plan: list[dict]
     bindings: dict
+    # The hash of every Component as it was when the layout was made.
+    revisions: dict[str, Any]
     layout: dict
     digest: str
     level: int
@@ -682,6 +684,7 @@ class TabletSession:
             data=result["bytes"],
             plan=result["slots"],
             bindings=stored["bindings"],
+            revisions=stored.get("revisions", {}),
             layout=layout,
             digest=bindings_digest(stored["bindings"], result["slots"]),
             level=icon_level(icons, self.caps),
@@ -1003,9 +1006,16 @@ class TabletSession:
             if err.code == "needs_encryption":
                 self.input = INPUT_NEEDS_ENCRYPTION
                 return False
+            # Refused or lost on the way: pair again when the limit allows.
+            self._schedule_pair()
             if err.code == "bad_key":
                 _LOGGER.warning("A TAB-1 tablet refused its new pairing key")
                 return False
+            # Otherwise the tablet may hold the new secret or the old one,
+            # and a pairing ends its session. It counts as not paired until
+            # the next tab_hello says which secret it holds.
+            self.drop_session()
+            self.input = INPUT_NOT_PAIRED
             raise
         self.sender.assignments.async_set_secret(self.mac, secret, key_id)
         self._force_pair = False
@@ -1239,11 +1249,15 @@ class TabletSession:
         # Input counts only from a tablet whose last handshake confirmed
         # encryption and pairing (contract 6.1, 7.3): otherwise not_paired.
         secret = assignments.secret(self.mac) if self.input == INPUT_OK else None
+        # The session this input belongs to; its answer goes to no other.
+        # None without a session: then no input belongs to one, whatever
+        # nonce it names, an empty one too.
+        nonce = self.nonce
         verdict, parsed = tp.verify_input(
             data,
             mac=self.hex,
             secret=secret,
-            nonce=self.nonce or "",
+            nonce=nonce,
             last_counter=self.last_counter,
             layouts=tuple(self.kept),
         )
@@ -1256,11 +1270,11 @@ class TabletSession:
         while self._inputs and now - self._inputs[0] >= 1.0:
             self._inputs.popleft()
         if len(self._inputs) >= INPUTS_PER_SECOND:
-            await self._async_ack(counter, tp.ACK_BUSY)
+            await self._async_ack(counter, tp.ACK_BUSY, nonce)
             return
         self._inputs.append(now)
         if verdict == "stale_layout":
-            await self._async_ack(counter, tp.ACK_STALE)
+            await self._async_ack(counter, tp.ACK_STALE, nonce)
             # The tablet shows a layout HA keeps no bindings for: read what it
             # really shows before trusting `shown` again.
             self._check_shown = True
@@ -1268,7 +1282,7 @@ class TabletSession:
                 self.kick()
             return
         code = await self._async_run_input(parsed)
-        await self._async_ack(counter, code)
+        await self._async_ack(counter, code, nonce)
 
     def _drop_input(self, verdict: str) -> None:
         """Count a dropped input; no ack, so a stranger learns nothing."""
@@ -1306,6 +1320,12 @@ class TabletSession:
             return tp.ACK_DENIED
         if action.get("demo"):
             return tp.ACK_DENIED
+        made_from = compiled.revisions.get(component_id)
+        if made_from is None or made_from != component.get("hash"):
+            # The Component changed after this layout was made: its outputs
+            # may do something else than this screen shows. Without a hash
+            # to compare, it counts as changed.
+            return tp.ACK_STALE
         try:
             await async_run_output(
                 self.hass,
@@ -1324,14 +1344,21 @@ class TabletSession:
             return ACK_FOR_ERROR.get(err.code, tp.ACK_FAILED)
         return tp.ACK_DONE
 
-    async def _async_ack(self, counter: int, code: str) -> None:
-        """Answer one input."""
+    async def _async_ack(self, counter: int, code: str, nonce: str) -> None:
+        """Answer one input, in the session it came in.
+
+        An input of a session that has ended gets no answer: the tablet
+        forgot it with the session, and puts its control back by itself.
+        """
         ok = code == tp.ACK_DONE
         try:
             await self._call(
                 "tab_ack",
                 {"n": counter, "ok": ok, "code": code},
                 body=tp.ack_body(counter, ok, code),
+                # Counters start again in every session (contract 7.1), so in
+                # a later one this answer would be taken for another input's.
+                still=lambda: self.nonce == nonce,
             )
         except LinkError:
             return

@@ -14,18 +14,23 @@ const flush = async () => {
 };
 
 // A stand-in connection. Each entry of script says how that subscribe call
-// ends: "resolve" (the default), "not_loaded" or "unauthorized". answers
-// maps a command type to what sendMessagePromise resolves to (or a function
-// of the message; a thrown error rejects).
+// ends: "resolve" (the default), "not_loaded", "unknown_command",
+// "unauthorized" or "lost" (the connection was lost while it was under
+// way). answers maps a command type to what sendMessagePromise resolves to
+// (or a function of the message; a thrown error rejects).
 function makeConnection({ script = [], answers = {} } = {}) {
   return {
     subscribes: [],
     sent: [],
     stopped: 0,
-    subscribeMessage(callback, message) {
+    subscribeMessage(callback, message, options) {
       const action = script[this.subscribes.length] || "resolve";
-      this.subscribes.push({ callback, message });
-      if (action === "not_loaded" || action === "unauthorized") {
+      this.subscribes.push({ callback, message, options });
+      if (action === "lost") {
+        // Home Assistant's connection answers with an error result, code 3.
+        return Promise.reject({ type: "result", success: false, error: { code: 3, message: "Connection lost" } });
+      }
+      if (action !== "resolve") {
         return Promise.reject(Object.assign(new Error(action), { code: action }));
       }
       return Promise.resolve(() => {
@@ -44,6 +49,26 @@ function makeConnection({ script = [], answers = {} } = {}) {
   };
 }
 
+// Home Assistant's connection fires "ready" when it is back after a loss.
+function withConnectionEvents(conn) {
+  conn.listeners = new Map();
+  conn.addEventListener = (type, callback) => {
+    conn.listeners.set(type, [...(conn.listeners.get(type) || []), callback]);
+  };
+  conn.removeEventListener = (type, callback) => {
+    conn.listeners.set(
+      type,
+      (conn.listeners.get(type) || []).filter((entry) => entry !== callback),
+    );
+  };
+  conn.fire = (type) => {
+    for (const callback of conn.listeners.get(type) || []) {
+      callback(conn);
+    }
+  };
+  return conn;
+}
+
 const KITCHEN = { mac: "aa:01", name: "Kitchen tablet", dashboard: "home", status: "on_tablet" };
 const HALLWAY = { mac: "aa:02", name: "Hallway tablet", dashboard: "night", status: "offline" };
 
@@ -55,6 +80,8 @@ test("the tablet list is one subscription shared by every listener", async () =>
   const stopSecond = onTabletsChanged(conn, (tablets) => second.push(tablets));
   assert.equal(conn.subscribes.length, 1);
   assert.deepEqual(conn.subscribes[0].message, { type: "apollo_tab/tablets/subscribe" });
+  // A connection without events keeps opening its subscriptions again itself.
+  assert.equal(conn.subscribes[0].options, undefined);
   await flush();
 
   conn.subscribes[0].callback({ type: "tablets", tablets: [KITCHEN, HALLWAY, null, { name: "no mac" }] });
@@ -127,6 +154,248 @@ test("the subscription opens again after the integration was reloaded", async ()
   }
 });
 
+// After a restart of Home Assistant the connection is back before the
+// integration is loaded. The connection's own new subscribe would fail then
+// and tell nobody, so the subscription is opened again here.
+test("the tablet list is subscribed again when the connection comes back", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(makeConnection({ script: ["resolve", "not_loaded", "resolve"] }));
+    const lists = [];
+    const errors = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => errors.push(error.code),
+    });
+    await flush();
+    conn.subscribes[0].callback({ type: "tablets", tablets: [KITCHEN] });
+    assert.deepEqual(conn.subscribes[0].options, { resubscribe: false });
+
+    conn.fire("ready");
+    assert.equal(conn.subscribes.length, 2);
+    assert.deepEqual(conn.subscribes[1].options, { resubscribe: false });
+    await flush();
+    // The first subscription went with the old connection: it is not closed.
+    assert.equal(conn.stopped, 0);
+    assert.deepEqual(errors, []);
+
+    mock.timers.tick(2000);
+    assert.equal(conn.subscribes.length, 3);
+    await flush();
+    conn.subscribes[0].callback({ type: "tablets", tablets: [] });
+    assert.deepEqual(lists, [[KITCHEN]]);
+    conn.subscribes[2].callback({ type: "tablets", tablets: [KITCHEN, HALLWAY] });
+    assert.deepEqual(lists, [[KITCHEN], [KITCHEN, HALLWAY]]);
+    assert.deepEqual(errors, []);
+
+    stop();
+    mock.timers.tick(1000);
+    assert.equal(conn.stopped, 1);
+    assert.deepEqual(conn.listeners.get("ready"), []);
+    conn.fire("ready");
+    assert.equal(conn.subscribes.length, 3);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// While Home Assistant starts, the integration's commands are not there yet.
+test("a subscribe Home Assistant does not know yet after a restart is tried again", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(makeConnection({ script: ["resolve", "unknown_command", "resolve"] }));
+    const lists = [];
+    const errors = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => errors.push(error.code),
+    });
+    await flush();
+    conn.subscribes[0].callback({ type: "tablets", tablets: [KITCHEN] });
+
+    conn.fire("ready");
+    await flush();
+    assert.deepEqual(errors, []);
+    mock.timers.tick(2000);
+    assert.equal(conn.subscribes.length, 3);
+    await flush();
+    conn.subscribes[2].callback({ type: "tablets", tablets: [HALLWAY] });
+    assert.deepEqual(lists, [[KITCHEN], [HALLWAY]]);
+    assert.deepEqual(errors, []);
+    stop();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// Lets `ms` milliseconds pass one second at a time, with the promise steps
+// in between that a failed subscribe needs to ask for its next try.
+async function pass(ms) {
+  for (let done = 0; done < ms; done += 1000) {
+    mock.timers.tick(1000);
+    await flush();
+  }
+}
+
+// The first subscribe can come while Home Assistant is still starting (a
+// preview card made again after a reconnect), or meet an older integration
+// that was updated but not restarted. The listener hears of it at once and
+// the subscribe is tried again in the background.
+test("a first subscribe Home Assistant does not know is reported at once and tried again", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(
+      makeConnection({ script: ["unknown_command", "unknown_command", "resolve"] }),
+    );
+    const lists = [];
+    const errors = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => errors.push(error.code),
+    });
+    await flush();
+    assert.deepEqual(errors, ["unknown_command"]);
+    assert.equal(conn.subscribes.length, 1);
+
+    mock.timers.tick(2000);
+    assert.equal(conn.subscribes.length, 2);
+    await flush();
+    // The same failure is told once.
+    assert.deepEqual(errors, ["unknown_command"]);
+    mock.timers.tick(4000);
+    assert.equal(conn.subscribes.length, 3);
+    await flush();
+    conn.subscribes[2].callback({ type: "tablets", tablets: [KITCHEN] });
+    assert.deepEqual(lists, [[KITCHEN]]);
+
+    // The failure is over: a newcomer gets the list, with no new subscribe.
+    const later = [];
+    const laterErrors = [];
+    const stopLater = onTabletsChanged(conn, (tablets) => later.push(tablets), {
+      onError: (error) => laterErrors.push(error.code),
+    });
+    assert.deepEqual(later, [[KITCHEN]]);
+    assert.deepEqual(laterErrors, []);
+    assert.equal(conn.subscribes.length, 3);
+    stop();
+    stopLater();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a subscribe Home Assistant never knows is given up after ten minutes", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(
+      makeConnection({
+        script: [...Array(25).fill("unknown_command"), "resolve", ...Array(24).fill("unknown_command")],
+      }),
+    );
+    const lists = [];
+    const errors = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => errors.push(error.code),
+    });
+    await flush();
+    // Tries after 2, 4, 8 and 16 s, then every 30 s; the last at ten minutes.
+    await pass(599000);
+    assert.equal(conn.subscribes.length, 23);
+    await pass(1000);
+    assert.equal(conn.subscribes.length, 24);
+    await pass(1800000);
+    assert.equal(conn.subscribes.length, 24);
+    assert.deepEqual(errors, ["unknown_command"]);
+
+    // A new connection tries again, with the short waits first.
+    conn.fire("ready");
+    assert.equal(conn.subscribes.length, 25);
+    await flush();
+    await pass(2000);
+    assert.equal(conn.subscribes.length, 26);
+    conn.subscribes[25].callback({ type: "tablets", tablets: [HALLWAY] });
+    assert.deepEqual(lists, [[HALLWAY]]);
+    assert.deepEqual(errors, ["unknown_command"]);
+
+    // The failure was over. The next one is its own, and is told as well.
+    conn.fire("ready");
+    await flush();
+    await pass(600000);
+    assert.equal(conn.subscribes.length, 50);
+    assert.deepEqual(errors, ["unknown_command", "unknown_command"]);
+    stop();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// After a restart the listeners keep the list they have while the subscribe
+// is tried again, and hear of the failure only when it is given up.
+test("a subscribe Home Assistant stops knowing is reported when it is given up", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(
+      makeConnection({ script: ["resolve", ...Array(24).fill("unknown_command")] }),
+    );
+    const lists = [];
+    const errors = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => errors.push(error.code),
+    });
+    await flush();
+    conn.subscribes[0].callback({ type: "tablets", tablets: [KITCHEN] });
+
+    conn.fire("ready");
+    await flush();
+    await pass(599000);
+    assert.deepEqual(errors, []);
+    await pass(1000);
+    assert.deepEqual(errors, ["unknown_command"]);
+    assert.equal(conn.subscribes.length, 25);
+    await pass(60000);
+    assert.equal(conn.subscribes.length, 25);
+    assert.deepEqual(lists, [[KITCHEN]]);
+    stop();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// Home Assistant's connection answers a subscribe that was under way when
+// the connection was lost with "Connection lost". The connection comes back
+// with "ready", and the subscribe is sent again then.
+test("a subscribe cut off by a lost connection waits for the connection", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(makeConnection({ script: ["resolve", "lost", "resolve"] }));
+    const lists = [];
+    const errors = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => errors.push(error),
+    });
+    await flush();
+    conn.subscribes[0].callback({ type: "tablets", tablets: [KITCHEN] });
+
+    conn.fire("ready");
+    await flush();
+    assert.deepEqual(errors, []);
+    await pass(60000);
+    assert.equal(conn.subscribes.length, 2);
+
+    conn.fire("ready");
+    assert.equal(conn.subscribes.length, 3);
+    await flush();
+    conn.subscribes[2].callback({ type: "tablets", tablets: [KITCHEN, HALLWAY] });
+    assert.deepEqual(lists, [[KITCHEN], [KITCHEN, HALLWAY]]);
+    assert.deepEqual(errors, []);
+    stop();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("a final failure is reported, and the next listener tries again", async () => {
   const conn = makeConnection({ script: ["unauthorized", "resolve"] });
   const errors = [];
@@ -141,6 +410,82 @@ test("a final failure is reported, and the next listener tries again", async () 
   assert.deepEqual(lists, [[]]);
   stop();
   stopNext();
+});
+
+// The first listener shows the failure while the subscribe is tried again
+// in the background. A newcomer should not wait for the next try to hear
+// how things stand.
+test("a newcomer during a failure has the subscribe tried at once", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(
+      makeConnection({ script: ["unknown_command", "unknown_command", "resolve"] }),
+    );
+    const errors = [];
+    const stop = onTabletsChanged(conn, () => {}, { onError: (error) => errors.push(error.code) });
+    await flush();
+    assert.deepEqual(errors, ["unknown_command"]);
+
+    const lists = [];
+    const nextErrors = [];
+    const stopNext = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => nextErrors.push(error.code),
+    });
+    assert.equal(conn.subscribes.length, 2);
+    await flush();
+    assert.deepEqual(nextErrors, ["unknown_command"]);
+    // Only the new try goes on: one subscribe after 2 s, none from the old.
+    mock.timers.tick(2000);
+    assert.equal(conn.subscribes.length, 3);
+    await flush();
+    conn.subscribes[2].callback({ type: "tablets", tablets: [KITCHEN] });
+    assert.deepEqual(lists, [[KITCHEN]]);
+    assert.equal(conn.listeners.get("ready").length, 1);
+    stop();
+    stopNext();
+    mock.timers.tick(1000);
+    assert.deepEqual(conn.listeners.get("ready"), []);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// The answer to a change is shown over the last list. While the listeners
+// show a failure there is no such list.
+test("a failure leaves no old list for a newcomer", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const conn = withConnectionEvents(makeConnection({ script: ["resolve", "unauthorized", "resolve"] }));
+    const lists = [];
+    const errors = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets), {
+      onError: (error) => errors.push(error.code),
+    });
+    await flush();
+    conn.subscribes[0].callback({ type: "tablets", tablets: [KITCHEN] });
+    conn.fire("ready");
+    await flush();
+    assert.deepEqual(errors, ["unauthorized"]);
+
+    // The first newcomer has the subscribe tried again; the second comes
+    // before its answer and gets no list from before the failure.
+    const first = [];
+    const second = [];
+    const stopFirst = onTabletsChanged(conn, (tablets) => first.push(tablets));
+    const stopSecond = onTabletsChanged(conn, (tablets) => second.push(tablets));
+    assert.equal(conn.subscribes.length, 3);
+    assert.deepEqual([first, second], [[], []]);
+    await flush();
+    conn.subscribes[2].callback({ type: "tablets", tablets: [HALLWAY] });
+    assert.deepEqual([first, second], [[[HALLWAY]], [[HALLWAY]]]);
+    assert.deepEqual(lists, [[KITCHEN], [HALLWAY]]);
+    stop();
+    stopFirst();
+    stopSecond();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("assigning a dashboard sends the address and shows the answer at once", async () => {
@@ -202,6 +547,45 @@ test("setting a tablet up again sends its address and shows the answer at once",
   await assert.rejects(pairTablet(refused, "aa:01"), { code: "not_approved" });
   stop();
 });
+
+// Home Assistant can send the answer and later lists in one go. The lists
+// are then handled first, and the answer, which is older, must not come
+// back over them.
+for (const [name, type, change] of [
+  ["assigning a dashboard", "apollo_tab/tablet/assign", (conn) => assignTablet(conn, "aa:01", "night")],
+  ["setting a tablet up again", "apollo_tab/tablet/pair", (conn) => pairTablet(conn, "aa:01")],
+]) {
+  test(`${name}: an answer does not replace a list that came after the change was sent`, async () => {
+    let answer;
+    const conn = makeConnection({
+      answers: {
+        [type]: () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      },
+    });
+    const lists = [];
+    const stop = onTabletsChanged(conn, (tablets) => lists.push(tablets));
+    await flush();
+    conn.subscribes[0].callback({ type: "tablets", tablets: [KITCHEN, HALLWAY] });
+
+    const sending = { ...KITCHEN, dashboard: "night", status: "sending" };
+    const failed = { ...KITCHEN, dashboard: "night", status: "failed", reason: "too_big" };
+    const pending = change(conn);
+    await flush();
+    answer({ tablet: sending });
+    conn.subscribes[0].callback({ type: "tablets", tablets: [failed, HALLWAY] });
+
+    // The caller still gets the answer.
+    assert.deepEqual(await pending, sending);
+    assert.deepEqual(lists, [
+      [KITCHEN, HALLWAY],
+      [failed, HALLWAY],
+    ]);
+    stop();
+  });
+}
 
 // Product owner, 2026-11-12: locks, alarms and garage doors keep their
 // usual rules on a tablet, with no switch per tablet. The only change the

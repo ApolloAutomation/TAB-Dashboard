@@ -289,11 +289,14 @@ def verify_input(
     *,
     mac: str,
     secret: bytes | None,
-    nonce: str,
+    nonce: str | None,
     last_counter: int,
     layouts: tuple[str, ...] | list[str] | set[str],
 ) -> tuple[str, dict | None]:
     """Check one esphome.tab1_input event (contract 7.3).
+
+    nonce is the current session's, or None while HA holds no session: then
+    no input is the current session's, not even one with an empty nonce.
 
     layouts holds the hashes HA keeps bindings for on this tablet: the
     wanted one, and the one before it until the tablet confirms the switch.
@@ -320,7 +323,7 @@ def verify_input(
         return "not_paired", None
     if not hmac.compare_digest(sign(secret, payload), signature):
         return "bad_signature", None
-    if p_nonce != nonce:
+    if nonce is None or p_nonce != nonce:
         return "stale_session", None
     if not (p_counter.isdigit() and p_widget.isdigit()):
         return "malformed", None

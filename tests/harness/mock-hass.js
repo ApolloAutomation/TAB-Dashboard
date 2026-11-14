@@ -124,6 +124,24 @@ const DOOR_LOCK = {
   params: { entity: { kind: "entity", domain: "lock", multiple: false } },
 };
 
+// A card from the user's folder with five graphs, one more than a screen
+// takes, so the tablet leaves it out even when it is alone on its page. The
+// harness server converts it (FIVE_GRAPHS in tests/harness/server.py).
+const FIVE_GRAPHS = {
+  id: "me/five-graphs",
+  tag: "apollo-tab-el-me-five-graphs",
+  name: "Five graphs",
+  description: "One sensor as five lines.",
+  icon: "mdi:chart-line",
+  version: "1.0.0",
+  size: [2, 2],
+  grid: { columns: 12, rows: 6 },
+  source: "user",
+  sensitive: false,
+  approved: true,
+  params: { entity: { kind: "entity", domain: "sensor", multiple: false } },
+};
+
 // The tokens the integration sends for a card with no style of its own.
 function plainStyle(theme) {
   const { card, tx, tx2, acc, acc2, acct, card2, line, onbg, ontx, r, r2, bw } = theme;
@@ -336,10 +354,10 @@ const TABLET_SETS = {
 };
 
 // options.seed: "none", "sample" (default) or "real" (uses options.realConfig).
-// options.community adds a lock card from the user's folder to the library.
-// options.night adds the "Night" dashboard. options.tablets: "none"
-// (default), "three", "no-engine", "new", "two-new" or "all" (see
-// TABLET_SETS).
+// options.community adds a lock card from the user's folder to the library,
+// options.graphs a card with five graphs. options.night adds the "Night"
+// dashboard. options.tablets: "none" (default), "three", "no-engine", "new",
+// "two-new" or "all" (see TABLET_SETS).
 export function createMockHass(fixtures, options = {}) {
   defineStandIns();
 
@@ -348,6 +366,9 @@ export function createMockHass(fixtures, options = {}) {
   const library = structuredClone(fixtures.library);
   if (options.community) {
     library.components.push(structuredClone(DOOR_LOCK));
+  }
+  if (options.graphs) {
+    library.components.push(structuredClone(FIVE_GRAPHS));
   }
 
   // A small in-memory stand-in for Home Assistant's storage dashboards.
@@ -362,6 +383,10 @@ export function createMockHass(fixtures, options = {}) {
   // down: the connection is lost. waiting: commands sent meanwhile.
   // underWay: commands sent and not answered yet.
   const connection = { down: false, waiting: [], underWay: new Set() };
+  // Home Assistant does not know the commands whose type starts with this;
+  // null: it knows them all (see unknownCommands).
+  let unknownPrefix = null;
+  const isUnknown = (type) => unknownPrefix !== null && String(type).startsWith(unknownPrefix);
 
   const addDashboard = (urlPath, title, config, showInSidebar) => {
     dashboards.set(urlPath, {
@@ -476,6 +501,7 @@ export function createMockHass(fixtures, options = {}) {
 
   const finishSend = (tablet) => {
     tablet.sending = false;
+    clearTimeout(tablet.timer);
     tablet.timer = null;
     emitTablets();
   };
@@ -503,8 +529,9 @@ export function createMockHass(fixtures, options = {}) {
   };
 
   // The first TAB-1 dashboard made goes to every approved tablet that has
-  // none. A new tablet waits for an admin.
-  const giveToOrphans = () => {
+  // none. A new tablet waits for an admin. announce: false gives it without
+  // a send and without an event, as for a browser whose connection is down.
+  const giveToOrphans = (announce = true) => {
     const first = tabOrder()[0]?.url_path || null;
     if (!first) {
       return;
@@ -513,18 +540,22 @@ export function createMockHass(fixtures, options = {}) {
     for (const tablet of approvedTablets()) {
       if (!tablet.dashboard && !tablet.forced) {
         tablet.dashboard = first;
-        send(tablet);
+        if (announce) {
+          send(tablet);
+        }
         changed = true;
       }
     }
-    if (changed) {
+    if (changed && announce) {
       emitTablets();
     }
   };
 
   // A deleted dashboard's approved tablets move to the first one left, or
-  // to none. A new tablet loses it as its suggestion.
-  const moveFrom = (urlPath) => {
+  // to none. A new tablet loses it as its suggestion. announce: false moves
+  // them without a send and without an event, as for a browser whose
+  // connection is down.
+  const moveFrom = (urlPath, announce = true) => {
     const next = tabOrder().find((dashboard) => dashboard.url_path !== urlPath)?.url_path || null;
     let changed = false;
     for (const tablet of tablets) {
@@ -536,11 +567,13 @@ export function createMockHass(fixtures, options = {}) {
     for (const tablet of approvedTablets()) {
       if (tablet.dashboard === urlPath) {
         tablet.dashboard = next;
-        send(tablet);
+        if (announce) {
+          send(tablet);
+        }
         changed = true;
       }
     }
-    if (changed) {
+    if (changed && announce) {
       emitTablets();
     }
   };
@@ -558,7 +591,12 @@ export function createMockHass(fixtures, options = {}) {
     const dashboard = dashboards.get(urlPath);
     const wasTab = isTabConfig(dashboard.config);
     dashboard.config = structuredClone(config);
+    const becameTab = !wasTab && isTabConfig(dashboard.config);
     if (!announce) {
+      // The tablets get it all the same; only this browser hears nothing.
+      if (becameTab) {
+        giveToOrphans(false);
+      }
       return;
     }
     queueMicrotask(() =>
@@ -572,7 +610,7 @@ export function createMockHass(fixtures, options = {}) {
     if (showing.length) {
       emitTablets();
     }
-    if (!wasTab && isTabConfig(dashboard.config)) {
+    if (becameTab) {
       giveToOrphans();
     }
   };
@@ -661,6 +699,9 @@ export function createMockHass(fixtures, options = {}) {
     },
     async answerWS(message) {
       calls.push(structuredClone(message));
+      if (isUnknown(message.type)) {
+        throw fail("unknown_command", "Unknown command.");
+      }
       const failures = failing.get(message.type) || 0;
       if (failures > 0) {
         failing.set(message.type, failures - 1);
@@ -794,8 +835,11 @@ export function createMockHass(fixtures, options = {}) {
       }
     },
     connection: {
-      async subscribeMessage(callback, message) {
-        const record = { callback, message };
+      async subscribeMessage(callback, message, options) {
+        if (isUnknown(message.type)) {
+          throw fail("unknown_command", "Unknown command.");
+        }
+        const record = { callback, message, resubscribe: options?.resubscribe !== false };
         listeners.add(record);
 
         if (message.type === "apollo_tab/tablets/subscribe") {
@@ -857,11 +901,13 @@ export function createMockHass(fixtures, options = {}) {
       store(urlPath, config, false);
     },
     // Another browser deletes a dashboard while this one's connection is
-    // down: no "removed" event reaches this browser.
+    // down: no "removed" event reaches this browser. The tablets that
+    // showed it move all the same.
     deleteWhileOffline(urlPath) {
       if (!dashboards.delete(urlPath)) {
         throw fail("not_found", "Dashboard not found");
       }
+      moveFrom(urlPath, false);
     },
     // The connection drops: every command under way is answered with
     // "Connection lost" (a save among them may still be stored, for
@@ -875,9 +921,17 @@ export function createMockHass(fixtures, options = {}) {
     },
     // The connection comes back. Home Assistant's own connection then opens
     // its subscriptions again and fires "ready"; nothing tells what changed.
-    // Commands that waited go out after that.
+    // A subscription made with resubscribe: false went with the old
+    // connection. So did one Home Assistant does not take again (see
+    // unknownCommands), and nobody is told of that. Commands that waited go
+    // out after that.
     reconnect() {
       connection.down = false;
+      for (const record of [...listeners]) {
+        if (!record.resubscribe || isUnknown(record.message.type)) {
+          listeners.delete(record);
+        }
+      }
       for (const callback of [...(connectionListeners.get("ready") || [])]) {
         callback(hass.connection);
       }
@@ -896,6 +950,17 @@ export function createMockHass(fixtures, options = {}) {
     // How many listeners wait for the connection's "ready" event.
     readyListeners() {
       return connectionListeners.get("ready")?.size || 0;
+    },
+    // How many subscriptions of one type are open.
+    subscriptions(type) {
+      return [...listeners].filter((record) => record.message.type === type).length;
+    },
+    // Home Assistant does not know the commands whose type starts with
+    // `prefix`, because it is still starting or its integration is an older
+    // one: they are answered unknown_command, as commands and as
+    // subscribes. null: it knows them all again.
+    unknownCommands(prefix) {
+      unknownPrefix = prefix ?? null;
     },
     failSaves(count) {
       failingSaves = Math.max(0, Number(count) || 0);

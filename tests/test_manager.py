@@ -99,6 +99,13 @@ async def test_converts_tab_dashboard_on_save(
     assert entry["layout"]["theme"]["id"] == "midnight"
     assert entry["layout"]["hash"]
     assert entry["bindings"]["slots"]
+    # The Components the layout was made from, for the check at tap time.
+    library = config_entry.runtime_data.library
+    assert entry["revisions"] == {
+        component_id: component["hash"]
+        for component_id, component in library.components.items()
+    }
+    assert entry["revisions"]["apollo/light-tile"]
 
 
 async def test_reconverts_on_change(

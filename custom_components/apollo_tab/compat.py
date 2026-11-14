@@ -44,12 +44,13 @@ _KEY_WARNED: HassKey[bool] = HassKey(f"{DOMAIN}.lovelace_warned")
 _KEY_UNREADABLE: HassKey[set[str]] = HassKey(f"{DOMAIN}.lovelace_unreadable")
 
 
-def _warn_unreadable(hass: HomeAssistant, url_path: str, err: OSError) -> None:
+def _warn_unreadable(hass: HomeAssistant, url_path: str, err: Exception) -> None:
     """Log once per dashboard and run that its file could not be read.
 
     Home Assistant reads a YAML dashboard's file time outside its own error
     handling, so a file deleted while Home Assistant runs raises an OSError
-    here instead of ConfigNotFound.
+    here instead of ConfigNotFound. A file that is missing before its first
+    load raises ConfigNotFound.
     """
     warned = hass.data.setdefault(_KEY_UNREADABLE, set())
     if url_path in warned:
@@ -142,12 +143,12 @@ async def async_probe_dashboard(
 ) -> tuple[str, dict | None]:
     """Load a dashboard and say why it has no config, when it has none.
 
-    Returns (PROBE_OK, config), (PROBE_EMPTY, None) when the dashboard exists
-    without a saved config, (PROBE_MISSING, None) when there is no dashboard
-    with this url_path, and (PROBE_ERROR, None) when it could not be read,
-    for example a YAML dashboard with an error. Tablets are only moved away
-    from a missing dashboard or one that is not a TAB-1 dashboard, never
-    from one that could not be read.
+    Returns (PROBE_OK, config), (PROBE_EMPTY, None) when a storage dashboard
+    exists without a saved config, (PROBE_MISSING, None) when there is no
+    dashboard with this url_path, and (PROBE_ERROR, None) when it could not
+    be read, for example a YAML dashboard with an error or without its file.
+    Tablets are only moved away from a missing dashboard or one that is not
+    a TAB-1 dashboard, never from one that could not be read.
     """
     dashboards = _dashboards(hass)
     if dashboards is None:
@@ -157,7 +158,12 @@ async def async_probe_dashboard(
         return PROBE_MISSING, None
     try:
         config = await cfg.async_load(False)
-    except ConfigNotFound:
+    except ConfigNotFound as err:
+        if getattr(cfg, "mode", None) == "yaml":
+            # The file is missing, for example after a restart with its
+            # folder not there yet. The dashboard is still registered.
+            _warn_unreadable(hass, url_path, err)
+            return PROBE_ERROR, None
         return PROBE_EMPTY, None
     except HomeAssistantError:
         return PROBE_ERROR, None

@@ -1,14 +1,21 @@
 """Check that the fixtures agree with the reference code. Run after gen_fixtures.py.
 
+Also checks that gen_icons.py makes icons.json, from small fonts made here.
+
 Usage: python -B reference/check_fixtures.py   (from the contract folder)
 """
 
+import contextlib
+import io
 import json
+import struct
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import gen_icons  # noqa: E402
 import tabproto as tp  # noqa: E402
 
 ROOT = HERE.parent
@@ -18,6 +25,69 @@ ICONS = json.loads((ROOT / "icons.json").read_text(encoding="utf-8"))
 
 def load(name):
     return json.loads((FIX / name).read_text(encoding="utf-8"))
+
+
+def icon_font(glyphs):
+    """Return a font with only the two tables gen_icons.py reads.
+
+    glyphs lists (code point, name) for glyph 1 and up; glyph 0 is .notdef.
+    A name that is a number is stored as that standard Macintosh index, a
+    text as a string of the font's own ('post' format 2).
+    """
+    index, strings = [0], []
+    for _, name in glyphs:
+        if isinstance(name, int):
+            index.append(name)
+        else:
+            index.append(258 + len(strings))
+            strings.append(bytes([len(name)]) + name.encode("latin1"))
+    post = struct.pack(f">I28xH{len(index)}H", 0x00020000, len(index), *index)
+    post += b"".join(strings)
+    groups = b"".join(
+        struct.pack(">III", code, code, glyph) for glyph, (code, _) in enumerate(glyphs, 1)
+    )
+    cmap = struct.pack(">HHHHI", 0, 1, 3, 10, 12)
+    cmap += struct.pack(">HHIII", 12, 0, 16 + len(groups), 0, len(glyphs)) + groups
+    font = struct.pack(">IH6x", 0x00010000, 2)
+    font += struct.pack(">4sIII", b"cmap", 0, 44, len(cmap))
+    font += struct.pack(">4sIII", b"post", 0, 44 + len(cmap), len(post))
+    return font + cmap + post
+
+
+def make_icons(font):
+    """Run gen_icons.py on a font. Return (the file it wrote or None, its error)."""
+    with tempfile.TemporaryDirectory() as folder:
+        source, out = Path(folder, "font.ttf"), Path(folder, "icons.json")
+        source.write_bytes(font)
+        argv, sys.argv = sys.argv, ["gen_icons.py", str(source), str(out)]
+        error = ""
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                gen_icons.main()
+        except SystemExit as stop:
+            error = str(stop)
+        finally:
+            sys.argv = argv
+        return (out.read_bytes() if out.exists() else None), error
+
+
+def icons() -> None:
+    """gen_icons.py makes icons.json from a font, however it names its glyphs."""
+    names = gen_icons.MAC_GLYPHS
+    assert len(names) == 258 and len(set(names)) == 258
+    assert (names[0], names[14], names[239], names[257]) == (
+        ".notdef", "plus", "minus", "dcroat",
+    )
+    committed = (ROOT / "icons.json").read_bytes()
+    glyphs = [(code, name.removeprefix("mdi:")) for name, (code, _) in ICONS["icons"].items()]
+    assert make_icons(icon_font(glyphs)) == (committed, "")
+    # A font may name plus and minus by their standard index, 14 and 239.
+    standard = [(code, {"plus": 14, "minus": 239}.get(name, name)) for code, name in glyphs]
+    assert make_icons(icon_font(standard)) == (committed, "")
+    # A name the font lacks stops the script, and nothing is written.
+    for font in (glyphs, standard):
+        lacking = [(code, name) for code, name in font if name not in ("minus", 239)]
+        assert make_icons(icon_font(lacking)) == (None, "not in the font: minus")
 
 
 def main() -> None:
@@ -134,6 +204,8 @@ def main() -> None:
         for payload in step["payloads"]:
             assert len(payload.encode("utf-8")) <= tp.MAX_SET_BYTES
             assert tp.canonical(json.loads(payload)).decode("utf-8") == payload
+
+    icons()
     print("fixtures agree with the reference code")
 
 

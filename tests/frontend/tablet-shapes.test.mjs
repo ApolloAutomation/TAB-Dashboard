@@ -535,3 +535,183 @@ test("the stand-in's offline tablet without a dashboard reads offline, like the 
   });
   checkTabletList("tablets", list);
 });
+
+test("a send the stand-in ended at once leaves no timer behind", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "three", night: true });
+  const mac = hass.getTablets().find((tablet) => tablet.name === "Kitchen tablet").mac;
+  const status = () => hass.getTablets().find((tablet) => tablet.mac === mac).status;
+  hass.sendDelay(20);
+  hass.setTablet(mac, {});
+  hass.finishSends();
+  assert.equal(status(), "on_tablet");
+  // A held send stays "sending", also after the first send's 20 ms.
+  hass.holdSends();
+  hass.setTablet(mac, {});
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(status(), "sending");
+  hass.finishSends();
+  assert.equal(status(), "on_tablet");
+});
+
+// Home Assistant gives the first dashboard to the tablets whatever a
+// browser hears of it.
+test("a save this browser does not hear of still gives the first dashboard to the tablets", async () => {
+  const hass = createMockHass(FIXTURES, { seed: "none", tablets: "new" });
+  hass.sendDelay(0);
+  const events = [];
+  for (const type of ["apollo_tab/tablets/subscribe", "apollo_tab/layout/subscribe"]) {
+    await hass.connection.subscribeMessage((event) => events.push(event), { type });
+  }
+  await flush();
+  events.length = 0;
+  const approved = hass.getTablets().find((tablet) => tablet.approved);
+  const fresh = hass.getTablets().find((tablet) => !tablet.approved);
+  assert.equal(approved.dashboard, null);
+
+  await hass.callWS({
+    type: "lovelace/dashboards/create",
+    url_path: "tab-1",
+    title: "TAB-1",
+    icon: "mdi:tablet-dashboard",
+    mode: "storage",
+    require_admin: false,
+    show_in_sidebar: false,
+  });
+  hass.saveWhileOffline("tab-1", FIXTURES.sample_config);
+  await flush();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await flush();
+
+  const after = Object.fromEntries(hass.getTablets().map((tablet) => [tablet.mac, [tablet.dashboard, tablet.status]]));
+  assert.deepEqual(after[approved.mac], ["tab-1", "on_tablet"]);
+  assert.deepEqual(after[fresh.mac], [null, "new"]);
+  const listed = await hass.callWS({ type: "apollo_tab/dashboards" });
+  assert.deepEqual(listed.dashboards[0].shown_on, [approved.mac]);
+  // Nothing reached this browser.
+  assert.deepEqual(events, []);
+});
+
+// Home Assistant moves the tablets off a deleted dashboard whatever a
+// browser hears of it.
+test("a delete this browser does not hear of still moves the tablets", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "all", night: true });
+  const events = [];
+  for (const type of ["apollo_tab/tablets/subscribe", "apollo_tab/layout/subscribe"]) {
+    await hass.connection.subscribeMessage((event) => events.push(event), { type });
+  }
+  await flush();
+  events.length = 0;
+  const before = hass.getTablets();
+  const showed = before.filter((tablet) => tablet.dashboard === "tab-1").map((tablet) => tablet.mac);
+  const waiting = before.find((tablet) => tablet.suggested === "tab-1");
+  assert.ok(showed.length > 3 && waiting, "the stand-in tablets do not show the sample dashboard");
+
+  hass.deleteWhileOffline("tab-1");
+  await flush();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await flush();
+
+  const after = hass.getTablets();
+  checkTabletList("tablets", after);
+  for (const tablet of after) {
+    const was = before.find((entry) => entry.mac === tablet.mac);
+    // The ones that showed it went to the dashboard that is left.
+    assert.equal(tablet.dashboard, was.dashboard === "tab-1" ? "night" : was.dashboard, tablet.name);
+    // No send was started for this browser to hear of.
+    assert.equal(tablet.status, was.status, tablet.name);
+  }
+  // A new tablet loses the deleted dashboard as its suggestion.
+  assert.equal(after.find((tablet) => tablet.mac === waiting.mac).suggested, null);
+  const listed = await hass.callWS({ type: "apollo_tab/dashboards" });
+  assert.deepEqual(
+    listed.dashboards.map((dashboard) => dashboard.url_path),
+    ["night"],
+  );
+  for (const mac of showed) {
+    assert.ok(listed.dashboards[0].shown_on.includes(mac), `${mac} is not listed under the dashboard that is left`);
+  }
+  // Nothing reached this browser.
+  assert.deepEqual(events, []);
+
+  // With no dashboard left the tablets show none.
+  hass.deleteWhileOffline("night");
+  await flush();
+  for (const tablet of hass.getTablets()) {
+    assert.equal(tablet.dashboard, null, tablet.name);
+  }
+  assert.equal(hass.getTablets().find((tablet) => tablet.name === "Kitchen tablet").status, "no_dashboard");
+  assert.deepEqual(events, []);
+  assert.throws(() => hass.deleteWhileOffline("night"), { code: "not_found" });
+});
+
+// Home Assistant's connection opens a subscription again after it was lost,
+// unless the subscription was made with resubscribe: false. The panel makes
+// its own that way and opens them again itself at "ready".
+test("the stand-in's connection comes back without the subscriptions made with resubscribe false", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "three" });
+  const type = "apollo_tab/tablets/subscribe";
+  const kept = [];
+  const gone = [];
+  await hass.connection.subscribeMessage((event) => kept.push(event), { type });
+  const stop = await hass.connection.subscribeMessage((event) => gone.push(event), { type }, { resubscribe: false });
+  await flush();
+  assert.deepEqual([kept.length, gone.length], [1, 1]);
+  assert.equal(hass.subscriptions(type), 2);
+  let ready = 0;
+  hass.connection.addEventListener("ready", () => {
+    // Its own are gone by the time "ready" is heard.
+    assert.equal(hass.subscriptions(type), 1);
+    ready += 1;
+  });
+
+  // Until the connection is back both are open.
+  hass.dropConnection();
+  hass.emitTablets();
+  await flush();
+  assert.deepEqual([kept.length, gone.length], [2, 2]);
+
+  hass.reconnect();
+  assert.equal(ready, 1);
+  hass.emitTablets();
+  await flush();
+  assert.deepEqual([kept.length, gone.length], [3, 2]);
+  assert.equal(hass.subscriptions(type), 1);
+  // Closing the one that is gone changes nothing.
+  stop();
+  assert.equal(hass.subscriptions(type), 1);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+});
+
+// While Home Assistant starts, or with an older integration, it answers
+// unknown_command. A subscription its connection opens again by itself is
+// then lost, and nobody is told.
+test("the stand-in answers unknown_command for commands Home Assistant does not know", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "three" });
+  const type = "apollo_tab/tablets/subscribe";
+  const events = [];
+  await hass.connection.subscribeMessage((event) => events.push(event), { type });
+  await flush();
+  events.length = 0;
+
+  hass.unknownCommands("apollo_tab/");
+  await assert.rejects(hass.callWS({ type: "apollo_tab/tablets" }), { code: "unknown_command" });
+  await assert.rejects(hass.connection.subscribeMessage(() => {}, { type }), { code: "unknown_command" });
+  await assert.rejects(
+    hass.connection.subscribeMessage(() => {}, { type: "apollo_tab/card/subscribe", card: {} }),
+    { code: "unknown_command" },
+  );
+  // Home Assistant's own commands are there.
+  assert.ok(Array.isArray(await hass.callWS({ type: "lovelace/dashboards/list" })));
+  // A subscription that is open stays open on the same connection.
+  assert.equal(hass.subscriptions(type), 1);
+
+  hass.dropConnection();
+  hass.reconnect();
+  assert.equal(hass.subscriptions(type), 0);
+  hass.unknownCommands(null);
+  hass.emitTablets();
+  await flush();
+  assert.deepEqual(events, []);
+  assert.deepEqual((await hass.callWS({ type: "apollo_tab/tablets" })).tablets, hass.getTablets());
+  await new Promise((resolve) => setTimeout(resolve, 60));
+});

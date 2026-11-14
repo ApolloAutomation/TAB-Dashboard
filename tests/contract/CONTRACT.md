@@ -587,13 +587,22 @@ Checks, in this order. The first failure decides.
 
 Which hashes HA keeps bindings for: the wanted layout, and the one that was on
 screen before it, until `tab_status` (or `tab_hello`) confirms the switch.
-Then only the wanted one. So a tap on the old layout during a build still
-works, with the old layout's actions. After an HA restart HA keeps bindings
-only for layouts it compiled in this run. If the tablet reports the hash HA
-compiles for its dashboard, that is enough and nothing is sent again.
+Then only the wanted one. So a tap on the old layout during a build is still
+answered from the old layout's bindings: it runs the old layout's action, or
+nothing when the card's Component changed since (below). After an HA restart
+HA keeps bindings only for layouts it compiled in this run. If the tablet
+reports the hash HA compiles for its dashboard, that is enough and nothing
+is sent again.
 
 - `ok`: store the counter, run the action under the integration's rules, then
   call `tab_ack(counter, ok, code, auth)`.
+  - The bindings name a Component (a card's definition in HA) and one of its
+    actions by name. HA runs the action only while that Component is the one
+    the layout was made from. If the Component changed since, the same name
+    may stand for another action than the screen shows: HA runs nothing and
+    acks `stale`, or `denied` when the Component is no longer allowed.
+  - This holds for every layout HA keeps bindings for: the old one, and the
+    wanted one until HA has made it again from the changed Component.
 - `stale_layout`: store the counter and call `tab_ack(counter, false,
   "stale")`. Start a send only if none is running and no build is being
   watched.
@@ -604,7 +613,8 @@ compiles for its dashboard, that is enough and nothing is sent again.
 
 Ack codes: empty (done), `confirm` (HA needs a yes first: ask, then send again
 with confirmed 1), `denied` (not allowed), `failed` (the action failed),
-`stale` (layout changed), `busy` (too many inputs; HA accepts 10 per second).
+`stale` (the layout or the Component changed), `busy` (too many inputs; HA
+accepts 10 per second).
 
 ### 7.4 What the tablet does
 
