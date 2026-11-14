@@ -192,9 +192,9 @@ test("the Repairs status has its own amber band", async () => {
     return panelStyles.slice(start, panelStyles.indexOf("}", start));
   };
   const band = rule('.tablet-status[data-tone="attention"]');
-  assert.match(band, /border: 1px solid var\(--warning-color, #ffa600\);/);
-  assert.match(band, /background: color-mix\(in srgb, var\(--warning-color, #ffa600\) 16%, var\(--card-background-color, #181c23\)\);/);
-  assert.match(rule('.tablet-status[data-tone="attention"]::before'), /background: var\(--warning-color, #ffa600\);/);
+  assert.match(band, /border: 1px solid var\(--tab-warn-ink\);/);
+  assert.match(band, /background: color-mix\(in srgb, var\(--tab-warn\) 12%, var\(--tab-surface\)\);/);
+  assert.match(rule('.tablet-status[data-tone="attention"]::before'), /background: var\(--tab-warn-ink\);/);
   // No other status has a band.
   assert.equal((panelStyles.match(/\.tablet-status\[data-tone="[a-z]+"\] \{/g) || []).length, 1);
 });
@@ -742,10 +742,16 @@ test("the panel guards each Turn on button by its own place, and shows the wait"
     "this._turnOnMovedAt = new Map();",
   ]);
   const { panelStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
-  const start = panelStyles.indexOf(".tablet-turn-on[data-settling] {");
+  // A button that waits looks exactly like a disabled filled button: one
+  // rule holds both, and neither is faded.
+  const start = panelStyles.indexOf("button.primary:disabled,\n.tablet-turn-on[data-settling] {");
   assert.ok(start >= 0, "no look for a button that waits");
-  assert.match(panelStyles.slice(start, panelStyles.indexOf("}", start)), /opacity: 0\.55;/);
-  assert.match(panelStyles, /button:disabled \{\n  cursor: default;\n  opacity: 0\.55;/);
+  const look = panelStyles.slice(start, panelStyles.indexOf("}", start));
+  assert.match(look, /background: var\(--tab-tonal\);/);
+  assert.match(look, /color: var\(--tab-disabled\);/);
+  for (const match of panelStyles.matchAll(/([^{}]*(?:button:disabled|\[data-settling\])[^{}]*)\{([^}]*)\}/g)) {
+    assert.doesNotMatch(match[2], /opacity/, `${match[1].trim()} is faded`);
+  }
 });
 
 test("an erased tablet's row says that Home Assistant waits in Repairs", () => {
@@ -900,7 +906,7 @@ test("on a phone the links leave room for their focus ring", async () => {
   const { panelStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
   const focus = panelStyles.slice(panelStyles.indexOf("a:focus-visible,"), panelStyles.indexOf("}", panelStyles.indexOf("a:focus-visible,")));
   const reach = Number(/outline: (\d+)px solid/.exec(focus)[1]) + Number(/outline-offset: (\d+)px;/.exec(focus)[1]);
-  assert.equal(reach, 5);
+  assert.equal(reach, 4);
   for (const name of ["tablet-repairs", "tablet-device-page"]) {
     const start = panelStyles.indexOf(`@media (max-width: 700px), (pointer: coarse) {\n  .${name} {`);
     assert.ok(start >= 0, name);

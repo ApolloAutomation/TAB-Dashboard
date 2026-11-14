@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 from jinja2.sandbox import SandboxedEnvironment
 
+from custom_components.apollo_tab.library import picker_fields, read_picker
 from custom_components.apollo_tab.maker.compile import compile_card, public_card
 from custom_components.apollo_tab.maker.convert import alias_tag, convert_dashboard
 from custom_components.apollo_tab.maker.schema import (
@@ -44,6 +45,7 @@ def load_components():
 
 def _library(components, theme_entries):
     """Build the library object the panel would receive."""
+    picker = read_picker()
     ordered = sorted(
         components.values(),
         key=lambda comp: (comp.get("source") != "builtin", comp.get("name", "")),
@@ -65,6 +67,7 @@ def _library(components, theme_entries):
             "sensitive": bool(component.get("sensitive")),
             "approved": True,
             "params": component.get("params", {}),
+            **picker_fields(component, picker),
         }
         for component in ordered
     ]

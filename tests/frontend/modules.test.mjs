@@ -34,6 +34,14 @@ const expected = [
   "feedbackReduce",
   "warningText",
   "warningPlace",
+  "parseCssColour",
+  "accentInk",
+  "accentGrounds",
+  "accentText",
+  "layoutBand",
+  "shellHeight",
+  "fitStage",
+  "drawerShift",
 ];
 
 test("logic module exports the complete public surface", async () => {

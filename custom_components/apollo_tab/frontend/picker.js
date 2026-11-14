@@ -315,6 +315,7 @@ export function openCardPicker({ root, hass, library, config, themeId, compact =
       }
       foot.append(
         makeButton(t("pick.skip"), {
+          kind: "text",
           test: "pick-skip",
           onClick: () => finish({ component, params: { ...params } }),
         }),

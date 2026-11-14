@@ -1,0 +1,66 @@
+{
+ "apollo/alarm-panel": {
+  "group": "security",
+  "keywords": ["alarm", "security", "siren", "burglar", "intruder", "away"]
+ },
+ "apollo/blinds": {
+  "group": "covers",
+  "keywords": ["curtains", "shades", "shutters", "roller", "garage", "awning", "window"]
+ },
+ "apollo/camera-snapshot": {
+  "group": "security",
+  "keywords": ["camera", "cctv", "doorbell", "driveway", "video", "security"]
+ },
+ "apollo/fan": {
+  "group": "climate",
+  "keywords": ["ceiling fan", "air", "cooling", "breeze", "ventilation", "speed"]
+ },
+ "apollo/light-slider": {
+  "group": "lights",
+  "keywords": ["lamp", "bulb", "dimmer", "brightness", "lighting", "ceiling light"]
+ },
+ "apollo/light-tile": {
+  "group": "lights",
+  "keywords": ["lamp", "bulb", "lighting", "ceiling light", "on and off"]
+ },
+ "apollo/lock": {
+  "group": "security",
+  "keywords": ["door", "front door", "deadbolt", "key", "unlock", "security"]
+ },
+ "apollo/media-player": {
+  "group": "media",
+  "keywords": ["music", "speaker", "tv", "radio", "song", "audio", "playlist", "podcast"]
+ },
+ "apollo/scene-row": {
+  "group": "lights",
+  "keywords": ["scenes", "mood", "preset", "movie", "dinner", "night", "buttons"]
+ },
+ "apollo/sensor-graph": {
+  "group": "sensors",
+  "keywords": ["graph", "chart", "history", "trend", "temperature", "humidity", "power"]
+ },
+ "apollo/sensor-value": {
+  "group": "sensors",
+  "keywords": ["reading", "number", "temperature", "humidity", "battery", "power", "meter"]
+ },
+ "apollo/thermostat": {
+  "group": "climate",
+  "keywords": ["heating", "cooling", "temperature", "heat", "radiator", "boiler", "air conditioning"]
+ },
+ "apollo/weather": {
+  "group": "sensors",
+  "keywords": ["forecast", "rain", "sun", "temperature", "outside", "clouds", "wind"]
+ },
+ "community/energy-gauge": {
+  "group": "sensors",
+  "keywords": ["power", "energy", "electricity", "watts", "dial", "solar", "usage", "meter"]
+ },
+ "community/presence-chips": {
+  "group": "home",
+  "keywords": ["people", "family", "person", "away", "who is home", "phone"]
+ },
+ "community/room-summary": {
+  "group": "home",
+  "keywords": ["room", "area", "overview", "temperature", "humidity", "lights", "page"]
+ }
+}

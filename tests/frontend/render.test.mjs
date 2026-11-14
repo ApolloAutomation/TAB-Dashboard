@@ -264,8 +264,8 @@ test("card children sit at their absolute rectangles; the border does not move t
   assert.equal(button.style.left, "100px");
   assert.equal(button.style.top, "10px");
   // ...and the layer starts at that outer edge, outside the border.
-  assert.match(rule(".at-card-body"), /position: absolute;\s+inset: calc\(-1 \* var\(--at-bw, 0px\)\);/);
-  assert.match(rule(".at-card"), /border: var\(--at-bw, 0px\) solid/);
+  assert.match(rule(".at-card-body"), /position: absolute;\s+inset: calc\(-1 \* var\(--at-bw, 0px\) \* var\(--at-f, 1\)\);/);
+  assert.match(rule(".at-card"), /border: calc\(var\(--at-bw, 0px\) \* var\(--at-f, 1\)\) solid/);
   assert.equal(card.style.getPropertyValue("--at-bw"), "3px");
 });
 
@@ -636,4 +636,39 @@ test("the tablet preview's box for a missing character fills the room the tablet
       assert.ok(!box.style.marginRight, `scale ${scale}: ${box.style.marginRight}`);
     }
   });
+});
+
+// A picture drawn smaller than the tablet keeps its proportions: corners,
+// edges, outlines and the graph's line scale with it (--at-f is the scale;
+// at 1 every value is what it was). Rules added later are held too.
+test("the renderer's styles scale radius, border and outline with the picture", () => {
+  assert.match(rule(".at-card"), /border: calc\(var\(--at-bw, 0px\) \* var\(--at-f, 1\)\) solid/);
+  assert.match(rule(".at-card"), /border-radius: calc\(var\(--at-r, 16px\) \* var\(--at-f, 1\)\);/);
+  assert.match(rule(".at-card-body"), /inset: calc\(-1 \* var\(--at-bw, 0px\) \* var\(--at-f, 1\)\);/);
+  // The last rule of a selector is its own (the first may be a shared one).
+  const own = (selector) => {
+    const start = rendererStyles.lastIndexOf(`\n${selector} {`);
+    return rendererStyles.slice(start, rendererStyles.indexOf("}", start));
+  };
+  for (const selector of [".at-button", ".at-image", ".at-nav-button"]) {
+    assert.match(own(selector), /border-radius: calc\(var\(--at-r2(, 10px)?\) \* var\(--at-f, 1\)\);/, selector);
+  }
+  assert.match(rule(".at-button.busy,\n.at-switch.busy"), /outline: calc\(2px \* var\(--at-f, 1\)\) solid/);
+  assert.match(rule(".at-chart-line"), /stroke-width: calc\(3px \* var\(--at-f, 1\)\);/);
+  assert.match(rule(".at-nobox"), /border: calc\(1px \* var\(--at-f, 1\)\) solid/);
+  // Every length of an edge, corner, outline or line in the whole string,
+  // except none, a pill and a circle.
+  const lengths = /^\s*(border(?:-[a-z]+)*|outline(?:-width)?|outline|stroke-width|inset|box-shadow):([^;]*);/gm;
+  for (const [, property, value] of rendererStyles.matchAll(lengths)) {
+    if (!/\dpx|var\(--at-(bw|r|r2)\b/.test(value)) continue;
+    if (/^ ?(0|999px|50%|inherit)$/.test(value)) continue;
+    assert.match(value, /var\(--at-f/, `${property}:${value} does not scale with the picture`);
+  }
+});
+
+test("every tablet picture is left to right", () => {
+  const base = rule(".at-card,\n.at-page,\n.at-heading,\n.at-nav");
+  for (const declaration of ["direction: ltr;", "unicode-bidi: isolate;", "text-size-adjust: 100%;", "-webkit-text-size-adjust: 100%;"]) {
+    assert.ok(base.includes(declaration), declaration);
+  }
 });

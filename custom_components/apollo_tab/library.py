@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,23 @@ _BUILTIN_DIR = Path(__file__).parent / "library"
 
 # Bound a load so a pathological file cannot stall startup or reload.
 LOAD_TIMEOUT_SECONDS = 30
+
+# The groups of the card picker. The panel gives each its title.
+PICKER_GROUPS = (
+    "lights",
+    "climate",
+    "covers",
+    "security",
+    "media",
+    "sensors",
+    "home",
+    "more",
+)
+MAX_KEYWORDS = 8
+MAX_KEYWORD_LENGTH = 24
+# A search word: lower-case words of letters and digits, with single spaces,
+# hyphens or apostrophes between them.
+_KEYWORD = re.compile(r"[a-z0-9]+(?:[ '-][a-z0-9]+)*")
 
 
 class _ComponentLoader(yaml.SafeLoader):
@@ -92,6 +110,67 @@ def _read_strings() -> dict[str, str]:
     return {key: value for key, value in data.items() if isinstance(value, str)}
 
 
+def picker_entry_problem(entry: Any) -> str | None:
+    """Return why an entry of picker.json cannot be used, or None."""
+    if not isinstance(entry, dict):
+        return "the entry is not an object"
+    unknown = set(entry) - {"group", "keywords"}
+    if unknown:
+        return f"unknown key {sorted(unknown)[0]!r}"
+    if entry.get("group") not in PICKER_GROUPS:
+        return f"unknown group {entry.get('group')!r}"
+    keywords = entry.get("keywords", [])
+    if not isinstance(keywords, list) or len(keywords) > MAX_KEYWORDS:
+        return f"keywords must be a list of at most {MAX_KEYWORDS} words"
+    for word in keywords:
+        if (
+            not isinstance(word, str)
+            or len(word) > MAX_KEYWORD_LENGTH
+            or not _KEYWORD.fullmatch(word)
+        ):
+            return f"{word!r} is not a short plain search word"
+    if len(set(keywords)) != len(keywords):
+        return "a search word is listed twice"
+    return None
+
+
+def read_picker(path: Path | None = None) -> dict[str, dict]:
+    """Read picker.json: a group and search words per built-in card id.
+
+    An entry that fails the checks is left out and logged, because the file
+    ships with the integration. An entry for a card that is not there is
+    never used.
+    """
+    data = _read_json(path or _BUILTIN_DIR / "picker.json")
+    if not isinstance(data, dict):
+        _LOGGER.error("Built-in picker.json is missing or not an object")
+        return {}
+    entries: dict[str, dict] = {}
+    for card_id, entry in data.items():
+        problem = picker_entry_problem(entry)
+        if problem is not None:
+            _LOGGER.error("Built-in picker.json, %s: %s", card_id, problem)
+            continue
+        entries[card_id] = {
+            "group": entry["group"],
+            "keywords": list(entry.get("keywords", [])),
+        }
+    return entries
+
+
+def picker_fields(component: dict, picker: dict[str, dict]) -> dict[str, Any]:
+    """Return the picker's group and search words for one card.
+
+    The card file's own win; else the card's entry in picker.json. A card
+    with neither has an empty group, and the panel guesses one.
+    """
+    entry = picker.get(component.get("id"), {})
+    return {
+        "group": component.get("group") or entry.get("group", ""),
+        "keywords": list(component.get("keywords") or entry.get("keywords", [])),
+    }
+
+
 def _builtin_component_files() -> list[Path]:
     """Return the built-in component files, sorted by name."""
     folder = _BUILTIN_DIR / "components"
@@ -146,6 +225,7 @@ class Library:
         self.errors: list[dict] = []
         self.themes: dict[str, dict] = {}
         self.strings: dict[str, str] = {}
+        self.picker: dict[str, dict] = {}
         self.user_dir: str = hass.config.path(DOMAIN, "components")
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.approvals")
         self._approved: dict[str, str] = {}
@@ -192,6 +272,7 @@ class Library:
         self.errors = errors
         self.themes = result["themes"]
         self.strings = result["strings"]
+        self.picker = result["picker"]
         self._notify()
 
     def _check_templates(self, component: dict) -> str | None:
@@ -235,6 +316,7 @@ class Library:
         """Read, validate and check all files; runs in the executor."""
         themes = _read_themes()
         strings = _read_strings()
+        picker = read_picker()
         files: list[tuple[Path, str]] = [
             (path, "builtin") for path in _builtin_component_files()
         ]
@@ -259,6 +341,7 @@ class Library:
         return {
             "themes": themes,
             "strings": strings,
+            "picker": picker,
             "candidates": candidates,
             "errors": errors,
             "builtin_files": {
@@ -423,6 +506,7 @@ class Library:
                     "sensitive": component.get("sensitive", False),
                     "approved": self.is_approved(component["id"]),
                     "params": component.get("params", {}),
+                    **picker_fields(component, self.picker),
                 }
             )
         components.sort(key=lambda item: (item["source"] != "builtin", item["name"]))
