@@ -82,6 +82,7 @@ from .const import (
     WHEN_VALUE_RE,
 )
 from .errors import MakerError
+from .outputs import reference
 from .schema import (
     _as_mapping,
     _as_number,
@@ -1027,6 +1028,12 @@ def _validate_data2(raw: object, path: str) -> dict:
             for index, entry in enumerate(value):
                 _data_scalar(entry, f"{kpath}.{index}", in_list=True)
             continue
+        if key in COLOUR_DATA_KEYS and reference(value) is None:
+            # A template that prints a list is refused in schema 2 (C.2.8):
+            # a colour is a list, or a reference such as '{{ c | rgb }}'.
+            raise MakerError(
+                "bad_value", kpath, "a colour is a list of numbers or '{{ name }}'"
+            )
         _data_scalar(value, kpath, in_list=False)
     return {
         key: list(value) if isinstance(value, list) else value

@@ -19,18 +19,32 @@ from homeassistant.helpers.event import (
     TrackTemplate,
     TrackTemplateResult,
     async_call_later,
+    async_track_state_change_event,
     async_track_template_result,
     async_track_time_interval,
 )
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
+from .maker import outputs as out2
 from .maker.compile import compile_card, public_card
-from .maker.const import CONFIRM_COVER_CLASSES, SENSITIVE_DOMAINS, TARGET_KEYS
+from .maker.const import (
+    COLOUR_DATA_KEYS,
+    CONFIRM_COVER_CLASSES,
+    SENSITIVE_DOMAINS,
+    TARGET_KEYS,
+)
 from .maker.errors import MakerError
 from .maker.schema import is_allowed_action, validate_card_config
+from .maker.schema2 import check_option_value
 from .maker.style import resolve_style
 from .sandbox import ComponentTemplate, limit_error
+from .sources import (
+    CLOCK_RESEND_S,
+    SOURCE_KINDS,
+    position_key,
+    source_value,
+)
 
 if TYPE_CHECKING:
     from . import ApolloTabData
@@ -319,6 +333,22 @@ class SlotHub:
         """Return the number of shared slots currently tracked."""
         return len(self._slots)
 
+    def last_result(self, slot: dict) -> tuple[bool, Any]:
+        """Return (True, value) when a tracked template slot has a value.
+
+        The value is Home Assistant's own last result of that template, as
+        every card and tablet that shows it got it.
+        """
+        key = json.dumps(
+            [slot.get("template"), slot.get("variables")], sort_keys=True, default=str
+        )
+        shared = self._slots.get(key)
+        if shared is None or not shared.has_result:
+            return False, None
+        if isinstance(shared.result, Exception):
+            return True, None
+        return True, shared.result
+
 
 class _SharedSlot:
     """Track one template for every listener of an identical slot."""
@@ -422,9 +452,12 @@ class SlotTracker:
                     self._hub.async_subscribe(slot, partial(self._deliver, slot))
                 )
                 continue
+            if slot["kind"] in SOURCE_KINDS:
+                self._start_source(slot)
+                continue
             if slot["kind"] not in ("history", "action"):
-                # A source of schema 2 (colour, clock and the rest) has no
-                # value here yet; the tablet shows no value for it.
+                # statistics has no value here yet; the tablet shows no
+                # value for it.
                 continue
             first_fetches.append(self._async_fetch(slot))
             seconds = (
@@ -439,6 +472,46 @@ class SlotTracker:
             )
         if first_fetches:
             await asyncio.gather(*first_fetches)
+
+    def _start_source(self, slot: dict) -> None:
+        """Follow a colour, state_icon, clock or media_position slot.
+
+        clock is delivered at start and every CLOCK_RESEND_S. The others
+        follow their entity; a position only when the player's state or its
+        position changed, not at every attribute change.
+        """
+        self._deliver(slot, source_value(self.hass, slot))
+        if slot["kind"] == "clock":
+
+            @callback
+            def tick(_now: datetime) -> None:
+                """Deliver the clock again; on the event loop, not in a thread."""
+                self._deliver(slot, source_value(self.hass, slot))
+
+            self._removers.append(
+                async_track_time_interval(
+                    self.hass, tick, timedelta(seconds=CLOCK_RESEND_S)
+                )
+            )
+            return
+        entity = slot.get("entity")
+        if not isinstance(entity, str):
+            return
+        last = [position_key(self.hass.states.get(entity))]
+
+        @callback
+        def changed(event: Event) -> None:
+            """Deliver the source's value after a change of its entity."""
+            if slot["kind"] == "media_position":
+                key = position_key(event.data.get("new_state"))
+                if key == last[0]:
+                    return
+                last[0] = key
+            self._deliver(slot, source_value(self.hass, slot))
+
+        self._removers.append(
+            async_track_state_change_event(self.hass, [entity], changed)
+        )
 
     @callback
     def async_stop(self) -> None:
@@ -817,6 +890,8 @@ def output_confirm_text(
     output = component.get("outputs", {}).get(action_ref.get("output"))
     if not isinstance(output, dict):
         return None
+    if component.get("schema") == 2:
+        return _confirm_text2(hass, output, action_ref, params, entities)
     domain, _, service = str(output.get("action", "")).partition(".")
     if domain != "cover":
         return None
@@ -835,6 +910,291 @@ def output_confirm_text(
     return f"{_COVER_VERBS.get(service, 'Move')} {name}?"
 
 
+def _confirm_text2(
+    hass: HomeAssistant,
+    output: dict,
+    action_ref: dict,
+    params: dict,
+    entities: Collection[str],
+) -> str | None:
+    """Return the question of a schema 2 output: over every entity it could reach.
+
+    Devices that an `entities` input gives are known only at the call,
+    which asks for them.
+    """
+    if output.get("kind") != "action":
+        return None
+    ref = out2.reference(output.get("data", {}).get("entity_id"))
+    if ref is None:
+        return None
+    found = out2.entity_list(
+        out2.lookup({**params, **(action_ref.get("vars") or {})}, ref[0], None)
+    )
+    if found is None:
+        return None
+    for entity_id in found[0]:
+        if entity_id not in entities:
+            continue
+        service = _service_for(output, entity_id)
+        if service is None or not service.startswith("cover."):
+            continue
+        if not _needs_confirmation(hass, {}, "cover", entity_id):
+            continue
+        state = hass.states.get(entity_id)
+        name = state.name if state is not None else entity_id
+        verb = _COVER_VERBS.get(service.partition(".")[2], "Move")
+        return f"{verb} {name}?"
+    return None
+
+
+def _service_for(output: dict, entity_id: str) -> str | None:
+    """Return the service a schema 2 output calls for one entity, or None.
+
+    The service must be of the entity's domain, in a per-kind map too: the
+    loader checks the map's keys, and this checks again at the call.
+    """
+    domain = entity_id.partition(".")[0]
+    if output.get("actions") is not None:
+        service = output["actions"].get(domain)
+    else:
+        service = output.get("action")
+    if not isinstance(service, str) or service.partition(".")[0] != domain:
+        return None
+    return service
+
+
+_MISSING = object()
+
+
+async def async_input_value(
+    hass: HomeAssistant, slot_hub: SlotHub | None, slot: dict | None
+) -> Any:
+    """Return Home Assistant's own last value of an input (C.2.8, `uses`).
+
+    From the slot hub when a card or a tablet tracks it, else worked out
+    once now. Never from a browser's or a tablet's message. The result is
+    left as it is (a list of entity ids stays a list); uses_value types it.
+    """
+    if not isinstance(slot, dict):
+        return None
+    kind = slot.get("kind")
+    try:
+        if kind == "template":
+            if slot_hub is not None:
+                found, value = slot_hub.last_result(slot)
+                if found:
+                    return value
+            return await async_render_limited(hass, slot["template"], slot["variables"])
+        if kind in SOURCE_KINDS:
+            return source_value(hass, slot)
+        if kind in ("history", "action"):
+            return await async_evaluate_slot(hass, slot)
+    except HomeAssistantError, TemplateError:
+        return None
+    return None
+
+
+def _option_values(component: dict, stored: object) -> dict:
+    """Check the options again when a call runs (C.2.3); a bad one takes its default."""
+    stored = stored if isinstance(stored, dict) else {}
+    values = {}
+    for name, option in component.get("options", {}).items():
+        if name not in stored:
+            continue
+        value = stored[name]
+        if option.get("from"):
+            # The device's list was checked when the layout was made; the
+            # entries stay text.
+            ok = (
+                value is None
+                or isinstance(value, str)
+                or (isinstance(value, list) and all(isinstance(v, str) for v in value))
+            )
+            values[name] = value if ok else None
+            continue
+        try:
+            values[name] = check_option_value(option, value, f"options.{name}")
+        except MakerError, TypeError:
+            values[name] = option.get("default")
+    return values
+
+
+def _typed_data_value(
+    hass: HomeAssistant, raw: Any, variables: dict, uses_names: Collection[str]
+) -> Any:
+    """Type one data value of a schema 2 output (C.2.8, how a value gets its type)."""
+    if not out2.is_template(raw):
+        return raw
+    ref = out2.reference(raw)
+    if ref is not None:
+        name, key, name_filter = ref
+        return out2.apply_filter(out2.lookup(variables, name, key), name_filter)
+    try:
+        # Limited: a data template cannot read states (C.2.8).
+        text = ComponentTemplate(raw, hass).async_render(
+            variables, parse_result=False, limited=True
+        )
+    except TemplateError as err:
+        raise CallError("service_error", str(err)) from err
+    text = text if isinstance(text, str) else str(text)
+    if text == "":
+        return None
+    typed = out2.typed_text(text)
+    if isinstance(typed, str) and any(out2.mentions(n, raw) for n in uses_names):
+        raise CallError("not_allowed", "An input in service data must give a number")
+    return typed
+
+
+def _render_data2(
+    hass: HomeAssistant, data: dict, variables: dict, uses_names: Collection[str]
+) -> dict:
+    """Render and type the service data of a schema 2 output, all but entity_id."""
+    rendered: dict = {}
+    try:
+        for key, raw in data.items():
+            if key == "entity_id":
+                continue
+            if isinstance(raw, list):
+                # Checked at load too: a list only for a colour key, 1 to 4.
+                if key not in COLOUR_DATA_KEYS:
+                    raise out2.NotAllowed(f"{key} may not hold a list")
+                if not 1 <= len(raw) <= 4:
+                    raise out2.NotAllowed(f"{key} must be a list of 1 to 4 numbers")
+                rendered[key] = [
+                    out2.colour_entry(
+                        key, _typed_data_value(hass, entry, variables, uses_names)
+                    )
+                    for entry in raw
+                ]
+                continue
+            value = out2.scalar_or_colour(
+                key, _typed_data_value(hass, raw, variables, uses_names)
+            )
+            if value is out2.LEFT_OUT:
+                continue
+            if key in COLOUR_DATA_KEYS and not isinstance(value, list):
+                # A template that prints a list is refused in schema 2.
+                raise out2.NotAllowed(f"{key} must be a list of numbers")
+            rendered[key] = value
+    except out2.NotAllowed as err:
+        raise CallError("not_allowed", str(err)) from err
+    if target_keys := TARGET_KEYS & rendered.keys():
+        raise CallError(
+            "not_allowed",
+            f"Output data may not target {', '.join(sorted(target_keys))}",
+        )
+    return rendered
+
+
+async def _async_run_output2(
+    hass: HomeAssistant,
+    *,
+    component: dict,
+    output: dict,
+    action_ref: dict,
+    params: dict,
+    entities: Collection[str],
+    widget: dict,
+    event: str,
+    value: Any,
+    confirmed: bool,
+    context: Context,
+    slot_hub: SlotHub | None,
+) -> None:
+    """Run one output of a schema 2 card (C.2.8, C.5). Raises CallError."""
+    if output.get("kind") != "action":
+        raise CallError("local_action", "Local outputs run on the screen")
+    services = (
+        list(output["actions"].values())
+        if output.get("actions") is not None
+        else [output.get("action") or ""]
+    )
+    for service in services:
+        if not is_allowed_action(service):
+            raise CallError("not_allowed", f"{service} is not allowed")
+    option = None
+    if event == "change" and widget.get("t") == "choice":
+        options = action_ref.get("options")
+        options = options if isinstance(options, list) else []
+        if not out2.check_choice(value, len(options)):
+            raise CallError("invalid_value", "No such option")
+        value = int(value)
+        # The server's own copy of the list; the tablet never names one.
+        option = options[value]
+    elif event == "change":
+        value = _checked_change_value(widget, value)
+    else:
+        value = None
+    stored = (
+        action_ref.get("values") if isinstance(action_ref.get("values"), dict) else {}
+    )
+    variables: dict = {
+        **params,
+        **_option_values(component, stored.get("options")),
+        "can": stored.get("can") if isinstance(stored.get("can"), dict) else {},
+        **(action_ref.get("vars") or {}),
+        "value": value,
+        "option": option,
+    }
+    # Text from a template that names any input in uses is refused; an
+    # entities input may not be in data at all (refused at load).
+    uses_names = []
+    uses = action_ref.get("uses") if isinstance(action_ref.get("uses"), dict) else {}
+    for name, kind in (output.get("uses") or {}).items():
+        entry = uses.get(name) if isinstance(uses.get(name), dict) else {}
+        raw = await async_input_value(hass, slot_hub, entry.get("slot"))
+        variables[name] = out2.uses_value(kind, raw)
+        uses_names.append(name)
+    # entity_id: one text or a list of 1 to 16, each one of the card's
+    # devices and of the domain of the service it gets.
+    ref = out2.reference(output["data"].get("entity_id"))
+    found = out2.entity_list(out2.lookup(variables, ref[0], None)) if ref else None
+    if found is None:
+        raise CallError("not_allowed", "entity_id must name the card's devices")
+    targets, as_list = found
+    calls: dict[str, list[str]] = {}
+    for entity_id in targets:
+        if entity_id not in entities:
+            raise CallError("not_allowed", f"{entity_id} is not a device of this card")
+        service = _service_for(output, entity_id)
+        if service is None:
+            if output.get("actions") is not None:
+                # A kind without an entry has no action (C.2.8).
+                continue
+            raise CallError("not_allowed", f"{entity_id} is not a {services[0]} entity")
+        calls.setdefault(service, []).append(entity_id)
+    if not calls:
+        raise CallError("not_allowed", "No device of this card takes this action")
+    service_data = _render_data2(hass, output["data"], variables, uses_names)
+    if not confirmed:
+        for service, ids in calls.items():
+            for entity_id in ids:
+                state = hass.states.get(entity_id)
+                device_class = (
+                    state.attributes.get("device_class") if state is not None else None
+                )
+                if out2.needs_question(
+                    output.get("feedback"), service.partition(".")[0], device_class
+                ):
+                    raise CallError(
+                        "confirm_required", f"{service} needs a confirmation"
+                    )
+    for service, ids in calls.items():
+        domain, _, name = service.partition(".")
+        try:
+            await hass.services.async_call(
+                domain,
+                name,
+                {**service_data, "entity_id": ids if as_list else ids[0]},
+                blocking=True,
+                context=context,
+            )
+        except Unauthorized as err:
+            raise CallError("unauthorized", str(err)) from err
+        except (HomeAssistantError, probatio.Invalid, ValueError) as err:
+            raise CallError("service_error", str(err)) from err
+
+
 async def async_run_output(
     hass: HomeAssistant,
     *,
@@ -847,17 +1207,35 @@ async def async_run_output(
     value: Any,
     confirmed: bool,
     context: Context,
+    slot_hub: SlotHub | None = None,
 ) -> None:
     """Run one output of a compiled card. Raises CallError(code, message).
 
     The connection-free core of a card call, used by the browser and by
     tablets. action_ref is the card's action entry ({"output", "vars"}),
     entities the entities the card was set up with, widget the widget that
-    was used.
+    was used. slot_hub gives the last values of the inputs a schema 2
+    output lists in `uses`.
     """
     output = component.get("outputs", {}).get(action_ref.get("output"))
     if output is None:
         raise CallError("unknown_widget", "The card has no such output")
+    if component.get("schema") == 2:
+        await _async_run_output2(
+            hass,
+            component=component,
+            output=output,
+            action_ref=action_ref,
+            params=params,
+            entities=entities,
+            widget=widget,
+            event=event,
+            value=value,
+            confirmed=confirmed,
+            context=context,
+            slot_hub=slot_hub,
+        )
+        return
     # The library checks actions when it loads a file; check again here so a
     # card can never reach a service outside the allow lists, such as a
     # script.<name> service that runs a script the user did not pick.
@@ -872,6 +1250,13 @@ async def async_run_output(
             "not_allowed",
             f"Output data may not target {', '.join(sorted(target_keys))}",
         )
+    # No rendered value is a list or a mapping (C.2.8), for schema 1 too:
+    # only a text, a number, yes or no, or none goes out (no set, no bytes).
+    for key, item in service_data.items():
+        if key != "entity_id" and not (
+            item is None or isinstance(item, str | int | float | bool)
+        ):
+            raise CallError("not_allowed", f"{key} may only hold a text or a number")
     domain, _, service = output["action"].partition(".")
     entity_id = service_data.get("entity_id")
     if (

@@ -214,6 +214,7 @@
   "warn.over_budget_tracks": "A screen can show 6 colour bars. This card's bar is drawn plain.",
   "warn.too_many_details": "This card's controls page does not fit on the tablet, so a hold or tap no longer opens it.",
   "warn.card_left_out": "The dashboard is too big for the tablet, so this card is left out. Move it to another dashboard.",
+  "warn.tap_left_out": "A tap on this card would move a garage door, gate or door, which must ask first. So a tap on the card does nothing.",
   "warn.not_kept": "Too big to be kept when the tablet restarts. After a restart the tablet waits for Home Assistant before it shows this dashboard.",
   "warn.columns_differ": "This page is not set to 3 columns in Home Assistant, so it looks different there than on the tablet.",
   "warn.visibility_ignored": "This has a \"show only when\" rule from Home Assistant's own editor. The tablet ignores the rule and always shows it.",

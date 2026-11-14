@@ -30,6 +30,7 @@ from .maker.const import (
     UNAVAILABLE_GLOBALS,
     UNAVAILABLE_TESTS,
 )
+from .maker.outputs import rgb
 
 MAX_RENDER_STEPS = 20000  # loop items, operators, filter, test and function calls
 RENDER_BUDGET_SECONDS = 0.1  # wall time per render, checked at every step
@@ -419,6 +420,8 @@ class ComponentEnvironment(TemplateEnvironment):
         for name in UNAVAILABLE_GLOBALS:
             self.globals.pop(name, None)
         self.globals["range"] = _limited_range
+        # A colour number or #RRGGBB to [r, g, b] (cards spec C.2.8).
+        self.filters["rgb"] = rgb
         # pass_context guards are never folded at compile time either.
         for name, func in list(self.filters.items()):
             self.filters[name] = _make_guard(name, func, _FILTER_PRE_CHECKS.get(name))

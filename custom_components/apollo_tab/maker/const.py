@@ -40,6 +40,8 @@ DATA_TEMPLATE_FILTERS = frozenset(
         "upper",
     }
 )
+# Schema 2 data templates may also turn a colour into [r, g, b] (C.2.8).
+DATA_TEMPLATE_FILTERS_2 = DATA_TEMPLATE_FILTERS | {"rgb"}
 DATA_TEMPLATE_TESTS = frozenset(
     {
         "boolean",
@@ -116,36 +118,6 @@ DURATION_UNITS = {"s": 1, "min": 60, "h": 3600}
 FEEDBACK_MODES = ("optimistic", "pulse", "progress", "confirm")
 LOCAL_ACTIONS = ("open_details", "open_live", "go_to_page")
 
-ALLOWED_ACTION_DOMAINS = frozenset(
-    {
-        "alarm_control_panel",
-        "button",
-        "climate",
-        "cover",
-        "fan",
-        "humidifier",
-        "input_boolean",
-        "input_button",
-        "input_number",
-        "input_select",
-        "light",
-        "lock",
-        "media_player",
-        "number",
-        "scene",
-        "script",
-        "select",
-        "siren",
-        "switch",
-        "vacuum",
-        "valve",
-        "water_heater",
-    }
-)
-# Every script is also registered as its own service, script.<object_id>, which
-# would run that script whatever entity the card picked. Script outputs may
-# therefore use only the generic services that act on the given entity_id.
-ALLOWED_DOMAIN_SERVICES = {"script": frozenset({"turn_on", "turn_off", "toggle"})}
 SENSITIVE_DOMAINS = frozenset({"lock", "alarm_control_panel"})
 CONFIRM_COVER_CLASSES = frozenset({"garage", "gate", "door"})
 READ_ACTIONS = frozenset({"weather.get_forecasts"})
@@ -313,3 +285,10 @@ ALLOWED_SERVICES = {
         {"set_temperature", "set_operation_mode", "turn_on", "turn_off"}
     ),
 }
+
+# The domains an output may call, and per domain the services (C.2.8), for
+# files of both schemas. Every script is also registered as its own service,
+# script.<object_id>, which would run that script whatever entity the card
+# picked; the list keeps script to the generic services.
+ALLOWED_ACTION_DOMAINS = frozenset(ALLOWED_SERVICES)
+ALLOWED_DOMAIN_SERVICES = ALLOWED_SERVICES

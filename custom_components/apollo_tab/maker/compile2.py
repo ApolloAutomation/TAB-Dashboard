@@ -398,6 +398,8 @@ class _Compiler2:
         self.widgets: list = []
         self.cut = False
         self.opener = False
+        self.tap_left_out = False
+        self.uses: dict[int, dict] = {}
 
     # ------------------------------------------------------------ inputs
 
@@ -573,13 +575,17 @@ class _Compiler2:
         if hold is not None:
             out["hold"] = hold
         clipped = bool(laid["clipped"]) or laid["dropped"] > 0 or self.cut
+        warnings = ["element_clipped"] if clipped else []
+        if self.tap_left_out:
+            warnings.append("tap_left_out")
         out.update(
             {
                 "widgets": self.widgets,
                 "slots": self.slots,
                 "actions": self.actions,
+                "call": self._call(),
                 "opener": self.opener,
-                "warnings": ["element_clipped"] if clipped else [],
+                "warnings": warnings,
                 "notes": self.notes,
             }
         )
@@ -739,6 +745,10 @@ class _Compiler2:
                 self.opener = True
                 return {"tap": {"local": "detail"}}, toggle
             return None, toggle
+        if self._would_ask(chosen["output"]):
+            # A wipe over a tile must never open a question (C.2.8).
+            self.tap_left_out = True
+            return None, toggle
         result = self._tap_of(chosen["output"], "card", {})
         if result is None:
             return None, toggle
@@ -747,6 +757,36 @@ class _Compiler2:
         if output["kind"] == "action" and self.standard.get("ask"):
             out["confirm"] = chosen["label"] + "?"
         return out, toggle
+
+    def _would_ask(self, name: str) -> bool:
+        """Return whether a card tap on this output would ask first.
+
+        A cover of class garage, gate or door asks; the facts say which
+        (`asks`). Devices an `entities` input gives are known only at the
+        call, so a cover output fed by one counts as asking.
+        """
+        output = self.component["outputs"][name]
+        if output["kind"] != "action":
+            return False
+        domains = (
+            list(output["actions"])
+            if output["actions"] is not None
+            else [output["action"].split(".", 1)[0]]
+        )
+        target = self.param_vars.get(output["entity_ref"])
+        if target is None:
+            return "cover" in domains
+        ids = target if isinstance(target, list) else [target]
+        for entity in ids:
+            if not isinstance(entity, str):
+                continue
+            domain = entity.split(".", 1)[0]
+            if domain not in domains:
+                continue
+            known = self.facts.get(entity)
+            if domain == "cover" and isinstance(known, dict) and known.get("asks"):
+                return True
+        return False
 
     def _card_hold(self) -> dict | None:
         """Return the card's hold: open its detail page, unless switched off."""
@@ -766,7 +806,7 @@ class _Compiler2:
             return {"local": "detail"}
         output = self.component["outputs"][name]
         if output["kind"] == "action":
-            self.actions[f"{key}:tap"] = {"output": name, "vars": dict(item_vars)}
+            self.actions[f"{key}:tap"] = self._action(name, item_vars)
             return {"policy": output["feedback"]}
         local = output["local"]
         if local == "detail":
@@ -791,6 +831,79 @@ class _Compiler2:
                 return None
             tap["page"] = page
         return tap
+
+    def _action(self, name: str, names: dict) -> dict:
+        """Return what a call needs besides the output (C.2.8).
+
+        vars: the item's loop names and `vars`. values: the options and the
+        facts, which a data template may read. uses: per input the output
+        lists, its type and the slot that gives Home Assistant's own last
+        value; the call reads it from the slot hub, never from the message.
+        All of it is data. values and uses reach the bindings through the
+        compiled card's "call" entry, keyed like the actions.
+        """
+        output = self.component["outputs"][name]
+        action: dict = {"output": name, "vars": dict(names)}
+        if output["kind"] != "action":
+            return action
+        uses = {}
+        for input_name, kind in (output.get("uses") or {}).items():
+            uses[input_name] = {
+                "type": kind,
+                "slot": self._input_slot(input_name, names),
+            }
+        if uses:
+            # Kept beside the action under the same key; see run().
+            self.uses[id(action)] = uses
+        return action
+
+    def _call(self) -> dict:
+        """Return what the calls of this card read besides the output."""
+        return {
+            "values": {"options": dict(self.options), "can": self.can},
+            "uses": {
+                key: self.uses[id(action)]
+                for key, action in self.actions.items()
+                if id(action) in self.uses
+            },
+        }
+
+    def _input_slot(self, name: str, names: dict) -> dict | None:
+        """Return the slot of an input without adding it to the card's slots."""
+        spec = self.component["inputs"][name]
+        source = spec["kind"]
+        if self.demo:
+            return None
+        if source in ("template", "camera"):
+            return self._template_slot("{{ " + name + " }}", names)
+        if source == "clock":
+            return {"kind": "clock"}
+        if source == "action":
+            return {
+                "kind": "action",
+                "action": spec["action"],
+                "data": {
+                    **spec["data"],
+                    "entity_id": self._entity_of(spec["param"], names),
+                },
+                "result": spec["result"],
+                "variables": self._variables(names),
+                "refresh": spec["refresh"],
+            }
+        entity = self._entity_of(spec["param"], names)
+        if entity is None:
+            return None
+        if source == "history":
+            return {"kind": "history", "entity": entity, "hours": spec["hours"]}
+        if source == "colour":
+            return {"kind": "colour", "entity": entity, "of": spec["of"]}
+        if source == "statistics":
+            return {
+                "kind": "statistics",
+                "entity": entity,
+                **{k: v for k, v in spec.items() if k not in ("kind", "param")},
+            }
+        return {"kind": source, "entity": entity}
 
     # ------------------------------------------------------------ layout
 
@@ -1068,7 +1181,7 @@ class _Compiler2:
         if on_change:
             output = self.component["outputs"][on_change]
             widget["change"] = {"policy": output["feedback"]}
-            action = {"output": on_change, "vars": dict(names)}
+            action = self._action(on_change, names)
             if kind == "choice":
                 action["options"] = self._choice_list(item, names)["values"]
             self.actions[f"{index}:change"] = action
@@ -1383,34 +1496,9 @@ class _Compiler2:
                 source == "statistics" and "buckets" in spec
             )
             return [] if listed else None
-        if source == "clock":
-            return {"s": self._add_slot({"kind": "clock"})}
-        if source == "action":
-            entity = self._entity_of(spec["param"], names)
-            slot = {
-                "kind": "action",
-                "action": spec["action"],
-                "data": {**spec["data"], "entity_id": entity},
-                "result": spec["result"],
-                "variables": self._variables(names),
-                "refresh": spec["refresh"],
-            }
-            return {"s": self._add_slot(slot)}
-        entity = self._entity_of(spec["param"], names)
-        if entity is None:
+        slot = self._input_slot(name, names)
+        if slot is None:
             return None
-        if source == "history":
-            slot = {"kind": "history", "entity": entity, "hours": spec["hours"]}
-        elif source == "colour":
-            slot = {"kind": "colour", "entity": entity, "of": spec["of"]}
-        elif source == "statistics":
-            slot = {
-                "kind": "statistics",
-                "entity": entity,
-                **{k: v for k, v in spec.items() if k not in ("kind", "param")},
-            }
-        else:
-            slot = {"kind": source, "entity": entity}
         return {"s": self._add_slot(slot)}
 
     def _template_slot(self, src: str, names: dict) -> dict:

@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import secrets
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -118,34 +119,56 @@ def chunk_layout(data: bytes, chunk_bytes: int = CHUNK_BYTES) -> list[str]:
 
 
 def encode_set(
-    layout: str, values: dict[int, Any], *, full: bool, limit: int = MAX_SET_BYTES
+    layout: str,
+    values: dict[int, Any],
+    *,
+    full: bool,
+    limit: int = MAX_SET_BYTES,
+    together: Iterable[tuple[int, int]] = (),
 ) -> list[str]:
     """Encode slot values as one or more tab_set payloads.
 
     values maps device slot numbers to wire values (already coerced). With
     full=True the first payload carries "f":1, which tells the tablet to set
-    every slot to "no value" before applying the pairs.
+    every slot to "no value" before applying the pairs. together lists slot
+    pairs that must share a payload when both are sent: a widget's value
+    and its rate (contract 8).
     """
-    pairs = [[slot, values[slot]] for slot in sorted(values)]
+    partner: dict[int, int] = {}
+    for first, second in together:
+        if first in values and second in values and first != second:
+            partner[first] = second
+            partner[second] = first
+    units: list[list[list]] = []
+    placed: set[int] = set()
+    for slot in sorted(values):
+        if slot in placed:
+            continue
+        group = sorted({slot, partner.get(slot, slot)})
+        placed.update(group)
+        units.append([[number, values[number]] for number in group])
     payloads: list[str] = []
     batch: list[list] = []
 
     def flush() -> None:
         """Write the gathered pairs as one payload."""
-        message: dict[str, Any] = {"h": layout, "v": batch.copy()}
+        message: dict[str, Any] = {
+            "h": layout,
+            "v": sorted(batch, key=lambda pair: pair[0]),
+        }
         if full and not payloads:
             message["f"] = 1
         payloads.append(canonical(message).decode("utf-8"))
         batch.clear()
 
     size = 64
-    for pair in pairs:
-        pair_size = len(canonical(pair)) + 1
-        if batch and size + pair_size > limit:
+    for unit in units:
+        unit_size = sum(len(canonical(pair)) + 1 for pair in unit)
+        if batch and size + unit_size > limit:
             flush()
             size = 64
-        batch.append(pair)
-        size += pair_size
+        batch.extend(unit)
+        size += unit_size
     if batch or not payloads:
         flush()
     return payloads

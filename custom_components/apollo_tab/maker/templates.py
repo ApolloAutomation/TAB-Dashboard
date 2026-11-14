@@ -18,6 +18,7 @@ from jinja2.sandbox import ImmutableSandboxedEnvironment
 from .const import (
     BLOCKED_TEXT_METHODS,
     DATA_TEMPLATE_FILTERS,
+    DATA_TEMPLATE_FILTERS_2,
     DATA_TEMPLATE_TESTS,
     UNAVAILABLE_FILTERS,
     UNAVAILABLE_GLOBALS,
@@ -136,6 +137,7 @@ def _check_data_tree(
     path: str,
     allowed_names: set[str],
     inputs: frozenset[str] | set[str] = frozenset(),
+    filters: frozenset[str] = DATA_TEMPLATE_FILTERS,
 ) -> None:
     """Limit a service data template to plain expressions over allowed names."""
     for node in _iter_nodes(tree):
@@ -163,7 +165,7 @@ def _check_data_tree(
                 "service data templates may only use the card's params, "
                 f"loop names and value, not {node.name!r}",
             )
-        if isinstance(node, nodes.Filter) and node.name not in DATA_TEMPLATE_FILTERS:
+        if isinstance(node, nodes.Filter) and node.name not in filters:
             raise MakerError(
                 "bad_template",
                 path,
@@ -193,11 +195,12 @@ def check_data_template(
     path: str,
     allowed_names: set[str],
     inputs: frozenset[str] | set[str] = frozenset(),
+    filters: frozenset[str] = DATA_TEMPLATE_FILTERS,
 ) -> None:
     """Run check_template, then limit a service data template to allowed names."""
     tree = _parse(text, path)
     _check_tree(tree, path)
-    _check_data_tree(tree, path, allowed_names, inputs)
+    _check_data_tree(tree, path, allowed_names, inputs, filters)
 
 
 def _marked_template(value: object) -> str | None:
@@ -240,7 +243,9 @@ def _check_component_templates2(component: dict) -> None:
                 data_path = f"outputs.{name}.data.{key}"
                 if isinstance(value, list):
                     data_path = f"{data_path}.{index}"
-                check_data_template(entry, data_path, allowed, inputs)
+                check_data_template(
+                    entry, data_path, allowed, inputs, DATA_TEMPLATE_FILTERS_2
+                )
 
 
 def check_component_templates(component: dict) -> None:

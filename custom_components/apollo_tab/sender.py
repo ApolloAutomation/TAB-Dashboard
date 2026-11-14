@@ -46,6 +46,7 @@ from .live import (
     jsonable,
     output_confirm_text,
 )
+from .maker import outputs as out2
 from .maker.device import (
     CAPS_DEFAULTS,
     CHUNK_BYTES,
@@ -55,6 +56,7 @@ from .maker.device import (
     compile_device_layout,
     icon_level,
 )
+from .sources import TIMED_KINDS, source_value
 from .tablet_link import (
     LINK_CHECKING,
     LINK_NO_ENGINE,
@@ -208,6 +210,23 @@ def _find_widget(layout: dict, widget_id: int) -> dict | None:
     return None
 
 
+def _rate_pairs(layout: dict) -> list[tuple[int, int]]:
+    """Return (value slot, rate slot) of every widget with both, as source slots."""
+    pairs = []
+    for page in layout.get("pages", []):
+        for item in page.get("w", []):
+            for widget in [item, *item.get("w", [])]:
+                value, rate = widget.get("value"), widget.get("rate")
+                if (
+                    isinstance(value, dict)
+                    and isinstance(rate, dict)
+                    and "s" in value
+                    and "s" in rate
+                ):
+                    pairs.append((value["s"], rate["s"]))
+    return pairs
+
+
 class _Live:
     """The live values of one layout on one tablet."""
 
@@ -217,11 +236,9 @@ class _Live:
         self.hash = compiled.hash
         self.digest = compiled.digest
         self.level = compiled.level
-        self.by_source: dict[int, list[tuple[int, str]]] = {}
+        self.by_source: dict[int, list[dict]] = {}
         for entry in compiled.plan:
-            self.by_source.setdefault(entry["src"], []).append(
-                (entry["d"], entry["type"])
-            )
+            self.by_source.setdefault(entry["src"], []).append(entry)
         self.wire: dict[int, Any] = {entry["d"]: None for entry in compiled.plan}
         # What the tablet holds; None until the first snapshot went out.
         self.sent: dict[int, Any] | None = None
@@ -230,31 +247,99 @@ class _Live:
             for slot in compiled.bindings.get("slots", [])
             if slot.get("n") in self.by_source
         ]
+        # Device slots of a clock or a position: worked out at the moment
+        # of each send, and sent when HA works them out again, also when
+        # the value is the same (C.5, contract 8).
+        self.timed: dict[int, dict] = {}
+        for slot in slots:
+            if slot.get("kind") in TIMED_KINDS:
+                for entry in self.by_source[slot["n"]]:
+                    self.timed[entry["d"]] = slot
+        self.due: set[int] = set()
+        # A new rate travels with a fresh value of its widget (contract 8).
+        self.rate_of_value: dict[int, int] = {}
+        self.value_of_rate: dict[int, int] = {}
+        for value_src, rate_src in _rate_pairs(compiled.layout):
+            value_d, rate_d = self.number_slot(value_src), self.number_slot(rate_src)
+            if value_d is not None and rate_d is not None:
+                self.rate_of_value[value_d] = rate_d
+                self.value_of_rate[rate_d] = value_d
         sender = session.sender
         self.tracker = SlotTracker(sender.hass, sender.slot_hub, slots, self._on_result)
 
-    @callback
-    def _on_result(self, slot: dict, result: Any) -> None:
-        """Convert one fresh source value for each device slot it feeds."""
+    def number_slot(self, source: Any) -> int | None:
+        """Return the device slot that holds a source slot as a plain number."""
+        for entry in self.by_source.get(source, []) if isinstance(source, int) else []:
+            if entry["type"] == "n" and not entry.get("coerce"):
+                return entry["d"]
+        return None
+
+    def _set(self, slot: dict, result: Any) -> None:
+        """Convert one source value for each device slot it feeds."""
         value = None if isinstance(result, Exception) else jsonable(result)
         icons = self.session.sender.icons
-        for number, kind in self.by_source.get(slot["n"], []):
+        for entry in self.by_source.get(slot["n"], []):
             try:
-                self.wire[number] = coerce(kind, value, icons, self.level)
+                self.wire[entry["d"]] = coerce(
+                    entry["type"],
+                    value,
+                    icons,
+                    self.level,
+                    entry.get("coerce"),
+                    entry.get("roles"),
+                )
             except ContractError:
-                self.wire[number] = None
+                self.wire[entry["d"]] = None
+
+    @callback
+    def _on_result(self, slot: dict, result: Any) -> None:
+        """Take one fresh source value; a clock or a position is due again."""
+        self._set(slot, result)
+        if slot.get("kind") in TIMED_KINDS:
+            self.due.update(entry["d"] for entry in self.by_source.get(slot["n"], []))
         self.session.values_changed(self)
 
+    def _fresh(self, numbers: set[int]) -> None:
+        """Work out the clock and position slots among numbers, now."""
+        hass = self.session.hass
+        for slot in {
+            id(self.timed[n]): self.timed[n] for n in numbers if n in self.timed
+        }.values():
+            self._set(slot, source_value(hass, slot))
+
+    def snapshot(self) -> dict[int, Any]:
+        """Return every device slot's value, clocks and positions worked out now."""
+        self._fresh(set(self.timed))
+        return dict(self.wire)
+
     def changes(self) -> dict[int, Any]:
-        """Return the device slots whose value the tablet does not have."""
+        """Return the device slots the tablet must get now.
+
+        A slot whose wire value differs from the one sent; a clock or a
+        position that HA worked out again, also when equal; and with a new
+        rate, a fresh value of its widget.
+        """
         if self.sent is None:
             return {}
         missing = object()
-        return {
-            number: value
+        numbers = {
+            number
             for number, value in self.wire.items()
-            if self.sent.get(number, missing) != value
+            if number not in self.timed and self.sent.get(number, missing) != value
         }
+        numbers |= self.due
+        numbers |= {
+            self.value_of_rate[number]
+            for number in list(numbers)
+            if number in self.value_of_rate
+        }
+        self._fresh(numbers)
+        return {number: self.wire[number] for number in sorted(numbers)}
+
+    def together(self) -> dict[str, list[tuple[int, int]]]:
+        """Return encode_set's keyword for the (value, rate) pairs, if any."""
+        pairs = list(self.rate_of_value.items())
+        return {"together": pairs} if pairs else {}
 
 
 class TabletSession:
@@ -1188,8 +1273,9 @@ class TabletSession:
 
     async def _async_snapshot(self, live: _Live) -> None:
         """Send every slot value, split when larger than one call allows."""
-        values = dict(live.wire)
-        for payload in tp.encode_set(live.hash, values, full=True):
+        values = live.snapshot()
+        live.due.clear()
+        for payload in tp.encode_set(live.hash, values, full=True, **live.together()):
             await self._call("tab_set", {"data": payload}, body=payload)
         if self.live is live:
             live.sent = values
@@ -1227,8 +1313,12 @@ class TabletSession:
             return
         self._flushing = True
         failed = False
+        due = live.due & set(changes)
+        live.due -= due
         try:
-            for payload in tp.encode_set(live.hash, changes, full=False):
+            for payload in tp.encode_set(
+                live.hash, changes, full=False, **live.together()
+            ):
                 await self._call(
                     "tab_set",
                     {"data": payload},
@@ -1236,6 +1326,7 @@ class TabletSession:
                     still=lambda: self.live is live,
                 )
             live.sent.update(changes)
+            due = set()
         except LinkError as err:
             if err.code in ("hash", "auth"):
                 self._link_error(err)
@@ -1251,6 +1342,8 @@ class TabletSession:
             failed = True
         finally:
             self._flushing = False
+            # A clock or a position that did not go out is still owed.
+            live.due |= due
         if self.live is live and live.changes():
             self._schedule_flush(SET_RETRY_S if failed else None)
 
@@ -1343,6 +1436,10 @@ class TabletSession:
             # may do something else than this screen shows. Without a hash
             # to compare, it counts as changed.
             return tp.ACK_STALE
+        if parsed["event"] == "change" and not self._change_allowed(
+            compiled, widget, action, parsed["value"]
+        ):
+            return tp.ACK_FAILED
         try:
             await async_run_output(
                 self.hass,
@@ -1356,10 +1453,37 @@ class TabletSession:
                 confirmed=parsed["confirmed"],
                 # A tablet has no user: a fresh context without one.
                 context=Context(),
+                slot_hub=self.sender.slot_hub,
             )
         except CallError as err:
             return ACK_FOR_ERROR.get(err.code, tp.ACK_FAILED)
         return tp.ACK_DONE
+
+    def _change_allowed(
+        self, compiled: Compiled, widget: dict, action: dict, value: Any
+    ) -> bool:
+        """Check a change against contract 7.3: range, step, or a choice's options.
+
+        Live limits and a live step count as the values last sent to this
+        tablet; when none was sent, the change is refused.
+        """
+        if widget.get("t") == "choice":
+            options = action.get("options")
+            return out2.check_choice(
+                value, len(options) if isinstance(options, list) else 0
+            )
+        live = self.live
+        if live is None or live.hash != compiled.hash or live.sent is None:
+            live = None
+
+        def sent(source: Any) -> Any:
+            """Return the value last sent for a source slot, or None."""
+            if live is None or live.sent is None:
+                return None
+            number = live.number_slot(source)
+            return None if number is None else live.sent.get(number)
+
+        return out2.check_change(widget, value, sent)
 
     async def _async_ack(self, counter: int, code: str, nonce: str) -> None:
         """Answer one input, in the session it came in.

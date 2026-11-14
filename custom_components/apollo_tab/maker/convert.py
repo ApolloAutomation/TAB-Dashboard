@@ -770,6 +770,8 @@ def _convert_card2(
         warnings.append(_warning("params_incomplete", *where))
     if "element_clipped" in (compiled.get("warnings") or []):
         warnings.append(_warning("element_clipped", *where))
+    if "tap_left_out" in (compiled.get("warnings") or []):
+        warnings.append(_warning("tap_left_out", *where))
     if card.get("visibility"):
         warnings.append(_warning("visibility_ignored", *where))
     item["compiled"] = compiled
@@ -1229,6 +1231,7 @@ def _bind_actions(item: dict, widget_ids: dict[int, int], actions_out: dict) -> 
             "demo": demo,
             "entities": list(entities),
         }
+        _bind_call(compiled, key, actions_out[f"{widget_id}:{kind}"])
 
 
 # ------------------------------------------------------------- layout v2
@@ -1401,4 +1404,21 @@ def _bind_actions2(
         }
         if "options" in action:
             entry["options"] = action["options"]
+        _bind_call(compiled, key, entry)
         actions_out[f"{target}:{kind}"] = entry
+
+
+def _bind_call(compiled: dict, key: str, entry: dict) -> None:
+    """Add what a schema 2 call reads to its binding (C.2.8).
+
+    The options and facts a data template may read, and the slots of the
+    inputs its output lists in `uses`; all of it data. A version 1 form of
+    a schema 2 card has them too: its outputs run in Home Assistant alike.
+    """
+    call = compiled.get("call")
+    if not isinstance(call, dict):
+        return
+    if "values" in call:
+        entry["values"] = call["values"]
+    if key in (call.get("uses") or {}):
+        entry["uses"] = call["uses"][key]
