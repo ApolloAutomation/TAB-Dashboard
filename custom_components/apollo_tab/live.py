@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 import probatio
 from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.components import websocket_api
-from homeassistant.components.recorder import history
+from homeassistant.components.recorder import history, statistics
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import Context, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, TemplateError, Unauthorized
@@ -26,6 +26,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
+from .const import DOMAIN
 from .maker import outputs as out2
 from .maker.compile import compile_card, public_card
 from .maker.const import (
@@ -52,6 +53,15 @@ if TYPE_CHECKING:
 
 HISTORY_POINTS = 120
 HISTORY_REFRESH_SECONDS = 300
+# A statistics input is read again no sooner than this (C.2.8). Its timer
+# runs a little slower, so each tick finds the shared value due.
+STATISTICS_MIN_AGE_S = 300
+STATISTICS_REFRESH_SECONDS = STATISTICS_MIN_AGE_S + 10
+# Inputs whose value Home Assistant fetches instead of tracking. In a
+# schema 2 card they may feed a template as well as a field (C.2.8).
+FETCHED_KINDS = frozenset({"history", "action", "statistics"})
+MAX_SHARED_FETCHES = 256
+_SHARED_FETCHES = f"{DOMAIN}_shared_fetches"
 # A switched-off slot gets a fresh start after this long.
 SWITCH_OFF_SECONDS = 300
 
@@ -178,12 +188,88 @@ async def async_render_limited(hass: HomeAssistant, text: str, variables: dict) 
     return ComponentTemplate(text, hass).async_render(variables, parse_result=True)
 
 
+class SharedFetches:
+    """Share fetched values between slots, so many readers make one call.
+
+    A value is kept with the moment it was fetched and is handed out again
+    while it is younger than the age the caller allows. Two callers that
+    ask at the same time wait for the same call. A call that fails is not
+    kept.
+    """
+
+    def __init__(self) -> None:
+        """Start empty."""
+        self._values: dict[str, tuple[datetime, Any]] = {}
+        self._running: dict[str, asyncio.Task] = {}
+
+    async def async_get(
+        self, key: str, max_age_s: float, fetch: Callable[[], Any]
+    ) -> Any:
+        """Return the kept value for key, or fetch it once for every caller."""
+        kept = self._values.get(key)
+        if kept is not None and dt_util.utcnow() - kept[0] < timedelta(
+            seconds=max_age_s
+        ):
+            return kept[1]
+        task = self._running.get(key)
+        if task is None:
+            task = asyncio.get_running_loop().create_task(self._async_run(key, fetch))
+            self._running[key] = task
+        # A caller that is cancelled must not cancel the call of the others.
+        return await asyncio.shield(task)
+
+    async def _async_run(self, key: str, fetch: Callable[[], Any]) -> Any:
+        """Run one fetch and keep its value."""
+        try:
+            value = await fetch()
+        finally:
+            self._running.pop(key, None)
+        self._values.pop(key, None)
+        self._values[key] = (dt_util.utcnow(), value)
+        while len(self._values) > MAX_SHARED_FETCHES:
+            # The oldest value goes first.
+            del self._values[next(iter(self._values))]
+        return value
+
+    def __len__(self) -> int:
+        """Return the number of kept values."""
+        return len(self._values)
+
+
+def shared_fetches(hass: HomeAssistant) -> SharedFetches:
+    """Return the fetches every card and tablet of this Home Assistant share."""
+    shared = hass.data.get(_SHARED_FETCHES)
+    if shared is None:
+        shared = hass.data[_SHARED_FETCHES] = SharedFetches()
+    return shared
+
+
+def _fetch_key(*parts: Any) -> str:
+    """Return the key of a shared fetch."""
+    return json.dumps(parts, sort_keys=True, default=str)
+
+
 async def async_fetch_action(hass: HomeAssistant, slot: dict) -> Any:
-    """Run a read-only action slot and render its result template."""
+    """Run a read-only action slot and render its result template.
+
+    Slots with the same action and data share one call (C.2.8): the copies
+    of a loop each render their own result from the one response. A kept
+    response is used for half the slot's refresh time, so each slot's own
+    timer still finds it due.
+    """
     domain, _, service = slot["action"].partition(".")
     try:
-        response = await hass.services.async_call(
-            domain, service, slot["data"], blocking=True, return_response=True
+        response = await shared_fetches(hass).async_get(
+            _fetch_key("action", slot["action"], slot["data"]),
+            slot["refresh"] / 2,
+            partial(
+                hass.services.async_call,
+                domain,
+                service,
+                slot["data"],
+                blocking=True,
+                return_response=True,
+            ),
         )
         return await async_render_limited(
             hass, slot["result"], {**slot["variables"], "response": response}
@@ -192,17 +278,163 @@ async def async_fetch_action(hass: HomeAssistant, slot: dict) -> Any:
         return []
 
 
+def _statistic_number(value: Any) -> float | None:
+    """Return a finite statistic, or None."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def hour_buckets(
+    rows: list[dict], current: Any, kind: str, now: datetime
+) -> list[float]:
+    """Return one number per local hour of today, up to the hour that runs now.
+
+    rows are the recorder's hourly rows (start as a UTC timestamp), current
+    is the value of the hour that runs now. Hours still to come are left
+    out (C.2.8). Two rows of one local hour (the hour that repeats when the
+    clocks go back) are joined: means are averaged, changes added. An hour
+    without a row takes 0 for a change and the hour before for a mean (the
+    first known hour for the hours before it). Without any value the list
+    is empty.
+    """
+    count = dt_util.as_local(now).hour + 1
+    found: dict[int, list[float]] = {}
+    for row in rows:
+        start = row.get("start")
+        number = _statistic_number(row.get(kind))
+        if not isinstance(start, int | float) or number is None:
+            continue
+        hour = dt_util.as_local(dt_util.utc_from_timestamp(start)).hour
+        if hour < count:
+            found.setdefault(hour, []).append(number)
+    if (number := _statistic_number(current)) is not None:
+        found.setdefault(count - 1, []).append(number)
+    if not found:
+        return []
+    joined = {
+        hour: (sum(values) if kind == "change" else sum(values) / len(values))
+        for hour, values in found.items()
+    }
+    if kind == "change":
+        return [round(joined.get(hour, 0.0), 2) for hour in range(count)]
+    last = joined[min(joined)]
+    out = []
+    for hour in range(count):
+        last = joined.get(hour, last)
+        out.append(round(last, 2))
+    return out
+
+
+async def _async_read_statistics(hass: HomeAssistant, slot: dict) -> Any:
+    """Read one statistics slot from the recorder (in its executor)."""
+    instance = get_instance(hass)
+    entity = slot["entity"]
+    now = dt_util.utcnow()
+    if slot.get("buckets") != "hour":
+        stat = slot["stat"]
+        result = await instance.async_add_executor_job(
+            statistics.statistic_during_period,
+            hass,
+            now - timedelta(hours=slot["hours"]),
+            None,
+            entity,
+            {stat},
+            None,
+        )
+        return _statistic_number(result.get(stat))
+    kind = "change" if slot["stat"] == "sum" else "mean"
+    midnight = dt_util.as_utc(dt_util.start_of_local_day())
+    hour_start = now.replace(minute=0, second=0, microsecond=0)
+    rows = await instance.async_add_executor_job(
+        statistics.statistics_during_period,
+        hass,
+        midnight,
+        hour_start,
+        {entity},
+        "hour",
+        None,
+        {kind},
+    )
+    current = await instance.async_add_executor_job(
+        statistics.statistic_during_period,
+        hass,
+        max(hour_start, midnight),
+        None,
+        entity,
+        {kind},
+        None,
+    )
+    return hour_buckets(rows.get(entity, []), current.get(kind), kind, now)
+
+
+async def async_fetch_statistics(hass: HomeAssistant, slot: dict) -> Any:
+    """Return a statistics slot's value: one number, or a number per hour.
+
+    From the recorder's statistics, read again no sooner than every
+    STATISTICS_MIN_AGE_S for every card and tablet together. Without the
+    recorder, or for an entity without statistics: None, or an empty list.
+    """
+    listed = slot.get("buckets") == "hour"
+    empty: Any = [] if listed else None
+    if "recorder" not in hass.config.components:
+        return empty
+    key = _fetch_key(
+        "statistics",
+        {k: v for k, v in slot.items() if k in ("entity", "stat", "hours", "buckets")},
+    )
+    try:
+        return await shared_fetches(hass).async_get(
+            key, STATISTICS_MIN_AGE_S, partial(_async_read_statistics, hass, slot)
+        )
+    except Exception:  # a broken slot must not break the rest of the card
+        return empty
+
+
+async def async_fetch_value(hass: HomeAssistant, slot: dict) -> Any:
+    """Fetch one history, action or statistics slot."""
+    if slot["kind"] == "history":
+        return await async_fetch_history(hass, slot["entity"], slot["hours"])
+    if slot["kind"] == "statistics":
+        return await async_fetch_statistics(hass, slot)
+    return await async_fetch_action(hass, slot)
+
+
+def fetch_interval(slot: dict) -> float:
+    """Return how often a fetched slot is fetched again, in seconds."""
+    if slot["kind"] == "action":
+        return slot["refresh"]
+    if slot["kind"] == "statistics":
+        return STATISTICS_REFRESH_SECONDS
+    return HISTORY_REFRESH_SECONDS
+
+
+async def async_feed_values(hass: HomeAssistant, feeds: dict) -> dict[str, Any]:
+    """Return the value of each fetched input a template names (C.2.8).
+
+    The values reach the template as variables: data, never template
+    source. A fetch that fails gives None.
+    """
+    values: dict[str, Any] = {}
+    for name, feed in feeds.items():
+        try:
+            values[name] = await async_fetch_value(hass, feed)
+        except HomeAssistantError:
+            values[name] = None
+    return values
+
+
 async def async_evaluate_slot(hass: HomeAssistant, slot: dict) -> Any:
     """Evaluate one slot once, raising TemplateError or HomeAssistantError."""
     if slot["kind"] == "template":
-        return jsonable(
-            await async_render_limited(hass, slot["template"], slot["variables"])
-        )
-    if slot["kind"] == "history":
-        return jsonable(await async_fetch_history(hass, slot["entity"], slot["hours"]))
-    if slot["kind"] != "action":
+        variables = slot["variables"]
+        if slot.get("inputs"):
+            variables = {**variables, **await async_feed_values(hass, slot["inputs"])}
+        return jsonable(await async_render_limited(hass, slot["template"], variables))
+    if slot["kind"] not in FETCHED_KINDS:
         raise HomeAssistantError(f"no value for a {slot['kind']} slot yet")
-    return jsonable(await async_fetch_action(hass, slot))
+    return jsonable(await async_fetch_value(hass, slot))
 
 
 class _SwitchedOff:
@@ -328,6 +560,7 @@ class SlotHub:
             shared.stop()
         self._slots.clear()
         self.async_reset()
+        self.hass.data.pop(_SHARED_FETCHES, None)
 
     def __len__(self) -> int:
         """Return the number of shared slots currently tracked."""
@@ -420,8 +653,9 @@ class _SharedSlot:
 class SlotTracker:
     """Track a list of slots and report every fresh result.
 
-    Template slots share their tracker through the SlotHub. History and
-    action slots are fetched once at start and again on their interval.
+    Template slots share their tracker through the SlotHub. History, action
+    and statistics slots are fetched once at start and again on their
+    interval; a template that names such inputs gets their values.
     on_result gets the slot and its value, or the exception it raised. Card
     subscriptions and tablet sessions both use it.
     """
@@ -447,6 +681,9 @@ class SlotTracker:
         for slot in self._slots:
             if self._stopped:
                 return
+            if slot["kind"] == "template" and slot.get("inputs"):
+                first_fetches.append(self._async_start_fed(slot))
+                continue
             if slot["kind"] == "template":
                 self._removers.append(
                     self._hub.async_subscribe(slot, partial(self._deliver, slot))
@@ -455,23 +692,76 @@ class SlotTracker:
             if slot["kind"] in SOURCE_KINDS:
                 self._start_source(slot)
                 continue
-            if slot["kind"] not in ("history", "action"):
-                # statistics has no value here yet; the tablet shows no
-                # value for it.
+            if slot["kind"] not in FETCHED_KINDS:
                 continue
             first_fetches.append(self._async_fetch(slot))
-            seconds = (
-                slot["refresh"] if slot["kind"] == "action" else HISTORY_REFRESH_SECONDS
-            )
             self._removers.append(
                 async_track_time_interval(
                     self.hass,
                     partial(self._async_refresh, slot),
-                    timedelta(seconds=seconds),
+                    timedelta(seconds=fetch_interval(slot)),
                 )
             )
         if first_fetches:
             await asyncio.gather(*first_fetches)
+
+    async def _async_start_fed(self, slot: dict) -> None:
+        """Track a template that names fetched inputs (C.2.8).
+
+        Each fetched input is fetched on its own interval. Once every one
+        has a value, the template is tracked through the slot hub with the
+        values among its variables; a changed value tracks it again with
+        the new variables. The values are data, never template source.
+        """
+        feeds: dict = slot["inputs"]
+        values: dict[str, Any] = {}
+        current: dict[str, Any] = {"key": None, "remove": None}
+
+        def track() -> None:
+            """Track the template with the values fetched so far."""
+            if self._stopped or len(values) < len(feeds):
+                return
+            variables = {**slot["variables"], **values}
+            key = _fetch_key(variables)
+            if key == current["key"]:
+                return
+            current["key"] = key
+            if current["remove"] is not None:
+                current["remove"]()
+            fed = {
+                "kind": "template",
+                "template": slot["template"],
+                "variables": variables,
+            }
+            current["remove"] = self._hub.async_subscribe(
+                fed, partial(self._deliver, slot)
+            )
+
+        def untrack() -> None:
+            """Stop tracking the template."""
+            if current["remove"] is not None:
+                current["remove"]()
+                current["remove"] = None
+
+        self._removers.append(untrack)
+
+        async def fetch(name: str, feed: dict, _now: datetime | None = None) -> None:
+            """Fetch one input and track the template again."""
+            try:
+                values[name] = await async_fetch_value(self.hass, feed)
+            except HomeAssistantError:
+                values[name] = None
+            track()
+
+        for name, feed in feeds.items():
+            self._removers.append(
+                async_track_time_interval(
+                    self.hass,
+                    partial(fetch, name, feed),
+                    timedelta(seconds=fetch_interval(feed)),
+                )
+            )
+        await asyncio.gather(*(fetch(name, feed) for name, feed in feeds.items()))
 
     def _start_source(self, slot: dict) -> None:
         """Follow a colour, state_icon, clock or media_position slot.
@@ -527,14 +817,9 @@ class SlotTracker:
             self._on_result(slot, result)
 
     async def _async_fetch(self, slot: dict) -> None:
-        """Fetch one history or action slot and pass the outcome on."""
+        """Fetch one history, action or statistics slot and pass the outcome on."""
         try:
-            if slot["kind"] == "history":
-                result: Any = await async_fetch_history(
-                    self.hass, slot["entity"], slot["hours"]
-                )
-            else:
-                result = await async_fetch_action(self.hass, slot)
+            result: Any = await async_fetch_value(self.hass, slot)
         except HomeAssistantError as err:
             result = err
         self._deliver(slot, result)
@@ -1017,6 +1302,9 @@ async def async_input_value(
     kind = slot.get("kind")
     try:
         if kind == "template":
+            if slot.get("inputs"):
+                feeds = await async_feed_values(hass, slot["inputs"])
+                slot = {**slot, "variables": {**slot["variables"], **feeds}}
             if slot_hub is not None:
                 found, value = slot_hub.last_result(slot)
                 if found:
@@ -1024,7 +1312,7 @@ async def async_input_value(
             return await async_render_limited(hass, slot["template"], slot["variables"])
         if kind in SOURCE_KINDS:
             return source_value(hass, slot)
-        if kind in ("history", "action"):
+        if kind in FETCHED_KINDS:
             return await async_evaluate_slot(hass, slot)
     except HomeAssistantError, TemplateError:
         return None

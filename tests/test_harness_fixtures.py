@@ -21,10 +21,10 @@ def test_fixtures_file_is_current():
 
 
 def test_fixture_cards_cover_all_builtins():
-    """The fixture cards lists cover exactly the 39 bundled Components.
+    """The fixture cards lists cover exactly the 41 bundled Components.
 
-    The 16 schema 1 cards are in `cards` and the panel's library; the 23
-    schema 2 cards of steps A and B are in `cards_v2`, which the panel does not
+    The 16 schema 1 cards are in `cards` and the panel's library; the 25
+    schema 2 cards of steps A, B and I11 are in `cards_v2`, which the panel does not
     read until the editor draws them (packages I7, I8).
     """
     expected = set()
@@ -36,7 +36,7 @@ def test_fixture_cards_cover_all_builtins():
             target = expected2 if component.get("schema") == 2 else expected
             target.add(component["id"])
     assert len(expected) == 16
-    assert len(expected2) == 23
+    assert len(expected2) == 25
     data = json.loads(FIXTURES_FILE.read_text(encoding="utf-8"))
     assert len(data["cards"]) == 16
     assert {card["id"] for card in data["cards"]} == expected

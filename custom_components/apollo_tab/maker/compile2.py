@@ -902,21 +902,21 @@ class _Compiler2:
             return self._template_slot("{{ " + name + " }}", names)
         if source == "clock":
             return {"kind": "clock"}
+        entity = self._entity_of(spec["param"], names)
+        if entity is None:
+            return None
         if source == "action":
+            # One slot per loop copy: the copy's names are among the
+            # variables its result renders with. Slots with the same action
+            # and data share one call in Home Assistant (C.2.8).
             return {
                 "kind": "action",
                 "action": spec["action"],
-                "data": {
-                    **spec["data"],
-                    "entity_id": self._entity_of(spec["param"], names),
-                },
+                "data": {**spec["data"], "entity_id": entity},
                 "result": spec["result"],
                 "variables": self._variables(names),
                 "refresh": spec["refresh"],
             }
-        entity = self._entity_of(spec["param"], names)
-        if entity is None:
-            return None
         if source == "history":
             return {"kind": "history", "entity": entity, "hours": spec["hours"]}
         if source == "colour":
@@ -1542,7 +1542,33 @@ class _Compiler2:
                 _mentions(name, _source(inputs[other])) for other in used
             ):
                 variables[name] = value
-        return {"kind": "template", "template": template, "variables": variables}
+        slot: dict = {"kind": "template", "template": template, "variables": variables}
+        feeds = {}
+        for name in self._fed_inputs(src, used, preview):
+            feed = self._input_slot(name, names)
+            if feed is not None:
+                feeds[name] = feed
+        if feeds:
+            # Fetched in Home Assistant and handed to the template as
+            # variables (C.2.8): data, never template source.
+            slot["inputs"] = feeds
+        return slot
+
+    def _fed_inputs(self, src: str, used: list, preview: dict) -> list:
+        """Return the history, statistics and action inputs a template names.
+
+        Named by the source itself or by a template input it uses, in
+        declaration order. An example card shows their preview values.
+        """
+        inputs = self.component["inputs"]
+        texts = [src, *(_source(inputs[name]) for name in used)]
+        return [
+            name
+            for name, spec in inputs.items()
+            if spec["kind"] in ("history", "statistics", "action")
+            and name not in preview
+            and any(_mentions(name, text) for text in texts)
+        ]
 
     @staticmethod
     def _used_inputs(src: str, inputs: dict, preview: dict) -> list:

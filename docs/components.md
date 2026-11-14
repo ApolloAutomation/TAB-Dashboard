@@ -672,7 +672,36 @@ by_hour:  {source: statistics, entity: "{{ entity }}", buckets: hour, period: to
   sends values, so the tablet's clock and progress bar stay right.
 - A `statistics` input gives one number over the last `hours` (1 to 168,
   default 24), or with `buckets: hour` the 24 hours of today (`mean` or
-  `sum`; hours still to come are left out).
+  `sum`; hours still to come are left out). It comes from the recorder's
+  statistics, so only for an entity that has them (a sensor with a state
+  class); else it has no value, or an empty list. Home Assistant reads it
+  again no sooner than every 5 minutes, for every card and tablet together.
+  An hour without statistics counts 0 for `sum` and the hour before for
+  `mean`.
+- History, `statistics` and read-action inputs can feed a label, an image
+  and a number field as well as a chart; the field's type turns the value
+  into text, an icon or a number, as for a template. A template may name
+  them too: `range: "{{ low }} to {{ high }}"`. Their values reach the
+  template as variables, so what a recorder or a weather service holds is
+  data and never runs as a template. A list (a history, `buckets: hour`)
+  is a chart's value only.
+- A read action's `data.entity_id` may name a loop over a param with
+  several devices of the action's domain, and its `result` may name a loop
+  entry or an item's `vars`: every copy then renders its own value.
+  Inputs with the same action and data share one call, used for half the
+  input's `refresh`:
+
+```yaml
+high:
+  action: weather.get_forecasts
+  data: {entity_id: "{{ entity }}", type: daily}
+  result: "{{ response[entity].forecast[d].temperature }}"
+layout:
+  - type: row
+    items:
+      - {type: label, text: "{{ high }}°", vars: {d: 0}}
+      - {type: label, text: "{{ high }}°", vars: {d: 1}}
+```
 
 ### Outputs
 

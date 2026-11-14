@@ -222,10 +222,11 @@ async def test_built_in_cards_replace_the_old_ones(
     library = Library(hass)
     await library.async_load()
     assert library.errors == []
-    assert len(library.components) == 39
-    # D.5: every old card but the camera snapshot (and the graph and the
-    # weather, whose new cards come with package I11).
+    assert len(library.components) == 41
+    # D.5: every old card but the camera snapshot.
     assert library.replaced_ids() == {
+        "apollo/sensor-graph",
+        "apollo/weather",
         "apollo/light-tile",
         "apollo/light-slider",
         "apollo/scene-row",

@@ -1,0 +1,132 @@
+schema: 2
+id: apollo/forecast
+version: 2.0.0
+name: Weather
+description: The weather now, and the next days with their highs and lows.
+icon: mdi:weather-partly-cloudy
+group: sensors
+replaces: [apollo/weather]
+
+params:
+  entity: {domain: weather, label: Weather from}
+
+options:
+  days:         {type: choice, section: shows, label: Days ahead, default: "5",
+                 choices: {"3": 3 days, "4": 4 days, "5": 5 days}}
+  show_details: {type: toggle, section: shows, label: Feels like and wind, default: true}
+
+inputs:
+  icon:      {source: state_icon, entity: "{{ entity }}"}
+  condition: "{{ state_translated(entity) }}"
+  now_temp:  "{{ state_attr(entity, 'temperature') }}"
+  temp:      "{{ (now_temp | round(0) | int) ~ '°' if now_temp is number else '' }}"
+  details: >-
+    {% set a = state_attr(entity, 'apparent_temperature') %}{% set w = state_attr(entity, 'wind_speed') %}{{ [('Feels like ' ~ (a | round(0) | int) ~ '°') if a is number else '', ('Wind ' ~ (w | round(0) | int) ~ ' ' ~ (state_attr(entity, 'wind_speed_unit') or '')) | trim if w is number else ''] | select | join(' · ') }}
+  # One call to weather.get_forecasts serves the four inputs below (they
+  # have the same action and data); each renders its own result for the
+  # day `d` its cell gives.
+  day:
+    action: weather.get_forecasts
+    data: {entity_id: "{{ entity }}", type: daily}
+    refresh: 30min
+    result: >-
+      {% set f = response[entity].forecast if entity in response else [] %}{{ as_local(as_datetime(f[d].datetime)).strftime('%a') if d < f | count and as_datetime(f[d].datetime) else '' }}
+  day_icon:
+    action: weather.get_forecasts
+    data: {entity_id: "{{ entity }}", type: daily}
+    refresh: 30min
+    result: >-
+      {% set f = response[entity].forecast if entity in response else [] %}{% set icons = {'clear-night': 'night', 'cloudy': 'cloudy', 'exceptional': 'cloudy-alert', 'fog': 'fog', 'hail': 'hail', 'lightning': 'lightning', 'lightning-rainy': 'lightning-rainy', 'partlycloudy': 'partly-cloudy', 'pouring': 'pouring', 'rainy': 'rainy', 'snowy': 'snowy', 'snowy-rainy': 'snowy-rainy', 'sunny': 'sunny', 'windy': 'windy', 'windy-variant': 'windy-variant'} %}{{ ('mdi:weather-' ~ icons.get(f[d].condition, 'cloudy')) if d < f | count else none }}
+  high:
+    action: weather.get_forecasts
+    data: {entity_id: "{{ entity }}", type: daily}
+    refresh: 30min
+    result: >-
+      {% set f = response[entity].forecast if entity in response else [] %}{{ f[d].temperature if d < f | count and f[d].temperature is number else none }}
+  low:
+    action: weather.get_forecasts
+    data: {entity_id: "{{ entity }}", type: daily}
+    refresh: 30min
+    result: >-
+      {% set f = response[entity].forecast if entity in response else [] %}{{ f[d].templow if d < f | count and f[d].templow is number else none }}
+
+state: temp
+lit: none
+
+parts:
+  icon:      {type: image, value: icon, look: bare, side: true}
+  temp:      {type: label, text: "{{ temp }}", size: xl}
+  condition: {type: label, text: "{{ condition }}", size: m}
+  details:   {type: label, text: "{{ details }}", size: s, when: [show_details]}
+  # One cell of a day; `vars: {d: n}` on the use line says which day.
+  name_cell: {type: label, text: "{{ day }}", size: s, align: centre}
+  icon_cell: {type: image, value: day_icon, look: bare}
+  high_cell: {type: label, text: "{{ (high | round(0) | int) ~ '°' if high is number else '' }}", size: m, align: centre}
+  low_cell:  {type: label, text: "{{ (low | round(0) | int) ~ '°' if low is number else '' }}", size: s, align: centre}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: none
+    v1: apollo/weather
+    layout:
+      - {use: icon}
+      - {use: temp}
+      - {use: condition}
+  large:
+    name: Large
+    grid: [12, 6]
+    header: none
+    v1: apollo/weather
+    layout:
+      # The icon beside the temperature, so the days get the whole width.
+      - type: row
+        height: 72
+        items:
+          - {use: icon, side: false, width: 72}
+          - {use: temp}
+      - {use: condition}
+      - {use: details}
+      - type: row
+        items:
+          - {use: name_cell, vars: {d: 0}}
+          - {use: name_cell, vars: {d: 1}}
+          - {use: name_cell, vars: {d: 2}}
+          - {use: name_cell, vars: {d: 3}, when: [days=4|5]}
+          - {use: name_cell, vars: {d: 4}, when: [days=5]}
+      - type: row
+        height: 32
+        items:
+          - {use: icon_cell, vars: {d: 0}}
+          - {use: icon_cell, vars: {d: 1}}
+          - {use: icon_cell, vars: {d: 2}}
+          - {use: icon_cell, vars: {d: 3}, when: [days=4|5]}
+          - {use: icon_cell, vars: {d: 4}, when: [days=5]}
+      - type: row
+        items:
+          - {use: high_cell, vars: {d: 0}}
+          - {use: high_cell, vars: {d: 1}}
+          - {use: high_cell, vars: {d: 2}}
+          - {use: high_cell, vars: {d: 3}, when: [days=4|5]}
+          - {use: high_cell, vars: {d: 4}, when: [days=5]}
+      - type: row
+        items:
+          - {use: low_cell, vars: {d: 0}}
+          - {use: low_cell, vars: {d: 1}}
+          - {use: low_cell, vars: {d: 2}}
+          - {use: low_cell, vars: {d: 3}, when: [days=4|5]}
+          - {use: low_cell, vars: {d: 4}, when: [days=5]}
+
+preview:
+  params: {entity: weather.example}
+  inputs:
+    icon: mdi:weather-partly-cloudy
+    condition: Partly cloudy
+    now_temp: 12
+    temp: "12°"
+    details: "Feels like 10° · Wind 14 km/h"
+    day: Mon
+    day_icon: mdi:weather-partly-cloudy
+    high: 14
+    low: 7

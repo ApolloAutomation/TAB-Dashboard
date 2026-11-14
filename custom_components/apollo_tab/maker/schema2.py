@@ -875,7 +875,8 @@ def _validate_input(spec: object, path: str, ctx: _Ctx) -> dict:
         return _validate_action_input(spec, path, ctx)
     source = spec.get("source")
     if source == "recorder":
-        return _validate_history_input(spec, path, ctx.params)
+        params = _with_loop_entity(spec.get("entity"), f"{path}.entity", ctx, None)
+        return _validate_history_input(spec, path, params)
     if source == "camera":
         return _validate_camera_input(spec, path, ctx.params)
     if source == "colour":
@@ -896,8 +897,35 @@ def _validate_input(spec: object, path: str, ctx: _Ctx) -> dict:
 
 
 def _validate_action_input(spec: dict, path: str, ctx: _Ctx) -> dict:
-    """Validate a read-action input; its param must have the action's domain."""
-    return _schema1_action_input(spec, path, ctx.params)
+    """Validate a read-action input; its param must have the action's domain.
+
+    Its `entity_id` may also name a loop over a param with several devices
+    of that domain (C.2.8); its `result` may name the loop's entry, so each
+    copy renders its own value from the one shared call.
+    """
+    action = spec.get("action")
+    domain = action.split(".", 1)[0] if isinstance(action, str) else None
+    data = spec.get("data")
+    entity = data.get("entity_id") if isinstance(data, dict) else None
+    params = _with_loop_entity(entity, f"{path}.data.entity_id", ctx, domain)
+    return _schema1_action_input(spec, path, params)
+
+
+def _with_loop_entity(value: object, path: str, ctx: _Ctx, domain: str | None) -> dict:
+    """Return the params, with a stand-in for a loop name an input's entity names.
+
+    A schema 1 check then reads the loop name as a single-device param. The
+    loop itself is checked once the layout is read: it must go over a param
+    with several devices, and for a read action only over devices of the
+    action's domain.
+    """
+    match = _VAR.match(value) if isinstance(value, str) else None
+    if match is None or match.group(1) in ctx.params:
+        return ctx.params
+    name = match.group(1)
+    ctx.deferred.append(("loop_entity", name, path, domain))
+    stand_in = {"kind": "entity", "multiple": False, "domain": domain}
+    return {**ctx.params, name: stand_in}
 
 
 def _validate_statistics_input(spec: dict, path: str, ctx: _Ctx) -> dict:
@@ -2279,6 +2307,13 @@ def _resolve_deferred(ctx: _Ctx) -> None:
                 "unknown_param", path, f"no loop over devices named {name!r}"
             )
         param = ctx.params[loop["loop"]["name"]]
+        domain = entry[3] if kind == "loop_entity" and len(entry) > 3 else None
+        if domain is not None and param["domains"] != [domain]:
+            raise MakerError(
+                "domain_mismatch",
+                path,
+                "every device of the loop must match the action",
+            )
         if kind == "output_entity":
             output_name = entry[3].split(".", 1)[1]
             _check_output_kinds(ctx.outputs[output_name], param, path)

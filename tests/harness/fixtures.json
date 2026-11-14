@@ -6987,6 +6987,991 @@
    }
   },
   {
+   "id": "apollo/forecast",
+   "name": "Weather",
+   "icon": "mdi:weather-partly-cloudy",
+   "form": {
+    "schema": 2,
+    "group": "sensors",
+    "legacy": false,
+    "replaces": [
+     "apollo/weather"
+    ],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "weather"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Weather from",
+      "help": "",
+      "domain": "weather"
+     }
+    },
+    "options": [
+     {
+      "name": "days",
+      "type": "choice",
+      "section": "shows",
+      "label": "Days ahead",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "3",
+        "label": "3 days"
+       },
+       {
+        "value": "4",
+        "label": "4 days"
+       },
+       {
+        "value": "5",
+        "label": "5 days"
+       }
+      ],
+      "default": "5"
+     },
+     {
+      "name": "show_details",
+      "type": "toggle",
+      "section": "shows",
+      "label": "Feels like and wind",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "default": true
+     }
+    ],
+    "standard": {
+     "title": false,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": []
+   },
+   "variants": {
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/forecast",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/forecast",
+      "name": "Weather",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         16,
+         152,
+         152
+        ],
+        "value": "mdi:weather-partly-cloudy",
+        "look": 2,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         180,
+         78,
+         180,
+         60
+        ],
+        "px": 48,
+        "text": {
+         "s": 1
+        },
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         180,
+         140,
+         180,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 2
+        },
+        "i": 2
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "days": "5",
+         "show_details": true
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:weather-partly-cloudy",
+         "kind": null,
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:weather-partly-cloudy",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "12\u00b0",
+      "2": "Partly cloudy"
+     }
+    },
+    "large": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/forecast",
+      "variant": "large",
+      "grid_options": {
+       "columns": 12,
+       "rows": 6
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/forecast",
+      "name": "Weather",
+      "variant": "large",
+      "demo": true,
+      "w": 376,
+      "h": 376,
+      "entities": [],
+      "header": null,
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "image",
+        "r": [
+         16,
+         104,
+         72,
+         72
+        ],
+        "value": "mdi:weather-partly-cloudy",
+        "look": 2,
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         96,
+         104,
+         264,
+         72
+        ],
+        "px": 48,
+        "text": {
+         "s": 1
+        },
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         184,
+         344,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 2
+        },
+        "i": 2
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         214,
+         344,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 3
+        },
+        "i": 3
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         238,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 4
+        },
+        "al": 1,
+        "i": 4
+       },
+       {
+        "t": "label",
+        "r": [
+         86,
+         238,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 5
+        },
+        "al": 1,
+        "i": 5
+       },
+       {
+        "t": "label",
+        "r": [
+         156,
+         238,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 6
+        },
+        "al": 1,
+        "i": 6
+       },
+       {
+        "t": "label",
+        "r": [
+         226,
+         238,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 7
+        },
+        "al": 1,
+        "i": 7
+       },
+       {
+        "t": "label",
+        "r": [
+         296,
+         238,
+         64,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 8
+        },
+        "al": 1,
+        "i": 8
+       },
+       {
+        "t": "image",
+        "r": [
+         16,
+         268,
+         62,
+         32
+        ],
+        "value": "mdi:weather-partly-cloudy",
+        "look": 2,
+        "i": 9
+       },
+       {
+        "t": "image",
+        "r": [
+         86,
+         268,
+         62,
+         32
+        ],
+        "value": "mdi:weather-partly-cloudy",
+        "look": 2,
+        "i": 10
+       },
+       {
+        "t": "image",
+        "r": [
+         156,
+         268,
+         62,
+         32
+        ],
+        "value": "mdi:weather-partly-cloudy",
+        "look": 2,
+        "i": 11
+       },
+       {
+        "t": "image",
+        "r": [
+         226,
+         268,
+         62,
+         32
+        ],
+        "value": "mdi:weather-partly-cloudy",
+        "look": 2,
+        "i": 12
+       },
+       {
+        "t": "image",
+        "r": [
+         296,
+         268,
+         64,
+         32
+        ],
+        "value": "mdi:weather-partly-cloudy",
+        "look": 2,
+        "i": 13
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         308,
+         62,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 9
+        },
+        "al": 1,
+        "i": 14
+       },
+       {
+        "t": "label",
+        "r": [
+         86,
+         308,
+         62,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 10
+        },
+        "al": 1,
+        "i": 15
+       },
+       {
+        "t": "label",
+        "r": [
+         156,
+         308,
+         62,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 11
+        },
+        "al": 1,
+        "i": 16
+       },
+       {
+        "t": "label",
+        "r": [
+         226,
+         308,
+         62,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 12
+        },
+        "al": 1,
+        "i": 17
+       },
+       {
+        "t": "label",
+        "r": [
+         296,
+         308,
+         64,
+         28
+        ],
+        "size": "m",
+        "text": {
+         "s": 13
+        },
+        "al": 1,
+        "i": 18
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         338,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 14
+        },
+        "al": 1,
+        "i": 19
+       },
+       {
+        "t": "label",
+        "r": [
+         86,
+         338,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 15
+        },
+        "al": 1,
+        "i": 20
+       },
+       {
+        "t": "label",
+        "r": [
+         156,
+         338,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 16
+        },
+        "al": 1,
+        "i": 21
+       },
+       {
+        "t": "label",
+        "r": [
+         226,
+         338,
+         62,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 17
+        },
+        "al": 1,
+        "i": 22
+       },
+       {
+        "t": "label",
+        "r": [
+         296,
+         338,
+         64,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 18
+        },
+        "al": 1,
+        "i": 23
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "days": "5",
+         "show_details": true
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:weather-partly-cloudy",
+         "kind": null,
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:weather-partly-cloudy",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "12\u00b0",
+      "2": "Partly cloudy",
+      "3": "Feels like 10\u00b0 \u00b7 Wind 14 km/h",
+      "4": "Mon",
+      "5": "Mon",
+      "6": "Mon",
+      "7": "Mon",
+      "8": "Mon",
+      "9": "14\u00b0",
+      "10": "14\u00b0",
+      "11": "14\u00b0",
+      "12": "14\u00b0",
+      "13": "14\u00b0",
+      "14": "7\u00b0",
+      "15": "7\u00b0",
+      "16": "7\u00b0",
+      "17": "7\u00b0",
+      "18": "7\u00b0"
+     }
+    }
+   }
+  },
+  {
+   "id": "apollo/graph",
+   "name": "Graph",
+   "icon": "mdi:chart-line",
+   "form": {
+    "schema": 2,
+    "group": "sensors",
+    "legacy": false,
+    "replaces": [
+     "apollo/sensor-graph"
+    ],
+    "needs_v2": false,
+    "size": [
+     2,
+     1
+    ],
+    "grid": {
+     "columns": 12,
+     "rows": 3
+    },
+    "variants": [
+     {
+      "id": "wide",
+      "name": "Wide",
+      "grid": [
+       12,
+       3
+      ],
+      "picker": true,
+      "needs_v2": false
+     },
+     {
+      "id": "large",
+      "name": "Large",
+      "grid": [
+       12,
+       6
+      ],
+      "picker": true,
+      "needs_v2": false
+     }
+    ],
+    "has_detail": false,
+    "params": {
+     "entity": {
+      "kind": "entity",
+      "domains": [
+       "sensor",
+       "number",
+       "input_number"
+      ],
+      "multiple": false,
+      "optional": false,
+      "device_class": null,
+      "label": "Graph of",
+      "help": ""
+     }
+    },
+    "options": [
+     {
+      "name": "kind",
+      "type": "choice",
+      "section": "shows",
+      "label": "Draw it as",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "line",
+        "label": "A line"
+       },
+       {
+        "value": "steps",
+        "label": "Steps"
+       },
+       {
+        "value": "bars",
+        "label": "Bars"
+       },
+       {
+        "value": "today",
+        "label": "Today by the hour"
+       }
+      ],
+      "default": "line"
+     },
+     {
+      "name": "hours",
+      "type": "choice",
+      "section": "shows",
+      "label": "Over the last",
+      "help": "",
+      "when": [
+       "kind!=today"
+      ],
+      "needs": "",
+      "needs_text": "",
+      "multiple": false,
+      "choices": [
+       {
+        "value": "6",
+        "label": "6 hours"
+       },
+       {
+        "value": "24",
+        "label": "24 hours"
+       },
+       {
+        "value": "72",
+        "label": "3 days"
+       },
+       {
+        "value": "168",
+        "label": "A week"
+       }
+      ],
+      "default": "24"
+     },
+     {
+      "name": "show_range",
+      "type": "toggle",
+      "section": "shows",
+      "label": "Lowest and highest",
+      "help": "",
+      "when": [],
+      "needs": "",
+      "needs_text": "",
+      "default": true
+     }
+    ],
+    "standard": {
+     "title": true,
+     "icon": true,
+     "hold": false,
+     "lit": "none",
+     "tint": false
+    },
+    "tap": null,
+    "notes": []
+   },
+   "variants": {
+    "wide": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/graph",
+      "variant": "wide",
+      "grid_options": {
+       "columns": 12,
+       "rows": 3
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/graph",
+      "name": "Graph",
+      "variant": "wide",
+      "demo": true,
+      "w": 376,
+      "h": 184,
+      "entities": [],
+      "header": {
+       "r": [
+        16,
+        16,
+        344,
+        32
+       ],
+       "icon": "mdi:gauge",
+       "title": "Graph"
+      },
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "label",
+        "r": [
+         16,
+         56,
+         168,
+         36
+        ],
+        "px": 28,
+        "text": {
+         "s": 1
+        },
+        "i": 0
+       },
+       {
+        "t": "label",
+        "r": [
+         192,
+         56,
+         168,
+         36
+        ],
+        "size": "s",
+        "text": {
+         "s": 2
+        },
+        "al": 2,
+        "i": 1
+       },
+       {
+        "t": "chart",
+        "r": [
+         16,
+         100,
+         344,
+         68
+        ],
+        "value": [
+         19.2,
+         19.4,
+         19.3,
+         19.9,
+         20.4,
+         20.2,
+         20.9,
+         21.3,
+         21.1,
+         21.7,
+         21.9,
+         21.4
+        ],
+        "kind": "line",
+        "i": 2
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "kind": "line",
+         "hours": "24",
+         "show_range": true
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:gauge",
+         "kind": null,
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:gauge",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "21.4 \u00b0C",
+      "2": "19.2 to 21.9 \u00b0C"
+     }
+    },
+    "large": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/graph",
+      "variant": "large",
+      "grid_options": {
+       "columns": 12,
+       "rows": 6
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/graph",
+      "name": "Graph",
+      "variant": "large",
+      "demo": true,
+      "w": 376,
+      "h": 376,
+      "entities": [],
+      "header": {
+       "r": [
+        16,
+        16,
+        344,
+        32
+       ],
+       "icon": "mdi:gauge",
+       "title": "Graph"
+      },
+      "on": null,
+      "lit": 3,
+      "widgets": [
+       {
+        "t": "label",
+        "r": [
+         16,
+         56,
+         344,
+         36
+        ],
+        "px": 28,
+        "text": {
+         "s": 1
+        },
+        "i": 0
+       },
+       {
+        "t": "chart",
+        "r": [
+         16,
+         100,
+         344,
+         230
+        ],
+        "value": [
+         19.2,
+         19.4,
+         19.3,
+         19.9,
+         20.4,
+         20.2,
+         20.9,
+         21.3,
+         21.1,
+         21.7,
+         21.9,
+         21.4
+        ],
+        "kind": "line",
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         338,
+         344,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 2
+        },
+        "i": 2
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "kind": "line",
+         "hours": "24",
+         "show_range": true
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:gauge",
+         "kind": null,
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:gauge",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "21.4 \u00b0C",
+      "2": "19.2 to 21.9 \u00b0C"
+     }
+    }
+   }
+  },
+  {
    "id": "apollo/light",
    "name": "Light",
    "icon": "mdi:lightbulb",

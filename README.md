@@ -12,9 +12,9 @@ its dashboard once its software has the dashboard engine.
   dashboards, and it works with no tablet connected.
 - The panel's editor shows the tablet's screen (1280x800) while you work,
   drawn from the same layout a tablet would receive.
-- "Add card" offers only cards the tablet can show: 21 built-in cards, plus
+- "Add card" offers only cards the tablet can show: 26 built-in cards, plus
   any community cards you have installed. You pick a card, then the device it
-  controls. Four older built-in cards are no longer offered, because newer
+  controls. Fifteen older built-in cards are no longer offered, because newer
   cards take their place; dashboards that have them keep them.
 - A tablet with older software still gets every dashboard. Cards made for
   the newer software are drawn simpler on it, a card it cannot draw at all
