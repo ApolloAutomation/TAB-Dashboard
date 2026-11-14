@@ -1,0 +1,161 @@
+# A test card that uses every part of schema 2: each widget kind, rows,
+# swaps, spaces, the four kinds of loop, every header form and trailing,
+# the card-level keys, vars, lookups, templates and inputs. Not shipped.
+schema: 2
+id: test/probe
+version: 1.0.0
+name: Probe
+description: Every part of a schema 2 card.
+icon: mdi:flask
+group: more
+
+params:
+  entity: {domain: light, label: Light}
+  lights: {domain: [light, switch], multiple: true, max: 4, optional: true, label: Lights}
+  extra: {domain: sensor, optional: true, label: Sensor}
+  page: {type: page, optional: true, label: Page}
+
+options:
+  greeting:    {type: text, section: shows, label: Greeting, default: Hello, max: 40}
+  show_more:   {type: toggle, section: shows, label: More, default: true}
+  mode:        {type: choice, section: controls, label: Mode, default: a,
+                choices: {a: First, b: Second}}
+  modes_shown: {type: choice, multiple: true, max: 4, section: controls, label: Modes,
+                default: [a, b], choices: {a: First, b: Second, c: Third}}
+  effects:     {type: choice, multiple: true, max: 4, from: can.effect_list, default_first: 2,
+                section: controls, label: Effects, needs: can.effects}
+  swatches:    {type: colours, section: look, label: Swatches, default: ["#FF0000", "2700K"]}
+  tone:        {type: colour, section: look, label: Tone, default: good}
+  steps:       {type: number, section: controls, label: Steps, min: 1, max: 10, default: 5}
+  badge_icon:  {type: icon, section: look, label: Badge, default: "mdi:star"}
+
+inputs:
+  is_on:    "{{ is_state(entity, 'on') }}"
+  pct:      "{{ ((state_attr(entity, 'brightness') or 0) / 2.55) | round | int }}"
+  colour:   {source: colour, entity: "{{ entity }}", of: rgb}
+  icon_now: {source: state_icon, entity: "{{ entity }}"}
+  now:      {source: clock}
+  spent:    {source: statistics, entity: "{{ extra }}", buckets: hour, period: today, stat: sum}
+  history:  {source: recorder, entity: "{{ extra }}", hours: 24}
+  state:    "{{ states(entity) }}"
+  role:     "{{ 'good' if is_on else 'bad' }}"
+  level:    "{{ pct ~ '%' }}"
+  effect_at: "{{ effects.index(state_attr(entity, 'effect')) if state_attr(entity, 'effect') in effects else none }}"
+
+outputs:
+  toggle:     {action: light.toggle, data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+  set_level:  {action: light.turn_on, data: {entity_id: "{{ entity }}", brightness_pct: "{{ value }}"},
+               feedback: optimistic}
+  set_effect: {action: light.turn_on, data: {entity_id: "{{ entity }}", effect: "{{ option }}"},
+               feedback: optimistic}
+  each:       {action: {light: light.toggle, switch: switch.toggle}, data: {entity_id: "{{ lamp }}"},
+               feedback: optimistic}
+  flash:      {action: light.turn_on, data: {entity_id: "{{ entity }}", flash: "{{ word }}"},
+               feedback: pulse}
+  go:         {local: go_to_page, page: "{{ page }}"}
+  leave:      {local: back}
+
+on: is_on
+tint: colour
+state: state
+lit: outline
+tap:
+  default: toggle
+  choices:
+    toggle: {label: Turns it on or off, output: toggle}
+    detail: {label: Opens its controls}
+    none:   {label: Does nothing}
+hold: detail
+
+parts:
+  dim: {type: slider, look: bar, value: pct, min: 0, max: 100, icon: "mdi:brightness-6",
+        colour: colour, on_change: set_level}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: tile_v
+    trailing: level
+    layout:
+      - {use: dim}
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    trailing: switch
+    layout:
+      - {use: dim}
+      - {type: slider, look: bar, value: pct, min: 0, max: 100}
+  chip:
+    name: Chip
+    grid: [12, 1]
+    header: chip
+    layout:
+      - {type: space}
+  title:
+    name: Words
+    grid: [12, 6]
+    header: title
+    align: top
+    layout:
+      - {type: label, text: "{{ greeting }}", size: ml, align: centre}
+      - {type: label, text: "Hi {{ greeting }}", size: s, colour: "{{ tone }}"}
+      - {type: label, clock: 24, value: now, size: xl}
+      - {type: switch, value: is_on, on_tap: toggle, colour: role}
+      - {type: row, items: [
+          {type: button, text: Long, on_tap: flash, vars: {word: long}, width: 120},
+          {type: button, icon: "{{ badge_icon }}", icon_live: icon_now, on_tap: flash,
+           vars: {word: short}, selected: is_on, shape: round, big_icon: true, weight: 2}]}
+      - {type: row, for_each: [{name: Up, word: up}, {name: Down, word: down}], as: way,
+         items: [{type: label, text: "{{ way.name }}", size: s},
+                 {type: button, text: "{{ way.word }}", on_tap: go}]}
+  plain:
+    name: Plain
+    grid: [12, 6]
+    header: none
+    layout:
+      - {type: thermostat, value: pct, min: 0, max: 100, step: 1, mark: pct, buttons: 48,
+         on_change: set_level, colour: accent, when: [can.brightness]}
+      - {type: chart, value: history, kind: steps, mark: pct, when: [has.extra], colour: info}
+      - {type: image, value: icon_now, look: badge, on_hold: detail}
+      - {type: space}
+      - {type: label, text: "{{ shown }}", for_each: modes_shown, as: shown, per_row: 4,
+         size: s, when: [show_more]}
+  full:
+    name: Controls
+    grid: [18, 11]
+    header: tile
+    trailing: more
+    picker: false
+    layout:
+      - {use: dim, height: 56}
+      - {type: slider, look: bar, track: hue, value: pct, min: 0, max: 360, keep_active: true,
+         on_change: set_level, direction: right}
+      - {type: slider, look: bar, value: pct, step: 50, keep_active: true, on_change: set_level,
+         track: {kelvin: ["{{ can.min_kelvin }}", "{{ can.max_kelvin }}"]},
+         min: "{{ can.min_kelvin }}", max: "{{ can.max_kelvin }}"}
+      - {type: slider, look: bar, value: pct, rate: 1, height: 8}
+      - {type: swap, items: [
+          {type: button, text: "On", on_tap: toggle, visible: is_on},
+          {type: row, visible: "{{ not is_on }}", items: [
+            {type: button, text: "Off", on_tap: toggle},
+            {type: label, text: "{{ state }}", align: right}]}]}
+      - {type: choice, options: [{value: 1, text: One, icon: "mdi:numeric-1"},
+                                 {value: 2, text: Two}], value: pct, on_change: set_level,
+         confirm: "Are you sure?"}
+      - {type: choice, look: dots, options: swatches, on_change: set_level}
+      - {type: choice, options: effects, value: effect_at, on_change: set_effect,
+         when: [can.effects, effects]}
+      - {type: choice, options: can.effect_list, rows: 2, on_change: set_effect,
+         when: [can.effects, tablet.v2]}
+      - {type: button, text: "{{ lamp }}", for_each: lights, as: lamp, per_row: 4,
+         on_tap: each, when: [has.lights]}
+      - {type: button, text: Back, on_tap: leave, when: ["!tablet.v2"]}
+detail: full
+
+preview:
+  params: {entity: light.example}
+  can: {brightness: true, colour: true, temperature: true, effects: true,
+        min_kelvin: 2000, max_kelvin: 6500, effect_list: [Rainbow, Night]}
+  inputs: {is_on: true, pct: 40, state: "On", level: "40%"}

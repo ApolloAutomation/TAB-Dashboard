@@ -198,3 +198,372 @@ def paginate(sections: list[tuple[int, int]]) -> list[tuple[int, int, int]]:
         col += span
         band_h = max(band_h, h)
     return out
+
+
+# ---------------------------------------------------------------- schema 2
+#
+# layout_card2 places the rows of a schema 2 card (C.3 of the cards spec).
+# layout_card above stays as it was for schema 1.
+
+LABEL_GAP = 2  # between two label rows that follow each other
+# Row heights of a label per size. The three digit sizes are fonts.row_px of
+# contract.json: a row lower than the line would push the text down.
+LABEL_ROWS_2 = {
+    "s": 22,
+    "m": 28,
+    "ml": 36,
+    "l": 44,
+    "xl": 60,
+    "xxl": 120,
+    "huge": 240,
+}
+ROW_PX_SIZES = ("xl", "xxl", "huge")
+BUTTON_H_2 = 48
+SLIDER_H_2 = 40
+LEVEL_H_2 = 8  # a bar that only shows
+SWITCH_H_2 = 40
+CHOICE_ROW_H = 48
+CHOICE_DOTS_ROW_H = 44
+CHOICE_GAP = 8  # between cells and between rows, as contract 4.7 draws them
+CHOICE_MAX_ROWS = 4
+TOUCH_MIN = 44  # no control narrower or lower than this
+ROW_ITEM_GAP = 8  # between the widgets of a row
+SIDE_GAP = 12
+
+# Header forms: their height, and the parts they draw.
+HEADER_H_2 = {
+    "title": 32,
+    "chip": 24,
+    "tile": 48,
+    "tile_v": 44 + GAP + 28 + LABEL_GAP + 22,
+    "none": 0,
+}
+BADGE = 44
+CHIP_ICON = 24
+TRAILING_SWITCH = (64, 36)
+TRAILING_MORE = 44
+TRAILING_TEXT_W = 88
+
+
+def _natural_height(geo: dict) -> int:
+    """Return the height a widget asks for before spare height is shared."""
+    kind = geo["type"]
+    height = geo.get("height")
+    if kind == "label":
+        size = geo.get("size", "m")
+        if height is not None:
+            if size in ROW_PX_SIZES:
+                return max(height, LABEL_ROWS_2[size])
+            return height
+        return LABEL_ROWS_2[size]
+    if height is not None:
+        return height
+    if kind == "button":
+        return BUTTON_H_2
+    if kind == "switch":
+        return SWITCH_H_2
+    if kind == "slider":
+        if geo.get("look") == "bar" and not geo.get("control"):
+            return LEVEL_H_2
+        return SLIDER_H_2
+    if kind == "choice":
+        cell = CHOICE_DOTS_ROW_H if geo.get("look") == "dots" else CHOICE_ROW_H
+        rows = geo.get("rows", 1)
+        return rows * cell + CHOICE_GAP * (rows - 1)
+    if kind in FLEX_TYPES:
+        return FLEX_MIN_H
+    return 0
+
+
+def _grows(geo: dict) -> bool:
+    """Return whether a widget takes spare height."""
+    if geo.get("height") is not None:
+        return False
+    return bool(geo.get("grow")) or geo["type"] in FLEX_TYPES
+
+
+def _widths(cells: list[dict], width: int) -> list[int]:
+    """Share a row's width: fixed widths first, the rest by weight, 8 apart."""
+    n = len(cells)
+    free = width - ROW_ITEM_GAP * (n - 1)
+    free -= sum(cell["width"] for cell in cells if cell.get("width") is not None)
+    weighted = [i for i, cell in enumerate(cells) if cell.get("width") is None]
+    total = sum(cells[i].get("weight", 1) for i in weighted)
+    out = [0] * n
+    given = 0
+    for k, i in enumerate(weighted):
+        if k == len(weighted) - 1:
+            out[i] = max(free - given, 0)
+        else:
+            out[i] = max(free * cells[i].get("weight", 1) // total, 0)
+            given += out[i]
+    for i, cell in enumerate(cells):
+        if cell.get("width") is not None:
+            out[i] = cell["width"]
+    return out
+
+
+def _choice_rows(geo: dict, width: int) -> int | None:
+    """Return the rows a choice needs so no cell is narrower than 44, or None."""
+    n = max(geo.get("options", 1), 1)
+    rows = geo.get("rows", 1)
+    while rows <= CHOICE_MAX_ROWS:
+        k = -(-n // rows)
+        if (width - CHOICE_GAP * (k - 1)) // k >= TOUCH_MIN:
+            return rows
+        rows += 1
+    return None
+
+
+def _fit_cells(cells: list[dict], width: int) -> list[dict]:
+    """Work out each widget's width; a control too narrow to touch is dropped.
+
+    Returns per widget {"w": width, "geo": geo with the rows a choice needs},
+    where geo is None for a widget that is dropped. Its width stays taken,
+    so the widgets after it keep their places.
+    """
+    out: list[dict] = []
+    for cell, cell_w in zip(cells, _widths(cells, width), strict=True):
+        geo: dict | None = cell
+        if cell["type"] == "choice":
+            rows = _choice_rows(cell, cell_w)
+            geo = None if rows is None else {**cell, "rows": rows}
+        elif cell.get("control") and cell_w < TOUCH_MIN:
+            geo = None
+        if (
+            geo is not None
+            and geo["type"] in ("button", "choice")
+            and _natural_height(geo) < TOUCH_MIN
+        ):
+            geo = None
+        out.append({"w": cell_w, "geo": geo})
+    return out
+
+
+def _header_parts(
+    form: str, trailing: str | None, x0: int, y0: int, x1: int
+) -> dict[str, list[int]]:
+    """Place the parts of a header form; rects are relative to the card."""
+    width = x1 - x0
+    if form == "title":
+        return {"title": [x0, y0, width, HEADER_H_2["title"]]}
+    if form == "chip":
+        rest = width - CHIP_ICON - GAP
+        state_w = rest // 2
+        return {
+            "icon": [x0, y0, CHIP_ICON, CHIP_ICON],
+            "name": [x0 + CHIP_ICON + GAP, y0, rest - state_w - GAP, 24],
+            "state": [x1 - state_w, y0 + 1, state_w, 22],
+        }
+    parts: dict[str, list[int]] = {}
+    trail_w = 0
+    if trailing == "switch":
+        trail_w = TRAILING_SWITCH[0]
+    elif trailing == "more":
+        trail_w = TRAILING_MORE
+    elif trailing == "text":
+        trail_w = TRAILING_TEXT_W
+    if form == "tile":
+        parts["badge"] = [x0, y0 + 2, BADGE, BADGE]
+        tx = x0 + BADGE + GAP
+        tw = x1 - tx - (trail_w + GAP if trail_w else 0)
+        parts["name"] = [tx, y0, tw, 26]
+        parts["state"] = [tx, y0 + 26, tw, 22]
+        mid = y0 + HEADER_H_2["tile"] // 2
+    else:  # tile_v
+        parts["badge"] = [x0, y0, BADGE, BADGE]
+        parts["name"] = [x0, y0 + BADGE + GAP, width, 28]
+        parts["state"] = [x0, y0 + BADGE + GAP + 28 + LABEL_GAP, width, 22]
+        mid = y0 + BADGE // 2
+    if trailing == "switch":
+        sw, sh = TRAILING_SWITCH
+        parts["trailing"] = [x1 - sw, mid - sh // 2, sw, sh]
+    elif trailing == "more":
+        parts["trailing"] = [
+            x1 - TRAILING_MORE,
+            mid - TRAILING_MORE // 2,
+            TRAILING_MORE,
+            TRAILING_MORE,
+        ]
+    elif trailing == "text":
+        text_w = x1 - (x0 + BADGE + GAP) if form == "tile_v" else TRAILING_TEXT_W
+        parts["trailing"] = [x1 - text_w, mid - 11, text_w, 22]
+    return parts
+
+
+def _row_height(row: dict, fitted: list) -> int:
+    """Return a row's height: its own, else its tallest widget."""
+    if row.get("height") is not None:
+        return row["height"]
+    heights = [0]
+    for member in fitted:
+        for cell in member:
+            if cell["geo"] is not None:
+                heights.append(_natural_height(cell["geo"]))
+    return max(heights)
+
+
+def _row_grows(row: dict, fitted: list) -> bool:
+    """Return whether a row takes spare height."""
+    if row.get("height") is not None:
+        return False
+    if row["kind"] == "space":
+        return True
+    return any(
+        _grows(cell["geo"])
+        for member in fitted
+        for cell in member
+        if cell["geo"] is not None
+    )
+
+
+def _is_label_row(row: dict) -> bool:
+    """Return whether a row holds labels only."""
+    return row["kind"] == "row" and all(
+        cell["type"] == "label" for cell in row["cells"]
+    )
+
+
+def layout_card2(
+    body: list[dict],
+    w: int,
+    h: int,
+    header: str = "none",
+    trailing: str | None = None,
+    align_top: bool = False,
+) -> dict:
+    """Place a schema 2 card. Coordinates are relative to the card's top-left.
+
+    body: rows in layout order, each {"kind": "row" | "swap" | "space",
+    "cells": [...], "height": px or None}. A row's cells are widgets side by
+    side; a swap's cells are members that share one place, each a list of
+    widgets side by side. A widget is {"type", and as it has them "size",
+    "look", "control" (it takes a touch), "height", "grow", "width",
+    "weight", "rows" and "options" (a choice), "side"}.
+
+    header is a form of C.3 and trailing what a tile header shows at its
+    right: "switch", "more", "text" or None.
+
+    Returns {"header": {part: rect}, "header_switch": row index or None,
+    "rects": per row a list per member (a row has one member) of rect or
+    None per widget, "rows": the same shape with the rows a choice got,
+    "clipped": [row indexes left out], "dropped": widgets left out because
+    a finger could not hit them}. A rect is [x, y, w, h].
+    """
+    x0, y0, x1, y1 = PAD, PAD, w - PAD, h - PAD
+    rects: list = [None] * len(body)
+    rows_out: list = [None] * len(body)
+    order = list(range(len(body)))
+    header_rect: dict[str, list[int]] = {}
+    header_switch = None
+    dropped = 0
+    head_h = HEADER_H_2[header]
+    if header == "title" and w >= WIDE_CARD_W:
+        for i in order:
+            row = body[i]
+            if (
+                row["kind"] == "row"
+                and len(row["cells"]) == 1
+                and row["cells"][0]["type"] == "switch"
+            ):
+                sw, sh = TRAILING_SWITCH
+                rects[i] = [[[x1 - sw, y0 - 2, sw, sh]]]
+                rows_out[i] = [[None]]
+                header_switch = i
+                order.remove(i)
+                break
+    if head_h:
+        header_rect = _header_parts(header, trailing, x0, y0, x1)
+        if header == "title" and header_switch is not None:
+            header_rect["title"][2] -= TRAILING_SWITCH[0] + GAP
+        header_rect = {
+            part: rect for part, rect in header_rect.items() if rect[1] + rect[3] <= y1
+        }
+        y0 += head_h + GAP
+
+    # One flexible widget marked "side" becomes a square column on the left.
+    for i in order:
+        row = body[i]
+        if (
+            row["kind"] == "row"
+            and len(row["cells"]) == 1
+            and row["cells"][0].get("side")
+            and row["cells"][0]["type"] in FLEX_TYPES
+        ):
+            side = max(min(y1 - y0, (x1 - x0) // 2), 0)
+            rects[i] = [[[x0, y0, side, side]]]
+            rows_out[i] = [[None]]
+            x0 += side + SIDE_GAP
+            order.remove(i)
+            break
+
+    fitted: dict[int, list] = {}
+    for i in order:
+        row = body[i]
+        if row["kind"] == "space":
+            fitted[i] = []
+        elif row["kind"] == "swap":
+            fitted[i] = [_fit_cells(member, x1 - x0) for member in row["cells"]]
+        else:
+            fitted[i] = [_fit_cells(row["cells"], x1 - x0)]
+        dropped += sum(cell["geo"] is None for member in fitted[i] for cell in member)
+
+    placed = list(order)
+    heights = {i: _row_height(body[i], fitted[i]) for i in placed}
+
+    def gap_before(k: int) -> int:
+        """Return the gap above the k-th placed row."""
+        if k == 0:
+            return 0
+        both = _is_label_row(body[placed[k - 1]]) and _is_label_row(body[placed[k]])
+        return LABEL_GAP if both else GAP
+
+    def used() -> int:
+        """Return the height the placed rows take with their gaps."""
+        return sum(heights[i] + gap_before(k) for k, i in enumerate(placed))
+
+    clipped: list[int] = []
+    avail = max(y1 - y0, 0)
+    while placed and used() > avail:
+        clipped.insert(0, placed.pop())
+    free = avail - used()
+    growers = [i for i in placed if _row_grows(body[i], fitted[i])]
+    if growers and free > 0:
+        share = free // len(growers)
+        for i in growers:
+            heights[i] += share
+            free -= share
+    y = y0 if align_top else y0 + max(free, 0)
+    for k, i in enumerate(placed):
+        y += gap_before(k)
+        height = heights[i]
+        row_rects = []
+        row_rows = []
+        for member in fitted[i]:
+            member_rects = []
+            member_rows = []
+            x = x0
+            for cell in member:
+                geo = cell["geo"]
+                if geo is None:
+                    member_rects.append(None)
+                    member_rows.append(None)
+                else:
+                    member_rects.append([x, y, cell["w"], height])
+                    member_rows.append(
+                        geo.get("rows") if geo["type"] == "choice" else None
+                    )
+                x += cell["w"] + ROW_ITEM_GAP
+            row_rects.append(member_rects)
+            row_rows.append(member_rows)
+        rects[i] = row_rects
+        rows_out[i] = row_rows
+        y += height
+    return {
+        "header": header_rect,
+        "header_switch": header_switch,
+        "rects": rects,
+        "rows": rows_out,
+        "clipped": clipped,
+        "dropped": dropped,
+    }
