@@ -11,6 +11,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
+    async_mock_service,
 )
 
 from custom_components.apollo_tab import protocol as tp, sender as sender_module
@@ -668,6 +669,212 @@ async def test_pairing_is_rate_limited(
     await until(hass, lambda: session.status == STATUS_ON_TABLET)
 
 
+@pytest.mark.parametrize("how", ["refused", "lost"])
+async def test_failed_first_pairing_is_tried_again_after_a_minute(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+    how: str,
+) -> None:
+    """A first pairing the tablet refused, or that got lost, is tried again.
+
+    The tablet is not paired then and takes its dashboard unsigned, so the
+    send succeeds and nothing else would greet it again.
+    """
+    tablet = make_tablet()
+    if how == "refused":
+        tablet.fail_next["tab_pair"] = "bad_key"
+    else:
+        tablet.timeout_next.add("tab_pair")
+    await setup_integration(hass, config_entry)
+    await save_tab_dashboard("tab-home", tab_config(light_card()))
+    session = await on_tablet(hass, config_entry)
+    assert session.input == "not_paired"
+    assert not tablet.paired
+    assert len(tablet.calls_of("tab_pair")) == 1
+    chunks = len(tablet.calls_of("tab_layout"))
+
+    # A minute later (the loop clock does not move in tests, so the last
+    # pairing is moved back instead).
+    session._last_pair -= 61
+    async_fire_time_changed(hass, dt_util.utcnow() + sender_module_timedelta(61))
+    await until(hass, lambda: len(tablet.calls_of("tab_pair")) == 2)
+    await until(
+        hass, lambda: session.status == STATUS_ON_TABLET and session.input == "ok"
+    )
+    assert tablet.secret == config_entry.runtime_data.assignments.secret(MAC)
+    # The dashboard on its screen is not sent again.
+    assert len(tablet.calls_of("tab_layout")) == chunks
+    assert tablet.refused == []
+
+
+async def test_lost_pairing_of_an_erased_tablet_is_tried_again(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+    memory_link: MemoryTabletLink,
+) -> None:
+    """A tablet paired before and erased, whose new pairing got lost.
+
+    It holds no secret, so it takes every call and the send succeeds. Home
+    Assistant says its taps do not work until the pairing a minute later.
+    """
+    tablet = make_tablet()
+    await setup_integration(hass, config_entry)
+    await save_tab_dashboard("tab-home", tab_config(light_card()))
+    session = await on_tablet(hass, config_entry)
+    assert session.input == "ok"
+    old = tablet.secret
+    pairs = len(tablet.calls_of("tab_pair"))
+
+    # Erased and set up again with its key: no secret, no session.
+    tablet.secret = None
+    tablet.nonce = None
+    tablet.timeout_next.add("tab_pair")
+    session._last_pair -= 61
+    memory_link.async_reconnect(MAC)
+    await until(hass, lambda: session.status == STATUS_FAILED)
+    assert (session.reason, session.retry) == ("timeout", True)
+    assert len(tablet.calls_of("tab_pair")) == pairs + 1
+    assert session.input == "not_paired"
+
+    # The retry after the failure greets again and sends as before.
+    async_fire_time_changed(hass, dt_util.utcnow() + sender_module_timedelta(6))
+    await on_tablet(hass, config_entry)
+    assert not tablet.paired
+    row = sender_of(config_entry).tablet_json(session)
+    assert (row["input"], row["paired"]) == ("not_paired", False)
+    assert len(tablet.calls_of("tab_pair")) == pairs + 1
+
+    # A minute later (the last pairing is moved back, as in
+    # test_pairing_is_rate_limited).
+    session._last_pair -= 61
+    async_fire_time_changed(hass, dt_util.utcnow() + sender_module_timedelta(61))
+    await until(hass, lambda: len(tablet.calls_of("tab_pair")) == pairs + 2)
+    await until(
+        hass, lambda: session.status == STATUS_ON_TABLET and session.input == "ok"
+    )
+    assert tablet.secret not in (None, old)
+    assert tablet.secret == config_entry.runtime_data.assignments.secret(MAC)
+    assert tablet.refused == []
+
+
+async def test_pairing_whose_answer_got_lost_is_tried_again(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+) -> None:
+    """The tablet took the new secret, but its answer never arrived.
+
+    Home Assistant still holds the old secret. It says the tablet's taps do
+    not work, signs nothing the tablet would refuse, and pairs again a
+    minute later.
+    """
+    tablet = make_tablet()
+    await setup_integration(hass, config_entry)
+    await save_tab_dashboard("tab-home", tab_config(light_card()))
+    session = await on_tablet(hass, config_entry)
+    assignments = config_entry.runtime_data.assignments
+    old = tablet.secret
+    pairs = len(tablet.calls_of("tab_pair"))
+    take_secret = tablet._on_tab_pair
+
+    def answer_lost(**args: str) -> dict:
+        """Take the secret; the answer does not reach Home Assistant."""
+        tablet._on_tab_pair = take_secret
+        take_secret(**args)
+        raise LinkError("timeout")
+
+    tablet._on_tab_pair = answer_lost
+    session._last_pair -= 61
+    session.request_pair()
+    await until(hass, lambda: session.status == STATUS_FAILED)
+    assert (session.reason, session.retry) == ("timeout", True)
+    assert tablet.secret not in (old, assignments.secret(MAC))
+    assert session.input == "not_paired"
+
+    # The retry greets again; the tablet refuses the old secret's greeting.
+    async_fire_time_changed(hass, dt_util.utcnow() + sender_module_timedelta(6))
+    await until(hass, lambda: session.reason == "auth")
+    assert (session.status, session.retry) == (STATUS_FAILED, True)
+    row = sender_of(config_entry).tablet_json(session)
+    assert (row["input"], row["paired"]) == ("not_paired", False)
+    assert len(tablet.calls_of("tab_pair")) == pairs + 1
+    assert tablet.refused == []
+
+    session._last_pair -= 61
+    async_fire_time_changed(hass, dt_util.utcnow() + sender_module_timedelta(61))
+    await until(hass, lambda: len(tablet.calls_of("tab_pair")) == pairs + 2)
+    await until(
+        hass, lambda: session.status == STATUS_ON_TABLET and session.input == "ok"
+    )
+    assert tablet.secret == assignments.secret(MAC)
+    assert tablet.refused == []
+
+
+async def test_paired_tablet_that_lost_one_pairing_call_works_on(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+) -> None:
+    """A new secret an admin asked for, whose call never reached the tablet.
+
+    The tablet still holds the old secret. The next greeting finds that out:
+    its taps work again and its row asks nothing of the admin. The new
+    secret follows a minute later.
+    """
+    toggles = async_mock_service(hass, "light", "toggle")
+    hass.states.async_set("light.kitchen", "on", {"friendly_name": "Kitchen"})
+    tablet = make_tablet()
+    await setup_integration(hass, config_entry)
+    await save_tab_dashboard("tab-home", tab_config(light_card()))
+    session = await on_tablet(hass, config_entry)
+    assignments = config_entry.runtime_data.assignments
+    old = tablet.secret
+    pairs = len(tablet.calls_of("tab_pair"))
+    widget = next(
+        int(key.partition(":")[0])
+        for key, action in session.want.bindings["actions"].items()
+        if action["output"] == "toggle"
+    )
+
+    tablet.timeout_next.add("tab_pair")
+    session._last_pair -= 61
+    session.request_pair()
+    await until(hass, lambda: session.status == STATUS_FAILED)
+    assert len(tablet.calls_of("tab_pair")) == pairs + 1
+    # Home Assistant cannot tell which secret the tablet holds now.
+    assert session.input == "not_paired"
+
+    async_fire_time_changed(hass, dt_util.utcnow() + sender_module_timedelta(6))
+    await until(
+        hass, lambda: session.status == STATUS_ON_TABLET and session.input == "ok"
+    )
+    assert tablet.secret == old == assignments.secret(MAC)
+    row = sender_of(config_entry).tablet_json(session)
+    assert (row["status"], row["reason"]) == (STATUS_ON_TABLET, "")
+    assert (row["approved"], row["paired"], row["input"]) == (True, True, "ok")
+    assert row["reauth"] is None
+    assert len(tablet.calls_of("tab_pair")) == pairs + 1
+    tablet.tap(widget)
+    await until(hass, lambda: tablet.acks == [(1, True, "")])
+    assert len(toggles) == 1
+
+    session._last_pair -= 61
+    async_fire_time_changed(hass, dt_util.utcnow() + sender_module_timedelta(61))
+    await until(hass, lambda: len(tablet.calls_of("tab_pair")) == pairs + 2)
+    await until(
+        hass, lambda: session.status == STATUS_ON_TABLET and session.input == "ok"
+    )
+    assert tablet.secret not in (None, old)
+    assert tablet.secret == assignments.secret(MAC)
+    assert tablet.refused == []
+
+
 async def test_pair_request_waits_for_the_limit_and_keeps_the_session(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
@@ -890,6 +1097,56 @@ async def test_unreadable_dashboard_keeps_layout(
     assert session.dashboard == "tab-a"
     assert tablet.active == shown
     assert tablet.calls_of("tab_clear") == []
+
+
+async def test_yaml_dashboard_without_its_file_keeps_its_tablets(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+    tmp_path,
+) -> None:
+    """A YAML dashboard whose file is away after a restart keeps its tablets.
+
+    Before its first load Home Assistant reports the missing file like a
+    storage dashboard that was never saved. The tablets stay on it and get
+    it again once the file is back.
+    """
+    from homeassistant.components.lovelace.dashboard import LovelaceYAML
+
+    from custom_components.apollo_tab import compat
+
+    tablet = make_tablet()
+    await setup_integration(hass, config_entry)
+    hass.config.config_dir = str(tmp_path)
+    data = config_entry.runtime_data
+    path = tmp_path / "tab-yaml.yaml"
+    path.write_text(json.dumps(tab_config(light_card())))
+    dashboards = hass.data[compat.LOVELACE_DATA].dashboards
+    yaml_config = {"mode": "yaml", "filename": "tab-yaml.yaml", "title": "Yaml"}
+    dashboards["tab-yaml"] = LovelaceYAML(hass, "tab-yaml", yaml_config)
+    await data.manager.async_convert("tab-yaml")
+    session = await on_tablet(hass, config_entry)
+    assert session.dashboard == "tab-yaml"
+    shown = tablet.active
+    # Another dashboard the tablet could be moved to.
+    await save_tab_dashboard("tab-other", tab_config(light_card()), title="Other")
+    assert session.dashboard == "tab-yaml"
+
+    # As after a restart: no cached copy, and the file is not there.
+    path.unlink()
+    dashboards["tab-yaml"] = LovelaceYAML(hass, "tab-yaml", yaml_config)
+    await data.manager.async_convert("tab-yaml")
+    await until(hass, lambda: session.status == STATUS_FAILED)
+    assert (session.reason, session.retry) == ("unreadable", False)
+    assert session.dashboard == "tab-yaml"
+    assert tablet.active == shown
+    assert tablet.calls_of("tab_clear") == []
+
+    path.write_text(json.dumps(tab_config(light_card())))
+    await data.manager.async_convert("tab-yaml")
+    await until(hass, lambda: session.status == STATUS_ON_TABLET)
+    assert session.dashboard == "tab-yaml"
 
 
 async def test_removed_tablet_stops_its_trackers(

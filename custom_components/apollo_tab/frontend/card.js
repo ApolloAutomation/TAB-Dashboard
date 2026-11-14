@@ -45,6 +45,12 @@ function errorText(event, config) {
   if (event.code === "unauthorized") {
     return t("card.unauthorized");
   }
+  // Home Assistant is still starting, or the integration is being loaded
+  // again. Nothing is wrong with the card, and it is subscribed again by
+  // itself (see subscribeCard).
+  if (event.code === "not_loaded" || event.code === "unknown_command") {
+    return t("card.waiting");
+  }
   return t("card.invalid", { message: event.message || event.code || "" });
 }
 

@@ -51,8 +51,21 @@ const TABLET_IMAGE_PLACEHOLDER = "mdi:image-outline";
 const TABLET_FONT_FAMILY = "Apollo TAB-1 Montserrat";
 let tabletFontLoading = false;
 let tabletFontReady = false;
+// The load ended without the font. It is not asked for again.
+let tabletFontFailed = false;
 // Texts drawn before the font was there, to be drawn again once it is.
 const tabletFontWaiting = new Map();
+
+// Whether a text drawn now has to be drawn again once the font is there.
+function tabletFontPending() {
+  return tabletFontLoading && !tabletFontReady && !tabletFontFailed;
+}
+
+// The preview then keeps Home Assistant's font, and nothing waits for it.
+function tabletFontLost() {
+  tabletFontFailed = true;
+  tabletFontWaiting.clear();
+}
 
 export function loadTabletFont() {
   if (tabletFontLoading || typeof FontFace !== "function" || typeof document === "undefined" || !document.fonts) {
@@ -73,9 +86,9 @@ export function loadTabletFont() {
           draw();
         }
       })
-      .catch(() => tabletFontWaiting.clear());
+      .catch(tabletFontLost);
   } catch (_error) {
-    // The preview then keeps Home Assistant's font.
+    tabletFontLost();
   }
 }
 
@@ -148,10 +161,18 @@ function localRect(rect, origin, sx, sy) {
 // What displayValue gives for no value, so a widget can be dimmed.
 const NO_VALUE = Symbol("no value");
 
+function hasNoValue(bound, state, feedback) {
+  return displayValue(bound, state, feedback, NO_VALUE) === NO_VALUE;
+}
+
 // A switch, slider, thermostat, chart or image without a value is drawn at
-// 40% and does not react to touch, as on the tablet (contract 4.7).
+// 40% and does not react to touch, as on the tablet (contract 4.7). Returns
+// whether the value is missing: the class stops the pointer only, so a
+// switch and a slider also turn the keyboard away.
 function markNoValue(element, bound, state, feedback) {
-  element.classList.toggle("at-none", displayValue(bound, state, feedback, NO_VALUE) === NO_VALUE);
+  const none = hasNoValue(bound, state, feedback);
+  element.classList.toggle("at-none", none);
+  return none;
 }
 
 function displayValue(bound, state, feedback, fallback = "–") {
@@ -321,7 +342,7 @@ function setLineText(element, value, options, px, width, scale, ellipsis = TABLE
   const advance = tabletAdvance(px);
   if (!advance) {
     element.textContent = tabletText(text);
-    if (tabletFontLoading && !tabletFontReady) {
+    if (tabletFontPending()) {
       tabletFontWaiting.set(element, () => setLineText(element, value, options, px, width, scale, ellipsis));
     }
     return;
@@ -450,7 +471,8 @@ function makeSwitch(card, widget, rect, scale, options, patches) {
   knob.style.height = `${28 * scale}px`;
   button.append(knob);
 
-  if (options.interactive && widget.tap) {
+  const live = Boolean(options.interactive && widget.tap);
+  if (live) {
     button.addEventListener("click", () => options.onTap?.(widget));
   } else {
     button.disabled = true;
@@ -460,7 +482,8 @@ function makeSwitch(card, widget, rect, scale, options, patches) {
   patches.push((state) => {
     const feedback = feedbackFor(state, widget);
     const value = displayValue(widget.value, state, feedback);
-    markNoValue(button, widget.value, state, feedback);
+    // Enter and Space press a button too, so without a value it is disabled.
+    button.disabled = markNoValue(button, widget.value, state, feedback) || !live;
     const on = isOn(value);
     button.classList.toggle("on", on);
     button.classList.toggle(
@@ -474,7 +497,8 @@ function makeSwitch(card, widget, rect, scale, options, patches) {
 
 function makeSlider(card, widget, rect, scale, options, patches) {
   const slider = html("div", "at-slider");
-  slider.tabIndex = options.interactive && widget.change ? 0 : -1;
+  const live = Boolean(options.interactive && widget.change);
+  slider.tabIndex = live ? 0 : -1;
   slider.setAttribute("role", "slider");
   setRect(slider, rect);
 
@@ -508,7 +532,7 @@ function makeSlider(card, widget, rect, scale, options, patches) {
     return clampStep(min + amount * (max - min), min, max, step);
   };
 
-  if (options.interactive && widget.change) {
+  if (live) {
     slider.addEventListener("pointerdown", (event) => {
       dragging = true;
       options.onDrag?.(true);
@@ -546,6 +570,11 @@ function makeSlider(card, widget, rect, scale, options, patches) {
       if (!["ArrowLeft", "ArrowDown", "ArrowRight", "ArrowUp"].includes(event.key)) {
         return;
       }
+      // Without a value there is nothing to step from, and the key is left
+      // to the page.
+      if (currentState && hasNoValue(widget.value, currentState, feedbackFor(currentState, widget))) {
+        return;
+      }
       event.preventDefault();
       if (!currentState) {
         return;
@@ -575,7 +604,14 @@ function makeSlider(card, widget, rect, scale, options, patches) {
       : toNumber(displayValue(widget.value, state, feedback), min);
     const amount = fraction(value, min, max);
     if (!dragging) {
-      markNoValue(slider, widget.value, state, feedback);
+      // Without a value the keyboard does not reach it either.
+      const none = markNoValue(slider, widget.value, state, feedback);
+      slider.tabIndex = live && !none ? 0 : -1;
+      if (none) {
+        slider.setAttribute("aria-disabled", "true");
+      } else {
+        slider.removeAttribute("aria-disabled");
+      }
     }
     fill.style.width = `${amount * 100}%`;
     knob.style.left = `${amount * 100}%`;
@@ -736,7 +772,7 @@ function makeThermostat(card, widget, rect, scale, options, patches) {
     const px = tabletThermostatSize(value, side, tabletAdvance);
     text.style.fontSize = `${px * scale}px`;
     setLineText(textSpan, value, options, px, tabletThermostatTextWidth(side), scale);
-    if (tabletFontLoading && !tabletFontReady) {
+    if (tabletFontPending()) {
       tabletFontWaiting.set(textSpan, () => {
         if (lastText === value) {
           drawTabletValue(value);

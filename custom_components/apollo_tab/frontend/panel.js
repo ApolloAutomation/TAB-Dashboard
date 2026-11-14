@@ -652,7 +652,8 @@ export class ApolloTabPanel extends HTMLElement {
 
   // What decides how the Tablets box is built; while it stays the same, a
   // new list only changes words and values in the rows already there, so a
-  // "Shows" list someone has open stays open.
+  // "Shows" list someone has open stays open. A new tablet's row holds a
+  // link to its device page, which is built with the row.
   _tabletShape() {
     if (this._tabletsError) {
       return `error:${errorMessage(this._tabletsError)}`;
@@ -666,6 +667,7 @@ export class ApolloTabPanel extends HTMLElement {
         tablet.mac,
         tabletName(tablet),
         isNewTablet(tablet),
+        isNewTablet(tablet) ? devicePagePath(tablet) : null,
         rows.length ? this._showsOptions(rows, tablet) : null,
       ]),
     );

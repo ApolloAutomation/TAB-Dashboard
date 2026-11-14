@@ -7,7 +7,8 @@ converter is imported from the integration package:
 
 GET serves files from the repository. POST /api/preview with {"config": {...}}
 answers with what apollo_tab/layout/preview would send, using the bundled
-cards, no approved cards and stand-in values instead of real states.
+cards and one card as from the user's folder (FIVE_GRAPHS), no approved cards
+and stand-in values instead of real states.
 
 --port 0 lets the system choose a free port; the first line printed names
 it. With --token, every answer carries it in an X-Harness-Token header, so
@@ -35,6 +36,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from custom_components.apollo_tab.maker.convert import convert_dashboard  # noqa: E402
+from custom_components.apollo_tab.maker.schema import validate_component  # noqa: E402
 from tests.harness.build_fixtures import (  # noqa: E402
     load_components,
     load_theme_entries,
@@ -47,12 +49,33 @@ PREVIEW_PATH = "/api/preview"
 TOKEN_HEADER = "X-Harness-Token"
 TOO_LARGE = "The request is larger than 1 MB"
 
+# A card as from the user's folder with five graphs, one more than a screen
+# takes: the tablet leaves it out even when it is alone on its page. The
+# stand-in Home Assistant lists it with graphs=1 (tests/harness/mock-hass.js).
+FIVE_GRAPHS = {
+    "id": "me/five-graphs",
+    "name": "Five graphs",
+    "description": "One sensor as five lines.",
+    "icon": "mdi:chart-line",
+    "version": "1.0.0",
+    "size": "2x2",
+    "params": {"entity": {"domain": "sensor"}},
+    "inputs": {
+        "history": {"source": "recorder", "entity": "{{ entity }}", "hours": 24}
+    },
+    "layout": [{"type": "chart", "value": "history"} for _ in range(5)],
+}
+
 
 @functools.cache
 def _library() -> tuple[dict, dict]:
-    """Return the bundled cards and themes by id, loaded once."""
+    """Return the cards and themes by id, loaded once."""
     themes = {entry["id"]: entry for entry in load_theme_entries()}
-    return load_components(), themes
+    components = load_components()
+    five = validate_component(FIVE_GRAPHS)
+    five["source"] = "user"
+    components[five["id"]] = five
+    return components, themes
 
 
 def preview_response(config: dict) -> dict:

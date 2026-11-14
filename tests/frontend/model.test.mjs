@@ -1782,6 +1782,37 @@ test("pageScreens lists the screens of one page", () => {
   assert.deepStrictEqual(model.pageScreens(null, 0), []);
 });
 
+// A card over the chart or dial budget is left out even when it is the only
+// card of its page (tests/test_maker_convert.py pins that), so the page's w
+// is empty and the warning is all there is to draw.
+test("omittedOnPage lists the cards left out of one screen", () => {
+  const leftOut = {
+    code: "over_budget_charts",
+    view: 0,
+    section: 0,
+    card: 0,
+    page: "view-0",
+    r: [100, 20, 376, 376],
+  };
+  const preview = {
+    layout: { pages: [{ id: "view-0", view: 0, w: [] }, { id: "view-1", view: 1, w: [] }] },
+    warnings: [
+      leftOut,
+      // Kept, only drawn plainer.
+      { code: "over_budget_gradients", view: 0, section: 0, card: 1, page: "view-0", r: [500, 20, 376, 376] },
+      // Not on any screen.
+      { code: "over_budget_arcs", view: 0, section: 0, card: 2, page: "view-0" },
+      null,
+    ],
+    sources: {},
+  };
+
+  assert.deepStrictEqual(model.omittedOnPage(preview, "view-0"), [leftOut]);
+  assert.deepStrictEqual(model.omittedOnPage(preview, "view-1"), []);
+  assert.deepStrictEqual(model.omittedOnPage({ layout: {} }, "view-0"), []);
+  assert.deepStrictEqual(model.omittedOnPage(null, "view-0"), []);
+});
+
 test("pageNotes and dashboardNotes pick the right warning codes", () => {
   const preview = {
     layout: {

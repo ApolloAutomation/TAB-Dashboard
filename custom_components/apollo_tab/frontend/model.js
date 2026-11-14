@@ -1,4 +1,4 @@
-import { cleanConfig, isIcon } from "./logic.js";
+import { cleanConfig, isIcon, warningBoxKind } from "./logic.js";
 
 export const CARD_TYPE = "custom:apollo-tab-card";
 export const PREVIEW_TYPE = "custom:apollo-tab-preview";
@@ -766,6 +766,15 @@ export function pageScreens(preview, vi) {
     }
   });
   return result;
+}
+
+// The cards left out of one screen: the warnings that have a rectangle on
+// it. They can be all the screen holds, when its only card is over the
+// chart or dial budget.
+export function omittedOnPage(preview, pageId) {
+  return warningList(preview).filter(
+    (warning) => warningBoxKind(warning) === "omitted" && warning.page === pageId,
+  );
 }
 
 export function pageItems(config, vi, library, preview) {

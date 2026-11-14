@@ -97,6 +97,7 @@ const modelExpected = [
   "getCard",
   "usesWholeScreen",
   "pageScreens",
+  "omittedOnPage",
   "pageItems",
   "pageNotes",
   "dashboardNotes",

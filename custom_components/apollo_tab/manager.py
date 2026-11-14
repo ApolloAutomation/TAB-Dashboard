@@ -189,10 +189,11 @@ class DashboardManager:
         ):
             self._quiet_until[url_path] = self._hass.loop.time() + _ECHO_WINDOW
         self._sources[url_path] = config
+        components = self.library.components
         try:
             result = convert_dashboard(
                 config,
-                components=self.library.components,
+                components=components,
                 themes=self.library.themes,
                 approved=self.library.approved_ids(),
             )
@@ -204,6 +205,12 @@ class DashboardManager:
         self.layouts[url_path] = {
             "layout": layout,
             "bindings": result["bindings"],
+            # The Components this layout was made from, by their hashes: a
+            # tap on a tablet runs only while its Component is still that one.
+            "revisions": {
+                component_id: component.get("hash")
+                for component_id, component in components.items()
+            },
             "warnings": result["warnings"],
             "title": info.get("title", url_path),
             "mode": info.get("mode", "storage"),

@@ -50,6 +50,7 @@ import {
   moveItem,
   movePage,
   nextDashboardTitle,
+  omittedOnPage,
   pageItems,
   pageKind,
   pageList,
@@ -1557,9 +1558,11 @@ export class ApolloTabDesigner extends HTMLElement {
     );
 
     const page = layout.pages?.[screenIndex];
+    const omitted = page ? omittedOnPage(this._preview, page.id) : [];
     // A page with no cards is still a page on the tablet, with its side bar
-    // entry; here it gets the "add the first card" help.
-    if (!page || !Array.isArray(page.w) || !page.w.length) {
+    // entry; here it gets the "add the first card" help. A page whose only
+    // card was left out is not empty: it gets that card's box below.
+    if (!page || !Array.isArray(page.w) || (!page.w.length && !omitted.length)) {
       const empty = el("div", "empty-page");
       empty.style.color = layout.theme?.tx || "#E8EAED";
       empty.append(el("p", null, t("editor.empty_page")));
@@ -1581,9 +1584,6 @@ export class ApolloTabDesigner extends HTMLElement {
 
     const sources = isObject(this._preview.sources) ? this._preview.sources : {};
     const items = (page.w || []).filter((item) => Object.hasOwn(sources, String(item.id)));
-    const omitted = (this._preview.warnings || []).filter(
-      (warning) => warning.page === page.id && warningBoxKind(warning) === "omitted",
-    );
     const count = items.length + omitted.length;
     const wall = pageHost.querySelector(".at-page");
     let n = 0;
@@ -2922,11 +2922,12 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   // Reads the TAB-1 dashboards with their titles, in the one order, for the
-  // "Shown on" block and the delete question. Kept as it was when Home
-  // Assistant cannot be reached.
+  // "Shown on" block and the delete question. The block is kept as it was
+  // when Home Assistant cannot be reached. Resolves to the rows this call
+  // read, or to null when it read none.
   async _loadTabRows() {
     if (!this._hass || this._status !== "ready") {
-      return;
+      return null;
     }
     const seq = ++this._tabRowsSeq;
     let rows;
@@ -2937,13 +2938,15 @@ export class ApolloTabDesigner extends HTMLElement {
       ]);
       rows = mergeDashboards(Array.isArray(tab?.dashboards) ? tab.dashboards : [], Array.isArray(list) ? list : []);
     } catch {
-      return;
+      return null;
     }
     if (seq !== this._tabRowsSeq) {
-      return;
+      // A newer read fills the block.
+      return rows;
     }
     this._tabRows = rows;
     this._fillShownOn();
+    return rows;
   }
 
   // Several saves in a row are read once, after the last.
@@ -3111,13 +3114,13 @@ export class ApolloTabDesigner extends HTMLElement {
     if (!Array.isArray(this._tablets) || !tabletsShowing(this._tablets, this._urlPath).length) {
       return "";
     }
-    await this._loadTabRows();
-    // Without the dashboards it cannot tell where the tablets go, and it
-    // does not guess.
-    if (!this._tabRows || !Array.isArray(this._tablets)) {
+    const rows = await this._loadTabRows();
+    // Without the dashboards as they are now it cannot tell where the
+    // tablets go, and it does not guess from an older list.
+    if (!rows || !Array.isArray(this._tablets)) {
       return "";
     }
-    return deleteNote(this._tablets, this._urlPath, this._tabRows, t);
+    return deleteNote(this._tablets, this._urlPath, rows, t);
   }
 
   async _deleteDashboard() {

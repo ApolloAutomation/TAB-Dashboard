@@ -14,7 +14,10 @@ const flush = async () => {
 };
 
 // Each entry of script says how that subscribe call ends; the default resolves.
-// "defer" leaves the subscribe pending until the test calls calls[n].resolve().
+// "reject" is the integration not being loaded, "unknown" Home Assistant not
+// knowing the command, "lost" the connection going while it was under way.
+// "defer" leaves the subscribe pending until the test calls calls[n].resolve()
+// or calls[n].reject(error).
 function makeConnection(script = []) {
   return {
     calls: [],
@@ -25,9 +28,9 @@ function makeConnection(script = []) {
       this.libraryLoads += 1;
       return Promise.resolve({ components: [{ id: `load-${this.libraryLoads}` }] });
     },
-    subscribeMessage(callback, message) {
+    subscribeMessage(callback, message, options) {
       const action = script[this.calls.length] || "resolve";
-      const call = { callback, message };
+      const call = { callback, message, options };
       this.calls.push(call);
 
       if (action === "reject") {
@@ -37,14 +40,22 @@ function makeConnection(script = []) {
           }),
         );
       }
+      if (action === "unknown") {
+        return Promise.reject({ code: "unknown_command", message: "Unknown command." });
+      }
+      if (action === "lost") {
+        // Home Assistant's connection answers with an error result, code 3.
+        return Promise.reject({ type: "result", success: false, error: { code: 3, message: "Connection lost" } });
+      }
 
       const unsubscribe = () => {
         this.unsubscribeCount += 1;
       };
 
       if (action === "defer") {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           call.resolve = () => resolve(unsubscribe);
+          call.reject = reject;
         });
       }
 
@@ -69,6 +80,8 @@ test("subscribeCard shares one subscription per card", async () => {
     card,
     dashboard: null,
   });
+  // A connection without events keeps opening its subscriptions again itself.
+  assert.equal(conn.calls[0].options, undefined);
 
   const init = { type: "init", card: { title: "Shared" } };
   conn.calls[0].callback(init);
@@ -459,8 +472,9 @@ test("onLayoutChanged reports events and a reopened subscription", async () => {
   }
 });
 
-// Home Assistant's connection fires "ready" after it has come back and opened
-// its subscriptions again; events from the time in between are lost.
+// Home Assistant's connection fires "ready" after it has come back; events
+// from the time in between are lost. The subscription is opened again here,
+// with resubscribe off, so the connection does not open it as well.
 function withConnectionEvents(conn) {
   conn.listeners = new Map();
   conn.addEventListener = (type, callback) => {
@@ -495,34 +509,325 @@ test("onLayoutChanged asks for a reload when the connection comes back", async (
     );
     await settle();
     assert.equal(restored, 0);
+    assert.deepEqual(conn.calls[0].options, { resubscribe: false });
 
+    // The subscription is opened again first; the reload is asked for once
+    // it is open.
     conn.fire("ready");
-    assert.equal(restored, 1);
-
-    // While the subscription is opened again after not_loaded, the reopened
-    // subscription asks once, not the connection as well.
-    conn.calls[0].callback({ type: "not_loaded" });
-    conn.fire("ready");
-    assert.equal(restored, 1);
-    mock.timers.tick(2000);
+    assert.equal(conn.calls.length, 2);
+    assert.deepEqual(conn.calls[1].options, { resubscribe: false });
+    assert.equal(restored, 0);
     await settle();
+    assert.equal(restored, 1);
+    // The first subscription went with the old connection: it is not closed.
+    assert.equal(conn.unsubscribeCount, 0);
+
+    // A connection that comes back while the subscription waits to be
+    // opened again after not_loaded opens it at once, and asks once.
+    conn.calls[1].callback({ type: "not_loaded" });
+    conn.fire("ready");
+    assert.equal(conn.calls.length, 3);
+    await settle();
+    assert.equal(restored, 2);
+    mock.timers.tick(60000);
+    await settle();
+    assert.equal(conn.calls.length, 3);
     assert.equal(restored, 2);
 
     stop();
     assert.deepEqual(conn.listeners.get("ready"), []);
     conn.fire("ready");
+    assert.equal(conn.calls.length, 3);
     assert.equal(restored, 2);
   } finally {
     mock.timers.reset();
   }
 });
 
-test("onLibraryChanged does not watch the connection", async () => {
+test("onLayoutChanged asks for a reload only once Home Assistant takes the subscribe again", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    // Home Assistant restarted: the first new subscribe comes too early.
+    const conn = withConnectionEvents(makeConnection(["resolve", "reject", "resolve"]));
+    let restored = 0;
+    const stop = onLayoutChanged(
+      conn,
+      () => {},
+      () => {
+        restored += 1;
+      },
+    );
+    await settle();
+
+    conn.fire("ready");
+    await settle();
+    assert.equal(conn.calls.length, 2);
+    assert.equal(restored, 0);
+    mock.timers.tick(2000);
+    assert.equal(conn.calls.length, 3);
+    await settle();
+    assert.equal(restored, 1);
+    stop();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("onLibraryChanged subscribes again after a reconnect but does not reload", async () => {
   const conn = withConnectionEvents(makeConnection());
-  const stop = onLibraryChanged(conn, () => {});
+  const libraries = [];
+  const stop = onLibraryChanged(conn, (library) => libraries.push(library));
   await settle();
-  assert.equal((conn.listeners.get("ready") || []).length, 0);
+  assert.equal(conn.calls.length, 1);
+
+  conn.fire("ready");
+  await settle();
+  assert.equal(conn.calls.length, 2);
+  assert.deepEqual(conn.calls[1].message, { type: "apollo_tab/library/subscribe" });
+  assert.deepEqual(libraries, []);
+  assert.equal(conn.libraryLoads, 0);
+
+  // Only the new subscription is live.
+  conn.calls[0].callback({ type: "changed" });
+  await settle();
+  assert.equal(libraries.length, 0);
+  conn.calls[1].callback({ type: "changed" });
+  await settle();
+  assert.equal(libraries.length, 1);
+
   stop();
+  assert.deepEqual(conn.listeners.get("ready"), []);
+});
+
+// A subscribe that comes while Home Assistant is still starting is tried
+// again, and the caller loads everything once it is open.
+test("onLayoutChanged tries a first subscribe Home Assistant does not know yet again", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    const conn = withConnectionEvents(makeConnection(["unknown", "resolve"]));
+    const events = [];
+    let restored = 0;
+    const stop = onLayoutChanged(
+      conn,
+      (event) => events.push(event),
+      () => {
+        restored += 1;
+      },
+    );
+    await settle();
+    assert.equal(conn.calls.length, 1);
+    assert.equal(restored, 0);
+
+    mock.timers.tick(2000);
+    assert.equal(conn.calls.length, 2);
+    await settle();
+    assert.equal(restored, 1);
+    const converted = { type: "converted", url_path: "tab-1" };
+    conn.calls[1].callback(converted);
+    assert.deepEqual(events, [converted]);
+    stop();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// Cards are subscribed again here when the connection comes back, like the
+// subscriptions above: while Home Assistant starts, the connection's own new
+// subscribe would fail and tell nobody.
+test("subscribeCard subscribes again when the connection comes back", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    const conn = withConnectionEvents(makeConnection());
+    const card = { component: "reconnect-test" };
+    const events = [];
+    const stop = subscribeCard(conn, card, null, (event) => events.push(event));
+    await flush();
+    assert.deepEqual(conn.calls[0].options, { resubscribe: false });
+    const first = { type: "init", card: { title: "Before" } };
+    conn.calls[0].callback(first);
+
+    conn.fire("ready");
+    assert.equal(conn.calls.length, 2);
+    assert.deepEqual(conn.calls[1].message, { type: "apollo_tab/card/subscribe", card, dashboard: null });
+    assert.deepEqual(conn.calls[1].options, { resubscribe: false });
+    await flush();
+    // The card keeps its picture until the new subscription sends one.
+    assert.deepEqual(events, [first]);
+    // The first subscription went with the old connection: it is not closed,
+    // and nothing more is taken from it.
+    assert.equal(conn.unsubscribeCount, 0);
+    conn.calls[0].callback({ type: "init", card: { title: "Stale" } });
+    assert.deepEqual(events, [first]);
+    const second = { type: "init", card: { title: "After" } };
+    conn.calls[1].callback(second);
+    assert.deepEqual(events, [first, second]);
+
+    stop();
+    mock.timers.tick(1000);
+    assert.equal(conn.unsubscribeCount, 1);
+    assert.deepEqual(conn.listeners.get("ready"), []);
+    conn.fire("ready");
+    assert.equal(conn.calls.length, 2);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("subscribeCard tries again when Home Assistant does not take the card back yet", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    // Home Assistant restarted: the first two new subscribes come too early.
+    const conn = withConnectionEvents(makeConnection(["resolve", "unknown", "reject", "resolve"]));
+    const card = { component: "restart-test" };
+    const events = [];
+    const stop = subscribeCard(conn, card, null, (event) => events.push(event));
+    await flush();
+    conn.calls[0].callback({ type: "init", card: { title: "Before" } });
+
+    conn.fire("ready");
+    await flush();
+    assert.equal(events.at(-1).type, "error");
+    assert.equal(events.at(-1).code, "unknown_command");
+    mock.timers.tick(2000);
+    assert.equal(conn.calls.length, 3);
+    await flush();
+    assert.equal(events.at(-1).code, "not_loaded");
+    mock.timers.tick(4000);
+    assert.equal(conn.calls.length, 4);
+    await flush();
+    const init = { type: "init", card: { title: "After" } };
+    conn.calls[3].callback(init);
+    assert.deepEqual(events.at(-1), init);
+
+    stop();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("subscribeCard starts its waits again when the connection comes back", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    const conn = withConnectionEvents(makeConnection(["reject", "reject", "reject", "resolve"]));
+    const card = { component: "waits-again-test" };
+    const stop = subscribeCard(conn, card, null, () => {});
+    await flush();
+    mock.timers.tick(2000);
+    assert.equal(conn.calls.length, 2);
+    await flush();
+
+    // The next try was 4 s away. The connection comes back: it is made at
+    // once, and the one after it follows 2 s later.
+    conn.fire("ready");
+    assert.equal(conn.calls.length, 3);
+    await flush();
+    mock.timers.tick(2000);
+    assert.equal(conn.calls.length, 4);
+    await flush();
+    mock.timers.tick(60000);
+    assert.equal(conn.calls.length, 4);
+
+    stop();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// The old subscription's unsubscribe would close whatever has its command
+// number on the new connection.
+test("subscribeCard closes only the new subscription when the card leaves after a reconnect", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    const conn = withConnectionEvents(makeConnection(["resolve", "defer"]));
+    const card = { component: "leave-after-reconnect-test" };
+    const stop = subscribeCard(conn, card, null, () => {});
+    await flush();
+
+    conn.fire("ready");
+    stop();
+    mock.timers.tick(1000);
+    assert.equal(conn.unsubscribeCount, 0);
+    conn.calls[1].resolve();
+    await flush();
+    assert.equal(conn.unsubscribeCount, 1);
+    assert.deepEqual(conn.listeners.get("ready"), []);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// Home Assistant's connection answers a subscribe that was under way when
+// the connection was lost with "Connection lost", and fires "ready" when it
+// is back.
+test("subscribeCard waits for the connection after a subscribe it cut off", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    const conn = withConnectionEvents(makeConnection(["resolve", "lost", "resolve"]));
+    const card = { component: "cut-off-test" };
+    const events = [];
+    const stop = subscribeCard(conn, card, null, (event) => events.push(event));
+    await flush();
+    const first = { type: "init", card: { title: "Before" } };
+    conn.calls[0].callback(first);
+
+    conn.fire("ready");
+    await flush();
+    // No error is shown and no timer runs; the card keeps its picture.
+    assert.deepEqual(events, [first]);
+    mock.timers.tick(60000);
+    assert.equal(conn.calls.length, 2);
+
+    conn.fire("ready");
+    assert.equal(conn.calls.length, 3);
+    await flush();
+    const second = { type: "init", card: { title: "After" } };
+    conn.calls[2].callback(second);
+    assert.deepEqual(events, [first, second]);
+
+    stop();
+    mock.timers.tick(1000);
+    assert.deepEqual(conn.listeners.get("ready"), []);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// The last card left while its subscribe was under way, and the connection
+// was lost before the answer: there is nothing left to close or to open.
+test("subscribeCard forgets a card nobody shows when its subscribe is cut off", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+
+  try {
+    const conn = withConnectionEvents(makeConnection(["defer", "resolve"]));
+    const card = { component: "cut-off-unwatched-test" };
+    const stop = subscribeCard(conn, card, null, () => {});
+    stop();
+    mock.timers.tick(1000);
+    assert.equal(conn.listeners.get("ready")?.length, 1);
+    conn.calls[0].reject({ type: "result", success: false, error: { code: 3, message: "Connection lost" } });
+    await flush();
+    assert.deepEqual(conn.listeners.get("ready"), []);
+    conn.fire("ready");
+    assert.equal(conn.calls.length, 1);
+
+    // The next card to come starts anew.
+    const again = subscribeCard(conn, card, null, () => {});
+    assert.equal(conn.calls.length, 2);
+    await flush();
+    again();
+    mock.timers.tick(1000);
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("a refused subscription is not tried again", async () => {

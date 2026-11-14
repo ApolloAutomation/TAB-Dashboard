@@ -963,6 +963,11 @@ const tabCards = (count, component, entity) =>
 // Five dials on one screen, one more than a screen can show.
 const DIALS_CONFIG = twoPages(tabCards(5, "apollo/thermostat", "climate.hall"));
 
+// One card with five graphs, one more than a screen can show: it is left
+// out, and its page has nothing else. The card is the stand-in's and the
+// harness server's own (FIVE_GRAPHS).
+const GRAPHS_CONFIG = twoPages(tabCards(1, "me/five-graphs", "sensor.energy"));
+
 // So many cards that the page needs two screens; the last of five dials is
 // left out on the second screen.
 const SPILL_CONFIG = twoPages([
@@ -3816,8 +3821,9 @@ function chains(realConfig) {
     }),
   ];
 
-  // A dial or graph over a screen's limit is moved to another page, and a
-  // card left out on a later screen is shown on that screen.
+  // A dial or graph over a screen's limit is moved to another page, a card
+  // left out on a later screen is shown on that screen, and a page whose
+  // only card is left out is not taken for an empty one.
   const moving = [
     step("86", "move-to-page", async (r) => {
       const onPage = (view) => `__j.designer()._history.present.views[${view}].sections[0].cards.length`;
@@ -3884,6 +3890,41 @@ function chains(realConfig) {
       }
       await checkSelectedCardVisible(r, "after choosing the dial left out");
       return r.shot("87-left-out-card-screen");
+    }),
+    step("111", "left-out-only-card", async (r) => {
+      const hit = '[data-test="hit"][data-source="0.0.0"]';
+      await r.open({ seed: "none", graphs: "1" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.eval(`__apolloMockHass.addDashboard("graphs-1", "Graphs", ${JSON.stringify(GRAPHS_CONFIG)});
+        __apolloOpenPanel("/edit/graphs-1"); true`);
+      await r.waitFor(`__j.designer()?._preview?.layout`, "what the tablet will show");
+      await r.waitFor(`__j.find('[data-test="list-row"][data-source="0.0.0"][data-shown="false"]')`, "the card left out");
+      // The tablet's page has no card at all, only the note about this one.
+      const converted = await r.eval(`(() => { const preview = __j.designer()._preview;
+        return { cards: preview.layout.pages[0].w.length, notes: preview.warnings.map((warning) => warning.code) }; })()`);
+      check(
+        converted.cards === 0 && stable(converted.notes) === stable(["over_budget_charts"]),
+        `the page was converted to ${JSON.stringify(converted)}`,
+      );
+      await r.waitFor(`__j.find(".warning-box") || __j.find('[data-test="add-first-card"]')`, "the picture of the page");
+      check((await r.count('[data-test="add-first-card"]')) === 0, "the picture offers a first card on a page that has a card");
+      check((await r.count(".empty-page")) === 0, "the picture calls a page with a card empty");
+      check((await r.count(".warning-box")) === 1, "the picture has no box for the card left out");
+      const words = await r.text(".warning-box");
+      check(words === (await uiString(r, "preview.omitted")), `the box reads "${words}"`);
+      check((await r.count('[data-test="hit"]')) === 1, "the card left out cannot be chosen on the picture");
+      const label = await r.eval(`__j.find('${hit}').getAttribute("aria-label")`);
+      check(label.startsWith("Five graphs, ") && label.endsWith("Item 1 of 1."), `the box is called "${label}"`);
+      // Its box on the picture chooses it, like any card's.
+      await r.click(hit);
+      await r.waitFor(`__j.find('${hit}[aria-pressed="true"]')`, "the card left out to be chosen");
+      await checkSelectedCardVisible(r, "after choosing the only card, which is left out");
+      const shot = await r.shot("111-left-out-only-card");
+      // The second page has no card: that one is empty.
+      await r.clearSelection();
+      await r.click('[data-test="page-tab"][data-view="1"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the help for a page without cards");
+      check((await r.count(".warning-box")) === 0, "the empty page shows a box for a card left out");
+      return shot;
     }),
   ];
 
@@ -4109,6 +4150,17 @@ function chains(realConfig) {
       return before;
     }),
     step("96", "delete-names-tablets", async (r) => {
+      // While the dashboards cannot be read, the question does not say where
+      // the tablets go: the list from before could name a deleted dashboard.
+      await r.eval(`__apolloMockHass.failCalls("apollo_tab/dashboards", 99); true`);
+      await r.click('[data-test="dashboard-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question without the dashboards");
+      await r.eval(`__apolloMockHass.failCalls("apollo_tab/dashboards", 0); true`);
+      const guessed = await r.eval(`__j.find('[data-test="confirm-more"]')?.textContent ?? null`);
+      check(guessed === null, `without the dashboards the question says "${guessed}"`);
+      await r.click('[data-test="confirm-cancel"]');
+      await r.waitFor(`!__j.find('dialog[data-test="confirm"][open]')`, "the question to close");
+
       await r.click('[data-test="dashboard-delete"]');
       await r.waitFor(`__j.find('dialog[data-test="confirm"][open]') && __j.find('[data-test="confirm-more"]')`, "the question");
       const more = await r.text('[data-test="confirm-more"]');
@@ -4374,6 +4426,96 @@ function chains(realConfig) {
     }),
   ];
 
+  // Home Assistant's connection is back before the integration is set up,
+  // or the integration is an older one: its commands are not known. What is
+  // open keeps trying by itself and comes back without a reload.
+  const SUBSCRIBED = (type) => `__apolloMockHass.subscriptions(${JSON.stringify(type)})`;
+  const starting = [
+    step("112", "restart-with-cards-open", async (r) => {
+      const card = `document.querySelector("apollo-tab-card").shadowRoot`;
+      const status = `(${card}.querySelector(".status")?.textContent ?? null)`;
+      const alerts = `__j.count('[data-test="tablets"] .alert')`;
+      await r.open(threeTablets, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      const waiting = await uiString(r, "card.waiting");
+      await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
+      // A card on a dashboard and the preview card, open along with Home.
+      await r.eval(`(() => {
+        const card = document.createElement("apollo-tab-card");
+        card.style.width = "376px";
+        card.style.height = "184px";
+        card.setConfig({ component: "apollo/light-tile", params: { entity: "light.kitchen" } });
+        card.hass = __apolloMockHass;
+        const preview = document.createElement("apollo-tab-preview");
+        preview.hass = __apolloMockHass;
+        preview.dashboard = "tab-1";
+        document.body.append(card, preview);
+        return true; })()`);
+      await r.waitFor(`${card}.querySelector(".at-card") && ${status} === null`, "the card to be drawn");
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the preview's lines");
+
+      // Home Assistant restarts. Its connection is back first; a tablet
+      // goes offline before the integration is set up.
+      await r.eval(`(() => { const mock = __apolloMockHass;
+        mock.dropConnection();
+        mock.unknownCommands("apollo_tab/");
+        mock.reconnect();
+        mock.setTablet(${JSON.stringify(KITCHEN)}, { online: false }, { quiet: true });
+        return true; })()`);
+      await r.waitFor(`${status} === ${JSON.stringify(waiting)}`, "the card to say it waits for Home Assistant");
+      // Home and the preview keep what they showed, with no error.
+      check((await r.count('[data-test="tablet-row"]')) === 3 && (await r.eval(alerts)) === 0, "Home lost its tablets while Home Assistant starts");
+      check((await r.text(tabletStatus(KITCHEN))) === "On the tablet", "Home heard of the tablet while nothing was subscribed");
+      for (const type of ["card", "tablets", "layout", "library"]) {
+        const open = await r.eval(SUBSCRIBED(`apollo_tab/${type}/subscribe`));
+        check(open === 0, `${open} ${type} subscriptions are open while Home Assistant does not know them`);
+      }
+      const shot = await r.shot("112-restart-with-cards-open");
+
+      // The integration is set up. Nobody presses anything.
+      await r.eval(`__apolloMockHass.unknownCommands(null); true`);
+      await r.waitFor(`${card}.querySelector(".at-card") && ${status} === null`, "the card to be drawn again", 20000);
+      await waitText(r, tabletStatus(KITCHEN), "Offline", "Home to show the tablet that went offline", 20000);
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "Kitchen tablet is offline"], "the preview's lines after the restart");
+      check((await r.eval(alerts)) === 0, "Home shows an error after Home Assistant has started");
+      check((await r.eval(SUBSCRIBED("apollo_tab/card/subscribe"))) === 1, "the card is not subscribed again");
+      check((await r.eval(SUBSCRIBED("apollo_tab/tablets/subscribe"))) === 1, "the tablets are not subscribed again once");
+      await r.shot("112-restart-over");
+      return shot;
+    }),
+    step("113", "tablets-known-later", async (r) => {
+      const homeAlert = '[data-test="tablets"] .alert';
+      const editorAlert = '[data-test="shown-on"] .alert';
+      await r.open(threeTablets, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      const failed = (await uiString(r, "tablets.load_failed")).replace("{message}", "Unknown command.");
+      // The panel is away long enough for its tablet subscription to end,
+      // and comes back to a Home Assistant that does not know the tablet
+      // commands: an older integration that was updated but not restarted.
+      await r.eval(`__apolloPanel.remove(); true`);
+      await r.waitFor(`${SUBSCRIBED("apollo_tab/tablets/subscribe")} === 0`, "the tablet subscription to end");
+      await r.eval(`__apolloMockHass.unknownCommands("apollo_tab/tablet"); __apolloOpenPanel(""); true`);
+      await waitText(r, homeAlert, failed, "Home to say the tablets cannot be loaded");
+      check((await r.count('[data-test="tablet-row"]')) === 0, "Home lists tablets it could not load");
+      const shot = await r.shot("113-tablets-not-known");
+      // The editor says the same under "Shown on", and draws no lines.
+      await r.eval(`__apolloOpenPanel("/edit/tab-1"); true`);
+      await r.waitFor(editorReady, "the editor");
+      await waitText(r, editorAlert, failed, "the editor to say the tablets cannot be loaded");
+      check((await r.count('[data-test="tablet-line"]')) === 0, "the editor shows tablet lines it could not load");
+
+      // Home Assistant is restarted with the new integration; the stand-in
+      // only learns the commands. Nobody presses anything.
+      await r.eval(`__apolloMockHass.unknownCommands(null); true`);
+      await r.waitFor(`__j.count('[data-test="shown-on-row"]') === 3 && !__j.find('${editorAlert}')`, "the editor to list the tablets", 20000);
+      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the editor's lines");
+      await r.eval(`__apolloOpenPanel(""); true`);
+      await r.waitFor(`${home} && __j.count('[data-test="tablet-row"]') === 3 && !__j.find('${homeAlert}')`, "Home to list the tablets");
+      await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
+      check((await r.eval(SUBSCRIBED("apollo_tab/tablets/subscribe"))) === 1, "the tablets are not subscribed once");
+      await r.shot("113-tablets-known-later");
+      return shot;
+    }),
+  ];
+
   // A new tablet waits for an admin: it is listed first, marked "New",
   // shows nothing and is left out of what the dashboards say. Picking its
   // first dashboard turns it on.
@@ -4417,6 +4559,13 @@ function chains(realConfig) {
         link.href === "/config/devices/device/0000000000000000000000000000000e" && link.named === "Open device page Porch tablet",
         `the device page link: ${JSON.stringify(link)}`,
       );
+      // The link follows the tablet's device when Home Assistant has it
+      // under another id; then back, for the steps below.
+      const href = `__j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-device-page"]`)})?.getAttribute("href")`;
+      for (const id of ["0000000000000000000000000000000f", "0000000000000000000000000000000e"]) {
+        await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, { device_id: ${JSON.stringify(id)} }); true`);
+        await r.waitFor(`${href} === "/config/devices/device/${id}"`, `the device page link to lead to device ${id}`);
+      }
       check((await r.count(`${tabletRow(KITCHEN)} [data-test="tablet-device"]`)) === 0, "the approved tablet has a device line");
       check(
         (await r.text(`${tabletRow(PORCH)} [data-test="tablet-waiting-note"]`)) === (await uiString(r, "tablets.waiting_note")),
@@ -5060,6 +5209,7 @@ function chains(realConfig) {
     tabletsNoEngine,
     tabletsAll,
     tabletsPreview,
+    starting,
     tabletsNew,
     tabletsPairAgain,
     tabletsNewGuards,

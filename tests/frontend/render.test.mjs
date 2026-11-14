@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   cardTokens,
   loadTabletFont,
+  renderCard,
   renderPage,
   tabletImageIconSize,
   tabletThermostatSize,
@@ -15,7 +16,7 @@ import {
   thermostatText,
 } from "../../custom_components/apollo_tab/frontend/render.js";
 import { rendererStyles } from "../../custom_components/apollo_tab/frontend/styles.js";
-import { installFakeDom } from "./fake-dom.mjs";
+import { FakeElement, installFakeDom } from "./fake-dom.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const frontend = path.resolve(here, "../../custom_components/apollo_tab/frontend");
@@ -282,6 +283,88 @@ test("a switch, slider, thermostat, chart or image without a value is at 40% and
   // A button has no value to miss.
   assert.ok(!empty.querySelector(".at-button").classList.contains("at-none"));
   assert.match(rule(".at-none"), /opacity: 0\.4;\s+pointer-events: none;/);
+});
+
+// The at-none class stops the pointer only. A focused slider would still
+// step from its lowest value on an arrow key, and Enter or Space would
+// still press a switch.
+test("a slider or switch without a value takes no key press", () => {
+  const uninstall = installFakeDom();
+  try {
+    const card = {
+      id: 1,
+      t: "card",
+      r: [0, 0, 376, 248],
+      w: [
+        { id: 2, t: "switch", r: [16, 30, 64, 36], value: { s: 1 }, tap: { p: 0 } },
+        { id: 4, t: "slider", r: [16, 80, 344, 40], value: { s: 2 }, min: 0, max: 255, step: 1, change: { p: 1 } },
+      ],
+    };
+    const sent = [];
+    const state = (values, errors = {}, feedback = new Map()) => ({ values, errors, tokens: {}, feedback });
+    const host = document.createElement("div");
+    const renderer = renderCard(host, card, state({ 1: null, 2: null }), {
+      sx: 1,
+      sy: 1,
+      interactive: true,
+      onTap: (widget) => sent.push(["tap", widget.id]),
+      onChange: (widget, value, final) => sent.push(["change", widget.id, value, final]),
+    });
+    const slider = host.querySelector(".at-slider");
+    const toggle = host.querySelector(".at-switch");
+    let prevented = 0;
+    const press = (key) => {
+      for (const listener of slider.listeners.get("keydown")) {
+        listener({ key, preventDefault: () => (prevented += 1) });
+      }
+    };
+    const off = (label) => {
+      press("ArrowUp");
+      press("ArrowDown");
+      assert.deepEqual(sent, [], label);
+      // The key is left to the page.
+      assert.equal(prevented, 0, label);
+      assert.equal(slider.tabIndex, -1, label);
+      assert.equal(slider.getAttribute("aria-disabled"), "true", label);
+    };
+
+    off("no values");
+    assert.equal(toggle.disabled, true);
+
+    // Only the slider's value cannot be read.
+    renderer.update(state({ 1: 1 }, { 2: "unavailable" }));
+    off("an error for the slider's value");
+    assert.equal(toggle.disabled, false);
+
+    renderer.update(state({ 1: 1, 2: 40 }));
+    assert.equal(slider.tabIndex, 0);
+    assert.equal(slider.getAttribute("aria-disabled"), null);
+    assert.equal(toggle.disabled, false);
+    press("ArrowUp");
+    assert.deepEqual(sent, [["change", 4, 41, true]]);
+    assert.equal(prevented, 1);
+
+    // A change that waits for its answer shows a value, so it stays in reach.
+    sent.length = 0;
+    const waiting = new Map([
+      [2, { phase: "pending", value: "on", until: 0 }],
+      [4, { phase: "pending", value: 41, until: 0 }],
+    ]);
+    renderer.update(state({ 1: null, 2: null }, {}, waiting));
+    assert.equal(toggle.disabled, false);
+    assert.equal(slider.tabIndex, 0);
+    assert.equal(slider.getAttribute("aria-disabled"), null);
+    press("ArrowUp");
+    assert.deepEqual(sent, [["change", 4, 42, true]]);
+
+    // A card that is only shown never takes a press, with or without values.
+    const shown = document.createElement("div");
+    renderCard(shown, card, state({ 1: 1, 2: 40 }), { sx: 1, sy: 1 });
+    assert.equal(shown.querySelector(".at-switch").disabled, true);
+    assert.equal(shown.querySelector(".at-slider").tabIndex, -1);
+  } finally {
+    uninstall();
+  }
 });
 
 test("the chart's baseline fills pixel row h - 2, as on the tablet", () => {
@@ -637,3 +720,85 @@ test("the tablet preview's box for a missing character fills the room the tablet
     }
   });
 });
+
+// A page of tablet text: a heading, a label and a thermostat value.
+function textLayout() {
+  const label = { id: 2, t: "label", r: [116, 100, 152, 28], text: "Front door" };
+  const dial = { id: 3, t: "thermostat", r: [116, 130, 120, 120], value: { s: 1 }, min: 5, max: 30, step: 1 };
+  const layout = oneCardLayout([label, dial]);
+  layout.pages[0].w.unshift({ id: 9, t: "heading", r: [100, 0, 300, 30], text: "Lights" });
+  return layout;
+}
+
+// Counts the texts the renderer keeps to draw again once the tablet's font
+// is there: its waiting list is a Map from the drawn element to a function.
+async function countWaitingTexts(run) {
+  const set = Map.prototype.set;
+  let waiting = 0;
+  Map.prototype.set = function countingSet(key, value) {
+    if (key instanceof FakeElement && typeof value === "function") {
+      waiting += 1;
+    }
+    return set.call(this, key, value);
+  };
+  try {
+    await run(() => waiting);
+  } finally {
+    Map.prototype.set = set;
+  }
+}
+
+// A font that never comes keeps no text waiting. Otherwise every draw of a
+// tablet preview would keep its texts, for as long as the page stays open.
+for (const [name, how] of [
+  ["cannot be fetched", "rejects"],
+  ["cannot be made", "throws"],
+]) {
+  test(`after the tablet's font ${name}, texts no longer wait for it`, async () => {
+    // A fresh copy of the renderer, whose font has not started loading.
+    const fresh = await import(`../../custom_components/apollo_tab/frontend/render.js?font-${how}`);
+    const uninstall = installFakeDom();
+    const fontFaceBefore = globalThis.FontFace;
+    let faces = 0;
+    let fail;
+    try {
+      globalThis.FontFace = class {
+        constructor() {
+          faces += 1;
+          if (how === "throws") {
+            throw new Error("no fonts here");
+          }
+        }
+
+        load() {
+          return new Promise((_resolve, reject) => {
+            fail = reject;
+          });
+        }
+      };
+      document.fonts = { add() {} };
+      const drawPage = () =>
+        fresh.renderPage(document.createElement("div"), textLayout(), 0, { values: { 1: 21 }, errors: {} }, { tablet: true, sx: 1, sy: 1 });
+
+      await countWaitingTexts(async (waiting) => {
+        drawPage();
+        if (how === "rejects") {
+          // Still loading: the heading, the label and the value wait.
+          assert.ok(waiting() >= 3, `${waiting()} texts wait while the font loads`);
+          fail(new Error("404"));
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+        const before = waiting();
+        for (let i = 0; i < 5; i += 1) {
+          drawPage();
+        }
+        assert.equal(waiting() - before, 0);
+      });
+      // The font is not asked for again on every draw.
+      assert.equal(faces, 1);
+    } finally {
+      globalThis.FontFace = fontFaceBefore;
+      uninstall();
+    }
+  });
+}

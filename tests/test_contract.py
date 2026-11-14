@@ -11,6 +11,9 @@ from custom_components.apollo_tab import protocol as tp
 from custom_components.apollo_tab.maker import device
 from custom_components.apollo_tab.maker.convert import convert_dashboard
 from custom_components.apollo_tab.maker.schema import validate_component
+from custom_components.apollo_tab.tablet_link import LinkError
+
+from .fake_tablet import FakeTablet
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "tests" / "contract"
@@ -215,6 +218,60 @@ def test_chunks_fixture() -> None:
     assert all(call["hash"] == chunks["hash"] for call in good["calls"])
 
 
+@pytest.mark.parametrize(
+    "name", ["repeated_commit_while_building", "repeated_commit_after_failed_build"]
+)
+async def test_simulated_tablet_repeated_commit(hass, name: str) -> None:
+    """The tests' tablet answers a repeated commit as the contract says (5).
+
+    While the build runs it is a success and nothing changes; after a failed
+    build nothing is staged any more and it is incomplete.
+    """
+    [case] = [case for case in load("chunks.json")["cases"] if case["name"] == name]
+    after = case["after_commit"]
+    # Not paired, so auth is empty, as in the fixture.
+    tablet = FakeTablet(hass, "aa:bb:cc:dd:ee:ff")
+    tablet.hold_build = True
+    for call in case["calls"]:
+        await tablet.async_call("tab_layout", call)
+    committed = case["calls"][0]["hash"]
+    await tablet.async_call("tab_commit", {"hash": committed, "auth": ""})
+    await tablet.async_call(
+        "tab_set",
+        {"data": json.dumps({"h": committed, "v": [[1, "kept"]]}), "auth": ""},
+    )
+    assert tablet.staged == committed
+    values = dict(tablet.staged_values)
+    assert values[1] == "kept"
+    failed = case.get("platform", {}).get("build_fails")
+    if failed:
+        tablet.finish_build(failed)
+
+    again = {"hash": after["commit_hash"], "auth": ""}
+    if after["commit"] == "ok":
+        assert await tablet.async_call("tab_commit", again) == {}
+    else:
+        with pytest.raises(LinkError) as err:
+            await tablet.async_call("tab_commit", again)
+        assert err.value.code == after["commit"]
+
+    if after["building"]:
+        assert (tablet.staged, tablet.staged_values, tablet.build) == (
+            committed,
+            values,
+            "",
+        )
+        tablet.finish_build()
+        assert tablet.active == case["shown"]
+        # Nothing is staged now, and an empty hash does not pass for it.
+        with pytest.raises(LinkError) as err:
+            await tablet.async_call("tab_commit", {"hash": "", "auth": ""})
+        assert err.value.code == "incomplete"
+    else:
+        assert (tablet.staged, tablet.build) == ("", failed)
+        assert tablet.active == case["shown"]
+
+
 def test_chunks_never_split_a_character() -> None:
     """A chunk border never falls inside a multi-byte character."""
     data = ("aé€😀" * 50).encode("utf-8")
@@ -316,6 +373,36 @@ def test_unpaired_tablet_input_is_refused() -> None:
         layouts=[events["hash"]],
     )
     assert verdict == "not_paired"
+
+
+def test_no_nonce_is_the_sessions_without_a_session() -> None:
+    """While HA holds no session, no nonce is the session's, an empty one too."""
+    events = load("input_events.json")
+    secret = bytes.fromhex(events["secret_hex"])
+    good = events["cases"][0]["data"]
+    fields = good["d"].split("|")
+    fields[2] = ""
+    empty = "|".join(fields)
+    for data in (good, {"d": empty, "s": tp.sign(secret, empty)}):
+        verdict, parsed = tp.verify_input(
+            data,
+            mac=events["mac"],
+            secret=secret,
+            nonce=None,
+            last_counter=0,
+            layouts=[events["hash"]],
+        )
+        assert (verdict, parsed) == ("stale_session", None)
+    # The signature is still checked first.
+    verdict, _ = tp.verify_input(
+        {"d": empty, "s": good["s"]},
+        mac=events["mac"],
+        secret=secret,
+        nonce=None,
+        last_counter=0,
+        layouts=[events["hash"]],
+    )
+    assert verdict == "bad_signature"
 
 
 def test_input_mac_and_knock() -> None:
