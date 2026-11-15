@@ -440,6 +440,9 @@ export class ApolloTabDesigner extends HTMLElement {
     this._view = 0;
     this._screen = 0;
     this._selected = null;
+    // Where to open the next dashboard that loads, set by the start screen:
+    // { urlPath, view, source } or null (see the load).
+    this.openAt = null;
     this._rows = [];
     // The other version while the person chooses, and what Home Assistant
     // holds then when that is not the other version (see _takeOver).
@@ -908,6 +911,21 @@ export class ApolloTabDesigner extends HTMLElement {
     this._view = 0;
     this._screen = 0;
     this._selected = null;
+    // The start screen's "left out" link: this page, with that card
+    // selected, so the card's panel says why the tablet leaves it out.
+    const at = this.openAt;
+    this.openAt = null;
+    if (isObject(at) && at.urlPath === urlPath && Number.isInteger(at.view)) {
+      const views = Array.isArray(config.views) ? config.views : [];
+      if (at.view >= 0 && at.view < views.length) {
+        this._view = at.view;
+        const source = Array.isArray(at.source) ? at.source : null;
+        const card = source ? views[source[0]]?.sections?.[source[1]]?.cards?.[source[2]] : null;
+        if (source && source[0] === at.view && isObject(card)) {
+          this._selected = [...source];
+        }
+      }
+    }
     this._preview = null;
     this._conflict = null;
     this._conflictStored = null;

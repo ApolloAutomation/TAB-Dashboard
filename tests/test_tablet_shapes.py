@@ -37,9 +37,20 @@ CONTRACT = json.loads(
 TRANSLATIONS = json.loads(
     (COMPONENT / "translations" / "en.json").read_text(encoding="utf-8")
 )
-STRINGS = json.loads(
+_RAW_STRINGS = json.loads(
     (COMPONENT / "library" / "strings.json").read_text(encoding="utf-8")
 )
+# The strings as the panel shows them: the word for turning a tablet on
+# (tablets.word.*) put in where a sentence names it, as logic.js fillWords.
+_WORDS = {
+    key.removeprefix("tablets.word."): value
+    for key, value in _RAW_STRINGS.items()
+    if key.startswith("tablets.word.")
+}
+STRINGS = {
+    key: re.sub(r"\{([a-z_]+)\}", lambda m: _WORDS.get(m[1], m[0]), value)
+    for key, value in _RAW_STRINGS.items()
+}
 
 LIGHT = {
     "type": "custom:apollo-tab-card",
@@ -250,7 +261,7 @@ AGREED_APPROVAL_NEEDED = (
     'dashboard for it, then press "Turn on with this dashboard".'
 )
 AGREED_NOT_APPROVED = (
-    "This tablet is new. Pick a dashboard for it on the Home screen, then "
+    "This tablet is new. Pick a dashboard for it under Tablets, then "
     'press "Turn on with this dashboard".'
 )
 
@@ -271,7 +282,7 @@ def test_the_approval_answers_use_the_agreed_words() -> None:
     for text in (APPROVAL_NEEDED, NOT_APPROVED):
         assert text.endswith(ending), text
     # The editor's line (redesign v2 4.3) names the tablet and comes with
-    # its own "Set it up" button, which goes to the Home screen; it never
+    # its own "Set it up" button, which goes to the start screen; it never
     # turns the tablet on from the editor.
     assert STRINGS["editor.on_tablet_new"] == "{tablet} is new and ready to turn on."
     assert STRINGS["editor.on_tablet_set_up"] == "Set it up"

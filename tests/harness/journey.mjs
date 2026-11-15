@@ -21,6 +21,8 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PREPICK_ONLY_DASHBOARD } from "../../custom_components/apollo_tab/frontend/tablets.js";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const GROUP_ORDER = ["lights", "climate", "media", "security", "sensors", "rooms", "more"];
@@ -160,6 +162,11 @@ window.__j = {
     };
     walk(root);
     return found;
+  },
+  // The drawn pages of the tablet pictures in these holders; each picture
+  // has its own shadow root.
+  pics(selector) {
+    return this.all(selector).map((holder) => holder.shadowRoot?.querySelector(".at-page")).filter(Boolean);
   },
   visible(element) {
     if (!element || !element.isConnected || !element.getClientRects().length) return false;
@@ -699,6 +706,40 @@ export class Run {
     await sleep(60);
   }
 
+  // A real double click at one place: two presses, the second with
+  // clickCount 2, as a mouse makes them.
+  async doubleClickAt(x, y) {
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    for (const clickCount of [1, 2]) {
+      await this.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount });
+      await this.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount });
+    }
+    await sleep(60);
+  }
+
+  // Only the second click of a double click, at a place.
+  async secondClickAt(x, y) {
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 2 });
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 2 });
+    await sleep(60);
+  }
+
+  // One key event: "keyDown" or "keyUp" of Enter or Space, maybe flagged
+  // as a key held down.
+  async keyEvent(type, key, { repeat = false } = {}) {
+    const keys = {
+      Enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" },
+      " ": { key: " ", code: "Space", windowsVirtualKeyCode: 32, text: " " },
+    };
+    const { text, ...event } = keys[key];
+    await this.browser.send("Input.dispatchKeyEvent", {
+      type,
+      ...event,
+      ...(type === "keyDown" ? { text, autoRepeat: repeat } : {}),
+    });
+  }
+
   async type(text) {
     await this.browser.send("Input.insertText", { text });
     await sleep(60);
@@ -833,7 +874,7 @@ const LOFT = "aa:bb:cc:dd:ee:0c";
 // The second new tablet of the "two-new" set, listed above the porch one.
 const PATIO = "aa:bb:cc:dd:ee:0f";
 // The status of a new tablet while there are dashboards to pick.
-const NEW_STATUS = 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".';
+const NEW_STATUS = "Ready to turn on";
 // For how long Turn on ignores presses after the rows moved (tablets.js).
 const TURN_ON_SETTLE_MS = 700;
 const tabletRow = (mac) => `[data-test="tablet-row"][data-mac="${mac}"]`;
@@ -1496,8 +1537,8 @@ async function keepChange(r, { offline }) {
 }
 
 // Page-side checks of the panel's visual system (steps 111 to 118). The
-// tablet picture and the example cards in the picker are left out: they are
-// drawn as the tablet draws them.
+// tablet pictures (also the start screen's sample) and the example cards in
+// the picker are left out: they are drawn as the tablet draws them.
 const UI = `window.__ui = {
   inPicture(node) {
     for (let at = node; at && at.nodeType === 1; at = __j.up(at)) {
@@ -1505,6 +1546,7 @@ const UI = `window.__ui = {
         at.classList.contains("page-host") ||
         at.classList.contains("tile-preview") ||
         at.classList.contains("tablet-pic") ||
+        at.classList.contains("guide-sample") ||
         at.localName === "apollo-tab-card"
       ) {
         return true;
@@ -1540,7 +1582,8 @@ const UI = `window.__ui = {
       if (node.matches("a:not(.button-link)") && getComputedStyle(node).display === "inline") continue;
       let kind = "other";
       if (node.matches(".tab")) kind = "tab";
-      else if (node.matches(".list-row, .entity-option, .tile")) kind = "row";
+      // The start screen's Advanced row is a row too: 56 px, two lines.
+      else if (node.matches(".list-row, .entity-option, .tile, .settings-row")) kind = "row";
       else if (node.matches("select, textarea, input:not([type=range]):not([type=color])")) kind = "field";
       else if (node.matches("button, a.button-link")) kind = "plain";
       const rect = node.getBoundingClientRect();
@@ -1788,7 +1831,7 @@ function chains(realConfig) {
       await r.waitFor(`${home} && __j.find('[data-test="dashboard-row"]')`, "Home with the dashboard");
       check((await r.count('[data-test="dashboard-row"]')) === 1, "not exactly one dashboard row");
       const row = await r.text('[data-test="dashboard-row"]');
-      check(row.includes("Pages: 2"), `row reads ${row}`);
+      check(row.includes("2 pages, "), `row reads ${row}`);
       check((await r.count('[data-test="edit"]')) === 1, "no Edit button");
       await checkTextContrast(r, ['[data-test="edit"]', '[data-test="create"]']);
       return r.shot("12-home-list");
@@ -1806,8 +1849,8 @@ function chains(realConfig) {
         .then((result) => result.dashboards.find((entry) => entry.url_path === "tab-1-2").pages)`);
       check(screens === 1, `the stand-in reports ${screens} tablet screens for one empty page`);
       const text = await r.text(row);
-      check(text.includes("Pages: 1"), `the new dashboard's row reads ${text}`);
-      check((await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]')).includes("Pages: 2"), "first row changed");
+      check(text.includes("1 page, no cards"), `the new dashboard's row reads ${text}`);
+      check((await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]')).includes("2 pages, "), "first row changed");
       return r.shot("28-new-dashboard-pages");
     }),
   ];
@@ -1979,7 +2022,8 @@ function chains(realConfig) {
         { seed: "sample", route: "/advanced", community: "1" },
         `__j.find('[data-test="advanced"] .code-line') && __j.find('[data-test="lock-row"][data-component="me/door-lock"]')`,
       );
-      const folder = await r.text('[data-test="advanced"] .code-line');
+      // The folder is a field to read and copy.
+      const folder = await r.eval(`__j.find('[data-test="advanced"] .code-line').value`);
       check(folder.includes("/config/apollo_tab/components"), `folder line ${folder}`);
       const row = await r.text('[data-test="lock-row"][data-component="me/door-lock"]');
       check(row.includes("Door lock") && row.includes("Switched off"), `lock row ${row}`);
@@ -3789,7 +3833,7 @@ function chains(realConfig) {
     step("70", "home-pages-agree", async (r) => {
       await r.open({ seed: "real" }, `${home} && __j.find('[data-test="row-not-shown"]')`);
       const row = await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]');
-      const pages = Number(/Pages: (\d+)/.exec(row)?.[1]);
+      const pages = Number(/(\d+) pages?, /.exec(row)?.[1]);
       check(pages === 2, `the row reads ${row}`);
       check(row.includes("1 card and 1 page are left out on tablets."), `the row reads ${row}`);
       const shot = await r.shot("70-home-pages-agree");
@@ -3886,7 +3930,7 @@ function chains(realConfig) {
       await openSample(r);
       await openDashMenu(r);
       const sidebar = await r.eval(`__j.find('[data-test="sidebar-checkbox"]').closest(".check").nextElementSibling.textContent`);
-      check(!sidebar.includes("in a browser") && sidebar.startsWith("Turn this on only if"), `the sidebar helper reads "${sidebar}"`);
+      check(!sidebar.includes("in a browser") && sidebar.startsWith("Switch this on only if"), `the sidebar helper reads "${sidebar}"`);
       await closePops(r);
       await selectRow(r, "0.1.0");
       const accent = await r.eval(`(() => { const box = __j.find('input[data-focus="look-use-accent"]');
@@ -4012,15 +4056,15 @@ function chains(realConfig) {
       await onHeading("TAB-1", "after Edit");
       const shot = await r.screen("77-focus-after-screen-change");
       await press("back");
-      await onHeading("TAB-1 dashboards", "after Back from the editor");
+      await onHeading("TAB-1", "after Back from the editor");
       await press("open-advanced");
       await onHeading("Advanced", "after Advanced");
       await press("back");
-      await onHeading("TAB-1 dashboards", "after Back from Advanced");
+      await onHeading("TAB-1", "after Back from Advanced");
       await press("edit");
       await onHeading("TAB-1", "after Edit again");
       await r.eval(`history.back(); true`);
-      await onHeading("TAB-1 dashboards", "after the browser's Back");
+      await onHeading("TAB-1", "after the browser's Back");
       // Deleting the dashboard leaves the editor for Home.
       await press("edit");
       await onHeading("TAB-1", "after Edit once more");
@@ -4028,7 +4072,7 @@ function chains(realConfig) {
       await press("dashboard-delete");
       await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question");
       await press("confirm-ok");
-      await onHeading("TAB-1 dashboards", "after deleting the dashboard");
+      await onHeading("TAB-1", "after deleting the dashboard");
       check((await r.count('[data-test="dashboard-row"]')) === 0, "the deleted dashboard is still listed");
       await r.screen("77-focus-after-delete");
       return shot;
@@ -4511,7 +4555,7 @@ function chains(realConfig) {
       await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
       check((await r.text(tabletStatus(HALLWAY))) === "Offline", `the hallway tablet reads "${await r.text(tabletStatus(HALLWAY))}"`);
       check(
-        (await r.text(tabletStatus(BEDROOM))) === "Waiting for tablet software",
+        (await r.text(tabletStatus(BEDROOM))) === "Needs a software update",
         `the bedroom tablet reads "${await r.text(tabletStatus(BEDROOM))}"`,
       );
       check(
@@ -4537,8 +4581,8 @@ function chains(realConfig) {
       check(JSON.stringify(choices) === JSON.stringify(["Night", "TAB-1"]), `the Shows list holds ${JSON.stringify(choices)}`);
       const rows = await r.eval(`__j.all('[data-test="dashboard-row"]').map((row) => row.dataset.urlPath)`);
       check(JSON.stringify(rows) === JSON.stringify(["night", "tab-1"]), `the dashboards are listed as ${JSON.stringify(rows)}`);
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom, Kitchen", "the Shown on line of TAB-1");
-      await waitText(r, shownOnLine("night"), "Shown on: Hallway", "the Shown on line of Night");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom, Kitchen", "the Shown on line of TAB-1");
+      await waitText(r, shownOnLine("night"), "On Hallway", "the Shown on line of Night");
       // The box sits above "Your dashboards" and has no tick boxes: locks,
       // alarms and garage doors need no switch per tablet.
       const above = await r.eval(`__j.find('[data-test="tablets"]').getBoundingClientRect().bottom <=
@@ -4572,8 +4616,8 @@ function chains(realConfig) {
       const same = await r.eval(`__j.find(${JSON.stringify(tabletShows(KITCHEN))}) === window.__shows && __j.active() === window.__shows
         && window.__shows.value === "night"`);
       check(same, "the Shows list was drawn again or lost focus");
-      await waitText(r, shownOnLine("night"), "Shown on: Hallway, Kitchen", "the Night row to name the kitchen tablet");
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom", "the TAB-1 row to drop the kitchen tablet");
+      await waitText(r, shownOnLine("night"), "On Hallway, Kitchen", "the Night row to name the kitchen tablet");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom", "the TAB-1 row to drop the kitchen tablet");
       const shot = await r.screen("93-tablet-sending");
       await r.eval(`__apolloMockHass.finishSends(); true`);
       await waitText(r, tabletStatus(KITCHEN), "On the tablet", "On the tablet once the tablet has it");
@@ -4584,7 +4628,7 @@ function chains(realConfig) {
 
       // An offline tablet keeps the choice and gets it when it is back.
       await pickShows(r, HALLWAY, "tab-1");
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom, Hallway", "the TAB-1 row to name the hallway tablet");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom, Hallway", "the TAB-1 row to name the hallway tablet");
       check((await r.text(tabletStatus(HALLWAY))) === "Offline", "the offline tablet no longer reads Offline");
       await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(HALLWAY)}, { online: true }); true`);
       await waitText(r, tabletStatus(HALLWAY), "Sending…", "Sending… once the hallway tablet is back");
@@ -4601,7 +4645,7 @@ function chains(realConfig) {
       // Trying again works and clears the line.
       await pickShows(r, BEDROOM, "night");
       await r.waitFor(`!__j.find('${tabletRow(BEDROOM)} [data-test="tablet-error"]')`, "the line about the failure to go");
-      await waitText(r, shownOnLine("night"), "Shown on: Bedroom, Kitchen", "the Night row to name the bedroom tablet");
+      await waitText(r, shownOnLine("night"), "On Bedroom, Kitchen", "the Night row to name the bedroom tablet");
       return shot;
     }),
   ];
@@ -4611,19 +4655,19 @@ function chains(realConfig) {
   const tabletsEditor = [
     step("94", "editor-caption", async (r) => {
       await r.open({ ...threeTablets, route: "/edit/tab-1" }, `(${editorReady}) && __j.find('[data-test="tablet-chip"]') && __j.find('[data-test="tablet-chip"]').title !== "Tablets"`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "a line per tablet");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "a line per tablet");
       const words = await r.eval(`__j.designer().shadowRoot.textContent`);
       check(!/not sent to tablets/i.test(words), "the editor still says dashboards are not sent to tablets");
       // The lines follow the tablets as they change.
       await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(KITCHEN)}, { online: false }); true`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "Kitchen tablet is offline"], "the offline line");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "Kitchen tablet is offline"], "the offline line");
       await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(KITCHEN)}, { online: true }); true`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "Sending to Kitchen tablet…"], "the sending line");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "Sending to Kitchen tablet…"], "the sending line");
       await r.eval(`__j.find('[data-test="tablet-lines"]').scrollIntoView({ block: "center" }); true`);
       await checkTextContrast(r, ['[data-test="tablet-line"][data-kind="tablet"]']);
       const shot = await r.screen("94-editor-caption");
       await r.eval(`__apolloMockHass.finishSends(); true`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the line once sent");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "the line once sent");
       return shot;
     }),
     step("95", "settings-shown-on", async (r) => {
@@ -4670,7 +4714,7 @@ function chains(realConfig) {
       check(focus === "shown-on-heading", `after Show here focus is on ${focus}`);
       await waitCaption(
         r,
-        ["Waiting for tablet software (Bedroom tablet)", "Hallway tablet is offline", "On Kitchen tablet"],
+        ["Bedroom tablet needs a software update", "Hallway tablet is offline", "On Kitchen tablet"],
         "the caption to add the hallway tablet",
       );
       await r.shot("95-settings-tablet-moved");
@@ -4696,7 +4740,7 @@ function chains(realConfig) {
           __j.find('[data-test="tablet-row"][data-mac="' + mac + '"] [data-test="tablet-shows"]')?.value === "night")`,
         "every tablet to show Night",
       );
-      await waitText(r, shownOnLine("night"), "Shown on: Bedroom, Hallway, Kitchen", "the Night row to name all three");
+      await waitText(r, shownOnLine("night"), "On Bedroom, Hallway, Kitchen", "the Night row to name all three");
       await r.shot("96-after-delete");
       return shot;
     }),
@@ -4727,7 +4771,7 @@ function chains(realConfig) {
       await r.waitSaved("the new dashboard");
       await waitCaption(
         r,
-        ["Waiting for tablet software (Bedroom tablet)", "Hallway tablet is offline", "On Kitchen tablet"],
+        ["Bedroom tablet needs a software update", "Hallway tablet is offline", "On Kitchen tablet"],
         "the new dashboard on the tablets",
       );
       await r.shot("97-first-dashboard-on-tablets");
@@ -4740,12 +4784,13 @@ function chains(realConfig) {
     step("98", "no-tablets", async (r) => {
       await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="tablets-none"]') && __j.find('[data-test="dashboard-row"]')`);
       check(
-        (await r.text('[data-test="tablets-none"]')) === "No TAB-1 tablet found in Home Assistant yet. Power the tablet on. If it asks for Wi-Fi, join \"Apollo TAB1 Hotspot\" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here. You can still build dashboards.",
+        (await r.text('[data-test="tablets-none"]')) === "No tablet found yet.",
         `the Tablets box says "${await r.text('[data-test="tablets-none"]')}"`,
       );
       check((await r.count('[data-test="row-shown-on"]')) === 0, "a dashboard says where it is shown");
-      check((await r.count('[data-test="tablets-add"]')) === 0, "a line about another tablet with none there");
-      await checkTextContrast(r, ['[data-test="tablets-none"]']);
+      // The way to add one is the link under the box.
+      check((await r.count('[data-test="tablets-add"]')) === 1, "no link about adding a tablet");
+      await checkTextContrast(r, ['[data-test="tablets-none"]', '[data-test="tablets-add"]']);
       const shot = await r.shot("98-no-tablets-home");
       await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
       await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor");
@@ -4773,7 +4818,7 @@ function chains(realConfig) {
   const tabletsNoEngine = [
     step("99", "tablet-without-engine", async (r) => {
       await r.open({ seed: "sample", tablets: "no-engine" }, `${home} && __j.count('[data-test="tablet-row"]') === 1`);
-      await waitText(r, tabletStatus(BEDROOM), "Waiting for tablet software", "the status");
+      await waitText(r, tabletStatus(BEDROOM), "Needs a software update", "the status");
       const help = await uiString(r, "tablets.no_engine_help");
       check((await r.text(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === help, "no helper line");
       check(
@@ -4781,7 +4826,7 @@ function chains(realConfig) {
         "no line that the choice is kept",
       );
       check((await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-input"]`)) === 0, "a line about taps before the dashboard is there");
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom", "the Shown on line");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom", "the Shown on line");
       await checkTextContrast(r, [tabletStatus(BEDROOM), `${tabletRow(BEDROOM)} [data-test="tablet-help"]`]);
       const shot = await r.shot("99-tablet-without-engine");
       await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(BEDROOM)}, { engine: "0.1.0" }); true`);
@@ -4798,7 +4843,7 @@ function chains(realConfig) {
       await r.shot("99-tablet-software-arrived");
       // With no dashboard at all there is no choice to keep.
       await r.open({ seed: "none", tablets: "no-engine" }, `${home} && __j.count('[data-test="tablet-row"]') === 1`);
-      await waitText(r, tabletStatus(BEDROOM), "Waiting for tablet software", "the status without dashboards");
+      await waitText(r, tabletStatus(BEDROOM), "Needs a software update", "the status without dashboards");
       check((await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === 1, "no helper line without dashboards");
       check(
         (await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-help-saved"]`)) === 0,
@@ -4815,9 +4860,9 @@ function chains(realConfig) {
       await r.open({ seed: "sample", tablets: "all" }, `${home} && __j.count('[data-test="tablet-row"]') === 15`);
       // The new tablet comes first, then the others by name.
       const expected = {
-        "Shed tablet": 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".',
+        "Shed tablet": NEW_STATUS,
         "Attic tablet": "This dashboard is too big for the tablet",
-        "Bedroom tablet": "Waiting for tablet software",
+        "Bedroom tablet": "Needs a software update",
         "Cellar tablet": "This dashboard cannot be read",
         "Den tablet": "On the tablet",
         "Garage tablet": "Update Apollo TAB Dashboard in Home Assistant",
@@ -4834,15 +4879,15 @@ function chains(realConfig) {
       const read = await r.eval(`Object.fromEntries(__j.all('[data-test="tablet-row"]').map((row) =>
         [row.querySelector(".tablet-name").textContent, row.querySelector('[data-test="tablet-status"]').innerText]))`);
       check(JSON.stringify(read) === JSON.stringify(expected), `the statuses read ${JSON.stringify(read)}`);
-      // "Shows" comes before the status: beside it on a wide screen, above it
-      // on a phone.
+      // The status chip comes before "Shows" (spec 4.2): under the name,
+      // beside "Shows" on a wide screen, above it on a phone.
       const order = await r.eval(`__j.all('[data-test="tablet-row"]').filter((row) =>
         row.querySelector(".tablet-shows") && row.querySelector('[data-test="tablet-status"]').textContent).map((row) => {
           const a = row.querySelector(".tablet-shows").getBoundingClientRect();
           const b = row.querySelector('[data-test="tablet-status"]').getBoundingClientRect();
-          return [row.querySelector(".tablet-name").textContent, a.bottom <= b.top + 1 || a.right <= b.left + 1];
+          return [row.querySelector(".tablet-name").textContent, b.bottom <= a.top + 1 || b.right <= a.left + 1];
         }).filter(([, first]) => !first).map(([name]) => name)`);
-      check(order.length === 0, `the status comes before "Shows" for ${JSON.stringify(order)}`);
+      check(order.length === 0, `"Shows" comes before the status for ${JSON.stringify(order)}`);
       const notes = await r.eval(`__j.all('[data-test="tablet-input"]').map((line) =>
         [line.closest('[data-test="tablet-row"]').querySelector(".tablet-name").textContent, line.textContent])`);
       check(
@@ -4902,7 +4947,7 @@ function chains(realConfig) {
           JSON.stringify({
             isNew: "true",
             mark: "New",
-            device: "Before you turn it on, check that the name on the tablet's screen ends in ddee0e. Open device page",
+            device: "Look at the tablet. The name on its screen ends in ddee0e. Open device page",
             before: "If it still shows TAB-1, its old dashboard, its name is not on its screen. Check that it shows TAB-1 and that its values no longer change.",
             value: "",
             options: ["Pick a dashboard", "TAB-1 (shown before)"],
@@ -4945,7 +4990,7 @@ function chains(realConfig) {
         preview.dashboard = "tab-1";
         document.body.append(preview);
         return true; })()`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the preview's lines");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "the preview's lines");
       const words = await r.eval(`document.querySelector("apollo-tab-preview").shadowRoot.textContent`);
       check(!/not sent to tablets/i.test(words), "the preview still says dashboards are not sent to tablets");
       await checkTextContrast(r, ['[data-test="tablet-line"]']);
@@ -4975,7 +5020,7 @@ function chains(realConfig) {
       const tone = await r.eval(`__j.find(${JSON.stringify(tabletStatus(PORCH))}).dataset.tone`);
       check(tone === "new", `the new tablet's tone is ${tone}`);
       check(
-        (await r.text(`${tabletRow(PORCH)} [data-test="tablet-approve-note"]`)) === "Only turn on tablets you own.",
+        (await r.text(`${tabletRow(PORCH)} [data-test="tablet-approve-note"]`)) === "If it shows another name, or this is not your tablet, do not turn it on.",
         "no line about turning on only tablets you own",
       );
       check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-input"]`)) === 0, "a line about taps on a new tablet");
@@ -4984,7 +5029,7 @@ function chains(realConfig) {
       // textContent: on a phone the link has a line of its own.
       const device = await r.eval(`__j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-device"]`)}).textContent`);
       check(
-        device === "Before you turn it on, check that the name on the tablet's screen ends in ddee0e. Open device page",
+        device === "Look at the tablet. The name on its screen ends in ddee0e. Open device page",
         `the device line reads "${device}"`,
       );
       // It never showed a dashboard, so nothing says its screen hides its name.
@@ -5022,17 +5067,21 @@ function chains(realConfig) {
         `the new tablet's list: ${JSON.stringify(list)}`,
       );
       // It shows nothing, so the dashboards do not name it.
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Kitchen", "the Shown on line of TAB-1");
+      await waitText(r, shownOnLine("tab-1"), "On Kitchen", "the Shown on line of TAB-1");
       check((await r.count(shownOnLine("night"))) === 0, "Night says it is shown somewhere");
       check((await r.calls("apollo_tab/tablet/assign")).length === 0, "something was assigned");
       check((await r.calls("apollo_tab/tablet/pair")).length === 0, "something was paired");
-      // With tablets there, a short line under them says how to add another.
+      // With tablets there, a link under them opens how to add another; the
+      // fold-out it opens is the box's last part and starts with the line.
       const add = await r.eval(`(() => { const line = __j.find('[data-test="tablets-add"]');
+        const fold = line.closest('[data-test="screen-says"]');
         const rows = __j.all('[data-test="tablet-row"]');
-        return line && { text: line.textContent, last: line.parentNode.lastElementChild === line,
-          below: line.getBoundingClientRect().top >= rows[rows.length - 1].getBoundingClientRect().bottom }; })()`);
+        return line && { text: line.textContent, last: fold.parentNode.lastElementChild === fold,
+          below: line.getBoundingClientRect().top >= rows[rows.length - 1].getBoundingClientRect().bottom,
+          first: fold.querySelector(".screen-says-body > p").textContent }; })()`);
       check(
-        JSON.stringify(add) === JSON.stringify({ text: await uiString(r, "tablets.add_another"), last: true, below: true }),
+        JSON.stringify(add) ===
+          JSON.stringify({ text: await uiString(r, "tablets.add_link"), last: true, below: true, first: await uiString(r, "tablets.add_another") }),
         `the line about another tablet: ${JSON.stringify(add)}`,
       );
       await checkTextContrast(r, [
@@ -5090,6 +5139,9 @@ function chains(realConfig) {
       await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, {}); true`);
       await sleep(100);
       check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "night", "the pick was lost");
+      // Every button waits at its first look (rule 4); the wait is over
+      // before its words are measured and before the first real press.
+      await r.waitFor(`!__j.find(${JSON.stringify(turnOn)}).hasAttribute("data-settling")`, "the button to stop waiting", 3000);
       await checkTextContrast(r, [turnOn]);
       await r.screen("104-new-tablet-picked");
       // The button turns it on, here pressed with the keyboard. It alone
@@ -5118,7 +5170,7 @@ function chains(realConfig) {
       check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "night", "an arrow key changed its list");
       const order = await r.eval(`__j.all('[data-test="tablet-row"]').map((row) => row.dataset.mac)`);
       check(JSON.stringify(order) === JSON.stringify([PORCH, KITCHEN]), `the tablets are in the order ${JSON.stringify(order)}`);
-      await waitText(r, shownOnLine("night"), "Shown on: Porch", "the Night row to name the porch tablet");
+      await waitText(r, shownOnLine("night"), "On Porch", "the Night row to name the porch tablet");
       const shot = await r.screen("104-new-tablet-sending");
       await r.eval(`__apolloMockHass.finishSends(); true`);
       await waitText(r, tabletStatus(PORCH), "On the tablet", "On the tablet");
@@ -5187,7 +5239,7 @@ function chains(realConfig) {
       await waitText(
         r,
         tabletStatus(PORCH),
-        'New tablet. Make a dashboard, then pick it and press "Turn on with this dashboard".',
+        NEW_STATUS,
         "the status with nothing to pick",
       );
       check(
@@ -5211,18 +5263,33 @@ function chains(realConfig) {
       await r.waitFor(enabled, "Turn on after the pick");
       await r.eval(`__apolloMockHass.answerWS({ type: "lovelace/dashboards/delete",
         dashboard_id: __apolloMockHass.getDashboard("night").id }); true`);
-      await r.waitFor(
-        `__j.count('[data-test="dashboard-row"]') === 1 &&
-          ![...__j.find(${JSON.stringify(tabletShows(PORCH))}).options].some((option) => option.value === "night")`,
-        "Night to leave the list",
-      );
-      await sleep(100);
-      const deleted = await row();
-      check(deleted.value === "" && deleted.disabled === true, `after the picked dashboard was deleted: ${JSON.stringify(deleted)}`);
+      if (PREPICK_ONLY_DASHBOARD) {
+        // One dashboard is left and the tablet was waiting: the button now
+        // names it, without a list, and waits again (rules 2 and 5).
+        await r.waitFor(
+          `__j.count('[data-test="dashboard-row"]') === 1 &&
+            __j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') === "TAB-1"`,
+          "the button to name the dashboard that is left",
+        );
+        const left = await r.eval(`(() => { const button = __j.find(${JSON.stringify(turnOn)});
+          return { list: !!__j.find(${JSON.stringify(tabletShows(PORCH))}), settling: button.hasAttribute("data-settling") }; })()`);
+        check(!left.list && left.settling, `after the picked dashboard was deleted: ${JSON.stringify(left)}`);
+      } else {
+        await r.waitFor(
+          `__j.count('[data-test="dashboard-row"]') === 1 &&
+            ![...__j.find(${JSON.stringify(tabletShows(PORCH))}).options].some((option) => option.value === "night")`,
+          "Night to leave the list",
+        );
+        await sleep(100);
+        const deleted = await row();
+        check(deleted.value === "" && deleted.disabled === true, `after the picked dashboard was deleted: ${JSON.stringify(deleted)}`);
+      }
 
       // Turned on somewhere else, then new again (added to ESPHome again):
       // the pick made before is not picked again.
-      await pickShows(r, PORCH, "tab-1");
+      if (!PREPICK_ONLY_DASHBOARD) {
+        await pickShows(r, PORCH, "tab-1");
+      }
       await r.waitFor(enabled, "Turn on after the pick");
       await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, { approved: true, dashboard: "tab-1" }); true`);
       await r.waitFor(isNew("false"), "the tablet to be turned on somewhere else");
@@ -5313,6 +5380,13 @@ function chains(realConfig) {
       await r.waitFor(
         `__j.find(${JSON.stringify(turnOn(PATIO))})?.disabled === false && __j.find(${JSON.stringify(turnOn(PORCH))})?.disabled === false`,
         "both buttons after the picks",
+      );
+      // Every button waits at its first look (rule 4); the wait is over
+      // before the first real press.
+      await r.waitFor(
+        `[${JSON.stringify(turnOn(PATIO))}, ${JSON.stringify(turnOn(PORCH))}].every((selector) => !__j.find(selector).hasAttribute("data-settling"))`,
+        "both buttons to stop waiting after their first look",
+        3000,
       );
       // A pick moves no row, so the first press is taken at once.
       const first = await r.eval(`__j.target(${JSON.stringify(turnOn(PATIO))})`);
@@ -5436,7 +5510,7 @@ function chains(realConfig) {
       await waitText(
         r,
         error,
-        'That change could not be saved: This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard".',
+        'That change could not be saved: This tablet is new. Pick a dashboard for it under Tablets, then press "Turn on with this dashboard".',
         "the refusal",
       );
       const calls = await r.calls("apollo_tab/tablet/assign");
@@ -6863,6 +6937,20 @@ function chains(realConfig) {
           check(disabled, `${when}: the Turn on button of ${mac} can be pressed`);
         }
       };
+      // Rule 9: with the gate on, the editor's dashboard becomes the porch
+      // tablet's pick once the start screen has read the dashboards; the
+      // button waits. With the gate off nothing is picked.
+      const handoverPicked = async (dashboard, when) => {
+        if (!PREPICK_ONLY_DASHBOARD) {
+          await nothingPicked([PORCH], when);
+          return;
+        }
+        await r.waitFor(`(__j.find(${JSON.stringify(tabletShows(PORCH))})?.value ?? null) === ${JSON.stringify(dashboard)}`,
+          `${when}: the handover's pick`, 3000);
+        const button = await r.eval(`(() => { const b = __j.find('${tabletRow(PORCH)} [data-test="tablet-turn-on"]');
+          return { disabled: b.disabled, settling: b.hasAttribute("data-settling") }; })()`);
+        check(!button.disabled && button.settling, `${when}: the porch button after the handover's pick: ${JSON.stringify(button)}`);
+      };
       const arrive = async (focusKey, when) => {
         await r.waitFor(`${home} && __j.active()?.dataset?.focus === "${focusKey}"`, `${when}: focus on ${focusKey}`);
         const settling = await r.eval(`${turnOns}.every((node) => node.hasAttribute("data-settling"))`);
@@ -6887,6 +6975,9 @@ function chains(realConfig) {
         // runs and the new dashboard gets the same address each time: the
         // memory of which dashboards had their notice starts empty.
         await r.eval(`localStorage.removeItem("apollo_tab.first_card"); true`);
+        // The start screen has finished loading (the tiles' pictures come
+        // last) before the press.
+        await r.waitFor(`__j.pics('.tablet-pic').length === __j.count('[data-test="dashboard-row"]')`, "the tiles' pictures");
         await r.click('[data-test="create"]');
         await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's editor");
         await r.waitSaved("the new dashboard");
@@ -6921,7 +7012,7 @@ function chains(realConfig) {
       check(row === "", `the porch tablet's name is ${row}`);
       check((await r.calls("apollo_tab/tablet/assign")).length === 0, "the handover sent an assign");
       await nothingTravels(urlPath, "after Put it on the tablet");
-      await nothingPicked([PORCH], "after Put it on the tablet");
+      await handoverPicked(urlPath, "after Put it on the tablet");
       await r.screen("131-first-card-arrival");
       // Back in the editor the notice does not come again; [Set it up] in
       // the Tablets pop-up hands the tablet over the same way.
@@ -6940,7 +7031,7 @@ function chains(realConfig) {
       await arrive(`name:${PORCH}`, "after Set it up");
       check((await r.calls("apollo_tab/tablet/assign")).length === 0, "Set it up sent an assign");
       await nothingTravels(urlPath, "after Set it up");
-      await nothingPicked([PORCH], "after Set it up");
+      await handoverPicked(urlPath, "after Set it up");
       // The browser's Back and Forward bring no pick and no focus on a
       // Turn on button.
       await r.eval(`history.back(); true`);
@@ -6951,7 +7042,9 @@ function chains(realConfig) {
       await nothingPicked([PORCH], "after Back and Forward");
       check(!(await r.eval(`__j.active()?.dataset?.test === "tablet-turn-on"`)), "after Back and Forward focus is on a Turn on button");
       // The handover was used once: Forward is a plain arrival, on the
-      // page's heading, with no button waiting again.
+      // page's heading. Every button waits at its first look (rule 4), and
+      // only for that long.
+      await r.waitFor(`__j.all("button[data-settling]").length === 0`, "the buttons to stop waiting after Forward", TURN_ON_SETTLE_MS + 1000);
       const forward = await r.eval(`({ focus: __j.active()?.dataset?.focus ?? null,
         settling: __j.all("button[data-settling]").length })`);
       check(forward.focus === "heading" && forward.settling === 0, `after Back and Forward: ${JSON.stringify(forward)}`);
@@ -7065,6 +7158,526 @@ function chains(realConfig) {
     }),
   ];
 
+  // Package 6: the start screen, and turning a tablet on under the twelve
+  // rules of the security review. Steps 133 to 135 count the assign calls
+  // the stand-in received. They read the gate (PREPICK_ONLY_DASHBOARD)
+  // from tablets.js and expect what its value says.
+  const assigns = async (r) => (await r.calls("apollo_tab/tablet/assign")).length;
+  const turnOnOf = (mac) => `${tabletRow(mac)} [data-test="tablet-turn-on"]`;
+  const centre = (r, selector) =>
+    r.eval(`(() => { const rect = __j.find(${JSON.stringify(selector)}).getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`);
+  const settling = (r, mac) => r.eval(`__j.find(${JSON.stringify(turnOnOf(mac))})?.hasAttribute("data-settling") ?? null`);
+  const waitSettled = (r, mac) =>
+    r.waitFor(
+      `(() => { const b = __j.find(${JSON.stringify(turnOnOf(mac))}); return b && !b.hasAttribute("data-settling"); })()`,
+      "the turn-on button to stop waiting",
+      3000,
+    );
+  const focusIs = (r) => r.eval(`__j.active()?.dataset?.focus ?? null`);
+  // With the gate off nothing is picked for the person, and a button with
+  // nothing picked is disabled, so a press on it proves nothing. These
+  // attacks run on a button that has a dashboard and takes presses.
+  const enabledButton = async (r, mac, when) => {
+    const button = await r.eval(`(() => { const b = __j.find(${JSON.stringify(turnOnOf(mac))});
+      return { disabled: b.disabled, settling: b.hasAttribute("data-settling") }; })()`);
+    check(!button.disabled, `${when}: the turn-on button is disabled, so the checks below would prove nothing`);
+    return button;
+  };
+  // Enter held down on the button: every key-down flagged as a repeat.
+  const holdEnter = async (r, mac, ms) => {
+    await r.eval(`__j.find(${JSON.stringify(turnOnOf(mac))}).focus(); true`);
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      await r.keyEvent("keyDown", "Enter", { repeat: true });
+      await sleep(50);
+    }
+    await r.keyEvent("keyUp", "Enter");
+    await sleep(150);
+  };
+  // The second click of a double click whose first click was on the
+  // tablet's check line, beside the button: the run began elsewhere.
+  const runFromElsewhere = async (r, mac) => {
+    const spot = await r.eval(`__j.target(${JSON.stringify(turnOnOf(mac))})`);
+    check(spot && !spot.error, spot?.error || "cannot reach the turn-on button");
+    await waitSettled(r, mac);
+    await sleep(100);
+    const line = await centre(r, `${tabletRow(mac)} [data-test="tablet-device"]`);
+    const height = await r.eval("innerHeight");
+    check(line.y > 0 && line.y < height, `the check line is out of view at ${JSON.stringify(line)}`);
+    await r.clickAt(line.x, line.y);
+    await r.secondClickAt(spot.x, spot.y);
+    await sleep(150);
+  };
+  const startScreen = [
+    step("133", "cold-path", async (r) => {
+      await r.open({ seed: "none", tablets: "new" }, `${home} && __j.find('[data-test="first-run"]')`);
+      check((await r.count('[data-test="first-run"] .guide-step')) === 3, "the guide has not three rows");
+      const filled = await r.eval(`__j.all("button.primary").filter((node) => __j.visible(node)).map((node) => node.dataset.test)`);
+      check(JSON.stringify(filled) === '["create"]', `the filled buttons are ${JSON.stringify(filled)}`);
+      // The guide's sample picture: 320 x 200 in the tablet's frame,
+      // captioned, on panels 900 px and wider; none on a phone.
+      if (r.setup.device === "desktop") {
+        await r.waitFor(`__j.pics('.guide-sample-screen')[0]`, "the guide's sample picture");
+        const sample = await r.eval(`(() => { const page = __j.pics('.guide-sample-screen')[0].getBoundingClientRect();
+          return { width: Math.round(page.width), height: Math.round(page.height), caption: __j.text('.guide-sample figcaption'),
+            hidden: __j.find('.guide-sample').getAttribute("aria-hidden") }; })()`);
+        check(
+          sample.width === 320 && sample.height === 200 && sample.caption === "A sample." && sample.hidden === "true",
+          `the sample picture: ${JSON.stringify(sample)}`,
+        );
+        // Scaled whole: the thermostat's two buttons are circles of 36
+        // tablet pixels, and the page button is a square inside the rail.
+        const parts = await r.eval(`(() => { const page = __j.pics('.guide-sample-screen')[0];
+          const size = (node) => { const box = node.getBoundingClientRect(); return [box.width * 4, box.height * 4]; };
+          return { thermostat: [...page.querySelectorAll(".at-thermostat button")].map(size),
+            rail: [...page.querySelectorAll(".at-nav-button")].map(size) }; })()`);
+        check(
+          parts.thermostat.length === 2 && parts.thermostat.every(([w, h]) => Math.abs(w - 36) < 0.5 && Math.abs(h - 36) < 0.5) &&
+            parts.rail.length === 1 && parts.rail.every(([w, h]) => Math.abs(w - 64) < 0.5 && Math.abs(h - 64) < 0.5),
+          `the sample picture's buttons: ${JSON.stringify(parts)}`,
+        );
+        // Fixed sample values, not this home's states: the stand-in home has
+        // none of the sample's entities.
+        const words = await r.eval(`__j.pics('.guide-sample-screen')[0].textContent`);
+        check(
+          words.includes("Kitchen") && words.includes("21.5°C") && !/unknown|None|unavailable/.test(words),
+          `the sample picture says "${words}"`,
+        );
+      } else {
+        await r.waitFor(`__j.pics('.guide-sample-screen').length === 1`, "the guide's sample picture, drawn but hidden");
+        check(!(await r.eval(`__j.visible(__j.all('.guide-sample')[0])`)), "a phone shows the sample picture");
+      }
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's editor");
+      await r.waitSaved("the new dashboard");
+      await r.addCard("add-first-card", "apollo/light-tile", "light.kitchen");
+      await r.waitSaved("the first card");
+      await leaveEditMode(r);
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.find('[data-test="guide-go"]')`, "the guide's row 3");
+      check(
+        (await r.eval(`__j.find('[data-test="first-run"] .guide-step:nth-child(2)').dataset.done`)) === "true",
+        "row 2 is not done",
+      );
+      const go = await r.eval(`(() => { const go = __j.find('[data-test="guide-go"]');
+        return { primary: go.classList.contains("primary"), turnOn: !!__j.find('[data-test="first-run"] [data-test="tablet-turn-on"]') }; })()`);
+      check(!go.primary && !go.turnOn, `row 3: ${JSON.stringify(go)}`);
+      check((await r.count('[data-test="tablet-turn-on"]')) === 1, "not exactly one turn-on button");
+      // With the gate off, pick the new dashboard first, so every check
+      // below is made on a button that takes presses.
+      const live = !PREPICK_ONLY_DASHBOARD;
+      let made = null;
+      if (live) {
+        const options = await r.eval(`[...__j.find(${JSON.stringify(tabletShows(PORCH))}).options].map((option) => option.value).filter(Boolean)`);
+        check(options.length === 1, `the porch tablet's list offers ${JSON.stringify(options)}`);
+        made = options[0];
+        await pickShows(r, PORCH, made);
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        await enabledButton(r, PORCH, "after the pick");
+        await holdEnter(r, PORCH, 1000);
+        check((await assigns(r)) === 0, "Enter held on the settled button sent an assign");
+        await runFromElsewhere(r, PORCH);
+        check((await assigns(r)) === 0, "the second click of a run begun on the check line sent an assign");
+      }
+      // A real double click on the guide's button sends nothing; the
+      // button it brings into view waits, and focus is on the tablet's name.
+      const before = await assigns(r);
+      const place = await centre(r, '[data-test="guide-go"]');
+      await r.doubleClickAt(place.x, place.y);
+      await sleep(150);
+      check((await assigns(r)) === before, "a double click on the guide's button sent an assign");
+      check((await settling(r, PORCH)) === true, "the turn-on button does not wait after the guide's button");
+      check((await focusIs(r)) === `name:${PORCH}`, `focus is on ${await focusIs(r)}`);
+      if (live) {
+        // The enabled button waits after the scroll: a bare click at once
+        // (no pointer, no key) sends nothing.
+        check((await enabledButton(r, PORCH, "after the guide's button")).settling, "the enabled button does not wait after the guide's button");
+        await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).click(); true`);
+        await sleep(80);
+        check((await assigns(r)) === before, "a bare click right after the guide's button sent an assign");
+      }
+      const shot = await r.shot("133-cold-path");
+      // By keyboard too.
+      await r.eval(`__j.find('[data-test="guide-go"]').focus(); true`);
+      await r.key("Enter");
+      await r.waitFor(`__j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the tablet's name after Enter");
+      await sleep(800);
+      check((await assigns(r)) === before, "the guide's button sent an assign");
+      if (live) {
+        // Space down during the wait after the guide's button, up after it.
+        await r.eval(`__j.find('[data-test="guide-go"]').focus(); true`);
+        await r.key("Enter");
+        await r.waitFor(`__j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the tablet's name before Space");
+        check((await enabledButton(r, PORCH, "before Space")).settling, "the button does not wait before Space");
+        await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+        await r.keyEvent("keyDown", " ");
+        await sleep(900);
+        await r.keyEvent("keyUp", " ");
+        await sleep(150);
+        check((await assigns(r)) === before, "Space that went down during the wait sent an assign");
+        // A pointer down during the wait, up after it.
+        await r.eval(`__j.find('[data-test="guide-go"]').focus(); true`);
+        await r.key("Enter");
+        await r.waitFor(`__j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the tablet's name before the pointer");
+        check((await enabledButton(r, PORCH, "before the pointer")).settling, "the button does not wait before the pointer");
+        const at = await centre(r, turnOnOf(PORCH));
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
+        await sleep(900);
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
+        await sleep(150);
+        check((await assigns(r)) === before, "a pointer that went down during the wait sent an assign");
+        // One plain press after the wait sends one call, with that dashboard.
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        const spot = await centre(r, turnOnOf(PORCH));
+        await r.clickAt(spot.x, spot.y);
+        await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the plain press");
+        const calls = await r.calls("apollo_tab/tablet/assign");
+        check(
+          calls.length === 1 && calls[0].approve === true && calls[0].url_path === made && calls[0].mac === PORCH,
+          `the plain press sent ${JSON.stringify(calls)}`,
+        );
+      }
+      // Two new tablets: row 3 names none and goes to the Tablets heading.
+      await r.open({ seed: "none", tablets: "two-new" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the second editor");
+      await r.waitSaved("the second dashboard");
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.find('[data-test="guide-go"]')`, "the guide's row 3 with two tablets");
+      check((await r.text('[data-test="guide-go"]')) === "Go to Tablets", `row 3's button reads ${await r.text('[data-test="guide-go"]')}`);
+      await r.click('[data-test="guide-go"]');
+      await r.waitFor(`__j.active()?.dataset?.focus === "tablets-heading"`, "focus on the Tablets heading");
+      check((await assigns(r)) === 0, "the guide's button sent an assign");
+      return shot;
+    }),
+    step("134", "pre-pick", async (r) => {
+      // One dashboard, one new tablet without a suggestion, there when the
+      // start screen opens.
+      await r.open({ seed: "sample", tablets: "new" }, `${home} && __j.find(${JSON.stringify(turnOnOf(PORCH))})`);
+      const first = await r.eval(`({ settling: __j.find(${JSON.stringify(turnOnOf(PORCH))}).hasAttribute("data-settling"),
+        list: !!__j.find(${JSON.stringify(tabletShows(PORCH))}),
+        disabled: __j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled,
+        name: __j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') })`);
+      // The new tablet's block reads top to bottom: "Shows" right above the
+      // button, in one column; the status at the top right on a desktop,
+      // under the name on a phone, where the button is full width.
+      if (first.list) {
+        const block = await r.eval(`(() => {
+          const box = (selector) => { const r = __j.find('${tabletRow(PORCH)} ' + selector).getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+          return { name: box(".tablet-name"), status: box('[data-test="tablet-status"]'),
+            shows: box("label.tablet-shows"), button: box('[data-test="tablet-turn-on"]'), notes: box(".tablet-notes") }; })()`);
+        const above = block.shows.bottom <= block.button.top && block.button.top - block.shows.bottom <= 24;
+        check(above && Math.abs(block.shows.left - block.button.left) <= 1, `Shows and the button: ${JSON.stringify(block)}`);
+        if (r.setup.device === "desktop") {
+          check(block.status.top < block.name.bottom && block.status.left > block.name.right, `the status: ${JSON.stringify(block)}`);
+        } else {
+          check(block.status.top >= block.name.bottom && block.status.bottom <= block.shows.top, `the status: ${JSON.stringify(block)}`);
+          check(Math.abs(block.button.right - block.button.left - (block.notes.right - block.notes.left)) <= 1, `the button is not full width: ${JSON.stringify(block)}`);
+        }
+      }
+      if (PREPICK_ONLY_DASHBOARD) {
+        check(!first.list, "the pre-picked row draws a Shows list");
+        check(first.name === "TAB-1", `the button names "${first.name}"`);
+        check(first.settling, "the button takes presses at first paint");
+        check(!first.disabled, "the pre-picked button is disabled");
+        await r.click(turnOnOf(PORCH));
+        check((await assigns(r)) === 0, "a press during the wait sent an assign");
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        await r.click(turnOnOf(PORCH));
+        await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the press after the wait");
+        const calls = await r.calls("apollo_tab/tablet/assign");
+        check(
+          calls.length === 1 && calls[0].approve === true && calls[0].url_path === "tab-1" && calls[0].mac === PORCH,
+          `the presses sent ${JSON.stringify(calls)}`,
+        );
+      } else {
+        check(first.list, "the row draws no Shows list with the gate off");
+        check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "", "something is picked");
+        check(first.disabled, "the button can be pressed with nothing picked");
+      }
+      const shot = await r.shot("134-pre-pick");
+      // The button is in no label, and its description holds both lines.
+      await r.open({ seed: "sample", tablets: "new" }, `${home} && __j.find(${JSON.stringify(turnOnOf(PORCH))})`);
+      const named = await r.eval(`(() => { const b = __j.find(${JSON.stringify(turnOnOf(PORCH))});
+        const root = b.getRootNode();
+        const described = (b.getAttribute("aria-describedby") || "").split(" ").map((id) => root.getElementById(id)?.textContent || "").join(" ");
+        return { label: !!b.closest("label"), described }; })()`);
+      check(!named.label, "the turn-on button is inside a label");
+      check(named.described.includes("ddee0e") && named.described.includes("do not turn it on"), `its description is "${named.described}"`);
+      // A tablet added while the screen is open: no pick, also with one
+      // dashboard.
+      await r.eval(`__apolloMockHass.addTablet(17, "Garden tablet", { approved: false, dashboard: null }); true`);
+      const GARDEN = "aa:bb:cc:dd:ee:11";
+      await r.waitFor(`__j.find(${JSON.stringify(turnOnOf(GARDEN))})`, "the added tablet's row");
+      const garden = await r.eval(`({ value: __j.find(${JSON.stringify(tabletShows(GARDEN))})?.value ?? null,
+        disabled: __j.find(${JSON.stringify(turnOnOf(GARDEN))}).disabled })`);
+      check(garden.value === "" && garden.disabled, `the added tablet: ${JSON.stringify(garden)}`);
+      // Two dashboards: the list shows, the button is disabled, picking
+      // sends nothing.
+      await r.open({ seed: "sample", night: "1", tablets: "new" }, `${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`);
+      check(await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled`), "the button can be pressed with two dashboards");
+      await pickShows(r, PORCH, "night");
+      await sleep(300);
+      check((await assigns(r)) === 0, "picking sent an assign");
+      // Deleting one of two dashboards: the waiting tablet's button names
+      // the one left and waits again.
+      await r.open({ seed: "sample", night: "1", tablets: "new" }, `${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`);
+      await sleep(900);
+      await r.eval(`__apolloMockHass.callWS({ type: "lovelace/dashboards/delete", dashboard_id: "night" }).then(() => true)`);
+      if (PREPICK_ONLY_DASHBOARD) {
+        await r.waitFor(`__j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') === "TAB-1"`, "the button to name the dashboard left", 5000);
+        check((await settling(r, PORCH)) === true, "the button does not wait after the delete");
+        await sleep(200);
+        await r.click(turnOnOf(PORCH));
+        check((await assigns(r)) === 0, "a press 200 ms after the delete sent an assign");
+      } else {
+        await r.waitFor(`__j.count('[data-test="dashboard-row"]') === 1`, "the deleted dashboard to go", 5000);
+        await sleep(300);
+        check(await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled`), "the button can be pressed after the delete");
+      }
+      return shot;
+    }),
+    step("135", "arrival-from-editor", async (r) => {
+      const params = { seed: "sample", night: "1", tablets: "new" };
+      const want = PREPICK_ONLY_DASHBOARD ? "tab-1" : "";
+      const toEditor = async () => {
+        await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
+        await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor");
+      };
+      const setItUp = async () => {
+        await openTablets(r);
+        await r.click(`[data-test="set-up-tablet"][data-mac="${PORCH}"]`);
+        await r.waitFor(`${home} && __j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the porch tablet's name");
+      };
+      const arrived = async (when) => {
+        check((await assigns(r)) === 0, `${when}: the arrival sent an assign`);
+        const href = await r.eval("location.href");
+        check(!href.includes(PORCH) && !href.includes("tab-1"), `${when}: the address is ${href}`);
+        const shows = await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))})?.value ?? null`);
+        check(shows === want, `${when}: the porch tablet's list holds "${shows}"`);
+        check((await settling(r, PORCH)) === true, `${when}: the button does not wait`);
+      };
+      await r.open(params, `${home} && __j.find('[data-test="dashboard-row"][data-url-path="tab-1"]')`);
+      await toEditor();
+      await setItUp();
+      // The read of the dashboards answers, with the handover's pick.
+      await r.waitFor(`(__j.find(${JSON.stringify(tabletShows(PORCH))})?.value ?? null) === ${JSON.stringify(want)}`, "the handover's pick", 3000);
+      await arrived("after Set it up");
+      // With the gate off nothing is picked on arrival and the button is
+      // disabled; pick during the wait, so the presses below meet a button
+      // that takes presses once the wait is over.
+      const live = !PREPICK_ONLY_DASHBOARD;
+      if (live) {
+        await pickShows(r, PORCH, "tab-1");
+        check((await enabledButton(r, PORCH, "after the pick on arrival")).settling, "the button does not wait after the pick on arrival");
+      }
+      const place = await centre(r, turnOnOf(PORCH));
+      await sleep(100);
+      await r.secondClickAt(place.x, place.y);
+      if (live) {
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        await enabledButton(r, PORCH, "before the late second click");
+      } else {
+        await sleep(750);
+      }
+      await r.secondClickAt(place.x, place.y);
+      check((await assigns(r)) === 0, "a second click of a double click sent an assign");
+      if (live) {
+        await runFromElsewhere(r, PORCH);
+        check((await assigns(r)) === 0, "the second click of a run begun on the check line sent an assign");
+      }
+      const shot = await r.shot("135-arrival-from-editor");
+      // Enter held from the editor: key-downs flagged as repeats, also with
+      // focus put on the button by script.
+      await toEditor();
+      await setItUp();
+      if (live) {
+        await pickShows(r, PORCH, "tab-1");
+        await enabledButton(r, PORCH, "before Enter held");
+      }
+      await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+      const until = Date.now() + 1500;
+      while (Date.now() < until) {
+        await r.keyEvent("keyDown", "Enter", { repeat: true });
+        await sleep(50);
+      }
+      await r.keyEvent("keyUp", "Enter");
+      check((await assigns(r)) === 0, "Enter held from the editor sent an assign");
+      if (live) {
+        // Still held once the wait is surely over.
+        await waitSettled(r, PORCH);
+        await holdEnter(r, PORCH, 600);
+        check((await assigns(r)) === 0, "Enter held on the settled button sent an assign");
+      }
+      // Space down during the wait and up after it.
+      await toEditor();
+      await setItUp();
+      if (live) {
+        await pickShows(r, PORCH, "tab-1");
+        check((await enabledButton(r, PORCH, "before Space")).settling, "the button does not wait before Space");
+      }
+      await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+      await r.keyEvent("keyDown", " ");
+      await sleep(900);
+      await r.keyEvent("keyUp", " ");
+      await sleep(100);
+      check((await assigns(r)) === 0, "Space that went down during the wait sent an assign");
+      // A fresh Enter after the wait sends one call, with that dashboard.
+      await waitSettled(r, PORCH);
+      if (!PREPICK_ONLY_DASHBOARD) {
+        await pickShows(r, PORCH, "tab-1");
+        await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+      }
+      await sleep(100);
+      await r.key("Enter");
+      await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the fresh Enter");
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(calls.length === 1 && calls[0].url_path === "tab-1" && calls[0].approve === true, `Enter sent ${JSON.stringify(calls)}`);
+      // A second run: a bare click (no pointer, no key) after the wait.
+      await r.open(params, `${home} && __j.find('[data-test="dashboard-row"][data-url-path="tab-1"]')`);
+      await toEditor();
+      await setItUp();
+      if (!PREPICK_ONLY_DASHBOARD) {
+        await pickShows(r, PORCH, "tab-1");
+      }
+      await waitSettled(r, PORCH);
+      await sleep(100);
+      await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).click(); true`);
+      await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the bare click");
+      check((await assigns(r)) === 1, "the bare click did not send one call");
+      // The editor's Back and the browser's Back pick nothing, and a pick
+      // made before going to the editor is gone.
+      await r.open(params, `${home} && __j.find('[data-test="dashboard-row"][data-url-path="tab-1"]')`);
+      await pickShows(r, PORCH, "tab-1");
+      await toEditor();
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`, "the start screen after Back");
+      await sleep(400);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "", "Back picked a dashboard");
+      await pickShows(r, PORCH, "tab-1");
+      await toEditor();
+      await r.eval(`history.back(); true`);
+      await r.waitFor(`${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`, "the start screen after the browser's Back");
+      await sleep(400);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "", "the browser's Back picked a dashboard");
+      check((await assigns(r)) === 0, "going back sent an assign");
+      // The same panel taken out of the page and put back starts at "Pick
+      // a dashboard" too.
+      await pickShows(r, PORCH, "tab-1");
+      await r.eval(`(() => { const panel = __apolloPanel; const parent = panel.parentNode; const next = panel.nextSibling;
+        panel.remove(); parent.insertBefore(panel, next); return true; })()`);
+      await r.waitFor(`${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`, "the start screen put back");
+      await sleep(900);
+      const back = await r.eval(`({ value: __j.find(${JSON.stringify(tabletShows(PORCH))}).value,
+        disabled: __j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled })`);
+      check(back.value === "" && back.disabled, `the panel put back: ${JSON.stringify(back)}`);
+      check((await assigns(r)) === 0, "putting the panel back sent an assign");
+      return shot;
+    }),
+    step(
+      "136",
+      "start-screen-layout",
+      async (r) => {
+        await r.browser.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+        try {
+          await r.open({ seed: "sample", night: "1", tablets: "three" }, `${home} && __j.pics('.tablet-pic').length === 2`);
+          const lefts = await r.eval(`(() => {
+            const left = (selector) => __j.find(selector).getBoundingClientRect().left;
+            return [left(".panel-header h1"), left('[data-test="tablets"]'), left('[data-test="dashboards"]')]; })()`);
+          check(Math.max(...lefts) - Math.min(...lefts) <= 1, `the title and the boxes start at ${JSON.stringify(lefts)}`);
+          const drawn = await r.eval(`__j.all('[data-test="dashboard-row"]').every((tile) => tile.querySelector(".tablet-pic")?.shadowRoot?.querySelector(".at-page"))`);
+          check(drawn, "a dashboard tile has no drawn page");
+          // The small pictures are scaled whole: each page button of the
+          // tablet's rail is a square of 64 tablet pixels inside the rail,
+          // whatever the panel's own button rules say.
+          const rails = await r.eval(`__j.pics('.tablet-pic').flatMap((page) => {
+            const scale = page.getBoundingClientRect().width / 1280;
+            const rail = page.querySelector(".at-nav").getBoundingClientRect();
+            return [...page.querySelectorAll(".at-nav-button")].map((button) => {
+              const box = button.getBoundingClientRect();
+              return { width: box.width / scale, height: box.height / scale,
+                inside: box.left >= rail.left && box.right <= rail.right + 0.01 }; }); })`);
+          check(
+            rails.length >= 2 && rails.every((box) => Math.abs(box.width - 64) < 0.5 && Math.abs(box.height - 64) < 0.5 && box.inside),
+            `the pictures' page buttons: ${JSON.stringify(rails)}`,
+          );
+          // Three tiles in a row, each with its action label at its foot,
+          // and Advanced as one 56 px row that is all one button.
+          const tiles = await r.eval(`(() => {
+            const tiles = __j.all('[data-test="dashboard-row"], .create-tile').map((tile) => tile.getBoundingClientRect());
+            const labels = __j.all('[data-test="dashboard-row"]').map((tile) => ({
+              label: tile.querySelector(".tile-action")?.textContent ?? null,
+              link: tile.querySelector('[data-test="edit"], [data-test="view"]')?.dataset.test ?? null,
+              last: tile.lastElementChild?.classList.contains("tile-action") ?? false }));
+            const open = __j.find('[data-test="open-advanced"]').getBoundingClientRect();
+            const box = __j.find('[data-test="open-advanced"]').closest(".box").getBoundingClientRect();
+            return { tops: tiles.map((tile) => Math.round(tile.top)), labels, open: { height: open.height, width: open.width }, box: box.width }; })()`);
+          check(tiles.tops.length === 3 && new Set(tiles.tops).size === 1, `the tiles start at ${JSON.stringify(tiles.tops)}`);
+          for (const tile of tiles.labels) {
+            const want = tile.link === "view" ? "Look at it" : "Edit";
+            check(tile.label === want && tile.last, `a tile's label: ${JSON.stringify(tile)}`);
+          }
+          check(tiles.open.height >= 56 && tiles.box - tiles.open.width <= 2, `the Advanced row: ${JSON.stringify(tiles)}`);
+          const shot = await r.shot("136-start-screen-layout");
+          // While the start screen loads, a screen reader hears "Loading…".
+          const loading = await r.eval(`(() => { const panel = window.__apolloOpenPanel("");
+            return panel.shadowRoot.querySelector('[data-test="home-loading"] .sr-only')?.textContent ?? null; })()`);
+          check(loading === "Loading…", `while loading the text is ${JSON.stringify(loading)}`);
+          await r.waitFor(`${home} && __j.find('[data-test="dashboard-row"]')`, "the start screen after loading");
+          return shot;
+        } finally {
+          await r.viewport();
+        }
+      },
+      { desktopOnly: true },
+    ),
+    step("137", "left-out-link", async (r) => {
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="row-not-shown"]')`);
+      await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="row-not-shown"]');
+      await r.waitFor(`(${editorReady}) && __j.designer()._selected`, "the editor with a card selected");
+      const at = await r.eval(`({ view: __j.designer()._view, selected: __j.designer()._selected })`);
+      check(at.view === 0 && Array.isArray(at.selected) && at.selected[0] === 0, `the editor opened at ${JSON.stringify(at)}`);
+      // The card's panel says why: "Left out" and what to do.
+      await r.waitFor(`__j.text('[data-test="side"]').includes(${JSON.stringify(NOT_SHOWN)})`, "the card's panel with its reason");
+      return r.shot("137-left-out-link");
+    }),
+    step("138", "screen-says", async (r) => {
+      await r.open({ seed: "sample", night: "1", tablets: "three" }, `${home} && __j.find('[data-test="tablets-add"]')`);
+      await r.click('[data-test="tablets-add"]');
+      await r.waitFor(`__j.find('[data-test="screen-says"]').open`, "the fold-out to open");
+      const rows = await r.eval(`__j.all('[data-test="screen-row"]').map((row) => ({
+        screen: row.querySelector("dt").dataset.screen, headline: row.querySelector("dt").textContent }))`);
+      check(rows.length >= 8, `the fold-out has ${rows.length} rows`);
+      for (const { screen, headline } of rows) {
+        check(SCREENS.waiting[screen]?.headline === headline, `the row for ${screen} reads "${headline}"`);
+      }
+      check(new Set(rows.map((row) => row.screen)).size === rows.length, "a screen has two rows");
+      // On a phone its link to Devices & services is a 44 px touch target.
+      if (r.setup.device === "phone") {
+        const height = await r.eval(`__j.find(".screen-devices").getBoundingClientRect().height`);
+        check(height >= 44, `the link to Devices & services is ${height} px high`);
+      }
+      await checkTextContrast(r, ['[data-test="screen-row"] dt', '[data-test="screen-row"] dd']);
+      const shot = await r.shot("138-screen-says");
+      // An offline tablet's "What to do" shows its own help.
+      await r.click('[data-test="tablets-add"]');
+      await r.waitFor(`!__j.find('[data-test="screen-says"]').open`, "the fold-out to close");
+      await r.click(`${tabletRow(HALLWAY)} [data-test="tablet-what-to-do"] summary`);
+      await r.waitFor(`__j.find('${tabletRow(HALLWAY)} [data-test="tablet-what-to-do"]').open`, "What to do to open");
+      const help = await r.text(`${tabletRow(HALLWAY)} [data-test="tablet-offline-help"]`);
+      check(help === (await uiString(r, "tablets.offline_help")), `What to do reads "${help}"`);
+      check(!(await r.eval(`__j.find('[data-test="screen-says"]').open`)), "What to do opened the fold-out");
+      return shot;
+    }),
+  ];
+
   return [
     first,
     real,
@@ -7117,6 +7730,7 @@ function chains(realConfig) {
     foundation,
     workspace,
     popups,
+    startScreen,
   ];
 }
 

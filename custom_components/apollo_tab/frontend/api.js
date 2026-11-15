@@ -1,4 +1,4 @@
-import { format, subscriptionKey } from "./logic.js";
+import { fillWords, format, subscriptionKey } from "./logic.js";
 
 let stringsCache = null;
 let stringsPromise = null;
@@ -31,7 +31,8 @@ export async function loadStrings(conn) {
     stringsPromise = conn
       .sendMessagePromise({ type: "apollo_tab/strings" })
       .then((result) => {
-        stringsCache = result?.strings || {};
+        // With the word for turning a tablet on put into every sentence.
+        stringsCache = fillWords(result?.strings || {});
         return stringsCache;
       })
       .catch((error) => {

@@ -13,7 +13,7 @@ A tablet shows up in the panel once it is in Home Assistant. For a tablet
 that has the dashboard software on it, the tablet's screen says each next
 step under a large headline:
 
-1. Power the tablet on.
+1. Plug the tablet in.
 2. If its screen says "Set up Wi-Fi", join the open Wi-Fi "Apollo TAB1
    Hotspot" from a phone within 15 minutes, and pick your home's Wi-Fi on
    the page that opens.
@@ -25,11 +25,12 @@ step under a large headline:
 The 15 minutes start each time the tablet is powered on. If they run out
 first, the tablet says "Setup not finished" and "Restart the tablet to
 finish setup": turn it off and on, and start again at step 2 or 3. While
-no tablet is in Home Assistant the panel says "No TAB-1 tablet found in
-Home Assistant yet" and repeats these steps; you can build dashboards all
-the same. Once there is a tablet, a short line under the tablets says the
-same for the next one:
-"To add another tablet, power it on. If it asks for Wi-Fi, join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here."
+no tablet is in Home Assistant the panel says "No tablet found yet."; you
+can build dashboards all the same. "How to add a tablet", under the
+tablets, opens the same steps in short:
+"Plug the tablet in. If it asks for Wi-Fi, join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here."
+Under them, "What does the tablet's screen say?" lists each headline the
+tablet's waiting screen can show, with what to do.
 
 ## A new tablet
 
@@ -39,12 +40,12 @@ first time. Until an admin turns it on, Home Assistant sends it nothing, it
 is not set up for taps, and anything it sends is ignored.
 
 The panel lists a new tablet first in the "Tablets" box, marked "New", with
-"New tablet. Pick a dashboard, then press "Turn on with this dashboard"."
-(or "New tablet. Make a dashboard, then pick it and press "Turn on with
-this dashboard"." while there is no dashboard to pick). Any
+the status "Ready to turn on" (and "Make a dashboard first." while there is
+no dashboard to pick). Any
 device can call itself "Porch tablet", so under its name the row says what
-to check first, for example "Before you turn it on, check that the name on
-the tablet's screen ends in 12ee0e." The six characters are the end of the
+to check first, for example "Look at the tablet. The name on its screen
+ends in 12ee0e." and "If it shows another name, or this is not your
+tablet, do not turn it on." The six characters are the end of the
 tablet's MAC address, and its waiting screen shows its name with them, for
 example "Apollo TAB-1 12ee0e". Check them on the tablet in front of you.
 "Open device page" opens the device in Home Assistant. Home Assistant also
@@ -60,21 +61,26 @@ that it shows Home and that its values no longer change." That is the
 tablet you just added again.
 
 To turn it on in the panel, pick its first dashboard under "Shows", then
-press "Turn on with this dashboard". Picking alone changes nothing, also
+press "Turn on with this dashboard". The button names the dashboard it
+sends on its second line. The panel never picks a dashboard for you, also
+not with only one dashboard or when the editor sends you to the tablet;
+until you pick one, the button cannot be pressed and "Pick a dashboard
+first." stands under it. Picking alone changes nothing, also
 when you move through the list with the keyboard. Only that button turns a
-tablet on. A "Shows" list or the editor's "Show this dashboard" still open
+tablet on. A "Shows" list or the editor's "Show here" still open
 from before the tablet became new is refused, and the tablet stays as it
 is. The panel then says that the change could not be saved:
-"This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard"."
+"This tablet is new. Pick a dashboard for it under Tablets, then press "Turn on with this dashboard"."
 
 An admin can also turn it on with the tablet's "Dashboard" control or with
 the "Show dashboard" action. Only turn on tablets you own. If you do not
 know the device, remove it from ESPHome instead.
 
 After you press the button, the tablet keeps its place in the list until
-you come back to the Home screen, and focus moves to its name. A "Turn on
-with this dashboard" button that has just moved, because a row above it
-changed, ignores presses for a moment and looks greyed out until then. So
+you come back to the start screen, and focus moves to its name. A "Turn on
+with this dashboard" button that has just appeared or moved, because a row
+above it changed, the panel scrolled or the dashboard it names changed,
+ignores presses for a moment and looks greyed out until then. So
 a double click turns on only the tablet you meant. A button that did not
 move takes a press at once, whatever else changes on the screen.
 
@@ -153,13 +159,14 @@ admin once more.
 
 ## Choosing a dashboard
 
-In the TAB-1 panel: open the Home screen and, in the "Tablets" box, pick a
+In the TAB-1 panel: on the start screen, in the "Tablets" box, pick a
 dashboard under "Shows" next to the tablet. It is saved and sent at once.
 A new tablet is turned on with "Turn on with this dashboard" after the pick
 (see above).
-The editor's settings for a dashboard, under "This dashboard", list the
-tablets that show it, with a "Show this dashboard" button for the others.
-New tablets are not listed there: turn them on from the Home screen first.
+In the editor, the "Tablets" pop-up in the top bar lists the tablets that
+show the dashboard, with a "Show here" button for the others.
+The editor's settings for a dashboard are under "This dashboard".
+New tablets are not listed there: turn them on from the start screen first.
 
 On the tablet's device page: the "Dashboard" control under Configuration has
 the same choice. Two dashboards with the same title are told apart by their
@@ -230,7 +237,7 @@ actions:
 
 The tablet controls devices only when its ESPHome connection is encrypted.
 Without encryption it shows the dashboard but cannot control anything: the
-panel says "Turn on encryption for it in ESPHome", and a tap on the tablet
+panel says "Switch on encryption for it in ESPHome", and a tap on the tablet
 shows "Touch is off: this tablet is not protected". The dashboard version
 of the tablet software turns encryption on by itself: Home Assistant gives
 the tablet its key the first time they connect. If you build the tablet
@@ -356,13 +363,12 @@ The panel shows one of these for each tablet:
 
 | Words | Meaning |
 |---|---|
-| New tablet. Pick a dashboard, then press "Turn on with this dashboard". | Nobody has turned this tablet on yet. Home Assistant sends it nothing, so it keeps the screen it has, and its taps do nothing. |
-| New tablet. Make a dashboard, then pick it and press "Turn on with this dashboard". | The same, and there is no TAB-1 dashboard to pick yet. |
+| Ready to turn on | Nobody has turned this tablet on yet. Home Assistant sends it nothing, so it keeps the screen it has, and its taps do nothing. Without a TAB-1 dashboard to pick, the row says "Make a dashboard first." |
 | On the tablet | The tablet says it shows the dashboard. |
 | Sending… | The dashboard is on its way, or the tablet is still building it, or an erased tablet is getting its key back. |
-| Offline | The tablet is not connected to Home Assistant. The row adds "Check that the tablet has power and Wi-Fi. If your Wi-Fi changed, turn the tablet off and on, then within 15 minutes join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi.". A tablet that has a dashboard keeps showing it, with its last values and a small mark at the bottom left that it is not connected. Without Wi-Fi it also shows a note at the bottom, for example "No Wi-Fi. Join the Wi-Fi “Apollo TAB1 Hotspot” from a phone". With Wi-Fi but without Home Assistant it shows only the small mark, so its screen may not say what is wrong. A tablet without a dashboard names what it needs, for example "Set up Wi-Fi", "No Wi-Fi", "Setup not finished" or "Waiting for Home Assistant", each with the next step. |
+| Offline | The tablet is not connected to Home Assistant. The row adds "Check that the tablet has power and Wi-Fi. If your Wi-Fi changed, restart the tablet, then within 15 minutes join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi.". A tablet that has a dashboard keeps showing it, with its last values and a small mark at the bottom left that it is not connected. Without Wi-Fi it also shows a note at the bottom, for example "No Wi-Fi. Join the Wi-Fi “Apollo TAB1 Hotspot” from a phone". With Wi-Fi but without Home Assistant it shows only the small mark, so its screen may not say what is wrong. A tablet without a dashboard names what it needs, for example "Set up Wi-Fi", "No Wi-Fi", "Setup not finished" or "Waiting for Home Assistant", each with the next step. |
 | Waiting for you in Repairs | Home Assistant does not connect to the tablet until an admin answers its question in Settings > System > Repairs, for example after the tablet was erased. The row says when to confirm and when not to (see "Taps on the tablet"). |
-| Waiting for tablet software | The tablet's software cannot show dashboards yet. |
+| Needs a software update | The tablet's software cannot show dashboards yet. |
 | Needs newer tablet software | Update the software on the tablet. |
 | Update Apollo TAB Dashboard in Home Assistant | The tablet is newer than this integration, or Home Assistant changed how it reaches ESPHome devices. |
 | Could not send. Trying again. | Sending failed. It is tried again after 5 seconds, then 15 seconds, 1 minute and every 5 minutes. |

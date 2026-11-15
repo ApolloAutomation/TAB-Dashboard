@@ -197,8 +197,34 @@ test("assign sends approve only when asked, and only as true", async () => {
   assert.equal(count(/this\._turnOn\(/g), 1);
   // _turnOn is defined once and called once, nowhere else.
   assert.equal(count(/\b_turnOn\b/g), 2);
-  // The only stored things are the two lists of dashboards in designer.js.
-  assert.equal(count(/setItem\(/g), 2);
+  // The only stored things are the two lists of dashboards in designer.js
+  // and the start screen's flags in prefs.js.
+  assert.equal(count(/setItem\(/g), 3);
+  assert.deepEqual(holding(/setItem\(/).sort(), ["designer.js", "prefs.js"]);
+  // prefs.js stores only the text "1", and only under the names of its list.
+  const prefs = files.find(([name]) => name === "prefs.js")[1];
+  assert.match(prefs, /setItem\(key, "1"\)/);
+  assert.match(prefs, /FLAGS\.includes\(name\) \? PREFIX \+ name : null/);
+  // The one call of _turnOn sits in the click handler that _turnOnButton
+  // makes; the guide's button only scrolls and gives focus.
+  const method = (text, name) => {
+    const start = text.indexOf(`\n  ${name}(`);
+    assert.ok(start >= 0, `${name} is in panel.js`);
+    const end = text.indexOf("\n  }\n", start);
+    return text.slice(start, end);
+  };
+  const panelSource = files.find(([name]) => name === "panel.js")[1];
+  assert.match(method(panelSource, "_turnOnButton"), /this\._turnOn\(mac\)/);
+  for (const name of ["_guideGo", "_scrollAndMark", "_markAllTurnOns", "_arrive"]) {
+    assert.doesNotMatch(method(panelSource, name), /_turnOn\(|_assign\(|_chosen/, `${name} turns a tablet on or picks`);
+  }
+  const guide = method(panelSource, "_guide");
+  const go = guide.slice(guide.indexOf('test: "guide-go"'));
+  assert.match(go, /onClick: \(\) => this\._guideGo\(/);
+  // No turn-on button is built inside a label.
+  for (const name of ["_turnOnButton", "_fillTabletRow"]) {
+    assert.doesNotMatch(method(panelSource, name), /"label"/, `${name} makes a label`);
+  }
   for (const [name, text] of files) {
     assert.doesNotMatch(text, /\.click\s*\(/, `${name} presses a control`);
     assert.doesNotMatch(text, /new (Mouse|Pointer|Keyboard|Touch)Event\(/, `${name} makes an input event`);

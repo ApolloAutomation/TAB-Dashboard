@@ -220,7 +220,7 @@ function fail(code, message = code) {
 // The integration's answer to a change for a tablet no admin turned on
 // (tests/harness/tablet-shapes.json).
 const NOT_APPROVED =
-  'This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard".';
+  'This tablet is new. Pick a dashboard for it under Tablets, then press "Turn on with this dashboard".';
 
 // A second dashboard for the tablet steps: "Night", with one empty page.
 const NIGHT_CONFIG = {
@@ -945,6 +945,12 @@ export function createMockHass(fixtures, options = {}) {
         return;
       }
       send(tablet);
+      emitTablets();
+    },
+    // A tablet that shows up while the panel is open: number n gives its
+    // address (aa:bb:cc:dd:ee:<n>), as in the sets above.
+    addTablet(n, name, changes = {}) {
+      tablets.push(tabletEntry(n, name, changes));
       emitTablets();
     },
     // Sends the tablet list to the panel, as Home Assistant does on a change.

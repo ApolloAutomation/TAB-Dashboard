@@ -1557,12 +1557,13 @@ test("pageItems gives a card that is not installed the devices in its params", (
 test("notShownCounts counts what the editor marks as not shown", () => {
   // The old dashboard: the bubble card is not drawn, and the old
   // "Tablet preview" view is not a page the tablet shows.
-  assert.deepStrictEqual(
-    model.notShownCounts(realDashboard, library, realDashboardPreview),
-    { cards: 1, pages: 1 },
-  );
+  const counts = ({ cards, pages }) => ({ cards, pages });
+  assert.deepStrictEqual(counts(model.notShownCounts(realDashboard, library, realDashboardPreview)), {
+    cards: 1,
+    pages: 1,
+  });
   // Without a preview, only cards that can never be drawn are counted.
-  assert.deepStrictEqual(model.notShownCounts(realDashboard, library, null), { cards: 1, pages: 1 });
+  assert.deepStrictEqual(counts(model.notShownCounts(realDashboard, library, null)), { cards: 1, pages: 1 });
 
   const config = model.newDashboardConfig();
   config.views[0].sections[0].cards = [
@@ -1575,11 +1576,42 @@ test("notShownCounts counts what the editor marks as not shown", () => {
     sources: { 1: [0, 0, 0] },
     warnings: [],
   };
-  assert.deepStrictEqual(model.notShownCounts(config, library, preview), { cards: 1, pages: 0 });
-  assert.deepStrictEqual(model.notShownCounts(config, library, null), { cards: 0, pages: 0 });
+  assert.deepStrictEqual(counts(model.notShownCounts(config, library, preview)), { cards: 1, pages: 0 });
+  assert.deepStrictEqual(model.notShownCounts(config, library, null), { cards: 0, pages: 0, first: null });
   // An empty dashboard has nothing that is left out.
-  assert.deepStrictEqual(model.notShownCounts(model.newDashboardConfig(), library, null), { cards: 0, pages: 0 });
-  assert.deepStrictEqual(model.notShownCounts(null, library, null), { cards: 0, pages: 0 });
+  assert.deepStrictEqual(model.notShownCounts(model.newDashboardConfig(), library, null), {
+    cards: 0,
+    pages: 0,
+    first: null,
+  });
+  assert.deepStrictEqual(model.notShownCounts(null, library, null), { cards: 0, pages: 0, first: null });
+});
+
+// The start screen's link opens the editor at the first thing the tablet
+// leaves out: that card's page, with the card selected.
+test("notShownCounts names the first card that is left out", () => {
+  const config = model.newDashboardConfig();
+  config.views[0].sections[0].cards = [
+    { type: model.CARD_TYPE, component: "apollo/light-tile", params: { entity: "light.kitchen" } },
+    { type: model.CARD_TYPE, component: "apollo/light-tile", params: { entity: "light.bedroom" } },
+  ];
+  const preview = {
+    layout: { pages: [{ id: "home", view: 0, w: [{ id: 1, t: "card", r: [0, 0, 10, 10] }] }] },
+    sources: { 1: [0, 0, 0] },
+    warnings: [],
+  };
+  const { first } = model.notShownCounts(config, library, preview);
+  assert.equal(first.view, 0);
+  assert.deepStrictEqual(first.source, [0, 0, 1]);
+  assert.equal(typeof first.key, "string");
+  // The old dashboard: its first page holds the card that is not drawn,
+  // before the view that is not a page.
+  const real = model.notShownCounts(realDashboard, library, realDashboardPreview);
+  assert.equal(real.first.view, 0);
+  assert.ok(Array.isArray(real.first.source) && real.first.source[0] === 0);
+  // Also the cards on each page, for the tile's line.
+  assert.equal(model.cardCount(config), 2);
+  assert.equal(model.cardCount(null), 0);
 });
 
 test("pageItems links shown cards to their drawn items and collects notes", () => {

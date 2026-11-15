@@ -975,18 +975,37 @@ export function notShownCounts(config, library, preview) {
   const drawn = isPlainObject(preview);
   let cards = 0;
   let pages = 0;
+  // The first thing left out, in page order: { view, key, source } for a
+  // card, { view, key: null, source: null } for a page the tablet cannot
+  // show, or null. The start screen's link opens the editor there.
+  let first = null;
   for (const page of pageList(config)) {
     if (page.kind !== "page") {
       pages += 1;
+      first ??= { view: page.view, key: null, source: null };
       continue;
     }
     for (const row of pageItems(config, page.view, library, preview)) {
       if (drawn ? !row.shown : NEVER_SHOWN_KINDS.has(row.kind)) {
         cards += 1;
+        first ??= { view: page.view, key: row.key, source: [...row.source] };
       }
     }
   }
-  return { cards, pages };
+  return { cards, pages, first };
+}
+
+// How many cards a dashboard holds, on every page; headings are not cards.
+export function cardCount(config) {
+  let count = 0;
+  for (const view of configViews(config)) {
+    const sections = isPlainObject(view) && Array.isArray(view.sections) ? view.sections : [];
+    for (const section of sections) {
+      const cards = isPlainObject(section) && Array.isArray(section.cards) ? section.cards : [];
+      count += cards.filter((card) => isPlainObject(card) && card.type !== "heading").length;
+    }
+  }
+  return count;
 }
 
 export function addPage(config, title, icon) {

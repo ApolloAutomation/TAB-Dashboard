@@ -126,7 +126,7 @@ pages do not scroll; a screen can show at most 4 graphs, 4 dials and 4
 left-to-right colour fades.
 
 To choose which dashboard a tablet shows, pick it under "Shows" next to the
-tablet on the panel's Home screen. For a new tablet, pick its first
+tablet under Tablets on the panel's start screen. For a new tablet, pick its first
 dashboard and then press "Turn on with this dashboard". See
 [docs/tablets.md](docs/tablets.md) for automations and the status words.
 

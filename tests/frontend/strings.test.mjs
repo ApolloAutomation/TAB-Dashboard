@@ -71,8 +71,9 @@ test("every string key used in the frontend exists", () => {
   assert.deepEqual(missing, []);
 });
 
-// Keys the frontend builds from a code, a group id or a device kind.
-const DYNAMIC_PREFIXES = ["warn.", "group.", "pick.which."];
+// Keys the frontend builds from a code, a group id or a device kind; the
+// tablet's screen headlines by screen; the words fillWords puts in.
+const DYNAMIC_PREFIXES = ["warn.", "group.", "pick.which.", "tablets.screen.", "tablets.screen_help.", "tablets.word."];
 
 test("every string in the file is used by the frontend", () => {
   const strings = readStrings();
@@ -218,10 +219,7 @@ test("the tablet texts avoid jargon", () => {
   assert.equal(plain("tablets.reauth_key").replace("Settings > Devices & services > ESPHome", "").match(jargon), null);
   // The line that helps an admin tell which device a new tablet is: an
   // instruction, with the six characters the tablet's own screen shows.
-  assert.equal(
-    strings["tablets.device_line"],
-    "Before you turn it on, check that the name on the tablet's screen ends in {mac}.",
-  );
+  assert.equal(strings["tablets.device_line"], "Look at the tablet. The name on its screen ends in {mac}.");
   assert.equal(
     strings["tablets.device_before"],
     "If it still shows {dashboard}, its old dashboard, its name is not on its screen. Check that it shows {dashboard} and that its values no longer change.",
@@ -229,7 +227,7 @@ test("the tablet texts avoid jargon", () => {
   assert.match(strings["tablets.needs_encryption"], /in ESPHome\.$/);
   assert.ok(!/\b(firmware|engine|integration)\b/i.test(strings["tablets.needs_encryption"]));
   // The design's own sentences, word for word.
-  assert.equal(strings["tablets.none"], "No TAB-1 tablet found in Home Assistant yet. Power the tablet on. If it asks for Wi-Fi, join \"Apollo TAB1 Hotspot\" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here. You can still build dashboards.");
+  assert.equal(strings["tablets.none"], "No tablet found yet.");
   assert.equal(strings["tablets.make_first"], "Make a dashboard first.");
   assert.equal(strings["editor.on_tablet_helper"], "Changes show on the tablet as you make them.");
   assert.equal(strings["editor.on_tablet_none"], "No tablets yet.");
@@ -243,4 +241,57 @@ test("no string uses the old jargon", () => {
     .filter(([, value]) => jargon.test(value.replace(/\{[^}]*\}/g, "")))
     .map(([key]) => key);
   assert.deepEqual(offenders, []);
+});
+
+// Spec 4.8: the start screen is the start screen, and a new tablet is set
+// up "under Tablets". No text a person reads names a Home screen.
+test("no text names a Home screen", () => {
+  const files = [
+    "custom_components/apollo_tab/library/strings.json",
+    "custom_components/apollo_tab/websocket.py",
+    "custom_components/apollo_tab/translations/en.json",
+    "tests/harness/mock-hass.js",
+    "tests/harness/tablet-shapes.json",
+    "README.md",
+    ...fs
+      .readdirSync(path.join(root, "docs"))
+      .filter((name) => name.endsWith(".md"))
+      .map((name) => `docs/${name}`),
+  ];
+  assert.ok(files.length > 6);
+  for (const file of files) {
+    const text = fs.readFileSync(path.join(root, file), "utf8");
+    assert.doesNotMatch(text, /\bHome screen\b/i, file);
+  }
+  assert.match(fs.readFileSync(path.join(root, "custom_components/apollo_tab/websocket.py"), "utf8"), /under Tablets/);
+});
+
+// The word for turning a tablet on lives in three keys; every sentence
+// takes it from there (logic.js fillWords), and no frontend file writes it
+// inside a string of its own.
+test("the approve word is in one place", () => {
+  const strings = readStrings();
+  const word = /\bturn(s|ed|ing)?\s+(it\s+|them\s+|the tablet\s+)?on\b/i;
+  const words = ["tablets.word.approve", "tablets.word.approve_cap", "tablets.word.approve_it"];
+  assert.deepEqual(
+    words.map((key) => strings[key]),
+    ["turn on", "Turn on", "turn it on"],
+  );
+  const holding = Object.entries(strings)
+    .filter(([key, value]) => !words.includes(key) && word.test(value))
+    .map(([key]) => key);
+  assert.deepEqual(holding, []);
+  // The sentences that need it take it as a word.
+  assert.match(strings["tablets.turn_on"], /^\{approve_cap\} with this dashboard$/);
+  assert.match(strings["tablets.approve_note"], /\{approve_it\}/);
+  for (const name of fs.readdirSync(frontend).filter((file) => file.endsWith(".js"))) {
+    // Comments may name the button; strings may not.
+    const code = fs
+      .readFileSync(path.join(frontend, name), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const match of code.matchAll(/(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g)) {
+      assert.doesNotMatch(match[2], word, `${name}: ${match[0]}`);
+    }
+  }
 });

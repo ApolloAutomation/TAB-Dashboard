@@ -9,14 +9,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { format } from "../../custom_components/apollo_tab/frontend/logic.js";
+import { fillWords, format } from "../../custom_components/apollo_tab/frontend/logic.js";
 import * as tablets from "../../custom_components/apollo_tab/frontend/tablets.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const SHAPES = JSON.parse(fs.readFileSync(path.join(root, "tests/harness/tablet-shapes.json"), "utf8"));
 const FIXTURES = JSON.parse(fs.readFileSync(path.join(root, "tests/harness/fixtures.json"), "utf8"));
-const STRINGS = JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8"));
+// As the panel loads them: with the word for turning a tablet on put in.
+const STRINGS = fillWords(JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8")));
 // The tablet's own words, from the shared contract (CONTRACT.md section 11).
 const SCREENS = JSON.parse(fs.readFileSync(path.join(root, "tests/contract/screens.json"), "utf8"));
 
@@ -376,8 +377,8 @@ test("docs/tablets.md quotes the panel's own words", () => {
   for (const key of ["tablets.shows", "tablets.title", "editor.on_tablet_name", "settings.heading"]) {
     assert.ok(docs.includes(`"${STRINGS[key]}"`), `docs/tablets.md does not quote "${STRINGS[key]}"`);
   }
-  assert.ok(docs.includes("Turn on encryption for it in ESPHome"), "the encryption hint");
-  assert.ok(STRINGS["tablets.needs_encryption"].includes("Turn on encryption for it in ESPHome"));
+  assert.ok(docs.includes("Switch on encryption for it in ESPHome"), "the encryption hint");
+  assert.ok(STRINGS["tablets.needs_encryption"].includes("Switch on encryption for it in ESPHome"));
   assert.ok(docs.includes("It is still being set up"), "the set-up hint");
   assert.ok(STRINGS["tablets.not_paired"].includes("It is still being set up"));
   for (const message of Object.values(SHAPES.commands["apollo_tab/tablet/assign"].errors)) {
@@ -486,7 +487,7 @@ test("docs/tablets.md quotes the panel's own words", () => {
   assert.ok(guide.includes(`"${STRINGS["tablets.add_another"]}"`), "the line about another tablet");
   const adding = docs.slice(docs.indexOf("## Adding a tablet"), docs.indexOf("## A new tablet"));
   assert.deepEqual(numberedSteps(adding), [
-    "1. Power the tablet on.",
+    "1. Plug the tablet in.",
     '2. If its screen says "Set up Wi-Fi", join the open Wi-Fi "Apollo TAB1 Hotspot" from a phone within 15 minutes, and pick your home\'s Wi-Fi on the page that opens.',
     `3. Its screen then says "${add.headline}" and "${add.step}". Add it there.`,
     `4. Its screen then says "${SCREENS.waiting.turn_on.headline}". Turn it on in the panel, as below.`,

@@ -512,6 +512,7 @@ input[type="range"]:disabled::-moz-range-thumb {
 button:focus-visible,
 input:is([type="checkbox"], [type="radio"], [type="color"]):focus-visible,
 a:focus-visible,
+summary:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--tab-text);
   outline-offset: 2px;
@@ -520,7 +521,8 @@ a:focus-visible,
 /* Links, as buttons or in a sentence, have one ring: a rounded rectangle
    round their words. A link button's words are in a span of their own,
    which takes the ring; its box stays a 40 px press area. */
-a:not(.button-link):focus-visible {
+a:not(.button-link):focus-visible,
+summary:focus-visible {
   border-radius: var(--tab-r-xs);
   box-shadow: none;
 }
@@ -939,8 +941,297 @@ ${barTokens}
 .box > a {
   justify-self: start;
 }
+/* Words for screen readers only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* The guide: three numbered steps, a done step with a tick. */
+.guide-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* The steps on the left, the sample picture on the right. */
+.guide-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.guide-body > .guide-steps {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.guide-sample {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.guide-sample-frame {
+  padding: 10px;
+  border-radius: var(--tab-r-m);
+  background: var(--tab-bezel);
+}
+.guide-sample-screen {
+  overflow: hidden;
+  /* A tablet picture: the panel's line height must not reach it. */
+  line-height: normal;
+  border-radius: var(--tab-r-xs);
+}
+.guide-sample figcaption {
+  color: var(--tab-text-2);
+}
+:host(.compact) .guide-sample {
+  display: none;
+}
+.guide-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.guide-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.guide-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--tab-line);
+  border-radius: 50%;
+  font-weight: 500;
+  --mdc-icon-size: 18px;
+}
+.guide-step[data-done="true"] .guide-mark {
+  border-color: transparent;
+  background: var(--tab-accent-fill);
+  color: var(--tab-accent-ink);
+}
+.guide-words {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  min-width: 0;
+}
+.guide-words > * {
+  margin: 0;
+}
+.guide-words h3 {
+  font-size: var(--tab-fs-body);
+  line-height: var(--tab-lh-body);
+  font-weight: 500;
+}
+/* Dashboards as tiles: a picture of the first page, the name as a link
+   over the whole tile, then what it holds and where it is shown. */
+.dashboard-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: 16px;
+}
+.dashboard-tile {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  background: var(--tab-surface);
+}
+.dashboard-tile:hover {
+  background: color-mix(in srgb, var(--tab-text) 4%, var(--tab-surface));
+}
+.dashboard-tile:has(.tile-link:focus-visible) {
+  outline: 2px solid var(--tab-ring);
+  outline-offset: 2px;
+}
+/* The picture sits in a thin dark bezel, like the tablet's own frame, with
+   a line round it, so a dark page keeps its edge on a dark tile. Shadows
+   draw both, so the picture keeps its size. */
+.tablet-pic {
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  margin: 4px;
+  border-radius: var(--tab-r-xs);
+  background: var(--tab-stage);
+  box-shadow: 0 0 0 4px var(--tab-bezel), 0 0 0 5px var(--tab-line);
+  pointer-events: none;
+}
+.dashboard-row > .row-text {
+  align-content: start;
+}
+/* A tile: picture, words, then its action label at the foot. */
+.dashboard-row {
+  grid-template-rows: auto 1fr auto;
+}
+.tile-action {
+  justify-self: start;
+  padding: 4px 12px;
+  border-radius: var(--tab-r-pill);
+  background: var(--tab-tonal);
+  color: var(--tab-text);
+  font-weight: 500;
+}
+.dashboard-tile:hover .tile-action {
+  background: color-mix(in srgb, var(--tab-text) 14%, var(--tab-surface));
+}
+/* A link button's words line up with the text above it. It is moved,
+   not narrowed, so its words keep their room. */
+.dashboard-tile .over-link,
+.guide-words > button.link {
+  position: relative;
+  inset-inline-start: -4px;
+}
+.tile-name {
+  margin: 0;
+  font-size: var(--tab-fs-head);
+  line-height: var(--tab-lh-head);
+  font-weight: 500;
+}
+.dashboard-tile .tile-link {
+  color: var(--tab-text);
+  text-decoration: none;
+}
+.tile-link:focus-visible {
+  outline: none;
+}
+/* The whole tile opens the dashboard. */
+.tile-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+/* What sits above the stretched link takes its own clicks. */
+.dashboard-tile .over-link,
+.dashboard-tile .row-tags,
+.dashboard-tile .kept-change {
+  position: relative;
+  z-index: 1;
+}
+.dashboard-tile .over-link {
+  justify-self: start;
+  text-align: start;
+}
+/* One line, however many tablets: the rest is cut with "…" and the whole
+   list is in the title. */
+.dashboard-tile .shown-on {
+  display: block;
+  justify-self: start;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dashboard-tile .shown-on::before {
+  display: inline-block;
+  margin-inline-end: 6px;
+}
+.dashboard-tile .shown-on[hidden] {
+  display: none;
+}
+.create-tile {
+  place-content: center;
+  justify-items: center;
+  min-height: 160px;
+  border-style: dashed;
+  background: transparent;
+  --mdc-icon-size: 28px;
+}
+/* Grey boxes where the parts of the screen come while it loads. */
+.loading-boxes {
+  display: grid;
+  gap: 16px;
+}
+.loading-box {
+  height: 96px;
+  border-radius: var(--tab-r-m);
+  background: var(--tab-tonal);
+}
+.loading-box.tall {
+  height: 200px;
+}
+/* Advanced as one settings row, 56 px high, the whole row a button: cog,
+   name and reason, chevron. */
+.box.advanced-link {
+  padding: 0;
+}
+.box.advanced-link > button.settings-row {
+  justify-self: stretch;
+}
+button.settings-row {
+  justify-content: flex-start;
+  gap: 16px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 16px;
+  border-radius: inherit;
+  background-color: transparent;
+  text-align: start;
+  --mdc-icon-size: 24px;
+}
+button.settings-row .row-text {
+  flex: 1 1 auto;
+  gap: 2px;
+}
+button.settings-row .settings-title {
+  font-size: var(--tab-fs-body);
+  line-height: var(--tab-lh-body);
+  font-weight: 500;
+}
+button.settings-row .small {
+  color: var(--tab-text-2);
+  font-weight: 400;
+}
+/* On a phone the create tile is as short as its button allows. */
+@media (max-width: 700px) {
+  .create-tile {
+    grid-auto-flow: column;
+    align-items: center;
+    min-height: 72px;
+  }
+}
+.path-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.path-field {
+  display: grid;
+  flex: 1 1 260px;
+  gap: 4px;
+  min-width: 0;
+}
+.path-field .field-label {
+  font-weight: 500;
+}
+.path-field input {
+  width: 100%;
+  min-height: var(--tab-control);
+  border: 1px solid var(--tab-line);
+  color: var(--tab-text);
+}
+.count-chips .chip {
+  white-space: normal;
+}
 /* Rows inside a box have no box of their own: a line divides them. */
-.dashboard-row,
 .component-row {
   display: flex;
   flex-wrap: wrap;
@@ -969,6 +1260,10 @@ ${barTokens}
   flex-wrap: wrap;
   gap: 6px;
 }
+/* A card's id in the Advanced lists. */
+.card-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .code-line {
   padding: 8px 12px;
   border-radius: var(--tab-r-s);
@@ -976,15 +1271,6 @@ ${barTokens}
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--tab-fs-small);
   line-height: var(--tab-lh-small);
-}
-.advanced-link {
-  display: grid;
-  justify-items: start;
-  gap: 2px;
-}
-/* The link's words line up with the hint under it. */
-.advanced-link > button.link {
-  margin-inline-start: -4px;
 }
 .panel-header > .back {
   flex: 0 0 auto;
@@ -1003,14 +1289,35 @@ ${barTokens}
 }
 .tablet-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
-    "name shows status"
-    ". notes notes";
+    "name shows"
+    "status shows"
+    "notes notes";
   align-items: center;
-  gap: 4px 16px;
+  gap: 8px 16px;
   padding-top: 12px;
   border-top: 1px solid var(--tab-line);
+}
+/* A new tablet stands out as a tinted block. Its status sits at the top
+   right; "Shows" comes right above the button it fills, in one column. */
+.tablet-row[data-new="true"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name status"
+    "shows shows"
+    "notes notes";
+  align-items: start;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--tab-r-m);
+  background: var(--tab-accent-soft);
+}
+.tablet-row[data-new="true"] .tablet-status {
+  justify-self: end;
+}
+.tablet-row[data-new="true"] .tablet-shows {
+  justify-self: start;
 }
 .tablet-title {
   grid-area: name;
@@ -1050,12 +1357,15 @@ ${barTokens}
     margin: 6px 0;
   }
 }
+/* "Shows" and its list, at most 260 px wide, at the right of the row. */
 .tablet-shows {
   grid-area: shows;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  max-width: 100%;
   margin: 0;
 }
 .tablet-shows .field-label {
@@ -1063,17 +1373,29 @@ ${barTokens}
   font-weight: 500;
 }
 .tablet-shows select {
-  flex: 1 1 auto;
-  width: 100%;
+  flex: 0 1 260px;
+  width: 260px;
   min-width: 0;
 }
+/* The status as a chip under the name. */
 .tablet-status {
   grid-area: status;
-  display: flex;
+  justify-self: start;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
   margin: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-pill);
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
   font-weight: 500;
+}
+.tablet-status:empty {
+  display: none;
 }
 /* A dot beside the words: green on the tablet, amber while sending, red
    for a problem, the accent for a new tablet, grey otherwise. The words
@@ -1158,14 +1480,206 @@ ${barTokens}
     margin: 6px 0;
   }
 }
+/* And for the link to the guide to writing a card, on Advanced. */
+@media (max-width: 700px), (pointer: coarse) {
+  .card-guide {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 44px;
+  }
+}
+/* The same for the link to Devices & services in how to add a tablet. */
+@media (max-width: 700px), (pointer: coarse) {
+  .screen-devices {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 44px;
+    margin: 6px 0;
+  }
+}
+/* Narrow: name, status, "Shows", then the rest, one under the other. The
+   button's full width is set after its own rule, further down. */
 @container (max-width: 620px) {
-  .tablet-row {
+  .tablet-row,
+  .tablet-row[data-new="true"] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "name"
-      "shows"
       "status"
+      "shows"
       "notes";
+  }
+  .tablet-row[data-new="true"] .tablet-status {
+    justify-self: start;
+  }
+  .tablet-shows,
+  .tablet-row[data-new="true"] .tablet-shows {
+    justify-self: stretch;
+  }
+  .tablet-shows select {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+/* The tablet's icon in a 40 px tile before its name. */
+.tablet-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--tab-r-s);
+  background: var(--tab-tonal);
+  --mdc-icon-size: 22px;
+}
+/* The six characters to find on the tablet's screen. */
+.tablet-mac {
+  padding: 0 4px;
+  border-radius: var(--tab-r-xs);
+  background: var(--tab-tonal);
+  color: var(--tab-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.tablet-name-warning,
+.tablet-check-warning {
+  flex: 1 0 100%;
+}
+/* "Turn on with this dashboard" over the dashboard it sends: one size
+   whatever it names, so a pick does not move it. */
+.turn-on-wrap {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.tablet-notes .tablet-turn-on {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 0;
+  width: 280px;
+  max-width: 100%;
+  min-height: 56px;
+  padding-block: 6px;
+  text-align: start;
+  /* It takes presses the moment it looks filled. */
+  transition: none;
+}
+/* Its words stay readable while it waits on the new tablet's tint. */
+.tablet-row[data-new="true"] .tablet-turn-on:disabled {
+  background: color-mix(in srgb, var(--tab-text) 8%, var(--tab-surface));
+  color: var(--tab-text-2);
+}
+@container (max-width: 620px) {
+  .turn-on-wrap,
+  .tablet-notes .tablet-turn-on {
+    width: 100%;
+  }
+}
+.turn-on-name {
+  display: block;
+  width: 100%;
+  min-height: 1.33em;
+  overflow: hidden;
+  font-size: var(--tab-fs-small);
+  font-weight: 400;
+  line-height: var(--tab-lh-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* With no dashboard to name, the one line sits in the middle; the button
+   keeps its 56 px, so a pick moves nothing. */
+.turn-on-name:empty {
+  display: none;
+}
+.tablet-pick-first[data-shown="false"] {
+  visibility: hidden;
+}
+/* Fold-outs: an offline tablet's "What to do", and how to add a tablet. */
+.what-to-do > summary,
+.screen-says > summary {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  gap: 6px;
+  min-height: var(--tab-control-s);
+  color: var(--tab-accent-text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.what-to-do > summary:hover,
+.screen-says > summary:hover {
+  text-decoration-thickness: 2px;
+}
+/* A chevron that points down when shut and up when open. Turned, it
+   reaches 2 px past its box, so it keeps 2 px from the end of the link. */
+.what-to-do > summary::after,
+.screen-says > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-block-start: -3px;
+  margin-inline-end: 2px;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+.what-to-do[open] > summary::after,
+.screen-says[open] > summary::after {
+  margin-block-start: 3px;
+  transform: rotate(-135deg);
+}
+/* On a phone each fold-out's link is a 44 px high touch target. */
+@media (max-width: 700px), (pointer: coarse) {
+  .what-to-do > summary,
+  .screen-says > summary {
+    min-height: 44px;
+  }
+}
+.what-to-do > p {
+  margin: 4px 0 0;
+}
+.screen-says-body {
+  display: grid;
+  gap: 8px;
+  padding-block: 4px 8px;
+}
+.screen-says-body > * {
+  margin: 0;
+}
+.screen-says-body h3 {
+  font-size: var(--tab-fs-body);
+  font-weight: 500;
+}
+.screen-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.screen-row {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+  gap: 4px 16px;
+  padding-block: 8px;
+  border-top: 1px solid var(--tab-line);
+}
+.screen-row dt {
+  font-weight: 500;
+}
+.screen-row dd {
+  margin: 0;
+  color: var(--tab-text-2);
+}
+@container (max-width: 620px) {
+  .screen-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 :host(.compact) .panel-header {
@@ -3648,6 +4162,9 @@ export const rendererStyles = `
   position: absolute;
   box-sizing: border-box;
   margin: 0;
+  /* No padding of the browser's own: it would widen a button in a small
+     picture. */
+  padding: 0;
   border: 0;
   color: var(--at-tx);
   font-family: inherit;

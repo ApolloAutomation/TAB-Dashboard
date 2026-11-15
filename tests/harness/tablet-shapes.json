@@ -102,7 +102,7 @@
       "result": { "tablet": "tablet" },
       "errors": {
         "not_found": "This tablet is not known",
-        "not_approved": "This tablet is new. Pick a dashboard for it on the Home screen, then press \"Turn on with this dashboard\".",
+        "not_approved": "This tablet is new. Pick a dashboard for it under Tablets, then press \"Turn on with this dashboard\".",
         "unknown_dashboard": "This dashboard does not exist"
       }
     },
@@ -111,7 +111,7 @@
       "result": { "tablet": "tablet" },
       "errors": {
         "not_found": "This tablet is not known",
-        "not_approved": "This tablet is new. Pick a dashboard for it on the Home screen, then press \"Turn on with this dashboard\"."
+        "not_approved": "This tablet is new. Pick a dashboard for it under Tablets, then press \"Turn on with this dashboard\"."
       }
     },
     "apollo_tab/dashboards": {

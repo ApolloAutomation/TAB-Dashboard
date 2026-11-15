@@ -535,3 +535,28 @@ test("placeBeside keeps a pop-up inside its bounds", () => {
     }
   }
 });
+
+test("fillWords puts the approve words into every sentence and leaves other braces alone", () => {
+  const strings = {
+    "tablets.word.approve": "turn on",
+    "tablets.word.approve_cap": "Turn on",
+    "tablets.word.approve_it": "turn it on",
+    "tablets.turn_on": "{approve_cap} with this dashboard",
+    "tablets.note": "Do not {approve_it} unless {name} is yours.",
+    "tablets.status": "Ready to {approve}",
+    "home.plain": "{count} cards",
+    "home.unknown": "{approve_later}",
+  };
+  const filled = logic.fillWords(strings);
+  assert.equal(filled["tablets.turn_on"], "Turn on with this dashboard");
+  assert.equal(filled["tablets.note"], "Do not turn it on unless {name} is yours.");
+  assert.equal(filled["tablets.status"], "Ready to turn on");
+  assert.equal(filled["home.plain"], "{count} cards");
+  assert.equal(filled["home.unknown"], "{approve_later}");
+  // The words themselves stay, and the file it was given is not changed.
+  assert.equal(filled["tablets.word.approve"], "turn on");
+  assert.equal(strings["tablets.turn_on"], "{approve_cap} with this dashboard");
+  // Nothing to fill from: the same sentences.
+  assert.deepEqual(logic.fillWords({ a: "{approve}" }), { a: "{approve}" });
+  assert.deepEqual(logic.fillWords(null), {});
+});

@@ -34,6 +34,29 @@ export function format(text, vars = {}) {
   );
 }
 
+// Words that live in one string each, under this prefix. Every other
+// sentence names one by the rest of its key in braces: the word for turning
+// a new tablet on (tablets.word.*) is written once and put in everywhere.
+const WORD_PREFIX = "tablets.word.";
+
+// The strings with those words put in. Other braces, such as {tablet},
+// stay for format(). A new object; `strings` stays as it was.
+export function fillWords(strings) {
+  const source = strings && typeof strings === "object" ? strings : {};
+  const words = new Map();
+  for (const [key, value] of Object.entries(source)) {
+    if (key.startsWith(WORD_PREFIX) && typeof value === "string") {
+      words.set(key.slice(WORD_PREFIX.length), value);
+    }
+  }
+  const filled = {};
+  for (const [key, value] of Object.entries(source)) {
+    filled[key] =
+      typeof value === "string" ? value.replace(/\{([a-z_]+)\}/g, (match, name) => words.get(name) ?? match) : value;
+  }
+  return filled;
+}
+
 export function resolveBound(bound, values = {}) {
   if (
     bound &&
