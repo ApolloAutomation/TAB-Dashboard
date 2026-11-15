@@ -1,0 +1,107 @@
+schema: 2
+id: apollo/climate
+version: 2.0.0
+name: Thermostat
+description: Set the temperature and the mode of a heater or air conditioner.
+icon: mdi:thermostat
+group: climate
+replaces: [apollo/thermostat]
+
+params:
+  entity: {domain: climate, label: Thermostat}
+
+options:
+  show_modes:   {type: toggle, section: controls, label: Modes, default: true,
+                 needs: can.modes, needs_text: This thermostat has one mode only}
+  modes_shown:  {type: choice, multiple: true, max: 6, from: can.modes, default_first: 6,
+                 section: controls, label: Modes shown, when: [show_modes], needs: can.modes}
+  show_presets: {type: toggle, section: controls, label: Presets, default: false,
+                 needs: can.presets, needs_text: This thermostat has no presets}
+  show_now:     {type: toggle, section: shows, label: Temperature now, default: true}
+
+inputs:
+  target:    "{{ state_attr(entity, 'temperature') }}"
+  now:       "{{ state_attr(entity, 'current_temperature') }}"
+  action:    "{{ state_attr(entity, 'hvac_action') }}"
+  working:   "{{ action in ['heating', 'cooling'] }}"
+  mode_at:   "{{ modes_shown.index(states(entity)) if states(entity) in modes_shown else none }}"
+  preset_at: >-
+    {{ can.presets.index(state_attr(entity, 'preset_mode')) if state_attr(entity, 'preset_mode') in can.presets else none }}
+  fan_at: >-
+    {{ can.fan_modes.index(state_attr(entity, 'fan_mode')) if state_attr(entity, 'fan_mode') in can.fan_modes else none }}
+  line: >-
+    {{ ('Now ' ~ now ~ '°' if now is not none else '') ~ (' · ' ~ action if action and action not in ['idle', 'off'] else '') }}
+  # Warm while it heats, cool while it cools.
+  tone:      "{{ 'warn' if action == 'heating' else 'info' if action == 'cooling' else none }}"
+  state:     "{{ state_translated(entity) }}"
+
+outputs:
+  set_temperature: {action: climate.set_temperature, data: {entity_id: "{{ entity }}", temperature: "{{ value }}"},
+                    feedback: progress}
+  set_mode:        {action: climate.set_hvac_mode, data: {entity_id: "{{ entity }}", hvac_mode: "{{ option }}"},
+                    feedback: progress}
+  set_preset:      {action: climate.set_preset_mode, data: {entity_id: "{{ entity }}", preset_mode: "{{ option }}"},
+                    feedback: progress}
+  set_fan_mode:    {action: climate.set_fan_mode, data: {entity_id: "{{ entity }}", fan_mode: "{{ option }}"},
+                    feedback: progress}
+
+on: working
+state: state
+lit: icon
+hold: detail
+
+parts:
+  dial:    {type: thermostat, value: target, min: "{{ can.min }}", max: "{{ can.max }}",
+            step: "{{ can.step }}", on_change: set_temperature, colour: tone, mark: now}
+  modes:   {type: choice, options: modes_shown, value: mode_at, on_change: set_mode,
+            when: [can.modes, show_modes, modes_shown]}
+  presets: {type: choice, options: can.presets, value: preset_at, on_change: set_preset,
+            when: [can.presets]}
+  line:    {type: label, text: "{{ line }}", size: s, align: centre, when: [show_now]}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: title
+    layout:
+      - {use: dial, buttons: 44}
+  large:
+    name: Large
+    grid: [12, 6]
+    header: title
+    v1: apollo/thermostat
+    # As on the controls page: the dial narrower than the card, so its
+    # buttons sit at the foot of the arc and not in the card's corners.
+    layout:
+      - {type: row, items: [{use: dial, buttons: 56, width: 264}]}
+      - {use: modes}
+      - {use: presets, when: [show_presets]}
+      - {use: line}
+  full:
+    name: Controls
+    grid: [18, 11]
+    header: title
+    picker: false
+    # A dial that does not crowd the number, its buttons at the foot of the
+    # arc, then each group of choices under its own word, so one lit cell
+    # per group reads as one choice. Each row of choices is 56 high
+    # (LOOK-NOTES decision 1).
+    layout:
+      - {type: row, height: 300, items: [{use: dial, buttons: 64, width: 360}]}
+      - {use: line}
+      - {type: label, text: Mode, size: s, when: [can.modes, show_modes, modes_shown]}
+      - {use: modes, height: 56}
+      - {type: label, text: Preset, size: s, when: [can.presets]}
+      - {use: presets, height: 56}
+      - {type: label, text: Fan, size: s, when: [can.fan_modes]}
+      - {type: choice, options: can.fan_modes, value: fan_at, on_change: set_fan_mode,
+         when: [can.fan_modes], height: 56}
+detail: full
+
+preview:
+  params: {entity: climate.example}
+  can: {target: true, modes: [heat, cool, auto, "off"], presets: [eco, comfort],
+        fan_modes: [], min: 7, max: 35, step: 0.5}
+  inputs: {target: 21, now: 20.5, action: heating, working: true, mode_at: 0,
+           preset_at: null, fan_at: null, line: "Now 20.5° · heating", tone: warn, state: Heat}

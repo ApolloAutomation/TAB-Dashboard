@@ -166,15 +166,19 @@ def test_facts_body_rejects_bad_input(body):
 
 
 def test_preview_reads_facts_from_the_states():
-    """A colour lamp's card is drawn with its colour bar, an on/off lamp's not."""
+    """A colour lamp's card is drawn with its colour bar, an on/off lamp's not.
+
+    Large shows the colour and white bars; Wide keeps one brightness bar and
+    leaves them to the controls page.
+    """
 
     def tracks(entity):
         card = {
             "type": "custom:apollo-tab-card",
             "component": "apollo/light",
             "params": {"entity": entity},
-            "variant": "wide",
-            "grid_options": {"columns": 12, "rows": 3},
+            "variant": "large",
+            "grid_options": {"columns": 12, "rows": 6},
         }
         config = {
             "apollo_tab": {"version": 1},
@@ -191,5 +195,5 @@ def test_preview_reads_facts_from_the_states():
         widgets = [w for card in cards for w in card.get("w", [])]
         return sum(1 for w in widgets if w.get("t") == "slider" and "track" in w)
 
-    assert tracks("light.kitchen") == 1
+    assert tracks("light.kitchen") == 2
     assert tracks("light.living_room") == 0

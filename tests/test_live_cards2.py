@@ -99,7 +99,14 @@ def _states(hass: HomeAssistant) -> None:
     hass.states.async_set(
         LAMP,
         "on",
-        {"top": 100, "level": 40, "brightness": 128, "rgb_color": [255, 179, 71]},
+        {
+            "top": 100,
+            "level": 40,
+            "brightness": 128,
+            "rgb_color": [255, 179, 71],
+            # A dimmable lamp: the Light card's Controls page needs brightness.
+            "supported_color_modes": ["hs"],
+        },
     )
     hass.states.async_set(LOCK, "locked")
     hass.states.async_set(DOOR, "closed", {"device_class": "garage"})

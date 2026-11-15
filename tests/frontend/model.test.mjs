@@ -3168,6 +3168,23 @@ const v2 = (id) => {
   return { id, name: entry.name, icon: entry.icon, source: "builtin", ...entry.form };
 };
 const LIGHT = v2("apollo/light");
+
+test("the stand-in Home Assistant makes the picker's examples with the picker's settings", () => {
+  const made = Object.fromEntries(
+    harnessFixtures.cards_v2
+      .filter((card) => card.example)
+      .map((card) => [card.id, card.example.card.options]),
+  );
+  // build_fixtures.py keeps the same list; each is a schema 2 card.
+  assert.deepStrictEqual(made, JSON.parse(JSON.stringify(model.EXAMPLE_OPTIONS)));
+  for (const [id, options] of Object.entries(model.EXAMPLE_OPTIONS)) {
+    const card = harnessFixtures.cards_v2.find((entry) => entry.id === id);
+    const names = card.form.options.map((option) => option.name);
+    for (const name of Object.keys(options)) {
+      assert.ok(names.includes(name), `${id} has no setting ${name}`);
+    }
+  }
+});
 const lampFacts = (can) => {
   const facts = { toggle: true, icon: "mdi:lightbulb", kind: null, min_kelvin: 2000, max_kelvin: 6500, effect_list: [], ...can };
   return { can: { ...facts, entity: { ...facts } }, has: { entity: true } };

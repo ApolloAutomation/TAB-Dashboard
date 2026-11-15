@@ -11,7 +11,8 @@ params:
 
 inputs:
   pct:  "{{ ((state_attr(entity, 'brightness') or 0) / 2.55) | round | int }}"
-  text: "{{ pct ~ '%' }}"
+  # While the screen light is gone: its state, not "0%".
+  text: "{{ state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else pct ~ '%' }}"
 
 outputs:
   set: {action: light.turn_on, data: {entity_id: "{{ entity }}", brightness_pct: "{{ value }}"},
@@ -29,12 +30,13 @@ variants:
     name: Row
     grid: [12, 2]
     header: chip
-    layout: [{use: bar}]
+    layout: [{use: bar, height: 48}]
   wide:
     name: Wide
     grid: [12, 3]
     header: tile
-    layout: [{use: bar}]
+    # The bar takes the card's height: no empty band under the header.
+    layout: [{use: bar, grow: true}]
 
 preview:
   inputs: {pct: 80, text: "80%"}

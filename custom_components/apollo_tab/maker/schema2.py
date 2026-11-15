@@ -82,6 +82,7 @@ from .const import (
     WHEN_VALUE_RE,
 )
 from .errors import MakerError
+from .features import FACT_NAMES
 from .outputs import reference
 from .schema import (
     _as_mapping,
@@ -135,6 +136,8 @@ _TOP_KEYS = {
     "tint",
     "state",
     "unavailable",
+    "alone",
+    "title",
     "lit",
     "tap",
     "hold",
@@ -165,6 +168,8 @@ _WIDGET_COMMON = {
     "for_each",
     "as",
     "per_row",
+    "at_most",
+    "two_rows",
     "use",
 }
 _WIDGET_KEYS = {
@@ -347,13 +352,66 @@ def _fact(value: object, path: str, ctx: _Ctx) -> str:
     match = _FACT.match(value)
     if match is None:
         raise MakerError("bad_value", path, f"bad fact {value!r}")
-    if match.group(2) is not None:
-        param = ctx.params.get(match.group(1))
-        if param is None or param["kind"] != "entity":
-            raise MakerError(
-                "unknown_param", path, f"no device param {match.group(1)!r}"
-            )
+    _fact_parts(match.group(1), match.group(2), path, ctx)
     return value
+
+
+def _is_device_param(name: str, ctx: _Ctx) -> bool:
+    """Return whether a name is an entity param of the file."""
+    param = ctx.params.get(name)
+    return param is not None and param["kind"] == "entity"
+
+
+def _fact_parts(first: str, second: str | None, path: str, ctx: _Ctx) -> None:
+    """Check `can.<first>` or `can.<first>.<second>` against the fixed table.
+
+    One name: a fact of the table, or a device param of the file (all its
+    facts). Two names: a device param, then a fact of the table.
+    """
+    if second is None:
+        if first in FACT_NAMES or _is_device_param(first, ctx):
+            return
+        raise MakerError(
+            "unknown_fact",
+            path,
+            f"can.{first} is neither a fact a device can have"
+            " nor a device of this card",
+        )
+    if not _is_device_param(first, ctx):
+        raise MakerError("unknown_param", path, f"no device param {first!r}")
+    if second not in FACT_NAMES:
+        raise MakerError(
+            "unknown_fact", path, f"{second!r} is not a fact a device can have"
+        )
+
+
+# `can.<x>` or `can.<param>.<x>` inside a template's text.
+_CAN_IN_TEMPLATE = re.compile(
+    r"(?<![A-Za-z0-9_.])can\.([a-z][a-z0-9_]*)(?:\.([a-z][a-z0-9_]*))?"
+)
+
+
+def _check_template_facts(doc: dict, ctx: _Ctx) -> None:
+    """Check every `can.<x>` a template of the file reads (decision 2).
+
+    A second name is checked only after a device param: after a fact it is
+    a method or a key of the fact's own value.
+    """
+    stack: list[tuple[str, object]] = [
+        (key, value) for key, value in doc.items() if key != "preview"
+    ]
+    while stack:
+        path, value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend((f"{path}.{key}", inner) for key, inner in value.items())
+        elif isinstance(value, list):
+            stack.extend((f"{path}.{i}", inner) for i, inner in enumerate(value))
+        elif isinstance(value, str) and _is_template(value):
+            for match in _CAN_IN_TEMPLATE.finditer(value):
+                first, second = match.groups()
+                if not _is_device_param(first, ctx):
+                    second = None
+                _fact_parts(first, second, path, ctx)
 
 
 def _when(raw: object, path: str, ctx: _Ctx) -> list:
@@ -424,6 +482,14 @@ def _validate_params(raw: object, ctx: _Ctx) -> None:
             raise MakerError("duplicate_name", path, f"duplicate name {name!r}")
         ctx.used.add(name)
         ctx.params[name] = _validate_param(spec, path)
+        if ctx.params[name]["kind"] == "entity" and name in FACT_NAMES:
+            # can.<name> would mean both the fact and this device.
+            raise MakerError(
+                "bad_name",
+                path,
+                f"{name!r} is the name of a fact (can.{name});"
+                " give this device another name",
+            )
 
 
 def _words(spec: dict, path: str) -> tuple[str, str]:
@@ -813,7 +879,8 @@ def _validate_input(spec: object, path: str, ctx: _Ctx) -> dict:
         return _validate_action_input(spec, path, ctx)
     source = spec.get("source")
     if source == "recorder":
-        return _validate_history_input(spec, path, ctx.params)
+        params = _with_loop_entity(spec.get("entity"), f"{path}.entity", ctx, None)
+        return _validate_history_input(spec, path, params)
     if source == "camera":
         return _validate_camera_input(spec, path, ctx.params)
     if source == "colour":
@@ -834,8 +901,35 @@ def _validate_input(spec: object, path: str, ctx: _Ctx) -> dict:
 
 
 def _validate_action_input(spec: dict, path: str, ctx: _Ctx) -> dict:
-    """Validate a read-action input; its param must have the action's domain."""
-    return _schema1_action_input(spec, path, ctx.params)
+    """Validate a read-action input; its param must have the action's domain.
+
+    Its `entity_id` may also name a loop over a param with several devices
+    of that domain (C.2.8); its `result` may name the loop's entry, so each
+    copy renders its own value from the one shared call.
+    """
+    action = spec.get("action")
+    domain = action.split(".", 1)[0] if isinstance(action, str) else None
+    data = spec.get("data")
+    entity = data.get("entity_id") if isinstance(data, dict) else None
+    params = _with_loop_entity(entity, f"{path}.data.entity_id", ctx, domain)
+    return _schema1_action_input(spec, path, params)
+
+
+def _with_loop_entity(value: object, path: str, ctx: _Ctx, domain: str | None) -> dict:
+    """Return the params, with a stand-in for a loop name an input's entity names.
+
+    A schema 1 check then reads the loop name as a single-device param. The
+    loop itself is checked once the layout is read: it must go over a param
+    with several devices, and for a read action only over devices of the
+    action's domain.
+    """
+    match = _VAR.match(value) if isinstance(value, str) else None
+    if match is None or match.group(1) in ctx.params:
+        return ctx.params
+    name = match.group(1)
+    ctx.deferred.append(("loop_entity", name, path, domain))
+    stand_in = {"kind": "entity", "multiple": False, "domain": domain}
+    return {**ctx.params, name: stand_in}
 
 
 def _validate_statistics_input(spec: dict, path: str, ctx: _Ctx) -> dict:
@@ -1140,6 +1234,12 @@ def _mark(
             if needs_key is not None:
                 if needs_key and key is None:
                     raise MakerError("bad_value", path, f"{name} needs a key")
+                if needs_key and name != "can" and key not in FACT_NAMES:
+                    # <as>_can of a loop over devices: one device's facts.
+                    # (`{{ can.<x> }}` is checked with every template.)
+                    raise MakerError(
+                        "unknown_fact", path, f"{key!r} is not a fact a device can have"
+                    )
                 return {"form": "lookup", "name": name, "key": key}
         if _is_template(value):
             if not template:
@@ -1333,7 +1433,7 @@ def _loop(item: dict, path: str, ctx: _Ctx, scope: dict) -> dict | None:
     for_each = item.get("for_each")
     as_name = item.get("as")
     if for_each is None:
-        if as_name is not None or "per_row" in item:
+        if as_name is not None or {"per_row", "at_most", "two_rows"} & set(item):
             raise MakerError("bad_value", f"{path}.as", "'as' needs 'for_each'")
         return None
     if scope:
@@ -1355,6 +1455,13 @@ def _loop(item: dict, path: str, ctx: _Ctx, scope: dict) -> dict | None:
         )
     loop["as"] = as_name
     loop["per_row"] = _int(item.get("per_row", 1), f"{path}.per_row", 1, 8)
+    if "at_most" in item:
+        # At most this many copies: a card that holds only so many.
+        loop["at_most"] = _int(item["at_most"], f"{path}.at_most", 1, MAX_LOOP_COPIES_2)
+        loop["copies"] = min(loop["copies"], loop["at_most"])
+    if "two_rows" in item:
+        # Copies that would fill one row only share two rows instead.
+        loop["two_rows"] = _bool(item["two_rows"], f"{path}.two_rows")
     return loop
 
 
@@ -1505,7 +1612,17 @@ def _row(item: dict, path: str, ctx: _Ctx, where: str, scope: dict) -> dict:
     """Validate a row: up to 8 widgets side by side."""
     _reject_unknown_keys(
         item,
-        {"type", "items", "when", "visible", "height", "for_each", "as", "per_row"},
+        {
+            "type",
+            "items",
+            "when",
+            "visible",
+            "height",
+            "for_each",
+            "as",
+            "per_row",
+            "at_most",
+        },
         path,
     )
     loop = _loop(item, path, ctx, scope)
@@ -1917,6 +2034,11 @@ def _validate_variants(doc: dict, ctx: _Ctx, card: dict) -> dict:
         out[name] = _variant(spec, path, ctx, card)
     if not any(variant["picker"] for variant in out.values()):
         raise MakerError("bad_value", "variants", "one variant must be in the picker")
+    if not any(variant["picker"] and not variant["needs"] for variant in out.values()):
+        # A card whose device can do nothing must still have a variant.
+        raise MakerError(
+            "bad_value", "variants", "one variant in the picker must have no needs"
+        )
     return out
 
 
@@ -1925,11 +2047,29 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
     spec = _as_mapping(spec, path)
     _reject_unknown_keys(
         spec,
-        {"name", "grid", "header", "trailing", "layout", "v1", "picker", "align"},
+        {
+            "name",
+            "grid",
+            "header",
+            "trailing",
+            "layout",
+            "v1",
+            "picker",
+            "align",
+            "needs",
+            "needs_text",
+            "state",
+        },
         path,
     )
     prefix = f"{path}." if path else ""
     name = _text(_required(spec, "name", path), f"{prefix}name", MAX_LABEL_2)
+    # What the device must be able to do for this variant, as for an option.
+    needs = spec.get("needs")
+    needs = "" if needs is None else _fact(needs, f"{prefix}needs", ctx)
+    needs_text = _text(spec.get("needs_text", ""), f"{prefix}needs_text", MAX_HELP_2)
+    if needs_text and not needs:
+        raise MakerError("bad_value", f"{prefix}needs_text", "needs_text needs 'needs'")
     grid = _required(spec, "grid", path)
     if not isinstance(grid, list) or len(grid) != 2:
         raise MakerError("bad_value", f"{prefix}grid", "grid is [columns, rows]")
@@ -1951,6 +2091,9 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
         "picker": _bool(spec.get("picker", True), f"{prefix}picker"),
         "align": _choose(spec, "align", ("top",), path),
         "v1": _v1(spec.get("v1"), f"{prefix}v1"),
+        "needs": needs,
+        "needs_text": needs_text,
+        "state": _variant_state(spec, prefix, header, ctx),
     }
     layout = _required(spec, "layout", path)
     lpath = f"{prefix}layout"
@@ -1965,6 +2108,34 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
     ]
     out["widgets"] = ctx.widgets
     return out
+
+
+def _variant_state(spec: dict, prefix: str, header: str, ctx: _Ctx) -> dict | None:
+    """Validate a variant's own state line: an input, or none for no line.
+
+    Left out, the header shows the card's `state`.
+    """
+    if "state" not in spec:
+        return None
+    path = f"{prefix}state"
+    if header not in ("chip", "tile", "tile_v"):
+        raise MakerError("bad_value", path, "state is for the chip and tile headers")
+    value = spec["state"]
+    if value == "none":
+        return {"form": "none"}
+    if isinstance(value, str) and value in ctx.inputs:
+        return {"form": "input", "input": value}
+    raise MakerError("bad_value", path, "state is an input or none")
+
+
+def _card_title(doc: dict, ctx: _Ctx) -> dict | None:
+    """Validate the card's own title: an input, used when the person set none."""
+    if "title" not in doc:
+        return None
+    value = doc["title"]
+    if isinstance(value, str) and value in ctx.inputs:
+        return {"form": "input", "input": value}
+    raise MakerError("bad_value", "title", "title is an input")
 
 
 def _trailing(
@@ -2187,6 +2358,13 @@ def _resolve_deferred(ctx: _Ctx) -> None:
                 "unknown_param", path, f"no loop over devices named {name!r}"
             )
         param = ctx.params[loop["loop"]["name"]]
+        domain = entry[3] if kind == "loop_entity" and len(entry) > 3 else None
+        if domain is not None and param["domains"] != [domain]:
+            raise MakerError(
+                "domain_mismatch",
+                path,
+                "every device of the loop must match the action",
+            )
         if kind == "output_entity":
             output_name = entry[3].split(".", 1)[1]
             _check_output_kinds(ctx.outputs[output_name], param, path)
@@ -2225,7 +2403,8 @@ def validate_component2(doc: dict) -> dict:
     _validate_inputs(doc.get("inputs"), ctx)
     _validate_outputs(doc.get("outputs"), ctx)
     card = {
-        key: _card_mark(doc, key, ctx) for key in ("on", "tint", "state", "unavailable")
+        key: _card_mark(doc, key, ctx)
+        for key in ("on", "tint", "state", "unavailable", "alone")
     }
     lit = _choose(doc, "lit", LIT_LOOKS, "", "fill")
     tap = _validate_tap(doc.get("tap"), ctx)
@@ -2242,6 +2421,7 @@ def validate_component2(doc: dict) -> dict:
     if detail is not None and detail not in variants:
         raise MakerError("bad_value", "detail", f"no variant named {detail!r}")
     _resolve_deferred(ctx)
+    _check_template_facts(doc, ctx)
     notes = _validate_notes(doc.get("notes"), ctx)
     first = next(v for v in variants.values() if v["picker"])
     columns, rows = first["grid"]
@@ -2269,6 +2449,7 @@ def validate_component2(doc: dict) -> dict:
         "inputs": ctx.inputs,
         "outputs": ctx.outputs,
         **card,
+        "title_input": _card_title(doc, ctx),
         "lit": lit,
         "tap": tap,
         "hold": hold,

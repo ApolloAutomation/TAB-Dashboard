@@ -226,7 +226,14 @@ CHOICE_ROW_H = 48
 CHOICE_DOTS_ROW_H = 44
 CHOICE_GAP = 8  # between cells and between rows, as contract 4.7 draws them
 CHOICE_MAX_ROWS = 4
+CHOICE_TALL = 2  # a grown choice's cell is at most this many times as tall as wide
 TOUCH_MIN = 44  # no control narrower or lower than this
+# A button draws its icon and text side by side when lower than this (contract
+# 4.7), with padding 6, icon 24 and gap 6: BUTTON_SIDE_W of its width is not
+# for the text. Below BUTTON_TEXT_MIN of text it shows the text alone.
+BUTTON_STACK_H = 64
+BUTTON_SIDE_W = 6 + 24 + 6 + 6
+BUTTON_TEXT_MIN = 48
 ROW_ITEM_GAP = 8  # between the widgets of a row
 SIDE_GAP = 12
 
@@ -238,11 +245,21 @@ HEADER_H_2 = {
     "tile_v": 44 + GAP + 28 + LABEL_GAP + 22,
     "none": 0,
 }
+# A tile_v header with no state line under the name ends under the name.
+TILE_V_NO_STATE_H = 44 + GAP + 28
 BADGE = 44
 CHIP_ICON = 24
 TRAILING_SWITCH = (64, 36)
+# A tile header's switch needs this much left for the name beside it.
+HEADER_NAME_MIN = 48
+# A name narrower than this would be a letter and "…": the header leaves it out.
+NAME_SHOWN_MIN = 32
 TRAILING_MORE = 44
 TRAILING_TEXT_W = 88
+# A chip's state is a short value ("21.4 °C", "unavailable"): at most this
+# wide, so a long name keeps the rest of the line. "unavailable" is 82 px
+# wide at the state's size: 80 cut it to "unavailab…".
+CHIP_STATE_MAX_W = TRAILING_TEXT_W
 
 
 def _natural_height(geo: dict) -> int:
@@ -315,6 +332,95 @@ def _choice_rows(geo: dict, width: int) -> int | None:
     return None
 
 
+def _fewer_rows(geo: dict) -> dict:
+    """Give a choice no more rows than it has options.
+
+    A row that no option fills would be a hole. A fixed height loses the
+    share of the rows that go, so each row keeps its height.
+    """
+    n = max(geo.get("options", 1), 1)
+    rows = geo["rows"]
+    if rows <= n:
+        return geo
+    return _rows_to(geo, n)
+
+
+def _rows_to(geo: dict, target: int) -> dict:
+    """Give a choice `target` rows; a fixed height keeps each row's height."""
+    rows = geo.get("rows", 1)
+    out = {**geo, "rows": target}
+    if geo.get("height") is not None:
+        each = (geo["height"] - CHOICE_GAP * (rows - 1)) // rows
+        out["height"] = target * each + CHOICE_GAP * (target - 1)
+    return out
+
+
+def _lone_cell(n: int, rows: int) -> bool:
+    """Return whether n cells in this many rows leave one alone in the last."""
+    k = -(-n // rows)
+    return rows > 1 and k > 1 and n - k * (rows - 1) == 1
+
+
+def _no_lone_cell(geo: dict, width: int) -> dict:
+    """Take one row away when the last row would hold a single cell.
+
+    Three presets in two rows leave one alone with a hole beside it; in one
+    row they fill it. Only while every cell stays wide enough to touch.
+    """
+    n = max(geo.get("options", 1), 1)
+    rows = geo["rows"]
+    while _lone_cell(n, rows):
+        k = -(-n // (rows - 1))
+        if (width - CHOICE_GAP * (k - 1)) // k < TOUCH_MIN:
+            break
+        geo = _rows_to(geo, rows - 1)
+        rows -= 1
+    return geo
+
+
+def _taller_rows(geo: dict, width: int, height: int) -> int:
+    """Return the rows of a grown choice, so no cell is a tall pillar.
+
+    While a cell would be more than CHOICE_TALL times as tall as it is wide,
+    one cell fewer goes in each row, as long as every row keeps its
+    height and the rows stay within CHOICE_MAX_ROWS. A count that would
+    leave one cell alone in the last row is passed over: three cells go
+    from one row to three, never to two and a hole.
+    """
+    n = max(geo.get("options", 1), 1)
+    rows = geo.get("rows", 1)
+    line = CHOICE_DOTS_ROW_H if geo.get("look") == "dots" else CHOICE_ROW_H
+    while rows < n:
+        k = -(-n // rows)
+        cell_w = (width - CHOICE_GAP * (k - 1)) // k
+        cell_h = (height - CHOICE_GAP * (rows - 1)) // rows
+        if cell_h <= CHOICE_TALL * cell_w:
+            break
+        more = None
+        for per_row in range(k - 1, 0, -1):
+            count = -(-n // per_row)
+            if (
+                count > CHOICE_MAX_ROWS
+                or (height - CHOICE_GAP * (count - 1)) // count < line
+            ):
+                break
+            if not _lone_cell(n, count):
+                more = count
+                break
+        if more is None:
+            break
+        rows = more
+    return rows
+
+
+def button_text_alone(width: int, height: int) -> bool:
+    """Return whether a button with an icon and a text shows only the text.
+
+    Side by side, an icon in a narrow button leaves its text a few letters.
+    """
+    return height < BUTTON_STACK_H and width - BUTTON_SIDE_W < BUTTON_TEXT_MIN
+
+
 def _fit_cells(cells: list[dict], width: int) -> list[dict]:
     """Work out each widget's width; a control too narrow to touch is dropped.
 
@@ -327,7 +433,13 @@ def _fit_cells(cells: list[dict], width: int) -> list[dict]:
         geo: dict | None = cell
         if cell["type"] == "choice":
             rows = _choice_rows(cell, cell_w)
-            geo = None if rows is None else {**cell, "rows": rows}
+            # More rows than asked keep each row's height: a fixed height
+            # is for one row as it is for two.
+            geo = (
+                None
+                if rows is None
+                else _no_lone_cell(_fewer_rows(_rows_to(cell, rows)), cell_w)
+            )
         elif cell.get("control") and cell_w < TOUCH_MIN:
             geo = None
         if (
@@ -340,16 +452,40 @@ def _fit_cells(cells: list[dict], width: int) -> list[dict]:
     return out
 
 
+def switch_fits_tile_header(width: int) -> bool:
+    """Return whether a tile header this wide has room for a trailing switch."""
+    name_w = width - BADGE - GAP - TRAILING_SWITCH[0] - GAP
+    return name_w >= HEADER_NAME_MIN
+
+
 def _header_parts(
-    form: str, trailing: str | None, x0: int, y0: int, x1: int
+    form: str,
+    trailing: str | None,
+    x0: int,
+    y0: int,
+    x1: int,
+    state_line: bool = True,
 ) -> dict[str, list[int]]:
-    """Place the parts of a header form; rects are relative to the card."""
+    """Place the parts of a header form; rects are relative to the card.
+
+    state_line: False when the card shows no state line (tile_v only).
+    """
     width = x1 - x0
     if form == "title":
         return {"title": [x0, y0, width, HEADER_H_2["title"]]}
     if form == "chip":
         rest = width - CHIP_ICON - GAP
-        state_w = rest // 2
+        if rest < NAME_SHOWN_MIN:
+            # Too narrow for a name: the icon alone, in the middle.
+            return {"icon": [x0 + (width - CHIP_ICON) // 2, y0, CHIP_ICON, CHIP_ICON]}
+        # The name gets two thirds, and all but CHIP_STATE_MAX_W on a wide
+        # chip: it is the longer text.
+        state_w = min(rest // 3, CHIP_STATE_MAX_W)
+        if rest - state_w - GAP < HEADER_NAME_MIN:
+            return {
+                "icon": [x0, y0, CHIP_ICON, CHIP_ICON],
+                "name": [x0 + CHIP_ICON + GAP, y0, rest, 24],
+            }
         return {
             "icon": [x0, y0, CHIP_ICON, CHIP_ICON],
             "name": [x0 + CHIP_ICON + GAP, y0, rest - state_w - GAP, 24],
@@ -366,14 +502,24 @@ def _header_parts(
     if form == "tile":
         parts["badge"] = [x0, y0 + 2, BADGE, BADGE]
         tx = x0 + BADGE + GAP
+        if trailing == "switch" and not switch_fits_tile_header(width):
+            # A narrow card: the switch would cut the name to a letter, or
+            # lie over the badge. The name gets the room.
+            trailing = None
+            trail_w = 0
         tw = x1 - tx - (trail_w + GAP if trail_w else 0)
+        if tw < NAME_SHOWN_MIN:
+            # No room for a name that can be read: the badge alone, in the
+            # middle.
+            return {"badge": [x0 + (width - BADGE) // 2, y0 + 2, BADGE, BADGE]}
         parts["name"] = [tx, y0, tw, 26]
         parts["state"] = [tx, y0 + 26, tw, 22]
         mid = y0 + HEADER_H_2["tile"] // 2
     else:  # tile_v
         parts["badge"] = [x0, y0, BADGE, BADGE]
         parts["name"] = [x0, y0 + BADGE + GAP, width, 28]
-        parts["state"] = [x0, y0 + BADGE + GAP + 28 + LABEL_GAP, width, 22]
+        if state_line:
+            parts["state"] = [x0, y0 + BADGE + GAP + 28 + LABEL_GAP, width, 22]
         mid = y0 + BADGE // 2
     if trailing == "switch":
         sw, sh = TRAILING_SWITCH
@@ -431,6 +577,7 @@ def layout_card2(
     header: str = "none",
     trailing: str | None = None,
     align_top: bool = False,
+    state_line: bool = True,
 ) -> dict:
     """Place a schema 2 card. Coordinates are relative to the card's top-left.
 
@@ -442,7 +589,8 @@ def layout_card2(
     "weight", "rows" and "options" (a choice), "side"}.
 
     header is a form of C.3 and trailing what a tile header shows at its
-    right: "switch", "more", "text" or None.
+    right: "switch", "more", "text" or None. state_line False: the card
+    shows no state line, so a tile_v header ends under the name.
 
     Returns {"header": {part: rect}, "header_switch": row index or None,
     "rects": per row a list per member (a row has one member) of rect or
@@ -458,6 +606,8 @@ def layout_card2(
     header_switch = None
     dropped = 0
     head_h = HEADER_H_2[header]
+    if header == "tile_v" and not state_line:
+        head_h = TILE_V_NO_STATE_H
     if header == "title" and w >= WIDE_CARD_W:
         for i in order:
             row = body[i]
@@ -473,7 +623,7 @@ def layout_card2(
                 order.remove(i)
                 break
     if head_h:
-        header_rect = _header_parts(header, trailing, x0, y0, x1)
+        header_rect = _header_parts(header, trailing, x0, y0, x1, state_line)
         if header == "title" and header_switch is not None:
             header_rect["title"][2] -= TRAILING_SWITCH[0] + GAP
         header_rect = {
@@ -543,6 +693,15 @@ def layout_card2(
             member_rects = []
             member_rows = []
             x = x0
+            if (
+                len(member) == 1
+                and member[0]["geo"] is not None
+                and member[0]["geo"]["type"] == "thermostat"
+                and member[0]["geo"].get("width") is not None
+            ):
+                # A thermostat narrower than its row sits in the middle:
+                # its buttons come in to the foot of the arc.
+                x += max(x1 - x0 - member[0]["w"], 0) // 2
             for cell in member:
                 geo = cell["geo"]
                 if geo is None:
@@ -550,6 +709,8 @@ def layout_card2(
                     member_rows.append(None)
                 else:
                     member_rects.append([x, y, cell["w"], height])
+                    if geo["type"] == "choice" and _grows(geo):
+                        geo = {**geo, "rows": _taller_rows(geo, cell["w"], height)}
                     member_rows.append(
                         geo.get("rows") if geo["type"] == "choice" else None
                     )

@@ -55,7 +55,7 @@ async def test_builtins_load(hass: HomeAssistant) -> None:
     """All built-in Components load without errors."""
     library = Library(hass)
     await library.async_load()
-    assert len(library.components) == 25
+    assert len(library.components) == 41
     assert library.errors == []
     assert library.themes
     assert "apollo/light-tile" in library.components
@@ -75,7 +75,7 @@ async def test_user_component_loads(
     component = library.components["me/simple"]
     assert component["source"] == "user"
     assert component["file"] == "simple.yaml"
-    assert len(library.components) == 26
+    assert len(library.components) == 42
     assert library.errors == []
     listing = library.as_dict()
     assert listing["components_path"] == library.user_dir
@@ -115,7 +115,7 @@ async def test_yaml_error_reported(
     assert len(library.errors) == 1
     assert library.errors[0]["code"] == "yaml_error"
     assert library.errors[0]["file"] == "broken.yaml"
-    assert len(library.components) == 25
+    assert len(library.components) == 41
 
 
 async def test_python_tag_rejected(
@@ -161,7 +161,7 @@ async def test_file_too_large_reported(
     assert len(library.errors) == 1
     assert library.errors[0]["code"] == "file_too_large"
     assert library.errors[0]["file"] == "big.yaml"
-    assert len(library.components) == 25
+    assert len(library.components) == 41
 
 
 async def test_reserved_namespace_rejected(
@@ -413,8 +413,8 @@ async def test_as_dict_gives_every_card_its_group_and_words(
     await library.async_load()
     data = json.loads(PICKER_FILE.read_text(encoding="utf-8"))
     entries = {item["id"]: item for item in library.as_dict()["components"]}
-    # The 25 bundled cards (16 of schema 1, 9 of schema 2) and the person's.
-    assert len(entries) == 26
+    # The 41 bundled cards (16 of schema 1, 25 of schema 2) and the person's.
+    assert len(entries) == 42
     for card_id, entry in data.items():
         assert entries[card_id]["group"] == entry["group"], card_id
         assert entries[card_id]["keywords"] == entry["keywords"], card_id
@@ -447,8 +447,8 @@ async def test_as_dict_gives_every_card_its_group_and_words(
     assert light["group"] == "lights"
     assert light["keywords"] == ["glow"]
 
-    # The harness fixtures give the panel the same answer: the schema 1
-    # cards in its library, the schema 2 cards' form data in cards_v2.
+    # The harness fixtures give the panel the same answer: every card in
+    # its library, the schema 2 cards' form data also in cards_v2.
     built = build()
     fixture = {item["id"]: item for item in built["library"]["components"]}
     fixture.update({item["id"]: item["form"] for item in built["cards_v2"]})
@@ -495,13 +495,10 @@ PICKER_NAME_ROOM = 176 - 2 * 12
 # from the cards' templates, so a friendlier example alone would promise what
 # the card on the wall does not do. Their new cards fix them (cards spec D.1
 # and D.2), and a card leaves this list when the picker stops offering it.
-# The list may only get shorter.
-NOT_FRIENDLY_YET = {
-    "apollo/alarm-panel": "shows the raw state word armed_home",
-    "community/presence-chips": (
-        "shows each person's id and raw state, such as person.alex: unknown"
-    ),
-}
+# The list may only get shorter. The alarm panel (raw state armed_home) and
+# the presence chips (person.alex: unknown) left it when the Alarm and People
+# cards replaced them.
+NOT_FRIENDLY_YET: dict[str, str] = {}
 
 
 def _texts(value: object) -> list[str]:
@@ -550,3 +547,69 @@ def test_cards_the_picker_offers_have_friendly_examples() -> None:
     assert len(fixtures["cards"]) == 16
     assert set(problems) == set(NOT_FRIENDLY_YET), problems
     assert len(NOT_FRIENDLY_YET) <= 2
+
+
+# New cards whose example in the picker is not friendly yet: the example
+# devices in the card's own `preview` have no names, so the card shows their
+# ids, in Home Assistant as in the stand-in. Only a friendlier preview in the
+# card file fixes them. The list may only get shorter.
+NOT_FRIENDLY_YET_V2: dict[str, str] = {
+    "apollo/people": "person.anna and the other example people",
+    "apollo/readings": "sensor.living_room and the other example sensors",
+}
+
+
+def _widget_texts(value: object) -> list[str]:
+    """Return the texts a compiled card draws: its titles and labels."""
+    if isinstance(value, dict):
+        return [
+            text
+            for key, item in value.items()
+            for text in (
+                [item] if key in ("text", "title") and isinstance(item, str) else []
+            )
+            + _widget_texts(item)
+        ]
+    if isinstance(value, list):
+        return [text for item in value for text in _widget_texts(item)]
+    return []
+
+
+def test_new_cards_the_picker_offers_have_friendly_examples() -> None:
+    """The schema 2 cards' examples in the picker are friendly and fit.
+
+    The picker asks for each card with no variant, so it gets its first
+    size, and with the picker's own settings where it has them (the stand-in
+    keeps that example as `example`).
+    """
+    fixtures = build()
+    problems: dict[str, list[str]] = {}
+    offered = 0
+    for card in fixtures["cards_v2"]:
+        if card["form"]["legacy"]:
+            continue
+        offered += 1
+        first = next(v["id"] for v in card["form"]["variants"] if v["picker"])
+        example = card.get("example") or card["variants"][first]
+        assert example["init"]["variant"] == first, card["id"]
+        init = {key: value for key, value in example["init"].items() if key != "call"}
+        found = []
+        shown = _widget_texts(init) + _texts(list(example["values"].values()))
+        for text in shown:
+            if ENTITY_ID.search(text):
+                found.append(f"id in {text!r}")
+            elif RAW_STATE.search(text):
+                found.append(f"raw state in {text!r}")
+        name = card["name"]
+        if len(name) * LETTER_WIDTH * 14 > PICKER_NAME_ROOM:
+            found.append(f"name {name!r} is too long for a picker tile")
+        header = init.get("header")
+        if header and header.get("title") == name:
+            room = header["r"][2] - (32 if header.get("icon") else 0)
+            if len(name) * LETTER_WIDTH * 16 > room:
+                found.append(f"name {name!r} is cut in the card's header")
+        if found:
+            problems[card["id"]] = found
+    assert offered == 25
+    assert set(problems) == set(NOT_FRIENDLY_YET_V2), problems
+    assert len(NOT_FRIENDLY_YET_V2) <= 2

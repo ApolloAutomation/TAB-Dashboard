@@ -260,7 +260,10 @@ def test_state_icon_by_kind_class_and_state() -> None:
     assert features.state_icon("cover", "garage", "closed") == "mdi:garage"
     assert features.state_icon("cover", "curtain", "open") == "mdi:blinds-open"
     assert features.state_icon("lock", None, "jammed") == "mdi:lock-alert"
-    assert features.state_icon("lock", None, "unknown") == "mdi:lock-outline"
+    # L2: a lock whose state is not known shows no padlock that says either.
+    assert features.state_icon("lock", None, "unknown") == "mdi:lock-alert"
+    assert features.state_icon("lock", None, "unavailable") == "mdi:lock-alert"
+    assert features.state_icon("lock", None, "locking") == "mdi:lock-outline"
     assert features.state_icon("sensor", "battery", "8") == "mdi:battery-alert"
     assert features.state_icon("sensor", "battery", "55") == "mdi:battery-50"
     assert features.state_icon("sensor", "battery", "90") == "mdi:battery"

@@ -41,7 +41,8 @@ variants:
   small:
     name: Small
     grid: [6, 2]
-    header: tile
+    # The name on its own line across the card.
+    header: tile_v
     layout:
       - {use: old_button}
   tile:

@@ -29,6 +29,9 @@ TABLET_KEYS = {
     "suggested",
     "reauth",
     "reauth_name",
+    "simpler",
+    "dropped",
+    "not_kept",
 }
 
 
@@ -104,6 +107,9 @@ async def test_tablets_exact_shape(
                 "suggested": None,
                 "reauth": None,
                 "reauth_name": None,
+                "simpler": 0,
+                "dropped": 0,
+                "not_kept": False,
             }
         ]
     }

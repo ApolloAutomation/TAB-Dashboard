@@ -26,13 +26,13 @@
  },
  "counts": {
   "normal_pages": 2,
-  "pages": 7,
-  "slots": 85,
-  "widgets": 157
+  "pages": 6,
+  "slots": 97,
+  "widgets": 156
  },
  "dropped": [],
- "hash": "11847f60ba9677f6",
- "size": 15039,
+ "hash": "bdca689110727ab6",
+ "size": 15681,
  "slots": [
   {
    "d": 1,
@@ -164,15 +164,15 @@
   {
    "d": 26,
    "src": 26,
-   "type": "n"
+   "type": "b"
   },
   {
-   "coerce": "colour",
    "d": 27,
    "src": 27,
    "type": "n"
   },
   {
+   "coerce": "colour",
    "d": 28,
    "src": 28,
    "type": "n"
@@ -180,11 +180,16 @@
   {
    "d": 29,
    "src": 29,
+   "type": "n"
+  },
+  {
+   "d": 30,
+   "src": 30,
    "type": "b"
   },
   {
    "coerce": "colour",
-   "d": 30,
+   "d": 31,
    "roles": {
     "accent": 16102727,
     "accent2": 7124223,
@@ -195,28 +200,23 @@
     "text": 15264493,
     "warn": 16102727
    },
-   "src": 30,
-   "type": "n"
-  },
-  {
-   "d": 31,
    "src": 31,
-   "type": "b"
+   "type": "n"
   },
   {
    "d": 32,
    "src": 32,
-   "type": "i"
+   "type": "b"
   },
   {
    "d": 33,
    "src": 33,
-   "type": "t"
+   "type": "i"
   },
   {
    "d": 34,
    "src": 34,
-   "type": "b"
+   "type": "t"
   },
   {
    "d": 35,
@@ -226,17 +226,17 @@
   {
    "d": 36,
    "src": 36,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 37,
    "src": 37,
-   "type": "b"
+   "type": "t"
   },
   {
    "d": 38,
    "src": 38,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 39,
@@ -251,12 +251,12 @@
   {
    "d": 41,
    "src": 41,
-   "type": "b"
+   "type": "i"
   },
   {
    "d": 42,
    "src": 42,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 43,
@@ -266,32 +266,32 @@
   {
    "d": 44,
    "src": 44,
-   "type": "n"
+   "type": "t"
   },
   {
    "d": 45,
    "src": 45,
-   "type": "t"
+   "type": "n"
   },
   {
    "d": 46,
    "src": 46,
-   "type": "b"
+   "type": "t"
   },
   {
    "d": 47,
    "src": 47,
-   "type": "n"
+   "type": "b"
   },
   {
    "d": 48,
    "src": 48,
-   "type": "b"
+   "type": "n"
   },
   {
    "d": 49,
    "src": 49,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 50,
@@ -301,22 +301,22 @@
   {
    "d": 51,
    "src": 51,
-   "type": "n"
+   "type": "t"
   },
   {
    "d": 52,
    "src": 52,
-   "type": "b"
+   "type": "n"
   },
   {
    "d": 53,
    "src": 53,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 54,
    "src": 54,
-   "type": "b"
+   "type": "t"
   },
   {
    "d": 55,
@@ -324,10 +324,9 @@
    "type": "b"
   },
   {
-   "coerce": "colour",
    "d": 56,
    "src": 56,
-   "type": "n"
+   "type": "i"
   },
   {
    "d": 57,
@@ -335,32 +334,32 @@
    "type": "b"
   },
   {
+   "coerce": "colour",
    "d": 58,
    "src": 58,
-   "type": "t"
+   "type": "n"
   },
   {
    "d": 59,
    "src": 59,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 60,
    "src": 60,
-   "type": "n"
+   "type": "t"
   },
   {
    "d": 61,
    "src": 61,
-   "type": "n"
+   "type": "t"
   },
   {
    "d": 62,
    "src": 62,
-   "type": "b"
+   "type": "n"
   },
   {
-   "coerce": "colour",
    "d": 63,
    "src": 63,
    "type": "n"
@@ -373,22 +372,23 @@
   {
    "d": 65,
    "src": 65,
-   "type": "t"
+   "type": "b"
   },
   {
+   "coerce": "colour",
    "d": 66,
    "src": 66,
-   "type": "t"
+   "type": "n"
   },
   {
    "d": 67,
    "src": 67,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 68,
    "src": 68,
-   "type": "b"
+   "type": "t"
   },
   {
    "d": 69,
@@ -398,11 +398,26 @@
   {
    "d": 70,
    "src": 70,
+   "type": "t"
+  },
+  {
+   "d": 71,
+   "src": 71,
+   "type": "b"
+  },
+  {
+   "d": 72,
+   "src": 72,
+   "type": "t"
+  },
+  {
+   "d": 73,
+   "src": 73,
    "type": "b"
   },
   {
    "coerce": "colour",
-   "d": 71,
+   "d": 74,
    "roles": {
     "accent": 16102727,
     "accent2": 7124223,
@@ -413,38 +428,23 @@
     "text": 15264493,
     "warn": 16102727
    },
-   "src": 71,
-   "type": "n"
-  },
-  {
-   "d": 72,
-   "src": 72,
-   "type": "b"
-  },
-  {
-   "d": 73,
-   "src": 73,
-   "type": "i"
-  },
-  {
-   "d": 74,
    "src": 74,
-   "type": "t"
+   "type": "n"
   },
   {
    "d": 75,
    "src": 75,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 76,
    "src": 76,
-   "type": "b"
+   "type": "i"
   },
   {
    "d": 77,
    "src": 77,
-   "type": "b"
+   "type": "t"
   },
   {
    "d": 78,
@@ -454,7 +454,7 @@
   {
    "d": 79,
    "src": 79,
-   "type": "b"
+   "type": "t"
   },
   {
    "d": 80,
@@ -464,7 +464,7 @@
   {
    "d": 81,
    "src": 81,
-   "type": "t"
+   "type": "b"
   },
   {
    "d": 82,
@@ -474,18 +474,78 @@
   {
    "d": 83,
    "src": 83,
-   "type": "n"
+   "type": "b"
   },
   {
    "d": 84,
    "src": 84,
-   "type": "n"
+   "type": "b"
   },
   {
    "d": 85,
    "src": 85,
+   "type": "t"
+  },
+  {
+   "d": 86,
+   "src": 86,
+   "type": "t"
+  },
+  {
+   "d": 87,
+   "src": 87,
+   "type": "t"
+  },
+  {
+   "d": 88,
+   "src": 88,
+   "type": "t"
+  },
+  {
+   "d": 89,
+   "src": 89,
+   "type": "t"
+  },
+  {
+   "d": 90,
+   "src": 90,
+   "type": "t"
+  },
+  {
+   "d": 91,
+   "src": 91,
+   "type": "t"
+  },
+  {
+   "d": 92,
+   "src": 92,
+   "type": "n"
+  },
+  {
+   "d": 93,
+   "src": 93,
+   "type": "b"
+  },
+  {
+   "d": 94,
+   "src": 94,
+   "type": "n"
+  },
+  {
+   "d": 95,
+   "src": 95,
+   "type": "t"
+  },
+  {
+   "d": 96,
+   "src": 96,
+   "type": "t"
+  },
+  {
+   "d": 97,
+   "src": 97,
    "type": "n"
   }
  ],
- "source_hash": "220535c18bbdf2fc"
+ "source_hash": "3bde18454860104f"
 }

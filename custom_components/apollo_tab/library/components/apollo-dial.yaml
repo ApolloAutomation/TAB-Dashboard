@@ -1,0 +1,68 @@
+schema: 2
+id: apollo/dial
+version: 2.0.0
+name: Gauge
+description: Show a number on a round gauge, coloured by the limits you set.
+icon: mdi:gauge
+group: sensors
+replaces: [community/energy-gauge]
+
+params:
+  entity: {domain: [sensor, number, input_number], label: Reading from}
+  max:    {type: number, default: 5000, label: Top of the gauge}
+
+options:
+  min:         {type: number, section: shows, label: Bottom of the gauge, default: 0}
+  low:         {type: number, section: shows, label: Low below, default: 0}
+  low_colour:  {type: colour, section: look, label: Colour when low, default: info}
+  high:        {type: number, section: shows, label: High above, default: 0}
+  high_colour: {type: colour, section: look, label: Colour when high, default: warn}
+  unit:        {type: text, max: 8, section: shows, label: Unit}
+
+inputs:
+  # No number (the sensor is gone): no value, so the dial shows "–" and
+  # fades, never a 0 it did not read.
+  reading: "{{ states(entity) | float(none) }}"
+  gone: "{{ states(entity) in ['unavailable', 'unknown'] }}"
+  shown_unit: "{{ unit or state_attr(entity, 'unit_of_measurement') or '' }}"
+  text:    "{{ (states(entity) ~ ' ' ~ shown_unit) | trim }}"
+  # A limit of 0 is not set.
+  tone: >-
+    {{ none if reading is not number else high_colour if high and reading > high else low_colour if low and reading < low else none }}
+  # Under the dial: its range, or why there is no value.
+  foot: >-
+    {{ ((min | round(0) | int) ~ ' to ' ~ (max | round(0) | int) ~ ' ' ~ shown_unit) | trim if reading is number else state_translated(entity) }}
+
+on: "{{ tone is not none }}"
+unavailable: gone
+state: text
+tint: tone
+lit: icon
+# A card too small for the dial shows its number, not its icon.
+alone: "{{ states(entity) if reading is number else '—' }}"
+
+parts:
+  gauge: {type: thermostat, value: reading, min: "{{ min }}", max: "{{ max }}", colour: tone}
+  text:  {type: label, text: "{{ text }}", size: m, align: centre}
+  # The dial shows the number; the line under it the unit and the range,
+  # or why there is no number.
+  range: {type: label, size: m, align: centre, when: [tablet.v2], text: "{{ foot }}"}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    header: title
+    v1: community/energy-gauge
+    # The dial alone takes the tile: its number is the reading.
+    layout: [{use: gauge}, {use: text, when: ["!tablet.v2"]}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: title
+    v1: community/energy-gauge
+    layout: [{use: gauge}, {use: range}, {use: text, size: ml, when: ["!tablet.v2"]}]
+
+preview:
+  params: {entity: sensor.example, max: 5000}
+  inputs: {reading: 1840, gone: false, shown_unit: W, text: "1840 W", tone: null, foot: "0 to 5000 W"}

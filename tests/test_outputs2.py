@@ -43,7 +43,7 @@ name: Calls
 icon: mdi:lightbulb
 params:
   entity: {domain: light}
-  group: {domain: [light, switch, fan], multiple: true, optional: true}
+  team: {domain: [light, switch, fan], multiple: true, optional: true}
   covers: {domain: cover, multiple: true, optional: true}
   pick: {domain: select, optional: true}
 options:
@@ -72,7 +72,7 @@ outputs:
   all:     {action: light.turn_on, uses: {members: entities}, feedback: pulse,
             data: {entity_id: "{{ members }}"}}
   each:    {action: {light: light.toggle, switch: switch.toggle}, feedback: optimistic,
-            data: {entity_id: "{{ group }}"}}
+            data: {entity_id: "{{ team }}"}}
   open:    {action: cover.open_cover, feedback: progress,
             data: {entity_id: "{{ covers }}"}}
   choose:  {action: select.select_option, feedback: optimistic,
@@ -95,7 +95,7 @@ variants:
           - {type: button, text: Quiet, on_tap: quiet}
           - {type: button, text: Loud, on_tap: loud}
           - {type: button, text: All, on_tap: all}
-          - {type: button, text: Each, on_tap: each, when: [has.group]}
+          - {type: button, text: Each, on_tap: each, when: [has.team]}
           - {type: button, text: Open, on_tap: open, when: [has.covers]}
       - {type: choice, options: can.pick.options, on_change: choose, when: [has.pick]}
       - {type: slider, value: sat, min: 0, max: 255, step: 0, on_change: say}
@@ -105,7 +105,7 @@ check_component_templates(COMPONENT)
 LAMP = "light.a"
 PARAMS = {
     "entity": LAMP,
-    "group": ["light.b", "switch.c", "fan.d"],
+    "team": ["light.b", "switch.c", "fan.d"],
     "covers": ["cover.blind", "cover.garage"],
     "pick": "select.mode",
 }
@@ -313,7 +313,7 @@ async def test_what_the_loader_refuses_is_refused_again_at_the_call(
             hass,
             each,
             component=foreign,
-            params={**each["params"], "group": ["light.b"]},
+            params={**each["params"], "team": ["light.b"]},
         )
     assert err.value.code == "not_allowed"
     listed = json.loads(json.dumps(COMPONENT))
@@ -342,7 +342,7 @@ async def test_entity_id_that_is_not_one_or_more_devices(
     calls = async_mock_service(hass, "light", "toggle")
     action = _bindings()["each"]
     with pytest.raises(CallError) as err:
-        await _run(hass, action, params={**action["params"], "group": bad})
+        await _run(hass, action, params={**action["params"], "team": bad})
     assert err.value.code == "not_allowed"
     assert calls == []
 
@@ -353,7 +353,7 @@ async def test_several_devices_with_one_that_is_not_the_cards(
     """A list that names a device the card was not set up with is refused whole."""
     calls = async_mock_service(hass, "light", "toggle")
     action = _bindings()["each"]
-    params = {**action["params"], "group": ["light.b", "light.stranger"]}
+    params = {**action["params"], "team": ["light.b", "light.stranger"]}
     with pytest.raises(CallError) as err:
         await _run(hass, action, params=params)
     assert err.value.code == "not_allowed"
@@ -371,7 +371,7 @@ async def test_an_action_per_kind_is_one_call_per_kind(hass: HomeAssistant) -> N
     assert [call.data for call in switches] == [{"entity_id": ["switch.c"]}]
     assert fans == []
     with pytest.raises(CallError) as err:
-        await _run(hass, action, params={**action["params"], "group": ["fan.d"]})
+        await _run(hass, action, params={**action["params"], "team": ["fan.d"]})
     assert err.value.code == "not_allowed"
 
 

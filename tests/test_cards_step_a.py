@@ -26,7 +26,9 @@ from custom_components.apollo_tab.live import async_run_output
 from custom_components.apollo_tab.maker import device
 from custom_components.apollo_tab.maker.compile2 import (
     compile_card2,
+    cut_middle,
     kelvin_track,
+    name_chars,
     validate_card_config2,
 )
 from custom_components.apollo_tab.maker.const import UPDATE_NOTE
@@ -287,9 +289,82 @@ def test_the_shipped_light_is_the_light_of_d1() -> None:
         " else '' }}"
     )
     d1["inputs"].pop("level")
+    # Large is not offered for a lamp that only turns on and off (D.1, the
+    # coordinator's decision 9).
+    large = shipped["variants"]["large"]
+    assert (large.pop("needs"), large.pop("needs_text")) == (
+        "can.brightness",
+        "This light only turns on and off",
+    )
     wide = d1["variants"]["wide"]["layout"]
     assert wide.pop(2) == {"use": "dots", "when": ["can.colour", "colour_control=dots"]}
+    _first_look_changes(d1)
+    _second_look_changes(d1)
     assert shipped == d1
+
+
+def _off_copies(bar: dict, icon: str) -> dict:
+    """Return a bar as a swap of its copy for on and its faded copy for off."""
+    when = bar.pop("when")
+    on = {**bar, "visible": "is_on", "grow": True}
+    off = {k: v for k, v in bar.items() if k not in ("track", "keep_active")}
+    off = {**off, "icon": icon, "visible": "{{ not is_on }}", "grow": True}
+    return {"type": "swap", "when": when, "items": [on, off]}
+
+
+def _first_look_changes(d1: dict) -> None:
+    """Apply what the first look at the pictures changed (LOOK-NOTES, package L1)."""
+    parts, variants = d1["parts"], d1["variants"]
+    # Decision 6: the colour and white bars of a lamp that is off are faded
+    # copies with an icon; the strength bar has an icon too.
+    parts["hue"] = _off_copies(parts["hue"], "mdi:palette")
+    parts["white"] = _off_copies(parts["white"], "mdi:white-balance-sunny")
+    parts["sat"]["icon"] = "mdi:palette-outline"
+    # Decision 5: no empty band. The Wide bars take the card's height; a lamp
+    # that only turns on and off fills it with a power button.
+    parts["power"] = {
+        "type": "button",
+        "icon": "mdi:power",
+        "on_tap": "toggle",
+        "selected": "is_on",
+        "big_icon": True,
+        "grow": True,
+        "when": ["!can.brightness"],
+    }
+    wide = variants["wide"]["layout"]
+    wide[0]["grow"] = True
+    wide.append({"use": "power"})
+    large = variants["large"]["layout"]
+    large[0]["grow"] = large[2]["grow"] = True
+    # Decision 2: no controls page for a lamp that only turns on and off.
+    full = variants["full"]
+    full["needs"] = "can.brightness"
+    full["needs_text"] = "This light only turns on and off"
+    # Decision 1: each row at least 56 high, brightness the tallest.
+    for row, height in zip(full["layout"], (72, 56, 56, 56, 56, 120), strict=True):
+        row["height"] = height
+
+
+def _second_look_changes(d1: dict) -> None:
+    """Apply what the look review of every card changed (package L2)."""
+    inputs, variants = d1["inputs"], d1["variants"]
+    # Only the bar of the mode the lamp is in has a marker: no hue or
+    # strength while it shows a white.
+    for name, index in (("hue", 0), ("sat", 1)):
+        inputs[name] = (
+            "{{ none if state_attr(entity, 'color_mode') == 'color_temp' else"
+            " (state_attr(entity, 'hs_color') or [none, none])[" + str(index) + "] }}"
+        )
+    # The larger sizes say the brightness and the white in the header.
+    inputs["readout"] = (
+        "{{ [state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K')"
+        " if is_on and kelvin is number else ''] | select | join(' · ') }}"
+    )
+    for name in ("wide", "large", "full"):
+        variants[name]["state"] = "readout"
+    # Wide: one bar of the card's height; two would each be under 48 px.
+    variants["wide"]["layout"] = [{"use": "dim", "grow": True}, {"use": "power"}]
+    d1["preview"]["inputs"]["readout"] = "On · 68%"
 
 
 @pytest.mark.parametrize("component_id", list(STEP_A))
@@ -503,9 +578,55 @@ def test_the_version_1_form_of_every_variant(
     )
     header_icon = (built.get("header") or {}).get("icon")
     assert header_icon is None or header_icon in LEVEL1
-    compiled = device.compile_device_layout(layout, ICONS)
+    _assert_no_fallback(device.compile_device_layout(layout, ICONS))
+
+
+def _assert_no_fallback(compiled: dict) -> None:
+    """Fail when a compiled device layout holds the fallback code point."""
     fallback = ICONS["icons"][ICONS["fallback"]][0]
-    assert chr(fallback).encode() not in compiled["bytes"]
+    assert fallback not in _icon_codes(json.loads(compiled["bytes"]))
+
+
+def _icon_codes(device_layout: dict) -> list[int]:
+    """Return every constant icon code point of a device layout.
+
+    The bytes hold code points as numbers, so this walks the layout instead
+    of looking for the character in the bytes.
+    """
+    found = [e["icon"] for e in device_layout.get("nav", []) if "icon" in e]
+    for page in device_layout["pages"]:
+        for item in page["w"]:
+            for part in (item, item.get("header") or {}, *item.get("w", [])):
+                if isinstance(part.get("icon"), int):
+                    found.append(part["icon"])
+                if part.get("t") == "image" and isinstance(part.get("value"), int):
+                    found.append(part["value"])
+    return found
+
+
+def test_the_fallback_check_can_fail() -> None:
+    """A layout with the fallback glyph is caught (LOOK-NOTES decision 8).
+
+    The check before looked for the character in the bytes, where code
+    points are numbers: it passed whatever the layout held.
+    """
+    fallback = ICONS["icons"][ICONS["fallback"]][0]
+    held = {
+        "nav": [{"icon": fallback}],
+        "pages": [{"w": [{"t": "card", "w": [{"t": "image", "value": fallback}]}]}],
+    }
+    assert _icon_codes(held) == [fallback, fallback]
+    assert chr(fallback).encode() not in json.dumps(held).encode()
+    for card in (
+        {"t": "card", "icon": fallback, "w": []},
+        {"t": "card", "header": {"icon": fallback}, "w": []},
+        {"t": "card", "w": [{"t": "button", "icon": fallback}]},
+    ):
+        assert _icon_codes({"pages": [{"w": [card]}]}) == [fallback], card
+    # The check the version 1 test runs fails on such a layout.
+    with pytest.raises(AssertionError):
+        _assert_no_fallback({"bytes": json.dumps(held).encode()})
+    _assert_no_fallback({"bytes": json.dumps({"pages": []}).encode()})
 
 
 # ---------------------------------------------------------------- the light of D.1
@@ -589,49 +710,134 @@ def test_the_owners_lamp_tile() -> None:
     assert "tap" not in detail and "hold" not in detail
 
 
-def test_the_owners_lamp_wide_large_and_controls() -> None:
-    """Wide: header with switch, bar, colour bar. Large: bar, colour, warm to cool.
+CUT_NAMES = [
+    ("Living Room Lamp 1", 14, "Living…Lamp 1"),
+    ("Living Room Lamp 12", 14, "Living…Lamp 12"),
+    ("Kitchen Ceiling Light", 14, "Kitchen…Light"),
+    ("Bedroom Lamp 2", 14, "Bedroom Lamp 2"),
+    ("Hallway", 14, "Hallway"),
+    ("Superlongnamewithoutspaces", 14, "Superlongnamewithoutspaces"),
+    ("Living Room Chandelier", 14, "Living Room Chandelier"),
+    ("Living Room Lamp Two", 14, "Living Room Lamp Two"),
+    ("A B", 2, "A B"),
+    ("Sofa lamp · Colour", 14, "Sofa la…Colour"),
+    ("", 14, ""),
+]
 
-    Controls: the same rows larger; no effects for a lamp that has none.
+
+@pytest.mark.parametrize(("name", "chars", "shown"), CUT_NAMES)
+def test_a_long_header_name_is_cut_in_the_middle(
+    name: str, chars: int, shown: str
+) -> None:
+    """The end of a name stays, so "Lamp 1" and "Lamp 2" can be told apart."""
+    assert cut_middle(name, chars) == shown
+    assert len(shown) <= chars or shown == name
+
+
+async def test_the_name_template_cuts_as_cut_middle(hass: HomeAssistant) -> None:
+    """The tile's live name gives what cut_middle gives, for every case."""
+    from custom_components.apollo_tab.live import async_evaluate_slot
+
+    result = _light_card(OWNER_LAMP_RAW, "tile", 6, 3)
+    [card, _detail] = _cards(result["layout"])
+    name = card["w"][1]
+    assert name["r"][2] == 152
+    [slot] = [s for s in result["bindings"]["slots"] if s["n"] == name["text"]["s"]]
+    assert name_chars(name["r"][2]) == 14
+    for full, _chars, _shown in CUT_NAMES:
+        if not full:
+            continue
+        hass.states.async_set("light.h1401", "on", {"friendly_name": full})
+        assert await async_evaluate_slot(hass, slot) == cut_middle(full, 14), full
+    # A lamp with no name shows the card's own name.
+    hass.states.async_set("light.h1401", "on", {})
+    assert await async_evaluate_slot(hass, slot) == "Light"
+
+
+def test_the_owners_two_lamps_differ_on_their_tiles() -> None:
+    """A person's title on a tile is cut in the middle too; Wide has room."""
+    for title, shown in (
+        ("Living Room Lamp 1", "Living…Lamp 1"),
+        ("Living Room Lamp 2", "Living…Lamp 2"),
+    ):
+        tile = _light_layout(
+            OWNER_LAMP_RAW,
+            variant="tile",
+            grid_options={"columns": 6, "rows": 3},
+            title=title,
+        )
+        assert _cards(tile["layout"])[0]["w"][1]["text"] == shown
+        wide = _light_layout(
+            OWNER_LAMP_RAW,
+            variant="wide",
+            grid_options={"columns": 12, "rows": 3},
+            title=title,
+        )
+        assert _cards(wide["layout"])[0]["w"][1]["text"] == title
+
+
+def _visible_when(result: dict, widget: dict) -> str:
+    """Return the end of the template that shows a swap copy."""
+    slot = result["bindings"]["slots"][widget["vis"]["s"] - 1]
+    assert slot["n"] == widget["vis"]["s"]
+    return slot["template"].rsplit("%}", 1)[-1]
+
+
+def _assert_on_and_off_copies(result: dict, on: dict, off: dict, icon: str) -> None:
+    """Check that a colour or white bar is two copies at one place (decision 6).
+
+    The copy with the track shows while the lamp is on and stays active with
+    no value. The other shows while it is off or unavailable: it has no track
+    and is not kept active, so it is drawn faded, with an icon.
     """
-    wide = _cards(_light_card(OWNER_LAMP_RAW, "wide", 12, 3)["layout"])[0]
+    assert on["r"] == off["r"]
+    assert _visible_when(result, on) == "{{ is_on }}"
+    assert _visible_when(result, off) == "{{ not is_on }}"
+    assert on["nv"] == 1 and "nv" not in off
+    assert "track" not in off and off["icon"] == icon
+    assert on["value"] == off["value"] and on["change"] == off["change"]
+    actions = result["bindings"]["actions"]
+    assert (
+        actions[f"{on['id']}:change"]["output"]
+        == actions[f"{off['id']}:change"]["output"]
+    )
+
+
+def test_the_owners_lamp_wide_large_and_controls() -> None:
+    """Wide: header with switch and one tall bar. Large: bar, colour, warm to cool.
+
+    Controls: the same rows larger; no effects for a lamp that has none. The
+    colour and white bars have a faded copy for a lamp that is off. (L2: the
+    Wide colour bar went; with it both bars were under 48 px.)
+    """
+    wide_result = _light_card(OWNER_LAMP_RAW, "wide", 12, 3)
+    wide = _cards(wide_result["layout"])[0]
     head = [("badge",), ("label", "m", 0), ("label", "s", 0), ("switch",)]
-    assert [_shape(w) for w in wide["w"]] == [
-        *head,
-        ("slider", "bar"),
-        ("slider", "hue"),
-    ]
-    hue = wide["w"][5]
-    assert hue["track"] == [
-        "#FF0000",
-        "#FFFF00",
-        "#00FF00",
-        "#00FFFF",
-        "#0000FF",
-        "#FF00FF",
-        "#FF0000",
-    ]
-    assert (hue["min"], hue["max"], hue["nv"]) == (0, 360, 1)
+    assert [_shape(w) for w in wide["w"]] == [*head, ("slider", "bar")]
+    assert wide["w"][4]["r"][3] == 96
     large_result = _light_card(OWNER_LAMP_RAW, "large", 12, 6)
     large, detail = _cards(large_result["layout"])
-    assert [_shape(w) for w in large["w"]] == [
-        *head,
+    bars = [
         ("slider", "bar"),
         ("slider", "hue"),
+        ("slider", "bar"),
         ("slider", "kelvin"),
+        ("slider", "bar"),
     ]
-    white = large["w"][6]
+    assert [_shape(w) for w in large["w"]] == [*head, *bars]
+    white = large["w"][7]
     assert (white["min"], white["max"], white["step"]) == (2000, 6500, 50)
     assert white["track"] == kelvin_track(2000, 6500)
     assert white["nv"] == 1
-    assert [_shape(w) for w in detail["w"]] == [
-        *head,
-        ("slider", "bar"),
-        ("slider", "hue"),
-        ("slider", "kelvin"),
-    ]
-    assert [w["r"][3] for w in detail["w"][4:]] == [56, 48, 48]
-    assert detail["r"][2:] == [568, 696]
+    _assert_on_and_off_copies(large_result, large["w"][5], large["w"][6], "mdi:palette")
+    _assert_on_and_off_copies(
+        large_result, white, large["w"][8], "mdi:white-balance-sunny"
+    )
+    assert [_shape(w) for w in detail["w"]] == [*head, *bars]
+    # LOOK-NOTES decision 1: each row at least 56 high, brightness the
+    # tallest; the card as tall as its rows.
+    assert [w["r"][3] for w in detail["w"][4:]] == [72, 56, 56, 56, 56]
+    assert detail["r"][2:] == [568, 288]
 
 
 def test_the_owners_lamp_with_every_colour_control() -> None:
@@ -644,14 +850,19 @@ def test_the_owners_lamp_with_every_colour_control() -> None:
     )
     assert result["warnings"] == []
     large = _cards(result["layout"])[0]
+    # Brightness, colour and its faded copy, strength, white and its faded
+    # copy (LOOK-NOTES decision 6), the favourites.
     assert [_shape(w) for w in large["w"]][4:] == [
         ("slider", "bar"),
         ("slider", "hue"),
         ("slider", "bar"),
+        ("slider", "bar"),
         ("slider", "kelvin"),
+        ("slider", "bar"),
         ("choice",),
     ]
-    dots = large["w"][8]
+    assert large["w"][7]["icon"] == "mdi:palette-outline"
+    dots = large["w"][10]
     assert dots["look"] == 1
     assert len(dots["cols"]) == 8
 
@@ -666,7 +877,7 @@ def test_a_lamp_that_only_dims() -> None:
 
 
 def test_a_lamp_that_only_turns_on_and_off() -> None:
-    """Tile: badge, name, state. Wide: header with switch. No bar anywhere."""
+    """Tile: badge, name, state. Wide: header and power button. No bar anywhere."""
     tile = _cards(_light_card(ONOFF_LAMP_RAW, "tile", 6, 3)["layout"])[0]
     assert [_shape(w) for w in tile["w"]] == [
         ("badge",),
@@ -675,14 +886,101 @@ def test_a_lamp_that_only_turns_on_and_off() -> None:
         ("label", "s", 2),
     ]
     assert tile["tap"] == {"policy": "optimistic"}
-    wide = _cards(_light_card(ONOFF_LAMP_RAW, "wide", 12, 3)["layout"])[0]
+    wide_result = _light_card(ONOFF_LAMP_RAW, "wide", 12, 3)
+    wide = _cards(wide_result["layout"])[0]
+    # LOOK-NOTES decision 5: one large power button fills the card, no
+    # empty band under the header. It is the card's one switch: the header
+    # shows none (L1 round 1).
     assert [_shape(w) for w in wide["w"]] == [
         ("badge",),
         ("label", "m", 0),
         ("label", "s", 0),
-        ("switch",),
+        ("button",),
     ]
-    assert wide["w"][3]["tap"] == {"policy": "optimistic"}
+    power = wide["w"][3]
+    assert power["icon"] == "mdi:power" and power["tap"] == {"policy": "optimistic"}
+    assert power["r"][1] - (wide["w"][0]["r"][1] + wide["w"][0]["r"][3]) <= 16
+    assert power["r"][1] + power["r"][3] == wide["r"][1] + wide["r"][3] - 16
+    actions = wide_result["bindings"]["actions"]
+    assert actions[f"{power['id']}:tap"]["output"] == "toggle"
+    # LOOK-NOTES decision 2: no hold and no controls page on any size.
+    for variant, columns, rows in (("tile", 6, 3), ("wide", 12, 3)):
+        result = _light_card(ONOFF_LAMP_RAW, variant, columns, rows)
+        [card] = _cards(result["layout"])
+        assert "hold" not in card, variant
+        assert [p["id"] for p in result["layout"]["pages"]] == ["home"], variant
+
+
+def test_the_header_switch_stays_when_the_power_button_has_no_room() -> None:
+    """A Wide on/off lamp made too low for the power button keeps its switch."""
+    result = _light_layout(
+        ONOFF_LAMP_RAW, variant="wide", grid_options={"columns": 12, "rows": 2}
+    )
+    [card] = _cards(result["layout"])
+    shapes = [_shape(w) for w in card["w"]]
+    assert ("button",) not in shapes
+    assert shapes[-1] == ("switch",)
+    assert card["w"][-1]["tap"] == {"policy": "optimistic"}
+
+
+def test_a_power_button_the_header_switch_replaces_is_not_clipped() -> None:
+    """L1 round 2: the on/off lamp at 12x2 loses nothing, so no warning.
+
+    A bar left out of a lamp that dims is still a clipped element.
+    """
+    result = _light_layout(
+        ONOFF_LAMP_RAW, variant="wide", grid_options={"columns": 12, "rows": 2}
+    )
+    assert result["warnings"] == []
+    dims = _light_layout(
+        DIM_LAMP_RAW, variant="wide", grid_options={"columns": 12, "rows": 2}
+    )
+    assert [w["code"] for w in dims["warnings"]] == ["element_clipped"]
+
+
+def test_a_narrow_light_shows_its_name_and_no_header_switch() -> None:
+    """L1 round 3: at 6x2 and 4x2 the Wide light has its name, not a switch.
+
+    A tap on the card still toggles, so nothing is lost and nothing warns.
+    When the tap opens the controls instead, the lost switch is a clipped
+    element. From 8 columns on the switch is there.
+    """
+    for columns in (4, 6):
+        result = _light_layout(
+            ONOFF_LAMP_RAW, variant="wide", grid_options={"columns": columns, "rows": 2}
+        )
+        assert result["warnings"] == []
+        [card] = _cards(result["layout"])
+        assert [w["t"] for w in card["w"]] == ["image", "label", "label"]
+        badge, name, _state = card["w"]
+        assert badge["r"][0] + badge["r"][2] <= name["r"][0]
+        assert name["r"][0] + name["r"][2] == card["r"][0] + card["r"][2] - 16
+        assert card["tap"] == {"policy": "optimistic"}
+    narrow = {"variant": "wide", "grid_options": {"columns": 6, "rows": 3}}
+    assert _light_layout(DIM_LAMP_RAW, **narrow)["warnings"] == []
+    opens = _light_layout(DIM_LAMP_RAW, **narrow, options={"tap": "detail"})
+    assert [w["code"] for w in opens["warnings"]] == ["element_clipped"]
+    wide = _light_layout(
+        ONOFF_LAMP_RAW, variant="wide", grid_options={"columns": 8, "rows": 2}
+    )
+    assert wide["warnings"] == []
+    assert [w["t"] for w in _cards(wide["layout"])[0]["w"]][3] == "switch"
+
+
+def test_a_switch_card_keeps_its_header_switch() -> None:
+    """Only a button that taps the same output takes the header switch away."""
+    component = COMPONENTS["apollo/switch"]
+    facts = {"switch.a": facts_of({"domain": "switch"})}
+    result = _compile(component, "tile", {"entity": "switch.a"}, {}, facts)
+    assert [w["t"] for w in result["widgets"]].count("switch") == 1
+
+
+def test_the_power_button_is_only_for_a_lamp_without_brightness() -> None:
+    """A lamp that dims shows its bar on Wide, not the power button."""
+    for raw in (DIM_LAMP_RAW, OWNER_LAMP_RAW):
+        wide = _cards(_light_card(raw, "wide", 12, 3)["layout"])[0]
+        assert not any(w["t"] == "button" for w in wide["w"])
+        assert "hold" in wide
 
 
 def test_the_form_note_of_an_on_off_lamp() -> None:
@@ -877,7 +1175,8 @@ async def test_each_scene_runs_its_own_device(hass: HomeAssistant) -> None:
         "type": "custom:apollo-tab-card",
         "component": "apollo/scenes",
         "params": {"scenes": ["scene.movie", "script.night", "scene.dinner"]},
-        "grid_options": {"columns": 12, "rows": 3},
+        # Large: Wide shows the names only (L2), Large the icons too.
+        "grid_options": {"columns": 12, "rows": 6},
     }
     result = _convert(_dashboard(entry), {}, 2)
     built = _cards(result["layout"])[0]
@@ -1062,13 +1361,20 @@ def test_the_link_goes_to_its_page() -> None:
 
 
 def test_the_link_shows_a_reading_when_it_has_a_device() -> None:
-    """`has.entity` adds the reading at 34 px and the device's name."""
+    """`has.entity` adds the reading at 34 px, with an arrow beside it.
+
+    L2: the device's name under the reading is gone, the header names it
+    already; the arrow says a tap goes to a page.
+    """
     component = COMPONENTS["apollo/page-link"]
     result = _compile(
         component, "tile", {"page": "climate", "entity": "sensor.temperature"}, {}, {}
     )
     labels = [w for w in result["widgets"] if w["t"] == "label"]
-    assert [w["size"] for w in labels][-2:] == ["l", "s"]
+    assert [w["size"] for w in labels][-2:] == ["m", "l"]
+    arrow = result["widgets"][-1]
+    assert (arrow["t"], arrow["look"], arrow["r"][2]) == ("image", 2, 28)
+    assert arrow["r"][1] >= labels[-1]["r"][1]
 
 
 # ---------------------------------------------------------------- words
@@ -1119,6 +1425,261 @@ def test_every_option_combination_of_the_light_fits_the_controls_page() -> None:
         result = _compile(component, "full", {"entity": "light.a"}, options, facts)
         _assert_inside(result, str(options))
         assert any(len(w.get("texts", [])) == 8 for w in result["widgets"])
+
+
+BAR, HUE, WHITE = ("slider", "bar"), ("slider", "hue"), ("slider", "kelvin")
+CHOICE = ("choice",)
+
+
+@pytest.mark.parametrize(
+    ("options", "order"),
+    [
+        # Every row: brightness, colour, strength, white, favourites, effects
+        # (the first four of the lamp's list).
+        (
+            {"colour_control": "both", "show_saturation": True},
+            [BAR, HUE, BAR, WHITE, CHOICE, CHOICE],
+        ),
+        # Eight effects of twelve, the most a card shows.
+        (
+            {
+                "colour_control": "both",
+                "show_saturation": True,
+                "effects_shown": EFFECTS[:8],
+            },
+            [BAR, HUE, BAR, WHITE, CHOICE, CHOICE],
+        ),
+        # No colour: brightness, white, effects.
+        ({"colour_control": "none"}, [BAR, WHITE, CHOICE]),
+    ],
+)
+def test_the_controls_page_of_a_light(options: dict, order: list) -> None:
+    """LOOK-NOTES decision 1: the controls page of a light.
+
+    Rows stack down from the header with the theme's gap; the card is as tall
+    as its rows and centred in the page, with no heading; every row is at
+    least 56 high and the brightness bar the tallest (the effects are two
+    rows of 56); swatches are at least 56 across; the rows keep one order.
+    """
+    result = _light_layout(
+        EVERYTHING_RAW["light"],
+        variant="tile",
+        grid_options={"columns": 6, "rows": 3},
+        options=options,
+    )
+    assert result["warnings"] == []
+    [detail] = result["layout"]["pages"][1]["w"]
+    assert detail["t"] == "card"
+    _x, y, _width, height = detail["r"]
+    assert y > 0 and y * 2 + height == 800
+    # One place per row: a swap's two copies share theirs.
+    places: list[tuple[tuple, list, dict]] = []
+    for widget in detail["w"][4:]:
+        if not places or places[-1][1] != widget["r"]:
+            places.append((_shape(widget), widget["r"], widget))
+    assert [shape for shape, _r, _w in places] == order
+    top = max(w["r"][1] + w["r"][3] for w in detail["w"][:4])
+    for _shape_of, rect, widget in places:
+        assert rect[1] == top + 8, places
+        line = (rect[3] - 8 * (widget.get("rows", 1) - 1)) // widget.get("rows", 1)
+        assert line >= 56
+        if rect is not places[0][1]:
+            assert line < places[0][1][3]
+        top = rect[1] + rect[3]
+    assert places[0][1][3] == 72
+    assert top + 16 == y + height
+    for _shape_of, rect, widget in places:
+        if widget["t"] == "choice" and widget.get("look") == 1:
+            cells = -(-len(widget["cols"]) // widget["rows"])
+            cell_w = (rect[2] - 8 * (cells - 1)) // cells
+            cell_h = (rect[3] - 8 * (widget["rows"] - 1)) // widget["rows"]
+            assert min(cell_w, cell_h) >= 56
+
+
+def test_a_choice_on_the_controls_page_has_no_empty_row() -> None:
+    """One effect in a row of two gives one row of 56, not 120 (geometry)."""
+    result = _light_layout(
+        EVERYTHING_RAW["light"],
+        variant="tile",
+        grid_options={"columns": 6, "rows": 3},
+        options={"colour_control": "none", "effects_shown": EFFECTS[:1]},
+    )
+    [detail] = result["layout"]["pages"][1]["w"]
+    [effects] = [w for w in detail["w"] if w.get("texts")]
+    assert effects["rows"] == 1 and effects["r"][3] == 56
+
+
+FOUR_MODES = {
+    "domain": "select",
+    "registry": {"capabilities": {"options": ["Eco", "Comfort", "Away", "Boost"]}},
+}
+NO_BAND_CASES = [
+    ("apollo/scenes", {"scenes": ["scene.a", "scene.b", "scene.c"]}, {}),
+    ("apollo/number", {"entity": "input_number.n"}, {"input_number.n": "input_number"}),
+    ("apollo/select", {"entity": "select.mode"}, {"select.mode": FOUR_MODES}),
+    ("apollo/light", {"entity": "light.l"}, {"light.l": OWNER_LAMP_RAW}),
+    ("apollo/light", {"entity": "light.l"}, {"light.l": DIM_LAMP_RAW}),
+    ("apollo/light", {"entity": "light.l"}, {"light.l": ONOFF_LAMP_RAW}),
+    ("apollo/screen", {"entity": "light.screen"}, {"light.screen": DIM_LAMP_RAW}),
+]
+SIXTEEN_MODES = {
+    "domain": "select",
+    "registry": {"capabilities": {"options": [f"Mode {n}" for n in range(16)]}},
+}
+NO_BAND_LARGE_CASES = [
+    ("apollo/scenes", {"scenes": ["scene.a", "scene.b", "scene.c"]}, {}, {}),
+    (
+        "apollo/scenes",
+        {"scenes": [f"scene.s{n}" for n in range(8)]},
+        {},
+        {"per_row": "2"},
+    ),
+    ("apollo/scenes", {"scenes": ["scene.a"]}, {}, {"show_names": False}),
+    ("apollo/select", {"entity": "select.mode"}, {"select.mode": FOUR_MODES}, {}),
+    (
+        "apollo/select",
+        {"entity": "select.mode"},
+        {"select.mode": SIXTEEN_MODES},
+        {"shown": [f"Mode {n}" for n in range(16)]},
+    ),
+    ("apollo/light", {"entity": "light.l"}, {"light.l": OWNER_LAMP_RAW}, {}),
+    ("apollo/light", {"entity": "light.l"}, {"light.l": DIM_LAMP_RAW}, {}),
+]
+
+
+def _bands(result: dict) -> list[int]:
+    """Return the heights of the empty bands across a card, top to bottom."""
+    spans = sorted((w["r"][1], w["r"][1] + w["r"][3]) for w in result["widgets"])
+    bands, bottom = [], 8
+    for top, end in spans:
+        bands.append(top - bottom)
+        bottom = max(bottom, end)
+    bands.append(result["h"] - 16 - bottom)
+    return bands
+
+
+@pytest.mark.parametrize(("component_id", "params", "devices"), NO_BAND_CASES)
+def test_no_empty_band_on_a_wide_card(
+    component_id: str, params: dict, devices: dict
+) -> None:
+    """LOOK-NOTES decision 5: no band over 56 px at the default size.
+
+    The scenes, number and select cards and the Wide light, as the first
+    look at the pictures found them.
+    """
+    facts = {
+        entity: facts_of(raw if isinstance(raw, dict) else {"domain": raw})
+        for entity, raw in devices.items()
+    }
+    for entity in params.get("scenes", []):
+        facts[entity] = facts_of({"domain": "scene"})
+    component = COMPONENTS[component_id]
+    result = _compile(component, "wide", params, {}, facts)
+    _assert_inside(result, component_id)
+    assert max(_bands(result)) <= 56, (component_id, _bands(result))
+
+
+@pytest.mark.parametrize(
+    ("component_id", "params", "devices", "options"), NO_BAND_LARGE_CASES
+)
+def test_no_empty_band_on_a_large_card(
+    component_id: str, params: dict, devices: dict, options: dict
+) -> None:
+    """LOOK-NOTES decision 5 on Large: the scenes and select cards, the light.
+
+    Round 1 of L1 found the Large select ("Mode") and the Large scenes card
+    with a band of 160 to 260 px over their controls.
+    """
+    facts = {
+        entity: facts_of(raw if isinstance(raw, dict) else {"domain": raw})
+        for entity, raw in devices.items()
+    }
+    for entity in params.get("scenes", []):
+        facts[entity] = facts_of({"domain": "scene"})
+    component = COMPONENTS[component_id]
+    result = _compile(component, "large", params, options, facts)
+    _assert_inside(result, component_id)
+    assert max(_bands(result)) <= 56, (component_id, options, _bands(result))
+
+
+def test_the_scenes_card_has_a_title() -> None:
+    """LOOK-NOTES decision 5: the Wide scenes card names itself."""
+    assert COMPONENTS["apollo/scenes"]["variants"]["wide"]["header"] == "title"
+
+
+def _choice_cells(result: dict) -> tuple[int, int]:
+    """Return the width and height of a compiled card's choice cells."""
+    [choice] = [w for w in result["widgets"] if w["t"] == "choice"]
+    rows = choice.get("rows", 1)
+    k = -(-len(choice["texts"]) // rows)
+    _x, _y, width, height = choice["r"]
+    return (width - 8 * (k - 1)) // k, (height - 8 * (rows - 1)) // rows
+
+
+def test_a_large_dropdown_has_no_pillars() -> None:
+    """L1 round 2: four choices on Large were four cells of 80 by 304."""
+    facts = {"select.mode": facts_of(FOUR_MODES)}
+    component = COMPONENTS["apollo/select"]
+    large = _compile(component, "large", {"entity": "select.mode"}, {}, facts)
+    _assert_inside(large, "large")
+    assert _choice_cells(large) == (168, 148)
+    # A Wide made as tall as Large: the same.
+    raw = {
+        "params": {"entity": "select.mode"},
+        "variant": "wide",
+        "grid_options": {"columns": 12, "rows": 6},
+    }
+    tall = compile_card2(component, validate_card_config2(component, raw), facts, 2)
+    assert _choice_cells(tall) == (168, 148)
+    # At its own size Wide has two rows of two: in one row of four the
+    # chosen "Standard" was cut (L2).
+    wide = _compile(component, "wide", {"entity": "select.mode"}, {}, facts)
+    assert _choice_cells(wide) == (168, 52)
+
+
+def test_eight_scenes_on_wide_show_their_names() -> None:
+    """L1 round 2: buttons of 80 by 52 cut every name to "Sce…".
+
+    Too low to stack icon and name, they show the name alone. L2: four
+    scenes in one row show the name alone too; beside a 16 px icon "Movie
+    Night" was cut, and the icon was too small to read from the room.
+    """
+    component = COMPONENTS["apollo/scenes"]
+    for count, icons in ((8, False), (4, False)):
+        scenes = [f"scene.s{n}" for n in range(count)]
+        facts = {entity: facts_of({"domain": "scene"}) for entity in scenes}
+        result = _compile(component, "wide", {"scenes": scenes}, {}, facts)
+        _assert_inside(result, f"{count} scenes")
+        buttons = [w for w in result["widgets"] if w["t"] == "button"]
+        assert len(buttons) == count
+        for button in buttons:
+            assert "text" in button
+            assert ("icon" in button) is icons, (count, button)
+
+
+async def test_a_switch_that_is_gone_does_not_say_off(hass: HomeAssistant) -> None:
+    """L1 round 2: an unavailable switch read "Off", the screen card "0%"."""
+    switch = _compile(
+        COMPONENTS["apollo/switch"], "chip", {"entity": "switch.kettle"}, {}, {}
+    )
+    state = _label(switch, "s", 2)["text"]
+    hass.states.async_set("switch.kettle", "unavailable")
+    gone = await _value(hass, switch, state)
+    assert gone not in ("On", "Off") and gone.lower() == "unavailable"
+    hass.states.async_set("switch.kettle", "off")
+    assert await _value(hass, switch, state) == "Off"
+    screen = _compile(
+        COMPONENTS["apollo/screen"],
+        "row",
+        {"entity": "light.backlight"},
+        {},
+        {"light.backlight": facts_of(DIM_LAMP_RAW)},
+    )
+    text = _label(screen, "s", 2)["text"]
+    hass.states.async_set("light.backlight", "unavailable")
+    assert (await _value(hass, screen, text)).lower() == "unavailable"
+    hass.states.async_set("light.backlight", "on", {"brightness": 255})
+    assert await _value(hass, screen, text) == "100%"
 
 
 def test_the_example_cards_need_no_device() -> None:
@@ -1287,7 +1848,12 @@ async def test_the_screen_and_link_texts(hass: HomeAssistant) -> None:
         {"unit_of_measurement": "°C", "friendly_name": "Living room"},
     )
     assert await _value(hass, link, _label(link, "l")["text"]) == "21.4 °C"
-    assert await _value(hass, link, _label(link, "s")["text"]) == "Living room"
+    assert await _value(hass, link, link["widgets"][-1]["value"]) == "mdi:chevron-right"
+    # L2: the name once, in the header; a device that is gone reads "—".
+    labels = [w for w in link["widgets"] if w["t"] == "label"]
+    assert not [w for w in labels if w.get("size") == "s"]
+    hass.states.async_set("sensor.temperature", "unavailable")
+    assert await _value(hass, link, _label(link, "l")["text"]) == "—"
 
 
 async def test_the_scenes_card_is_gone_only_when_every_scene_is(

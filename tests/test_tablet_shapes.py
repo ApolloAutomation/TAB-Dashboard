@@ -138,6 +138,12 @@ def check_tablet(where: str, tablet: Any) -> None:
         assert tablet["input"] == "not_paired", where
     assert tablet["short_name"] in short_names(tablet["name"]), where
     assert (tablet["reauth"] is None) == (tablet["reauth_name"] is None), where
+    # What the layout made for it leaves out or keeps; nothing without one.
+    assert tablet["simpler"] >= 0, where
+    assert tablet["dropped"] >= 0, where
+    if tablet["dashboard"] is None:
+        left = (tablet["simpler"], tablet["dropped"], tablet["not_kept"])
+        assert left == (0, 0, False), where
 
 
 def check_tablet_list(where: str, tablets: Any) -> None:

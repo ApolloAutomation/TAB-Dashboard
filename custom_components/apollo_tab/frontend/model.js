@@ -2674,6 +2674,15 @@ export function newerCard(library, component) {
   ) ?? null;
 }
 
+// Settings for a card's example in the picker where its defaults draw badly
+// with no devices. The Scenes card names each button after its scene, and
+// an example scene has no name, so the example shows the icons only. The
+// stand-in Home Assistant of tests/harness keeps the same list
+// (build_fixtures.py), and a test checks the two agree.
+export const EXAMPLE_OPTIONS = Object.freeze({
+  "apollo/scenes": Object.freeze({ show_names: false }),
+});
+
 // The card's named sizes a person can pick: every variant but its controls
 // page (`picker: false`).
 export function pickerVariants(component) {

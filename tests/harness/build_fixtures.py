@@ -30,6 +30,12 @@ LIBRARY_DIR = (
 COMPONENTS_DIR = LIBRARY_DIR / "components"
 FIXTURES_FILE = Path(__file__).with_name("fixtures.json")
 
+# The settings the picker gives a card's example (EXAMPLE_OPTIONS in
+# frontend/model.js; tests/frontend/model.test.mjs checks the two agree).
+EXAMPLE_OPTIONS = {
+    "apollo/scenes": {"show_names": False},
+}
+
 ERROR_SAMPLE = {
     "file": "my-card.yaml",
     "index": 0,
@@ -288,21 +294,43 @@ def _cards_v2(components):
                 "init": public_card(compiled),
                 "values": render_slots(compiled.get("slots") or [], env),
             }
-        entries.append(
-            {
-                "id": component_id,
-                "name": component["name"],
-                "icon": component["icon"],
-                # As the library answer gives it: the form data with the
-                # picker's group and search words.
-                "form": {
-                    **form_entry(component, component_id in replaced),
-                    **picker_fields(component, picker),
-                },
-                "variants": variants,
-            }
-        )
+        entry = {
+            "id": component_id,
+            "name": component["name"],
+            "icon": component["icon"],
+            # As the library answer gives it: the form data with the
+            # picker's group and search words.
+            "form": {
+                **form_entry(component, component_id in replaced),
+                **picker_fields(component, picker),
+            },
+            "variants": variants,
+        }
+        options = EXAMPLE_OPTIONS.get(component_id)
+        if options is not None:
+            entry["example"] = _example(component, options, env)
+        entries.append(entry)
     return entries
+
+
+def _example(component, options, env):
+    """Return the picker's example of a card with its EXAMPLE_OPTIONS.
+
+    The picker asks for the card with these settings and no variant, so the
+    card gets its first size, as Home Assistant answers it.
+    """
+    card_config = {
+        "type": "custom:apollo-tab-card",
+        "component": component["id"],
+        "options": dict(options),
+    }
+    card = validate_card_config2(component, card_config)
+    compiled = compile_card2(component, card, {}, 2)
+    return {
+        "card": card_config,
+        "init": public_card(compiled),
+        "values": render_slots(compiled.get("slots") or [], env),
+    }
 
 
 def load_theme_entries():

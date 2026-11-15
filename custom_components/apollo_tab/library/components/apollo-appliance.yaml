@@ -1,0 +1,83 @@
+schema: 2
+id: apollo/appliance
+version: 2.0.0
+name: Appliance
+description: How a washing machine or a dishwasher is getting on, and how long it has left.
+icon: mdi:washing-machine
+group: home
+
+# The switch and the buttons are not named power, start and pause: those
+# are names of facts (can.power), which a device param may not take.
+params:
+  state:        {domain: any, label: Its state}
+  remaining:    {domain: sensor, optional: true, label: Time left}
+  progress:     {domain: sensor, optional: true, label: How far it is}
+  power_switch: {domain: [switch, input_boolean], optional: true, label: Power switch}
+  start_button: {domain: [button, script], optional: true, label: Start button}
+  pause_button: {domain: [button, script], optional: true, label: Pause button}
+  programme:    {domain: sensor, optional: true, label: Programme}
+
+options:
+  show_programme: {type: toggle, section: shows, label: Programme, default: true}
+
+inputs:
+  words:   "{{ state_translated(state) }}"
+  running: "{{ states(state) in ['on', 'run', 'running', 'wash', 'washing', 'rinse', 'spin', 'dry', 'drying'] }}"
+  left: >-
+    {% set m = states(remaining) | float(-1) if remaining else -1 %}{{ (m | round | int ~ ' min') if m >= 0 else '' }}
+  pct:     "{{ states(progress) | float(0) if progress else 0 }}"
+  programme_line: "{{ states(programme) if programme else '' }}"
+
+outputs:
+  start:  {action: {button: button.press, script: script.turn_on},
+           data: {entity_id: "{{ start_button }}"}, feedback: pulse}
+  pause:  {action: {button: button.press, script: script.turn_on},
+           data: {entity_id: "{{ pause_button }}"}, feedback: pulse}
+  toggle: {action: {switch: switch.toggle, input_boolean: input_boolean.toggle},
+           data: {entity_id: "{{ power_switch }}"}, feedback: optimistic}
+
+on: running
+state: words
+lit: icon
+
+parts:
+  left:      {type: label, text: "{{ left }}", size: l, when: [has.remaining]}
+  bar:       {type: slider, look: bar, height: 8, value: pct, min: 0, max: 100,
+              when: [has.progress, tablet.v2]}
+  old_bar:   {type: slider, value: pct, min: 0, max: 100, when: [has.progress, "!tablet.v2"]}
+  programme: {type: label, text: "{{ programme_line }}", size: s, when: [has.programme, show_programme]}
+  buttons:
+    type: row
+    items:
+      - {type: button, text: Start, icon: "mdi:play", on_tap: start, when: [has.start_button]}
+      - {type: button, text: Pause, icon: "mdi:pause", on_tap: pause, when: [has.pause_button]}
+      - {type: button, text: Power, icon: "mdi:power", on_tap: toggle, when: [has.power_switch]}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    # The name across the whole tile, the time left under it. The bar needs
+    # more height than is left: it is on Large.
+    header: tile_v
+    # A tablet with older software keeps the time left at its old size.
+    layout: [{use: left, size: ml, when: [tablet.v2]}, {use: left, when: ["!tablet.v2"]}, {use: old_bar}]
+  large:
+    name: Large
+    # Five rows end under the buttons; six left an empty foot of 106 px.
+    grid: [12, 5]
+    header: tile
+    # The time left right under the header, large; the buttons follow it,
+    # so no band opens between them when there is no programme.
+    align: top
+    layout:
+      - {use: left, size: xl}
+      - {use: bar, height: 12}
+      - {use: old_bar}
+      - {use: programme}
+      - {use: buttons, height: 64}
+
+preview:
+  params: {state: sensor.washer, remaining: sensor.washer_left, progress: sensor.washer_done,
+           start_button: button.washer_start, programme: sensor.washer_programme}
+  inputs: {words: Running, running: true, left: "42 min", pct: 60, programme_line: Cotton 40}

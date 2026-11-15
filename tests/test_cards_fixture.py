@@ -10,6 +10,7 @@ them byte for byte, on the convert path, in its writer and in the sender.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -202,7 +203,11 @@ def test_the_caps_are_engine_0_2_0_and_engine_0_1_0() -> None:
 
 
 def test_the_nine_cards_on_two_pages_with_the_detail_pages() -> None:
-    """Every card of the first release, 2 normal pages, a detail page per light."""
+    """Every card of the first release, 2 normal pages, a detail page per light.
+
+    The on/off porch lamp has no hold and no detail page (LOOK-NOTES
+    decisions 2 and 3): 4 detail pages for 5 light cards.
+    """
     layout = source()["layout"]
     out = json.loads((FIX / "layout_v2_cards.dl.json").read_bytes())
     assert out["v"] == 2
@@ -212,14 +217,26 @@ def test_the_nine_cards_on_two_pages_with_the_detail_pages() -> None:
     cards = [item for page in normal for item in page["w"] if item["t"] == "card"]
     assert {card["component"] for card in cards} == NINE
     lights = [card for card in cards if card["component"] == "apollo/light"]
-    assert len(details) == len(lights) == 5
-    # Each light's hold opens its own detail page.
+    assert len(lights) == 5
+    bindings = source()["bindings"]["slots"]
+    # The lamp of a card: the entity of the slot that says it is on.
+    entities = {
+        card["id"]: bindings[card["on"]["s"] - 1]["variables"]["entity"]
+        for card in lights
+    }
+    porch = [card for card in lights if entities[card["id"]] == "light.porch"]
+    assert len(porch) == 1 and "hold" not in porch[0]
+    holders = [card for card in lights if card is not porch[0]]
+    assert len(details) == len(holders) == 4
+    # Each other light's hold opens its own detail page.
     pages = [page["id"] for page in layout["pages"]]
-    holds = [card["hold"]["page"] for card in lights]
+    holds = [card["hold"]["page"] for card in holders]
     assert sorted(holds) == sorted(page["id"] for page in details)
     assert all(pages.index(page) >= 2 for page in holds)
     on_device = [page for page in out["pages"] if page.get("sub") == 1]
-    assert len(on_device) == 5 and out["pages"][0].get("sub") is None
+    assert len(on_device) == 4 and out["pages"][0].get("sub") is None
+    # LOOK-NOTES decision 1: a detail page holds the card only, no heading.
+    assert all([w["t"] for w in page["w"]] == ["card"] for page in details)
     # Every picker variant of the nine but two (two pages hold no more).
     components = cards_fixture.load_library()[0]
     variants = {
@@ -241,6 +258,24 @@ def test_the_nine_cards_on_two_pages_with_the_detail_pages() -> None:
     }
     kinds = {item["t"] for item, _card in items_of(out)}
     assert {"choice", "slider", "switch", "button", "label", "image"} <= kinds
+
+
+def test_the_texts_are_english() -> None:
+    """Section and page titles of the fixture (LOOK-NOTES decision 3)."""
+    titles = [
+        section["title"]
+        for view in source()["dashboard"]["views"]
+        for section in view["sections"]
+    ]
+    assert titles == [
+        "Living room",
+        "Sofa lamp · Colour",
+        "House",
+        "Desk",
+        "Status",
+        "Settings",
+    ]
+    assert b"Farbe" not in (FIX / "layout_v2_cards.dl.json").read_bytes()
 
 
 def test_the_owners_lamp_has_colour_and_white() -> None:
@@ -405,7 +440,8 @@ def test_ci_compares_the_contract_with_tab_1() -> None:
         for step in steps
         if step.get("with", {}).get("repository") == "ApolloAutomation/TAB-1"
     ]
-    assert checkout["uses"].startswith("actions/checkout@")
+    # Pinned to a commit, like every other action of the file.
+    assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", checkout["uses"])
     assert checkout["with"]["persist-credentials"] is False
     folder = checkout["with"]["path"]
     after = steps[steps.index(checkout) + 1 :]

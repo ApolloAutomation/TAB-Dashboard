@@ -1,0 +1,71 @@
+schema: 2
+id: apollo/people
+version: 2.0.0
+name: People
+description: Who is home, and where everyone else is.
+icon: mdi:account-multiple
+group: home
+replaces: [community/presence-chips]
+
+params:
+  people: {domain: person, multiple: true, max: 8, label: People}
+
+options:
+  show_place: {type: toggle, section: shows, label: Where they are, default: true}
+
+inputs:
+  anyone_home: "{{ people | select('is_state', 'home') | list | count > 0 }}"
+
+on: anyone_home
+lit: none
+
+parts:
+  # Wide holds one row of four. With more people the fourth place says how
+  # many more there are.
+  faces:  {type: image, for_each: people, as: p, per_row: 4, at_most: 4, look: badge,
+           value: "{{ 'mdi:account-multiple' if p == people[3] and people | count > 4 else 'mdi:account' }}",
+           colour: "{{ 'muted' if p == people[3] and people | count > 4 else 'good' if is_state(p, 'home') else 'muted' }}",
+           when: [tablet.v2]}
+  names:  {type: label, for_each: people, as: p, per_row: 4, at_most: 4, size: s, align: centre,
+           text: "{{ ('+' ~ (people | count - 3) ~ ' more') if p == people[3] and people | count > 4 else state_attr(p, 'friendly_name') or p }}",
+           when: [tablet.v2]}
+  places: {type: label, for_each: people, as: p, per_row: 4, at_most: 4, size: s, align: centre,
+           text: "{{ '' if p == people[3] and people | count > 4 else '—' if states(p) in ['unavailable', 'unknown'] else state_translated(p) }}",
+           when: [show_place, tablet.v2]}
+  # Tall: one line each. The place has the room of "School", the name
+  # the rest. The lines share the card's height, so few people leave no
+  # hole.
+  lines:
+    type: row
+    for_each: people
+    as: p
+    when: [tablet.v2]
+    items:
+      - {type: image, value: "{{ 'mdi:account' }}", look: bare, width: 20, height: 24,
+         colour: "{{ 'good' if is_state(p, 'home') else 'muted' }}"}
+      - {type: label, text: "{{ state_attr(p, 'friendly_name') or p }}", size: m, grow: true}
+      - {type: label, size: s, align: right, width: 50, when: [show_place],
+         colour: "{{ 'good' if is_state(p, 'home') else 'muted' }}",
+         text: "{{ '—' if states(p) in ['unavailable', 'unknown'] else state_translated(p) }}"}
+  # What a tablet with older software shows on the tall card.
+  old_lines: {type: label, for_each: people, as: p, size: s, when: ["!tablet.v2"],
+              text: "{{ state_attr(p, 'friendly_name') or p }}: {{ state_translated(p) }}"}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: none
+    v1: community/presence-chips
+    layout: [{use: faces}, {use: names}, {use: places}]
+  tall:
+    name: Tall
+    grid: [6, 6]
+    header: title
+    # The list starts under the title; its lines share the height.
+    align: top
+    layout: [{use: lines}, {use: old_lines}]
+
+preview:
+  params: {people: [person.anna, person.ben, person.cleo]}
+  inputs: {anyone_home: true}

@@ -340,6 +340,49 @@ One thing is different from a browser: a tablet has no logged-in user, so
 anyone at the tablet can use every card on it. Put a card on a tablet's
 dashboard only if everyone who can reach that tablet may use it.
 
+## Tablets with older software
+
+A tablet whose software has the first dashboard engine (0.1.0) still gets
+every dashboard. Home Assistant makes a simpler layout for it, and the
+tablets list says what that tablet misses. Updating the tablet's software
+brings back the rest; nothing in the dashboard has to change.
+
+- **Cards shown simpler.** A card written for the newer software (a
+  schema 2 card, see [components.md](components.md#schema-2-cards)) is drawn
+  on an older tablet in one of three ways, in this order: as the older card
+  the card file names for it, as the card's own simpler form, or, when
+  neither keeps anything, as a note that reads
+  "Update this tablet to show this card". The note is drawn on the tablet only; the panel's picture
+  shows the newer software. Its words are the constant `UPDATE_NOTE` in
+  `custom_components/apollo_tab/maker/const.py`. The card list Home
+  Assistant gives the editor marks each card variant that gets the note on
+  an older tablet (`needs_v2`).
+- **Side bar and heading icons.** The older software holds only the most
+  common icons (level 1 of the icon set). In its layout a side bar entry
+  whose icon it does not hold gets no icon, so the tablet draws the icon it
+  gives every page without one; a heading's icon it does not hold is left
+  out and the heading keeps its text. The tablet never shows the question
+  mark it would draw for an unknown icon. The dashboard keeps the icons you
+  picked, and a tablet with newer software draws them.
+- **Parts it cannot draw.** A tablet says which kinds of widget it can
+  draw. A widget of another kind is left out of what that tablet gets.
+
+### What the tablets list reports
+
+For each tablet that is turned on and has a dashboard, the panel's tablets
+list (the `apollo_tab/tablets` answer) carries three more values. All three
+are 0 or false for a tablet without a dashboard or not yet turned on.
+
+| Key | Meaning |
+|---|---|
+| `simpler` | How many cards of schema 2 on its dashboard this tablet shows simpler, as above. 0 on a tablet with the newer software. |
+| `dropped` | How many widgets of its layout the tablet cannot draw, so left out. |
+| `not_kept` | True when its layout is bigger than the tablet keeps across a restart. It is sent, shown and used all the same, but after each restart the tablet waits for Home Assistant to send it again. On a bench tablet the dashboard was on screen after 25.7 s instead of 11.8 s. Make the dashboard smaller (fewer pages, cards or graphs) to have it kept. |
+
+The size that counts is the layout the tablet gets, including the question
+asked before a garage door, gate or door moves. The editor leaves detail
+pages out until a dashboard fits with those questions.
+
 ## Text on the tablet
 
 The tablet's font has Latin letters with accents and common punctuation.

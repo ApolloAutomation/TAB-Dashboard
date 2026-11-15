@@ -1,7 +1,15 @@
 {
+ "apollo/alarm": {
+  "group": "security",
+  "keywords": ["alarm", "security", "siren", "burglar", "intruder", "arm", "away"]
+ },
  "apollo/alarm-panel": {
   "group": "security",
   "keywords": ["alarm", "security", "siren", "burglar", "intruder", "away"]
+ },
+ "apollo/appliance": {
+  "group": "home",
+  "keywords": ["washing machine", "dishwasher", "dryer", "oven", "time left", "finished", "laundry"]
  },
  "apollo/blinds": {
   "group": "covers",
@@ -15,13 +23,49 @@
   "group": "security",
   "keywords": ["camera", "cctv", "doorbell", "driveway", "video", "security"]
  },
+ "apollo/climate": {
+  "group": "climate",
+  "keywords": ["heating", "cooling", "temperature", "heat", "radiator", "boiler", "air conditioning", "thermostat"]
+ },
+ "apollo/clock": {
+  "group": "home",
+  "keywords": ["time", "date", "clock", "greeting", "hour", "digits"]
+ },
+ "apollo/cover": {
+  "group": "covers",
+  "keywords": ["blinds", "curtains", "shades", "shutters", "garage", "gate", "awning", "window"]
+ },
+ "apollo/dial": {
+  "group": "sensors",
+  "keywords": ["gauge", "dial", "power", "energy", "solar", "meter", "limit", "usage"]
+ },
+ "apollo/door-lock": {
+  "group": "security",
+  "keywords": ["lock", "door", "front door", "deadbolt", "key", "unlock", "security"]
+ },
  "apollo/fan": {
   "group": "climate",
   "keywords": ["ceiling fan", "air", "cooling", "breeze", "ventilation", "speed"]
  },
+ "apollo/fan-speed": {
+  "group": "climate",
+  "keywords": ["fan", "ceiling fan", "air", "cooling", "breeze", "speed", "oscillate"]
+ },
+ "apollo/forecast": {
+  "group": "sensors",
+  "keywords": ["weather", "forecast", "rain", "sun", "temperature", "outside", "clouds", "wind"]
+ },
+ "apollo/graph": {
+  "group": "sensors",
+  "keywords": ["graph", "chart", "history", "trend", "temperature", "humidity", "power", "energy"]
+ },
  "apollo/light": {
   "group": "lights",
   "keywords": ["lamp", "bulb", "dimmer", "brightness", "colour", "color", "lighting", "ceiling light"]
+ },
+ "apollo/light-group": {
+  "group": "lights",
+  "keywords": ["lights", "lamps", "group", "all lights", "dimmer", "brightness", "room", "lighting"]
  },
  "apollo/light-slider": {
   "group": "lights",
@@ -35,6 +79,10 @@
   "group": "security",
   "keywords": ["door", "front door", "deadbolt", "key", "unlock", "security"]
  },
+ "apollo/media": {
+  "group": "media",
+  "keywords": ["music", "speaker", "tv", "radio", "song", "audio", "playlist", "podcast"]
+ },
  "apollo/media-player": {
   "group": "media",
   "keywords": ["music", "speaker", "tv", "radio", "song", "audio", "playlist", "podcast"]
@@ -47,9 +95,21 @@
   "group": "home",
   "keywords": ["page", "go to", "link", "jump", "menu", "room"]
  },
+ "apollo/people": {
+  "group": "home",
+  "keywords": ["people", "family", "person", "away", "who is home", "phone", "where"]
+ },
  "apollo/reading": {
   "group": "sensors",
   "keywords": ["reading", "status", "temperature", "humidity", "battery", "power", "state", "meter"]
+ },
+ "apollo/readings": {
+  "group": "sensors",
+  "keywords": ["list", "readings", "temperature", "humidity", "battery", "status", "overview"]
+ },
+ "apollo/room": {
+  "group": "home",
+  "keywords": ["room", "area", "overview", "temperature", "humidity", "lights", "page"]
  },
  "apollo/scene-row": {
   "group": "lights",
@@ -82,6 +142,10 @@
  "apollo/thermostat": {
   "group": "climate",
   "keywords": ["heating", "cooling", "temperature", "heat", "radiator", "boiler", "air conditioning"]
+ },
+ "apollo/volume": {
+  "group": "media",
+  "keywords": ["volume", "mute", "speaker", "tv", "sound", "loud", "quiet"]
  },
  "apollo/weather": {
   "group": "sensors",

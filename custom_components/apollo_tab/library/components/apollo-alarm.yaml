@@ -1,0 +1,101 @@
+schema: 2
+id: apollo/alarm
+version: 2.0.0
+name: Alarm
+description: See whether the alarm is on, and arm or disarm it after a question.
+icon: mdi:shield-home
+group: security
+replaces: [apollo/alarm-panel]
+
+params:
+  entity: {domain: alarm_control_panel, label: Alarm}
+
+options:
+  modes: {type: choice, multiple: true, max: 4, section: controls, label: Buttons,
+          default: [home, away],
+          choices: {home: Home, away: Away, night: Night, vacation: Holiday}}
+
+inputs:
+  armed:    "{{ states(entity) not in ['disarmed', 'unavailable', 'unknown'] }}"
+  disarmed: "{{ is_state(entity, 'disarmed') }}"
+  # No button while the panel is gone, as on the lock.
+  can_disarm: "{{ states(entity) not in ['disarmed', 'unavailable', 'unknown'] }}"
+  state:    "{{ state_translated(entity) }}"
+  icon:     {source: state_icon, entity: "{{ entity }}"}
+  tone:     "{{ 'bad' if is_state(entity, 'triggered') else 'good' if armed else none }}"
+
+outputs:
+  arm_home:     {action: alarm_control_panel.alarm_arm_home, data: {entity_id: "{{ entity }}"},
+                 feedback: confirm}
+  arm_away:     {action: alarm_control_panel.alarm_arm_away, data: {entity_id: "{{ entity }}"},
+                 feedback: confirm}
+  arm_night:    {action: alarm_control_panel.alarm_arm_night, data: {entity_id: "{{ entity }}"},
+                 feedback: confirm}
+  arm_vacation: {action: alarm_control_panel.alarm_arm_vacation, data: {entity_id: "{{ entity }}"},
+                 feedback: confirm}
+  disarm:       {action: alarm_control_panel.alarm_disarm, data: {entity_id: "{{ entity }}"},
+                 feedback: confirm}
+
+on: armed
+state: state
+tint: tone
+lit: outline
+# No card tap: a wipe over the screen must not even open the question.
+
+parts:
+  arm_or_disarm:
+    type: swap
+    when: ["!can.needs_code"]
+    items:
+      # The arm buttons while disarmed, else "Disarm".
+      - type: row
+        visible: disarmed
+        items:
+          - {type: button, text: Home, on_tap: arm_home, confirm: "Arm the alarm for home?",
+             when: [can.home, modes=home]}
+          - {type: button, text: Away, on_tap: arm_away, confirm: "Arm the alarm for away?",
+             when: [can.away, modes=away]}
+          - {type: button, text: Night, on_tap: arm_night, confirm: "Arm the alarm for the night?",
+             when: [can.night, modes=night]}
+          - {type: button, text: Holiday, on_tap: arm_vacation,
+             confirm: "Arm the alarm for a holiday?", when: [can.vacation, modes=vacation]}
+      - {type: button, text: Disarm, icon: "mdi:shield-off", on_tap: disarm,
+         confirm: "Disarm the alarm?", visible: can_disarm}
+  code_line: {type: label, text: This alarm needs a code. Use Home Assistant., size: s,
+              when: [can.needs_code]}
+  # What a tablet with older software shows on the wide card: every button.
+  old_buttons:
+    type: row
+    when: ["!tablet.v2", "!can.needs_code"]
+    items:
+      - {type: button, text: Home, on_tap: arm_home, confirm: "Arm the alarm for home?",
+         when: [can.home, modes=home]}
+      - {type: button, text: Away, on_tap: arm_away, confirm: "Arm the alarm for away?",
+         when: [can.away, modes=away]}
+      - {type: button, text: "Off", on_tap: disarm, confirm: "Disarm the alarm?"}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    layout:
+      - {use: arm_or_disarm, when: [tablet.v2]}
+      - {use: code_line}
+      - {use: old_buttons}
+  large:
+    name: Large
+    grid: [12, 6]
+    # The same header as Wide; the shield takes the room between it and
+    # the buttons.
+    header: tile
+    v1: apollo/alarm-panel
+    layout:
+      - {type: image, value: icon, look: badge, colour: tone}
+      - {use: arm_or_disarm, height: 64}
+      - {use: code_line}
+
+preview:
+  params: {entity: alarm_control_panel.example}
+  can: {home: true, away: true, night: false, vacation: false, needs_code: false}
+  inputs: {armed: false, disarmed: true, can_disarm: false, state: Disarmed}

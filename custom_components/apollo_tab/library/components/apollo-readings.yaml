@@ -1,0 +1,73 @@
+schema: 2
+id: apollo/readings
+version: 2.0.0
+name: List
+description: A short list of readings, one line each with its icon and value.
+icon: mdi:information-outline
+group: sensors
+
+params:
+  entities: {domain: any, multiple: true, max: 8, label: Devices}
+
+inputs:
+  gone: "{{ entities | select('is_state', 'unavailable') | list | count == entities | count }}"
+
+unavailable: gone
+lit: none
+
+parts:
+  # Large: the lines share the card's height, so few devices leave no
+  # hole. The value has the room of a short value; the name the rest. A
+  # device that is gone shows a dash there, never a cut "unavail…".
+  lines:
+    type: row
+    for_each: entities
+    as: e
+    when: [tablet.v2]
+    items:
+      - {type: image, value: "{{ e_can.icon }}", look: bare, width: 24, height: 24}
+      - {type: label, text: "{{ state_attr(e, 'friendly_name') or e }}", size: m, grow: true}
+      - {type: label, size: m, align: right, width: 88,
+         text: "{{ '—' if states(e) in ['unavailable', 'unknown'] else (states(e) ~ ' ' ~ (state_attr(e, 'unit_of_measurement') or '')) | trim }}"}
+  # Wide holds four lines. With more devices the fourth says how many more.
+  short_lines:
+    type: row
+    for_each: entities
+    as: e
+    at_most: 4
+    height: 28
+    when: [tablet.v2]
+    items:
+      - {type: image, value: "{{ e_can.icon }}", look: bare, width: 24,
+         visible: "{{ not (e == entities[3] and entities | count > 4) }}"}
+      - {type: label, size: s,
+         text: "{{ ('+' ~ (entities | count - 3) ~ ' more') if e == entities[3] and entities | count > 4 else state_attr(e, 'friendly_name') or e }}"}
+      - {type: label, size: s, align: right, width: 80,
+         text: "{{ '' if e == entities[3] and entities | count > 4 else '—' if states(e) in ['unavailable', 'unknown'] else (states(e) ~ ' ' ~ (state_attr(e, 'unit_of_measurement') or '')) | trim }}"}
+  # What a tablet with older software shows: "name: value" per device.
+  old_lines:
+    type: label
+    for_each: entities
+    as: e
+    size: s
+    when: ["!tablet.v2"]
+    text: >-
+      {{ state_attr(e, 'friendly_name') or e }}: {{ (states(e) ~ ' ' ~ (state_attr(e, 'unit_of_measurement') or '')) | trim }}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: none
+    layout: [{use: short_lines}, {use: old_lines}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: title
+    # The lines start under the title and share its height.
+    align: top
+    layout: [{use: lines}, {use: old_lines}]
+
+preview:
+  params: {entities: [sensor.living_room, sensor.bedroom, sensor.outside]}
+  inputs: {gone: false}

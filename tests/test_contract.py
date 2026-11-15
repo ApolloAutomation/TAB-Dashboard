@@ -2,6 +2,9 @@
 
 import importlib.util
 import json
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -62,6 +65,62 @@ def test_reference_check_passes() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.main()
+
+
+def _contract_copy(tmp_path: Path) -> Path:
+    """Copy the contract folder, the reference code with it."""
+    out = tmp_path / "contract"
+    shutil.copytree(CONTRACT, out)
+    return out
+
+
+def _reference(script: str, *args: str) -> subprocess.CompletedProcess:
+    """Run one script of a contract copy's reference code."""
+    return subprocess.run(
+        [sys.executable, "-B", script, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+
+
+def test_gen_fixtures_makes_the_contract_again(tmp_path: Path) -> None:
+    """gen_fixtures.py rewrites contract.json and the fixtures byte for byte.
+
+    It leaves the five layout_v2_cards files to tests/cards_fixture.py
+    (LOOK-NOTES decision 4, the reference code patch of I14a).
+    """
+    out = _contract_copy(tmp_path)
+    for path in (out / "fixtures").glob("*"):
+        if not path.name.startswith("layout_v2_cards"):
+            path.unlink()
+    (out / "contract.json").unlink()
+    ran = _reference(
+        str(out / "reference" / "gen_fixtures.py"),
+        str(ROOT / "custom_components" / "apollo_tab"),
+        str(out),
+    )
+    assert ran.returncode == 0, ran.stderr
+    for path in sorted((CONTRACT / "fixtures").glob("*")):
+        assert (out / "fixtures" / path.name).read_bytes() == path.read_bytes(), path
+    assert (out / "contract.json").read_bytes() == (
+        CONTRACT / "contract.json"
+    ).read_bytes()
+
+
+def test_check_fixtures_sees_a_changed_cards_byte(tmp_path: Path) -> None:
+    """check_fixtures.py checks layout_v2_cards and its .v1 pair (decision 4)."""
+    out = _contract_copy(tmp_path)
+    check = str(out / "reference" / "check_fixtures.py")
+    assert _reference(check).returncode == 0
+    for name in ("layout_v2_cards.dl.json", "layout_v2_cards.v1.dl.json"):
+        path = out / "fixtures" / name
+        good = path.read_bytes()
+        path.write_bytes(good.replace(b'"v":', b'"v" :', 1))
+        ran = _reference(check)
+        assert ran.returncode != 0 and name.removesuffix(".dl.json") in ran.stderr
+        path.write_bytes(good)
 
 
 def test_constants_match_contract_json() -> None:

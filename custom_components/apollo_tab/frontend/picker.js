@@ -2,6 +2,7 @@ import { t } from "./api.js";
 import { buildParamField, el, formFields, icon, makeButton, uid } from "./card-form.js";
 import {
   CARD_TYPE,
+  EXAMPLE_OPTIONS,
   fitsDevices,
   isAllowed,
   offeredCards,
@@ -14,13 +15,6 @@ import {
 
 // How far ahead of the visible area example cards are created, in pixels.
 const PREVIEW_MARGIN = 200;
-
-// Settings for a card's example where its defaults draw badly with no
-// devices. The Scenes card names each button after its scene, and an
-// example scene has no name, so the example shows the icons only.
-const EXAMPLE_OPTIONS = {
-  "apollo/scenes": { show_names: false },
-};
 
 // Words a search finds a card by besides its name and description: its
 // group ("Music and TV") and what its form asks ("Which speaker or TV?").
@@ -49,7 +43,7 @@ function previewBox(component, scale, themeId, hass, observer, watchers) {
           type: CARD_TYPE,
           component: component.id,
           params: {},
-          ...(EXAMPLE_OPTIONS[component.id] ? { options: EXAMPLE_OPTIONS[component.id] } : {}),
+          ...(EXAMPLE_OPTIONS[component.id] ? { options: { ...EXAMPLE_OPTIONS[component.id] } } : {}),
           style: { theme: themeId },
         });
       } catch {

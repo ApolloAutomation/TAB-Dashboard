@@ -899,10 +899,10 @@ async function waitCaption(r, lines, what) {
   }
 }
 
-// The cards the picker offers: the 25 bundled cards but the four older ones
-// a newer card replaces (light tile, light with slider, scene row, sensor
-// value).
-const OFFERED_CARDS = 21;
+// The cards the picker offers: the 41 bundled cards but the 15 older ones
+// a newer card replaces. Of the older cards only the camera snapshot is
+// still offered.
+const OFFERED_CARDS = 26;
 
 const CREATED_CARD = {
   type: "custom:apollo-tab-card",
@@ -1483,21 +1483,21 @@ function chains(realConfig) {
         .map((component) => component.id).sort()`);
       check(named.every((id) => tiles.includes(id)), `"light" finds ${tiles}, not every card named for lights (${named})`);
       check(tiles.includes("apollo/scenes"), `"light" does not find the cards in "Lights and scenes": ${tiles}`);
-      check(!tiles.includes("apollo/thermostat"), `"light" finds the thermostat: ${tiles}`);
+      check(!tiles.includes("apollo/climate"), `"light" finds the thermostat: ${tiles}`);
       const shot = await r.shot("04-picker-search");
       for (const [word, card] of [
-        ["tv", "apollo/media-player"],
-        ["speaker", "apollo/media-player"],
-        ["music", "apollo/media-player"],
-        ["climate", "apollo/thermostat"],
-        ["curtain", "apollo/blinds"],
+        ["tv", "apollo/media"],
+        ["speaker", "apollo/media"],
+        ["music", "apollo/media"],
+        ["climate", "apollo/climate"],
+        ["curtain", "apollo/cover"],
       ]) {
         const found = await search(word);
         check(found.includes(card), `"${word}" finds ${JSON.stringify(found)}, not ${card}`);
       }
       // Not inside words: "each" does not hold "ac".
       const short = await search("ac");
-      check(!short.some((id) => ["apollo/scenes", "community/presence-chips"].includes(id)), `"ac" finds ${short}`);
+      check(!short.some((id) => ["apollo/scenes", "apollo/people"].includes(id)), `"ac" finds ${short}`);
       check((await search("spotify")).length === 0, "a card matches spotify");
       const none = await r.text('[data-test="picker-none"]');
       check(none.includes('No card matches "spotify".') && none.includes("Try the name of a card or a kind of device"), `the picker says "${none}"`);
@@ -1579,10 +1579,10 @@ function chains(realConfig) {
       return r.shot("08-page-added");
     }),
     step("09", "page-two", async (r) => {
-      await r.addCard("add-card", "apollo/fan", "fan.bedroom_main_bedroom_fan");
+      await r.addCard("add-card", "apollo/fan-speed", "fan.bedroom_main_bedroom_fan");
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the fan on the canvas of page 2");
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan"`,
+        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan-speed"`,
         "the fan to be saved on page 2",
       );
       await r.waitSaved("fan added");
@@ -1599,7 +1599,7 @@ function chains(realConfig) {
       await r.click('[data-test="redo"]');
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the card to come back after redo");
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan"`,
+        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan-speed"`,
         "the redo to be saved",
       );
       await r.waitSaved("redo");
@@ -1742,13 +1742,13 @@ function chains(realConfig) {
         "the page to use the whole screen",
       );
       await r.waitFor(`!__j.find('[data-test="columns-notice"]')`, "the columns notice to go");
-      await r.addCard("add-card", "apollo/thermostat", "climate.hall");
+      await r.addCard("add-card", "apollo/climate", "climate.hall");
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/thermostat")`,
+        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/climate")`,
         "the thermostat to be saved",
       );
       const index = (await r.config()).views[0].sections[0].cards.findIndex(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       );
       await r.waitFor(`__j.find('[data-test="hit"][data-source="0.0.${index}"]')`, "the thermostat on the canvas");
       await r.waitSaved("thermostat added");
@@ -1756,8 +1756,12 @@ function chains(realConfig) {
     }),
     step("18", "save-error", async (r) => {
       const before = (await r.config()).views[0].sections[0].cards.find(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       ).grid_options.columns;
+      // The thermostat has named sizes, so Width and Height wait behind
+      // Fine-tune.
+      await r.tap('[data-test="size-fine-tune"]');
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       await r.eval(`__apolloMockHass.failSaves(1)`);
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save state to read error");
@@ -1766,7 +1770,7 @@ function chains(realConfig) {
       await r.click('[data-test="save-retry"]');
       await r.waitSaved("after retry");
       const after = (await r.config()).views[0].sections[0].cards.find(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       ).grid_options.columns;
       check(after === before + 6, `width ${before} became ${after}`);
       return shot;
@@ -1789,10 +1793,14 @@ function chains(realConfig) {
     }),
     step("20", "conflict", async (r) => {
       const index = (await r.config()).views[0].sections[0].cards.findIndex(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       );
       await r.click(`[data-test="hit"][data-source="0.0.${index}"]`);
-      await r.waitFor(`__j.find('[data-test="wider"]')`, "the card form");
+      await r.waitFor(`__j.find('[data-test="wider"]') || __j.find('[data-test="size-fine-tune"]')`, "the card form");
+      if (!(await r.count('[data-test="wider"]'))) {
+        await r.tap('[data-test="size-fine-tune"]');
+        await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
+      }
       await r.eval(`__apolloMockHass.failSaves(1)`);
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
@@ -2351,7 +2359,7 @@ function chains(realConfig) {
       await r.open({ seed: "sample", route: "/edit/tab-1" }, editorReady);
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"] [data-param="temperature_sensor"]')`, "the device step");
       const inPicker = await labels('dialog[data-test="picker"]');
       distinct(inPicker.map((field) => field.label), "label");
@@ -2797,7 +2805,7 @@ function chains(realConfig) {
       await r.clearSelection();
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"] [data-param="page"] select')`, "the device step");
       await r.eval(`__j.find('dialog[data-test="picker"] [data-param="page"] select').scrollIntoView({ block: "center" }); true`);
       const picker = await r.eval(`["dialog[data-test=picker]", "dialog[data-test=picker] .picker-body"]
@@ -3253,17 +3261,17 @@ function chains(realConfig) {
       check(title === "Add a card for Bedroom fan", `the picker is titled "${title}"`);
       const tiles = await r.eval(`__j.all('[data-test="tile"]').map((tile) => tile.dataset.component)`);
       // The fan card, and the switch card, which turns a fan on and off too.
-      check(stable([...tiles].sort()) === stable(["apollo/fan", "apollo/switch"]), `the picker offers ${tiles.join(", ")}`);
+      check(stable([...tiles].sort()) === stable(["apollo/fan-speed", "apollo/switch"]), `the picker offers ${tiles.join(", ")}`);
       await sleep(500);
       await r.shot("63-replace-other-card-picker");
       await r.click('[data-test="picker-show-all"]');
       await r.waitFor(`__j.count('[data-test="tile"]') === ${OFFERED_CARDS}`, "every card after Show all cards");
       // The fan's card gets the fan without asking for it again.
-      await r.click('[data-test="tile"][data-component="apollo/fan"]');
+      await r.click('[data-test="tile"][data-component="apollo/fan-speed"]');
       await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) =>
-          card.component === "apollo/fan" && card.params?.entity === "fan.bedroom_main_bedroom_fan")`,
+          card.component === "apollo/fan-speed" && card.params?.entity === "fan.bedroom_main_bedroom_fan")`,
         "the fan card for the bedroom fan to be saved",
       );
       await r.waitSaved("fan card added");
@@ -3906,7 +3914,7 @@ function chains(realConfig) {
       }
       const shot = await r.shot("79-card-for-several-devices");
 
-      const second = await pick("apollo/fan");
+      const second = await pick("apollo/fan-speed");
       check(second.title === "Add a card for Bedroom lamp, Bedroom fan", `the picker is titled "${second.title}"`);
       await r.waitFor(`__j.text('[data-test="toast"] span') === "Card added. Add a TAB-1 card for Bedroom lamp."`, "the toast for the last device");
       const third = await pick("apollo/light");
@@ -3919,7 +3927,7 @@ function chains(realConfig) {
         stable(saved) ===
           stable([
             ["apollo/light", "light.kitchen"],
-            ["apollo/fan", "fan.bedroom_main_bedroom_fan"],
+            ["apollo/fan-speed", "fan.bedroom_main_bedroom_fan"],
             ["apollo/light", "light.bedroom"],
           ]),
         `the dashboard holds ${JSON.stringify(saved)}`,
@@ -5560,7 +5568,7 @@ function chains(realConfig) {
         await leaveEditMode(r);
         await r.click('[data-test="add-card"]');
         await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-        await r.click('[data-test="tile"][data-component="community/room-summary"]');
+        await r.click('[data-test="tile"][data-component="apollo/room"]');
         await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
         // Read as it is once the card has its devices: enabled, with no
         // fade in between.
@@ -5611,7 +5619,7 @@ function chains(realConfig) {
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
       await measure("the picker");
-      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
       await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
       await measure("the picker's device step");
       await r.key("Escape");
@@ -5680,7 +5688,7 @@ function chains(realConfig) {
 
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
       await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
       const inPicker = await r.eval(`__j.all('dialog[data-test="picker"] button.primary').filter((node) => __j.visible(node))
         .map((node) => node.dataset.test)`);
@@ -5723,7 +5731,7 @@ function chains(realConfig) {
         await r.click('[data-test="add-card"]');
         await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
         await sleep(300);
-        await hover('[data-test="tile"][data-component="apollo/fan"]');
+        await hover('[data-test="tile"][data-component="apollo/fan-speed"]');
         await r.key("Escape");
         await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
         // Focus from the keyboard: one ring, 2 px wide and 2 px away.
@@ -6720,7 +6728,8 @@ function chains(realConfig) {
       await r.waitSaved("the colour choice");
       check(stable((await savedCard(r)).options) === stable({ bar_on_tile: false, colour_control: "both" }), `the card's options are ${JSON.stringify((await savedCard(r)).options)}`);
       // A size: Wide. The card takes its size on the grid, and the picture
-      // shows it twice as wide with its colour bar.
+      // shows it twice as wide with one brightness bar; colour and white are
+      // on the controls page.
       await r.click('[data-test="size-chip"][data-variant="wide"]');
       await r.waitFor(
         `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
@@ -6730,8 +6739,9 @@ function chains(realConfig) {
       await r.waitFor(
         `(() => { const root = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot;
           const card = root.querySelector(".at-card");
-          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8 && card.querySelector(".at-slider.tracked"); })()`,
-        "the picture to show the wide card with its colour bar",
+          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8
+            && card.querySelectorAll(".at-slider").length === 1 && !card.querySelector(".at-slider.tracked"); })()`,
+        "the picture to show the wide card with its one brightness bar",
       );
       check((await r.eval(`__j.find('[data-test="size-chip"][data-variant="wide"] input').checked`)) === true, "Wide is not marked as the size");
       await r.waitSaved("the size");
@@ -6850,7 +6860,7 @@ function chains(realConfig) {
       check((await focused(r)) === "wider", `after Fine-tune the focus is on ${await focused(r)}`);
       check((await r.count('[data-test="size-reset"]')) === 0, "Back is offered at the size marked");
       // Wider: the card shows the largest size that fits, and that size is
-      // marked; the picture shows the wide card.
+      // marked; the picture shows the wide card, with its one brightness bar.
       await r.click('[data-test="wider"]');
       await r.waitFor(
         `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
@@ -6859,7 +6869,7 @@ function chains(realConfig) {
       );
       await r.waitFor(
         `(() => { const card = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot.querySelector(".at-card");
-          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8 && card.querySelector(".at-slider.tracked"); })()`,
+          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8 && card.querySelector(".at-slider"); })()`,
         "the picture to show the wide card",
       );
       check(stable(await marked()) === stable(["wide"]), `after Wider the size marked is ${JSON.stringify(await marked())}`);

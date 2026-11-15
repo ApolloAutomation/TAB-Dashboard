@@ -21,11 +21,12 @@ def test_fixtures_file_is_current():
 
 
 def test_fixture_cards_cover_all_builtins():
-    """The fixture cards lists cover exactly the 25 bundled Components.
+    """The fixture cards lists cover exactly the 41 bundled Components.
 
-    The panel's library holds all 25, the four older cards marked `legacy`.
-    The 16 schema 1 cards have their example in `cards`, the 9 schema 2
-    cards of step A theirs in `cards_v2`.
+    The panel's library holds all 41. The 15 older cards that a schema 2
+    card replaces are marked `legacy`; only the camera snapshot is not. The
+    16 schema 1 cards have their example in `cards`, the 25 schema 2 cards
+    of steps A, B and I11 theirs in `cards_v2`.
     """
     expected = set()
     expected2 = set()
@@ -36,18 +37,22 @@ def test_fixture_cards_cover_all_builtins():
             target = expected2 if component.get("schema") == 2 else expected
             target.add(component["id"])
     assert len(expected) == 16
-    assert len(expected2) == 9
+    assert len(expected2) == 25
     data = json.loads(FIXTURES_FILE.read_text(encoding="utf-8"))
     assert len(data["cards"]) == 16
     assert {card["id"] for card in data["cards"]} == expected
     library = data["library"]["components"]
     assert {c["id"] for c in library} == expected | expected2
-    assert {c["id"] for c in library if c["legacy"]} == {
-        "apollo/light-tile",
-        "apollo/light-slider",
-        "apollo/scene-row",
-        "apollo/sensor-value",
+    assert {c["id"] for c in library if c["legacy"]} == expected - {
+        "apollo/camera-snapshot"
     }
+    replaced = {
+        replaced_id
+        for c in library
+        if c["schema"] == 2
+        for replaced_id in c["replaces"]
+    }
+    assert {c["id"] for c in library if c["legacy"]} == replaced
     assert {card["id"] for card in data["cards_v2"]} == expected2
 
 

@@ -23,7 +23,7 @@ import math
 import re
 from typing import Any
 
-from .compile import _constant, _mentions, _prelude, _source
+from .compile import ICON_ALONE, ICON_ALONE_MIN, _constant, _mentions, _prelude, _source
 from .const import (
     COLOUR_ROLES,
     ENTITY_ID_RE,
@@ -34,7 +34,14 @@ from .const import (
 )
 from .errors import MakerError
 from .features import card_facts, facts_of
-from .geometry import card_size_px, layout_card2
+from .geometry import (
+    LABEL_ROWS_2,
+    PAD,
+    button_text_alone,
+    card_size_px,
+    layout_card2,
+    switch_fits_tile_header,
+)
 from .schema import (
     _as_mapping,
     _card_title,
@@ -53,6 +60,8 @@ _HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 # Device names and numbers of the look keys (contract.json "v2").
 LIT = ("fill", "icon", "outline", "none")
 ALIGN = ("left", "centre", "right")
+# A value that shows alone in a tiny card keeps this far from its sides.
+VALUE_ALONE_PAD = 4
 SHAPES = ("box", "round", "bare")
 SLIDER_LOOKS = ("knob", "bar")
 DIRS = ("right", "up", "down")
@@ -80,6 +89,105 @@ DEFAULT_ROLES = {
 # Theme keys behind the roles that a theme entry holds.
 THEME_ROLES = {"accent": "acc", "accent2": "acc2", "text": "tx", "muted": "tx2"}
 STANDARD_DEFAULTS = {"icon": None, "tap": None, "tap_page": "", "hold": True}
+# A character of a header name (label m) is about 10.5 px wide on average.
+NAME_CHAR_W_X2 = 21
+ELLIPSIS = "…"
+# Widths of the header name's font (Montserrat Medium at 18 px, label m) in
+# tenths of a pixel, for the characters " " to "~", and of "…". Any other
+# character counts as NAME_W_OTHER.
+_NAME_W_ASCII = (
+    48, 48, 70, 127, 112, 152, 123, 38, 61, 61, 72, 105, 41, 69, 41, 63,
+    120, 67, 103, 103, 120, 103, 111, 108, 116, 111, 41, 41, 105, 105, 105, 103,
+    186, 132, 136, 130, 149, 121, 114, 139, 146, 56, 92, 129, 107, 172, 146, 151,
+    130, 151, 131, 112, 106, 142, 128, 203, 121, 116, 118, 60, 63, 60, 105, 90,
+    108, 108, 123, 103, 123, 110, 64, 124, 123, 50, 51, 111, 50, 190, 123, 114,
+    123, 123, 74, 90, 75, 122, 101, 162, 99, 101, 94, 63, 54, 63, 105,
+)  # fmt: skip
+NAME_W = {chr(32 + i): w for i, w in enumerate(_NAME_W_ASCII)} | {ELLIPSIS: 124}
+NAME_W_OTHER = 140
+# A name cut to fit keeps this much room spare, in tenths of a pixel.
+NAME_W_SPARE = 20
+
+
+def name_width(text: str) -> int:
+    """Return how wide a header name is drawn, in tenths of a pixel."""
+    return sum(NAME_W.get(char, NAME_W_OTHER) for char in text)
+
+
+def name_chars(width: int) -> int:
+    """Return how many characters of a header name fit in a width."""
+    return width * 2 // NAME_CHAR_W_X2
+
+
+def cut_middle(name: str, chars: int) -> str:
+    """Cut a long name in the middle, so its end stays.
+
+    "Living Room Lamp 1" becomes "Living…Lamp 1", not "Living Room L…": names
+    of lamps in one room often differ only at the end. The end kept is the
+    last word, with the word before it when the last is shorter than 4. A
+    name of one word, or an end longer than half the room, is left whole:
+    the tablet cuts it at its end.
+    """
+    if len(name) <= chars:
+        return name
+    words = name.split(" ")
+    tail = words[-1]
+    if len(words) > 2 and len(tail) < 4:
+        tail = words[-2] + " " + tail
+    head = name[: chars - 1 - len(tail)].rstrip()
+    if len(words) < 2 or len(tail) > chars // 2 or not head:
+        return name
+    return head + ELLIPSIS + tail
+
+
+def cut_to_fit(name: str, chars: int, width: int) -> str:
+    """Cut a name in the middle (cut_middle) so it fits a width in pixels.
+
+    chars is a first guess from the average width of a character. A name
+    that fits whole stays whole. A middle cut still too wide for its font
+    is cut further; when no middle cut is left, the name stays whole and
+    the tablet cuts it at its end. So the name never shows two "…".
+    """
+    room = width * 10 - NAME_W_SPARE
+    if name_width(name) <= room:
+        return name
+    for k in range(chars, 0, -1):
+        shown = cut_middle(name, k)
+        if shown == name:
+            return name
+        if name_width(shown) <= room:
+            return shown
+    return name
+
+
+def cut_to_fit_template(chars: int, width: int) -> str:
+    """Return cut_to_fit as a template for the name `n`.
+
+    It needs the variable `name_w` (NAME_W).
+    """
+    room = width * 10 - NAME_W_SPARE
+    return (
+        "{%- set w = n.split(' ') -%}"
+        "{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4"
+        " else w[-1] -%}"
+        "{%- set m = namespace(w=0) -%}"
+        "{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, "
+        + str(NAME_W_OTHER)
+        + ") -%}{%- endfor -%}"
+        "{%- set ns = namespace(out=n, done=m.w <= " + str(room) + ") -%}"
+        "{%- for k in range(" + str(chars) + ", 0, -1) -%}{%- if not ns.done -%}"
+        "{%- set h = n[:k - 1 - t | length].rstrip() -%}"
+        "{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2"
+        " or not h else h ~ '…' ~ t -%}"
+        "{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}"
+        "{%- set m = namespace(w=0) -%}"
+        "{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, "
+        + str(NAME_W_OTHER)
+        + ") -%}{%- endfor -%}"
+        "{%- if m.w <= " + str(room) + " -%}"
+        "{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}"
+        "{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}"
+    )
 
 
 def role_table(
@@ -351,6 +459,20 @@ def compile_card2(
     return _Compiler2(component, card, facts or {}, dl, roles, detail).run()
 
 
+def _switch_stands_in(row: dict, trailing: tuple | None, toggle: str | None) -> bool:
+    """Return whether a row left out only held buttons the header switch does.
+
+    A Wide on/off lamp too low for its power button shows the header switch
+    instead: nothing is lost, so it is not a clipped element.
+    """
+    if trailing is None or trailing[0] != "switch" or row["kind"] != "row":
+        return False
+    return toggle is not None and all(
+        item["type"] == "button" and item.get("on_tap") == toggle
+        for item, _names in row["cells"]
+    )
+
+
 class _Compiler2:
     """Hold the state for compiling one schema 2 card."""
 
@@ -509,6 +631,7 @@ class _Compiler2:
         """Compile the card and return the full server-side result."""
         variant_name = self._variant()
         variant = self.component["variants"][variant_name]
+        self._variant_state = variant.get("state")
         columns = self.card["columns"]
         columns = 36 if columns == "full" else columns
         width, height = card_size_px(columns, self.card["rows"])
@@ -516,33 +639,66 @@ class _Compiler2:
         header_form = variant["header"]
         trailing = self._trailing(variant)
         geo_body = [self._geo_row(row) for row in body]
+        own = self._variant_state
+        # No state line: a tile_v header ends under the name.
+        state_line = (
+            own["form"] != "none"
+            if own is not None
+            else self.component["state"] is not None
+        )
         laid = layout_card2(
             geo_body,
             width,
             height,
             header_form,
             trailing[0] if trailing else None,
-            variant["align"] == "top",
+            # On a detail page the rows stack down from the header; the
+            # converter then ends the card under them.
+            self.detail_copy or variant["align"] == "top",
+            state_line,
         )
         card_tap, toggle = self._card_tap()
+        if (
+            trailing is not None
+            and trailing[0] == "switch"
+            and self._button_runs(body, laid, toggle)
+        ):
+            # A button in the body already turns the device on and off: the
+            # header shows no second switch for the same thing.
+            trailing = None
+            laid = layout_card2(
+                geo_body,
+                width,
+                height,
+                header_form,
+                None,
+                self.detail_copy or variant["align"] == "top",
+                state_line,
+            )
         self.on = self._bind(self.component["on"], {}, "bool")
-        title = self._title()
+        name_rect = laid["header"].get("name")
+        title = self._title(None if name_rect is None else name_rect[2])
         icon = self._header_icon()
         ic = self._live_icon()
         tint = None
         if self.component["tint"] is not None and self.card["look"].get("tint", True):
             tint = self._bind(self.component["tint"], {}, "colour")
         header = None
-        if header_form == "title":
-            header = {"r": laid["header"].get("title", [16, 16, 0, 0])}
+        if header_form == "title" and "title" in laid["header"]:
+            # A card too low for its title has no header: its icon alone
+            # shows (_icon_alone).
+            header = {"r": laid["header"]["title"]}
             if icon is not None:
                 header["icon"] = icon
             header["title"] = title
-        else:
+        elif header_form != "title":
             self._header_widgets(
                 header_form, laid["header"], trailing, title, icon, ic, tint, toggle
             )
+        in_header = len(self.widgets)
         self._body_widgets(body, laid)
+        if not self._value_alone(header, laid["header"], in_header, width, height):
+            self._icon_alone(header, icon, ic, width, height)
         if self.on is None:
             self.on = next(
                 (w["value"] for w in self.widgets if w["t"] == "switch"), None
@@ -574,7 +730,21 @@ class _Compiler2:
         hold = self._card_hold()
         if hold is not None:
             out["hold"] = hold
-        clipped = bool(laid["clipped"]) or laid["dropped"] > 0 or self.cut
+        left_out = [
+            i
+            for i in laid["clipped"]
+            if not _switch_stands_in(body[i], trailing, toggle)
+        ]
+        # A card too narrow for its header switch: nothing is lost while a
+        # tap on the card does the same.
+        switch_lost = (
+            trailing is not None
+            and trailing[0] == "switch"
+            and header_form == "tile"
+            and not switch_fits_tile_header(width - 2 * PAD)
+            and self.actions.get("card:tap", {}).get("output") != toggle
+        )
+        clipped = bool(left_out) or laid["dropped"] > 0 or self.cut or switch_lost
         warnings = ["element_clipped"] if clipped else []
         if self.tap_left_out:
             warnings.append("tap_left_out")
@@ -591,17 +761,117 @@ class _Compiler2:
         )
         return out
 
+    def _icon_alone(
+        self, header: dict | None, icon: str | None, ic: Any, width: int, height: int
+    ) -> None:
+        """Draw the icon alone in a card too small for anything else.
+
+        Without it such a card is an empty box, and a tap on it still acts.
+        """
+        if self.widgets or icon is None:
+            return
+        if header is not None and header["r"][2] > 0 and header["r"][3] > 0:
+            return
+        side = max(min(width, height, ICON_ALONE + 2 * PAD) - 2 * PAD, 0)
+        if side < ICON_ALONE_MIN:
+            return
+        rect = [(width - side) // 2, (height - side) // 2, side, side]
+        shown = ic if ic is not None else icon
+        self._next({"t": "image", "r": rect, "value": shown, "look": 2})
+
+    def _value_alone(
+        self, header: dict | None, parts: dict, in_header: int, width: int, height: int
+    ) -> bool:
+        """Draw the card's `alone` text in a card too small for anything else.
+
+        A card that exists to show a reading (the time, a temperature) shows
+        it there instead of its icon. Only when nothing but icons would
+        show: the header's icon or badge, a picture of the body. They go.
+        """
+        alone = self.component.get("alone")
+        if alone is None:
+            return False
+        if any(w["t"] != "image" for w in self.widgets[in_header:]):
+            return False
+        if header is not None and header["r"][2] > 0 and header["r"][3] > 0:
+            return False
+        if set(parts) - {"icon", "badge"}:
+            return False
+        line = LABEL_ROWS_2["m"]
+        if width - VALUE_ALONE_PAD * 2 < ICON_ALONE_MIN or height < line:
+            return False
+        del self.widgets[:]
+        rect = [
+            VALUE_ALONE_PAD,
+            (height - line) // 2,
+            width - VALUE_ALONE_PAD * 2,
+            line,
+        ]
+        self._next(
+            {
+                "t": "label",
+                "r": rect,
+                "text": self._bind(alone, {}, "text"),
+                "size": "m",
+                "al": ALIGN.index("centre"),
+            }
+        )
+        return True
+
+    def _button_runs(self, body: list, laid: dict, output: str | None) -> bool:
+        """Return whether a button with a place in the body taps this output."""
+        if output is None:
+            return False
+        for row, rects in zip(body, laid["rects"], strict=True):
+            if rects is None or row["kind"] == "space":
+                continue
+            members = row["cells"] if row["kind"] == "swap" else [row["cells"]]
+            for member, member_rects in zip(members, rects, strict=True):
+                for (item, names), rect in zip(member, member_rects, strict=True):
+                    if (
+                        rect is not None
+                        and item["type"] == "button"
+                        and item.get("on_tap") == output
+                        and self._output_reaches(output, names)
+                    ):
+                        return True
+        return False
+
+    def _holds(self, name: str) -> bool:
+        """Return whether the card's device can do what a variant needs."""
+        needs = self.component["variants"][name].get("needs")
+        return not needs or term_holds(needs, self.names)
+
+    def _detail(self) -> str | None:
+        """Return the detail variant, or None when there is none for this device.
+
+        A detail variant whose `needs` does not hold makes no detail page,
+        so nothing opens one: no hold, no tap choice, no `more`.
+        """
+        detail = self.component["detail"]
+        return detail if detail and self._holds(detail) else None
+
     def _variant(self) -> str:
-        """Pick the detail variant, the person's, else the largest that fits."""
+        """Pick the detail variant, the person's, else the largest that fits.
+
+        Only variants whose `needs` holds count. A stored variant that does
+        not hold gives the file's first picker variant that does. An example
+        card (no device picked yet) is the picture of the variant it names,
+        whatever the example's facts.
+        """
         variants = self.component["variants"]
-        if self.detail_copy and self.component["detail"]:
+        if self.detail_copy and self._detail():
             return self.component["detail"]
+        picker = [
+            name for name in _picker_variants(self.component) if self._holds(name)
+        ]
         if self.card["variant"] in variants:
-            return self.card["variant"]
+            if self.demo or self._holds(self.card["variant"]):
+                return self.card["variant"]
+            return picker[0]
         columns = self.card["columns"]
         columns = 36 if columns == "full" else columns
         rows = self.card["rows"]
-        picker = _picker_variants(self.component)
 
         def area(name: str) -> int:
             grid = variants[name]["grid"]
@@ -635,25 +905,55 @@ class _Compiler2:
                 return name
         return None
 
-    def _title(self) -> Any:
-        """Choose the title: the person's, the device's name, or the card's name."""
+    def _title(self, width: int | None = None) -> Any:
+        """Choose the title: the person's, the device's name, or the card's name.
+
+        width: the room for the name of a tile or chip header, in pixels; a
+        longer name is cut in the middle (cut_to_fit).
+        """
+        chars = None if width is None else name_chars(width)
         if self.card["title"] is not None:
             # Plain text from the browser: never a template.
-            return self.card["title"]
+            title = self.card["title"]
+            return title if chars is None else cut_to_fit(title, chars, width)
+        own = self.component.get("title_input")
+        if own is not None and not self.demo:
+            # The card's own title, from one of its inputs.
+            if chars is None:
+                return self._bind_input(own["input"], {}, "text")
+            src = "{%- set n = (" + own["input"] + ") | string -%}"
+            slot = self._template_slot(src + cut_to_fit_template(chars, width), {})
+            slot["variables"]["name_w"] = dict(NAME_W)
+            return {"s": self._add_slot(slot)}
         param = self._first_entity()
         spec = self.component["params"].get(param) if param else None
         if not self.demo and spec is not None and not spec["multiple"]:
-            src = "{{ state_attr(" + param + ", 'friendly_name') or component_name }}"
+            name = "state_attr(" + param + ", 'friendly_name') or component_name"
+            if chars is None:
+                src = "{{ " + name + " }}"
+            else:
+                src = "{%- set n = (" + name + ") | string -%}"
+                src += cut_to_fit_template(chars, width)
             slot = self._template_slot(src, {})
             slot["variables"]["component_name"] = self.component["name"]
+            if chars is not None:
+                slot["variables"]["name_w"] = dict(NAME_W)
             return {"s": self._add_slot(slot)}
-        return self.component["name"]
+        name = self.component["name"]
+        return name if chars is None else cut_to_fit(name, chars, width)
 
     def _header_icon(self) -> str | None:
         """Return the header icon: the person's, the device's, else the file's."""
+        param = self._first_entity()
+        spec = self.component["params"].get(param) if param else None
+        # A card about several devices, or one that names itself after
+        # something else (a room), is not drawn with the first device's icon.
+        own = self.can.get("icon")
+        if (spec is not None and spec["multiple"]) or self.component.get("title_input"):
+            own = None
         for icon in (
             self.standard.get("icon"),
-            self.can.get("icon"),
+            own,
             self.component["icon"],
         ):
             if isinstance(icon, str) and _ICON.match(icon):
@@ -741,7 +1041,7 @@ class _Compiler2:
         if chosen is None or (chosen["value"] == "none" and "output" not in chosen):
             return None, toggle
         if "output" not in chosen:
-            if chosen["value"] == "detail" and self.component["detail"]:
+            if chosen["value"] == "detail" and self._detail():
                 self.opener = True
                 return {"tap": {"local": "detail"}}, toggle
             return None, toggle
@@ -792,7 +1092,7 @@ class _Compiler2:
         """Return the card's hold: open its detail page, unless switched off."""
         if self.detail_copy or self.component["hold"] != "detail":
             return None
-        if not self.component["detail"] or not self.standard.get("hold", True):
+        if not self._detail() or not self.standard.get("hold", True):
             return None
         self.opener = True
         return {"local": "detail"}
@@ -800,7 +1100,7 @@ class _Compiler2:
     def _tap_of(self, name: str, key: str, item_vars: dict) -> dict | None:
         """Build the tap of an output, recording an action under key."""
         if name == "detail":
-            if self.detail_copy or not self.component["detail"]:
+            if self.detail_copy or not self._detail():
                 return None
             self.opener = True
             return {"local": "detail"}
@@ -810,7 +1110,7 @@ class _Compiler2:
             return {"policy": output["feedback"]}
         local = output["local"]
         if local == "detail":
-            if self.detail_copy or not self.component["detail"]:
+            if self.detail_copy or not self._detail():
                 return None
             self.opener = True
             return {"local": "detail"}
@@ -878,21 +1178,21 @@ class _Compiler2:
             return self._template_slot("{{ " + name + " }}", names)
         if source == "clock":
             return {"kind": "clock"}
+        entity = self._entity_of(spec["param"], names)
+        if entity is None:
+            return None
         if source == "action":
+            # One slot per loop copy: the copy's names are among the
+            # variables its result renders with. Slots with the same action
+            # and data share one call in Home Assistant (C.2.8).
             return {
                 "kind": "action",
                 "action": spec["action"],
-                "data": {
-                    **spec["data"],
-                    "entity_id": self._entity_of(spec["param"], names),
-                },
+                "data": {**spec["data"], "entity_id": entity},
                 "result": spec["result"],
                 "variables": self._variables(names),
                 "refresh": spec["refresh"],
             }
-        entity = self._entity_of(spec["param"], names)
-        if entity is None:
-            return None
         if source == "history":
             return {"kind": "history", "entity": entity, "hours": spec["hours"]}
         if source == "colour":
@@ -913,13 +1213,17 @@ class _Compiler2:
         if trailing is None or variant["header"] not in ("tile", "tile_v"):
             return None
         form = trailing["form"]
-        if form == "more" and (self.detail_copy or not self.component["detail"]):
+        if form == "more" and (self.detail_copy or not self._detail()):
             return None
         if form == "input":
             return "text", trailing
         return form, trailing
 
     def _loop_entries(self, loop: dict) -> list[dict]:
+        """Return the names each copy of a loop gets, at most its `at_most`."""
+        return self._all_loop_entries(loop)[: loop.get("at_most", MAX_COPIES)]
+
+    def _all_loop_entries(self, loop: dict) -> list[dict]:
         """Return the names each copy of a loop gets."""
         kind = loop["kind"]
         as_name = loop["as"]
@@ -991,6 +1295,10 @@ class _Compiler2:
             else:
                 copies = self._widget_copies(item, {})
                 per_row = item["loop"]["per_row"] if "loop" in item else 1
+                if item.get("loop", {}).get("two_rows") and 3 <= len(copies) <= per_row:
+                    # Few copies: two rows of wider cells, not one row of
+                    # narrow cells under an empty half.
+                    per_row = -(-len(copies) // 2)
                 for start in range(0, len(copies), per_row):
                     cells = self._take(copies[start : start + per_row])
                     if cells:
@@ -1092,7 +1400,13 @@ class _Compiler2:
             self._next(badge)
         if "name" in parts:
             self._next({"t": "label", "r": parts["name"], "text": title, "size": "m"})
-        state = self._bind(self.component["state"], {}, "text")
+        own = self._variant_state
+        if own is None:
+            state = self._bind(self.component["state"], {}, "text")
+        elif own["form"] == "none":
+            state = None
+        else:
+            state = self._bind_input(own["input"], {}, "text")
         if "state" in parts and state is not None:
             state_label = {
                 "t": "label",
@@ -1187,7 +1501,7 @@ class _Compiler2:
             self.actions[f"{index}:change"] = action
         if item.get("confirm") is not None and ("tap" in widget or "change" in widget):
             widget["confirm"] = self._bind(item["confirm"], names, "text")
-        if item.get("on_hold") == "detail" and not self.detail_copy:
+        if item.get("on_hold") == "detail" and not self.detail_copy and self._detail():
             widget["hold"] = {"local": "detail"}
             self.opener = True
         self._next(widget)
@@ -1218,6 +1532,11 @@ class _Compiler2:
             return False
         if "icon_live" in item:
             widget["ic"] = self._bind(item["icon_live"], names, "icon")
+        rect = widget["r"]
+        if widget.get("text") is not None and button_text_alone(rect[2], rect[3]):
+            # Beside the icon the text would be cut to a few letters.
+            widget.pop("icon", None)
+            widget.pop("ic", None)
         if "selected" in item:
             widget["value"] = self._bind(item["selected"], names, "bool")
         if item.get("shape") is not None:
@@ -1518,7 +1837,33 @@ class _Compiler2:
                 _mentions(name, _source(inputs[other])) for other in used
             ):
                 variables[name] = value
-        return {"kind": "template", "template": template, "variables": variables}
+        slot: dict = {"kind": "template", "template": template, "variables": variables}
+        feeds = {}
+        for name in self._fed_inputs(src, used, preview):
+            feed = self._input_slot(name, names)
+            if feed is not None:
+                feeds[name] = feed
+        if feeds:
+            # Fetched in Home Assistant and handed to the template as
+            # variables (C.2.8): data, never template source.
+            slot["inputs"] = feeds
+        return slot
+
+    def _fed_inputs(self, src: str, used: list, preview: dict) -> list:
+        """Return the history, statistics and action inputs a template names.
+
+        Named by the source itself or by a template input it uses, in
+        declaration order. An example card shows their preview values.
+        """
+        inputs = self.component["inputs"]
+        texts = [src, *(_source(inputs[name]) for name in used)]
+        return [
+            name
+            for name, spec in inputs.items()
+            if spec["kind"] in ("history", "statistics", "action")
+            and name not in preview
+            and any(_mentions(name, text) for text in texts)
+        ]
 
     @staticmethod
     def _used_inputs(src: str, inputs: dict, preview: dict) -> list:

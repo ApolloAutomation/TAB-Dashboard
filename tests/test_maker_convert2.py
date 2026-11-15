@@ -355,15 +355,14 @@ def test_one_schema_2_card_gives_a_layout_v2_with_its_detail_page() -> None:
     assert card["component"] == "apollo/light"
     assert card["hold"] == {"local": "go_to_page", "page": "home~1"}
     assert card["tap"] == {"policy": "optimistic"}
-    heading, copy_card = detail["w"]
-    assert heading == {
-        "id": heading["id"],
-        "t": "heading",
-        "r": [404, 20, 568, 56],
-        "text": "Light",
-    }
-    # The controls variant, centred under the heading, without tap or hold.
-    assert copy_card["r"] == [404, 84, 568, 696]
+    # LOOK-NOTES decision 1: no heading (the card's header names the
+    # device); the controls variant as tall as its rows, centred in the
+    # page, without tap or hold.
+    [copy_card] = detail["w"]
+    bottom = max(w["r"][1] + w["r"][3] for w in copy_card["w"])
+    assert copy_card["r"] == [404, 272, 568, 256]
+    assert bottom + 16 == copy_card["r"][1] + copy_card["r"][3]
+    assert copy_card["r"][1] * 2 + copy_card["r"][3] == 800
     assert "tap" not in copy_card
     assert "hold" not in copy_card
     assert result["simpler"] == 0

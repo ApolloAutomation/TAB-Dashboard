@@ -15,7 +15,9 @@ options:
 
 inputs:
   is_on: "{{ is_state(entity, 'on') }}"
-  state: "{{ word_on if is_on else word_off }}"
+  # While the device is gone the card fades; its word says why, not "Off".
+  state: "{{ state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off) }}"
+  gone: "{{ states(entity) in ['unavailable', 'unknown'] }}"
 
 outputs:
   toggle: {action: {switch: switch.toggle, input_boolean: input_boolean.toggle, siren: siren.toggle,
@@ -23,6 +25,7 @@ outputs:
            data: {entity_id: "{{ entity }}"}, feedback: optimistic}
 
 on: is_on
+unavailable: gone
 lit: fill
 state: state
 tap:
@@ -47,7 +50,10 @@ variants:
   small:
     name: Small
     grid: [6, 2]
-    header: tile
+    # The name on its own line across the card; the fill says on or off
+    # and the fade that it is gone.
+    header: tile_v
+    state: none
     layout:
       - {use: old_switch}
   tile:
@@ -61,4 +67,4 @@ variants:
 preview:
   params: {entity: switch.example}
   can: {toggle: true}
-  inputs: {is_on: true, state: "On"}
+  inputs: {is_on: true, state: "On", gone: false}

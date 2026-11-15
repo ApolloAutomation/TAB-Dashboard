@@ -92,6 +92,12 @@ FACTS = {
 }
 # Facts every entity has.
 ANY_FACTS = ("toggle", "icon", "kind")
+# Every name of the fixed table. A card file's `can.<name>` names one of
+# these or one of its own device params, and a device param may not take
+# one of these names (it would hide the fact).
+FACT_NAMES = frozenset(
+    ANY_FACTS + tuple(name for row in FACTS.values() for group in row for name in group)
+)
 
 # Feature enum members, by name, that make a yes or no fact true.
 _FEATURE_FACTS = {
@@ -230,6 +236,9 @@ _STATE_ICONS = {
     ("lock", None, "open"): "mdi:lock-open",
     ("lock", None, "opening"): "mdi:lock-open",
     ("lock", None, "jammed"): "mdi:lock-alert",
+    # Whether it is locked is not known: no padlock that says either.
+    ("lock", None, "unavailable"): "mdi:lock-alert",
+    ("lock", None, "unknown"): "mdi:lock-alert",
     ("lock", None, None): "mdi:lock-outline",
     ("alarm_control_panel", None, "disarmed"): "mdi:shield-off",
     ("alarm_control_panel", None, "armed_home"): "mdi:shield-home",

@@ -1,0 +1,140 @@
+schema: 2
+id: apollo/graph
+version: 2.0.0
+name: Graph
+description: How a reading went over the last hours, or today hour by hour.
+icon: mdi:chart-line
+group: sensors
+replaces: [apollo/sensor-graph]
+
+params:
+  entity: {domain: [sensor, number, input_number], label: Graph of}
+
+options:
+  kind:       {type: choice, section: shows, label: Draw it as, default: line,
+               choices: {line: A line, steps: Steps, bars: Bars, today: Today by the hour}}
+  hours:      {type: choice, section: shows, label: Over the last, default: "24",
+               choices: {"6": 6 hours, "24": 24 hours, "72": 3 days, "168": A week},
+               when: ["kind!=today"]}
+  show_range: {type: toggle, section: shows, label: Lowest and highest, default: true}
+
+inputs:
+  h6:     {source: recorder, entity: "{{ entity }}", hours: 6}
+  h24:    {source: recorder, entity: "{{ entity }}", hours: 24}
+  h72:    {source: recorder, entity: "{{ entity }}", hours: 72}
+  h168:   {source: recorder, entity: "{{ entity }}", hours: 168}
+  today:  {source: statistics, entity: "{{ entity }}", buckets: hour, period: today, stat: mean}
+  lo6:    {source: statistics, entity: "{{ entity }}", stat: min, hours: 6}
+  hi6:    {source: statistics, entity: "{{ entity }}", stat: max, hours: 6}
+  lo24:   {source: statistics, entity: "{{ entity }}", stat: min, hours: 24}
+  hi24:   {source: statistics, entity: "{{ entity }}", stat: max, hours: 24}
+  lo72:   {source: statistics, entity: "{{ entity }}", stat: min, hours: 72}
+  hi72:   {source: statistics, entity: "{{ entity }}", stat: max, hours: 72}
+  lo168:  {source: statistics, entity: "{{ entity }}", stat: min, hours: 168}
+  hi168:  {source: statistics, entity: "{{ entity }}", stat: max, hours: 168}
+  hour_now: "{{ now().hour }}"
+  unit_text: "{{ state_attr(entity, 'unit_of_measurement') or '' }}"
+  # A dash while the sensor has no number, as on Status: never a cut
+  # "unavailabl…" with its unit.
+  reading: >-
+    {{ (states(entity) ~ ' ' ~ unit_text) | trim if states(entity) | float(none) is number else '—' }}
+  # "41 to 52 W": the lowest and highest the recorder's statistics hold.
+  range6:   "{{ ((lo6 | round(1)) ~ ' to ' ~ (hi6 | round(1)) ~ ' ' ~ unit_text) | trim if lo6 is number and hi6 is number else '' }}"
+  range24:  "{{ ((lo24 | round(1)) ~ ' to ' ~ (hi24 | round(1)) ~ ' ' ~ unit_text) | trim if lo24 is number and hi24 is number else '' }}"
+  range72:  "{{ ((lo72 | round(1)) ~ ' to ' ~ (hi72 | round(1)) ~ ' ' ~ unit_text) | trim if lo72 is number and hi72 is number else '' }}"
+  range168: "{{ ((lo168 | round(1)) ~ ' to ' ~ (hi168 | round(1)) ~ ' ' ~ unit_text) | trim if lo168 is number and hi168 is number else '' }}"
+  range_today: "{{ ((today | min | round(1)) ~ ' to ' ~ (today | max | round(1)) ~ ' ' ~ unit_text) | trim if today else '' }}"
+
+state: reading
+lit: none
+# A card too small for the graph shows the reading, not its icon.
+alone: reading
+
+parts:
+  reading: {type: label, text: "{{ reading }}", size: ml}
+  chart:   {type: chart, value: h24, grow: true}
+  range:   {type: label, text: "{{ range24 }}", size: s, when: [show_range]}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: title
+    v1: apollo/sensor-graph
+    layout:
+      # The reading, and the range at its right: the chart gets the rest.
+      - type: row
+        items:
+          - {use: reading}
+          - {use: range, align: right, text: "{{ range6 }}", when: ["kind!=today", hours=6, tablet.v2]}
+          - {use: range, align: right, text: "{{ range24 }}", when: ["kind!=today", hours=24, tablet.v2]}
+          - {use: range, align: right, text: "{{ range72 }}", when: ["kind!=today", hours=72, tablet.v2]}
+          - {use: range, align: right, text: "{{ range168 }}", when: ["kind!=today", hours=168, tablet.v2]}
+          - {use: range, align: right, text: "{{ range_today }}", when: [kind=today, tablet.v2]}
+      - {use: chart, value: h6, kind: line, when: [kind=line, hours=6]}
+      - {use: chart, value: h24, kind: line, when: [kind=line, hours=24]}
+      - {use: chart, value: h72, kind: line, when: [kind=line, hours=72]}
+      - {use: chart, value: h168, kind: line, when: [kind=line, hours=168]}
+      - {use: chart, value: h6, kind: steps, when: [kind=steps, hours=6]}
+      - {use: chart, value: h24, kind: steps, when: [kind=steps, hours=24]}
+      - {use: chart, value: h72, kind: steps, when: [kind=steps, hours=72]}
+      - {use: chart, value: h168, kind: steps, when: [kind=steps, hours=168]}
+      - {use: chart, value: h6, kind: bars, when: [kind=bars, hours=6, tablet.v2]}
+      - {use: chart, value: h24, kind: bars, when: [kind=bars, hours=24, tablet.v2]}
+      - {use: chart, value: h72, kind: bars, when: [kind=bars, hours=72, tablet.v2]}
+      - {use: chart, value: h168, kind: bars, when: [kind=bars, hours=168, tablet.v2]}
+      - {use: chart, value: today, kind: bars, mark: hour_now, when: [kind=today, tablet.v2]}
+      # What a tablet with older software draws instead of bars: a line.
+      - {use: chart, value: h6, kind: line, when: [kind=bars, hours=6, "!tablet.v2"]}
+      - {use: chart, value: h24, kind: line, when: [kind=bars, hours=24, "!tablet.v2"]}
+      - {use: chart, value: h72, kind: line, when: [kind=bars, hours=72, "!tablet.v2"]}
+      - {use: chart, value: h168, kind: line, when: [kind=bars, hours=168, "!tablet.v2"]}
+      - {use: chart, value: today, kind: line, when: [kind=today, "!tablet.v2"]}
+  large:
+    name: Large
+    grid: [12, 6]
+    header: title
+    v1: apollo/sensor-graph
+    layout:
+      - {use: reading}
+      - {use: chart, value: h6, kind: line, when: [kind=line, hours=6]}
+      - {use: chart, value: h24, kind: line, when: [kind=line, hours=24]}
+      - {use: chart, value: h72, kind: line, when: [kind=line, hours=72]}
+      - {use: chart, value: h168, kind: line, when: [kind=line, hours=168]}
+      - {use: chart, value: h6, kind: steps, when: [kind=steps, hours=6]}
+      - {use: chart, value: h24, kind: steps, when: [kind=steps, hours=24]}
+      - {use: chart, value: h72, kind: steps, when: [kind=steps, hours=72]}
+      - {use: chart, value: h168, kind: steps, when: [kind=steps, hours=168]}
+      - {use: chart, value: h6, kind: bars, when: [kind=bars, hours=6, tablet.v2]}
+      - {use: chart, value: h24, kind: bars, when: [kind=bars, hours=24, tablet.v2]}
+      - {use: chart, value: h72, kind: bars, when: [kind=bars, hours=72, tablet.v2]}
+      - {use: chart, value: h168, kind: bars, when: [kind=bars, hours=168, tablet.v2]}
+      - {use: chart, value: today, kind: bars, mark: hour_now, when: [kind=today, tablet.v2]}
+      # What a tablet with older software draws instead of bars: a line.
+      - {use: chart, value: h6, kind: line, when: [kind=bars, hours=6, "!tablet.v2"]}
+      - {use: chart, value: h24, kind: line, when: [kind=bars, hours=24, "!tablet.v2"]}
+      - {use: chart, value: h72, kind: line, when: [kind=bars, hours=72, "!tablet.v2"]}
+      - {use: chart, value: h168, kind: line, when: [kind=bars, hours=168, "!tablet.v2"]}
+      - {use: chart, value: today, kind: line, when: [kind=today, "!tablet.v2"]}
+      - {use: range, text: "{{ range6 }}", when: ["kind!=today", hours=6]}
+      - {use: range, text: "{{ range24 }}", when: ["kind!=today", hours=24]}
+      - {use: range, text: "{{ range72 }}", when: ["kind!=today", hours=72]}
+      - {use: range, text: "{{ range168 }}", when: ["kind!=today", hours=168]}
+      - {use: range, text: "{{ range_today }}", when: [kind=today]}
+
+preview:
+  params: {entity: sensor.example}
+  inputs:
+    h6: [19.9, 20.4, 20.2, 20.9, 21.3, 21.1, 21.7, 21.4]
+    h24: [19.2, 19.4, 19.3, 19.9, 20.4, 20.2, 20.9, 21.3, 21.1, 21.7, 21.9, 21.4]
+    h72: [18.8, 19.2, 20.1, 21.0, 19.6, 19.4, 20.3, 21.2, 19.9, 20.4, 21.9, 21.4]
+    h168: [18.1, 19.0, 20.6, 19.4, 20.8, 19.9, 21.2, 20.1, 21.5, 20.4, 21.9, 21.4]
+    today: [19.0, 18.8, 18.7, 18.6, 18.6, 18.9, 19.4, 20.1, 20.6, 21.0, 21.3, 21.4]
+    hour_now: 11
+    unit_text: "°C"
+    reading: "21.4 °C"
+    range6: "19.9 to 21.7 °C"
+    range24: "19.2 to 21.9 °C"
+    range72: "18.8 to 21.9 °C"
+    range168: "18.1 to 21.9 °C"
+    range_today: "18.6 to 21.4 °C"

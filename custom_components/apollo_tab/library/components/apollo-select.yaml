@@ -41,12 +41,15 @@ variants:
     name: Wide
     grid: [12, 3]
     header: title
-    layout: [{use: choices}, {use: old_now}, {use: old_previous}, {use: old_next}]
+    # The choices take the card's height: no empty band under the title.
+    # Two rows, so each choice is wide enough for its whole name.
+    layout: [{use: choices, grow: true, rows: 2}, {use: old_now}, {use: old_previous}, {use: old_next}]
   large:
     name: Large
     grid: [12, 6]
     header: title
-    layout: [{use: choices}, {use: old_now}, {use: old_previous}, {use: old_next}]
+    # As on Wide: the choices take the card's height.
+    layout: [{use: choices, grow: true}, {use: old_now}, {use: old_previous}, {use: old_next}]
 
 preview:
   params: {entity: select.example}

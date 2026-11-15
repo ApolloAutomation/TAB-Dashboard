@@ -142,14 +142,16 @@ async def test_replaces_in_a_user_file_is_refused(
     """Only built-in files may carry replaces."""
     user_components(
         "plug.yaml",
-        USER_CARD.replace("name: Plug\n", "name: Plug\nreplaces: [apollo/lock]\n"),
+        USER_CARD.replace(
+            "name: Plug\n", "name: Plug\nreplaces: [apollo/camera-snapshot]\n"
+        ),
     )
     library = Library(hass)
     await library.async_load()
     assert "me/plug" not in library.components
     assert [error["code"] for error in library.errors] == ["replaces_not_allowed"]
-    assert "apollo/lock" not in library.replaced_ids()
-    assert _entry(library, "apollo/lock")["legacy"] is False
+    assert "apollo/camera-snapshot" not in library.replaced_ids()
+    assert _entry(library, "apollo/camera-snapshot")["legacy"] is False
 
 
 async def test_a_v1_that_names_no_loaded_schema_1_card_is_refused(
@@ -220,16 +222,28 @@ async def test_built_in_cards_replace_the_old_ones(
     library = Library(hass)
     await library.async_load()
     assert library.errors == []
-    assert len(library.components) == 25
+    assert len(library.components) == 41
+    # D.5: every old card but the camera snapshot.
     assert library.replaced_ids() == {
+        "apollo/sensor-graph",
+        "apollo/weather",
         "apollo/light-tile",
         "apollo/light-slider",
         "apollo/scene-row",
         "apollo/sensor-value",
+        "apollo/fan",
+        "apollo/blinds",
+        "apollo/thermostat",
+        "apollo/lock",
+        "apollo/alarm-panel",
+        "apollo/media-player",
+        "community/energy-gauge",
+        "community/presence-chips",
+        "community/room-summary",
     }
     assert _entry(library, "apollo/light-tile")["legacy"] is True
     assert _entry(library, "apollo/light-slider")["legacy"] is True
-    assert _entry(library, "apollo/lock")["legacy"] is False
+    assert _entry(library, "apollo/camera-snapshot")["legacy"] is False
     assert _entry(library, "apollo/light")["legacy"] is False
 
 
