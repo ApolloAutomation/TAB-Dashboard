@@ -389,7 +389,11 @@ async def test_a_hue_change_keeps_the_lamps_strength(
     result = await _call(client, card, hue["i"], "change", value=120)
     assert result["success"], result
     assert list(calls[-1].data["hs_color"]) == [120, 40]
-    # The default favourites: the eighth is a warm white.
+    # The default favourites: the eighth is a warm white. With saturation
+    # shown the dots make way (look decision 11), so ask for the dots.
+    card = {**LIGHT_CARD, "variant": "large", "options": {"colour_control": "dots"}}
+    init = await _subscribe(client, card)
+    assert init["type"] == "init", init
     result = await _call(client, card, _widget(init, "choice"), "change", value=7)
     assert result["success"], result
     assert calls[-1].data["color_temp_kelvin"] == 2700
