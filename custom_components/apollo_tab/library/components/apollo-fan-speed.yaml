@@ -25,6 +25,7 @@ inputs:
   preset_at: >-
     {{ can.presets.index(state_attr(entity, 'preset_mode')) if state_attr(entity, 'preset_mode') in can.presets else none }}
   turning:   "{{ state_attr(entity, 'oscillating') }}"
+  gone:      "{{ states(entity) in ['unavailable', 'unknown'] }}"
   state:     "{{ state_translated(entity) ~ (', ' ~ pct ~ '%' if is_on and can.speed else '') }}"
 
 outputs:
@@ -50,10 +51,12 @@ hold: detail
 parts:
   speed:   {type: slider, look: bar, value: pct, min: 0, max: 100, step: "{{ can.step }}",
             icon: "mdi:fan", on_change: set_pct, when: [can.speed, show_speed]}
+  # While the fan is gone the presets and the turning button are not
+  # there: faded, they would read as loose words.
   presets: {type: choice, options: can.presets, value: preset_at, on_change: set_preset,
-            when: [can.presets, show_presets]}
-  turning: {type: button, text: Turning, icon: "mdi:autorenew", selected: turning,
-            on_tap: oscillate, when: [can.oscillate, show_oscillate]}
+            when: [can.presets, show_presets], visible: "{{ not gone }}"}
+  turning: {type: button, text: Side to side, icon: "mdi:autorenew", selected: turning,
+            on_tap: oscillate, when: [can.oscillate, show_oscillate], visible: "{{ not gone }}"}
 
 variants:
   tile:
@@ -67,27 +70,33 @@ variants:
     header: tile
     trailing: switch
     # Eight presets need two rows, which a wide card does not hold: they
-    # are on Large and the controls.
-    layout: [{use: speed}]
+    # are on Large and the controls. The bar takes the card's height.
+    layout: [{use: speed, grow: true}]
   large:
     name: Large
     grid: [12, 6]
     header: tile
     trailing: switch
-    layout: [{use: speed}, {use: presets}, {use: turning}]
+    # The controls stack down from the header, the bar the tallest. The
+    # presets take what is left, so a fan with few presets leaves no empty
+    # foot.
+    align: top
+    layout: [{use: speed, height: 96}, {use: presets, grow: true}, {use: turning, height: 56}]
   full:
     name: Controls
     grid: [18, 11]
     header: tile
     trailing: switch
     picker: false
+    # Every row at least 56 high, the speed bar the tallest (LOOK-NOTES
+    # decision 1).
     layout:
-      - {use: speed, height: 56}
-      - {use: presets, rows: 2}
-      - {use: turning}
+      - {use: speed, height: 72}
+      - {use: presets, rows: 2, height: 120}
+      - {use: turning, height: 56}
 detail: full
 
 preview:
   params: {entity: fan.example}
   can: {speed: true, oscillate: true, presets: [Breeze, Sleep], step: 25}
-  inputs: {is_on: true, pct: 50, preset_at: null, turning: false, state: "On, 50%"}
+  inputs: {is_on: true, pct: 50, preset_at: null, turning: false, gone: false, state: "On, 50%"}

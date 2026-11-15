@@ -24,13 +24,27 @@ options:
 inputs:
   temp: >-
     {{ (states(temperature_sensor) ~ (state_attr(temperature_sensor, 'unit_of_measurement') or '')) if temperature_sensor else '' }}
-  humid:      "{{ (states(humidity_sensor) ~ '%') if humidity_sensor else '' }}"
+  # The large temperature: a dash while the sensor has no number.
+  big_temp: >-
+    {{ temp if states(temperature_sensor) | float(none) is number else '—' }}
+  # The humidity only when it is a number: never "unavailable%".
+  humid: >-
+    {{ (states(humidity_sensor) ~ '%') if humidity_sensor and states(humidity_sensor) | float(none) is number else '' }}
   on_count:   "{{ lights | select('is_state', 'on') | list | count }}"
   any_on:     "{{ on_count > 0 }}"
+  # Every light gone: no count and no button, not "0 of 3 on".
+  lights_gone: "{{ lights | select('is_state', 'unavailable') | list | count == lights | count }}"
   count:      "{{ on_count }} of {{ lights | count }} lights on"
+  # A dash while the extra device is gone: never "unavailable W".
   extra_line: >-
-    {{ ((state_attr(extra, 'friendly_name') or extra) ~ ': ' ~ (states(extra) ~ ' ' ~ (state_attr(extra, 'unit_of_measurement') or '')) | trim) if extra else '' }}
+    {{ ((state_attr(extra, 'friendly_name') or extra) ~ ': ' ~ ('—' if states(extra) in ['unavailable', 'unknown'] else (states(extra) ~ ' ' ~ (state_attr(extra, 'unit_of_measurement') or '')) | trim)) if extra else '' }}
   line:       "{{ [temp, humid] | select | join(' · ') }}"
+  # The header's line: what the large temperature does not say already.
+  others: >-
+    {{ [temp if not show_temperature and states(temperature_sensor) | float(none) is number else '', humid, (on_count ~ ' of ' ~ (lights | count) ~ ' on') if lights and show_count and not lights_gone else ''] | select | join(' · ') }}
+  # The room's name: the area of its sensor or its first light.
+  room_name: >-
+    {% set first = temperature_sensor or humidity_sensor or (lights[0] if lights else none) or extra %}{{ (area_name(first) if first else none) or 'Room' }}
 
 outputs:
   lights_on:  {action: light.turn_on, data: {entity_id: "{{ lights }}"}, feedback: optimistic}
@@ -38,7 +52,8 @@ outputs:
   go:         {local: go_to_page, page: "{{ page }}"}
 
 on: any_on
-state: line
+state: others
+title: room_name
 lit: icon
 tap:
   default: go
@@ -47,16 +62,16 @@ tap:
     none: {label: Does nothing}
 
 parts:
-  temp:   {type: label, text: "{{ temp }}", size: l, when: [has.temperature_sensor, show_temperature]}
+  temp:   {type: label, text: "{{ big_temp }}", size: l, when: [has.temperature_sensor, show_temperature]}
   count:  {type: label, text: "{{ count }}", size: s, when: [has.lights, show_count]}
   extra:  {type: label, text: "{{ extra_line }}", size: s, when: [has.extra, show_extra]}
   lights:
     type: swap
     when: [has.lights, tablet.v2]
     items:
-      - {type: button, text: Lights off, icon: "mdi:lightbulb", on_tap: lights_off, visible: any_on}
-      - {type: button, text: Lights on, icon: "mdi:lightbulb-on", on_tap: lights_on,
-         visible: "{{ not any_on }}"}
+      - {type: button, text: Turn all off, icon: "mdi:lightbulb", on_tap: lights_off, visible: any_on}
+      - {type: button, text: Turn all on, icon: "mdi:lightbulb-on", on_tap: lights_on,
+         visible: "{{ not any_on and not lights_gone }}"}
   # What a tablet with older software shows: one line and a button to the page.
   old_line: {type: label, size: s, when: ["!tablet.v2"],
              text: "{{ [temp, humid, count if lights else ''] | select | join(' · ') }}"}
@@ -66,21 +81,26 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
-    header: tile
-    layout: [{use: temp, when: [tablet.v2]}, {use: old_line}, {use: old_go}]
+    # The name across the whole tile, the temperature under it.
+    header: tile_v
+    layout: [{use: temp, size: ml, when: [tablet.v2]}, {use: old_line}, {use: old_go}]
   room:
     name: Room
-    grid: [9, 5]
+    # Four rows hold the header, the temperature, the extra reading and the
+    # button exactly: five left an empty foot (LOOK-NOTES decision 5).
+    grid: [9, 4]
     header: tile
+    # From the header down: the temperature, the extra reading, the lights
+    # button right under them, so no band opens between them.
+    align: top
     layout:
-      - {use: count, when: [tablet.v2]}
       - {use: temp, size: xl, when: [tablet.v2]}
       - {use: extra, when: [tablet.v2]}
-      - {use: lights}
+      - {use: lights, height: 64}
       - {use: old_line}
       - {use: old_go}
 
 preview:
   params: {page: home}
-  inputs: {temp: "21.5°C", humid: "46%", on_count: 2, any_on: true, count: "2 of 4 lights on",
-           extra_line: "", line: "21.5°C · 46%"}
+  inputs: {temp: "21.5°C", big_temp: "21.5°C", lights_gone: false, humid: "46%", on_count: 2, any_on: true, count: "2 of 4 lights on",
+           extra_line: "", line: "21.5°C · 46%", others: "46% · 2 of 4 on", room_name: Living room}

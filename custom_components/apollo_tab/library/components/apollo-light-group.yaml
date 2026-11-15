@@ -21,12 +21,15 @@ inputs:
   # The mean brightness of the lights that are on.
   pct: >-
     {% set b = lights | select('is_state', 'on') | map('state_attr', 'brightness') | reject('none') | list %}{{ ((b | sum / b | count) / 2.55) | round | int if b else 0 }}
-  line:     "{{ on_count }} of {{ total }} on"
-  of_total: "of {{ total }} lights on"
+  gone:     "{{ lights | select('is_state', 'unavailable') | list | count == total }}"
+  line:     "{{ 'Unavailable' if gone else on_count ~ ' of ' ~ total ~ ' on' }}"
+  # The chip's value column: a dash while every light is gone (the card fades).
+  short:    "{{ '—' if gone else on_count ~ ' of ' ~ total ~ ' on' }}"
+  big:      "{{ '—' if gone else on_count }}"
+  of_total: "{{ '' if gone else 'of ' ~ total ~ ' lights on' }}"
   # The lights the bar dims: those that are on, or all when none is.
   targets: >-
     {{ lights if bar_sets == 'all' or on_count == 0 else lights | select('is_state', 'on') | list }}
-  gone:     "{{ lights | select('is_state', 'unavailable') | list | count == total }}"
 
 outputs:
   all_on:  {action: light.turn_on, data: {entity_id: "{{ lights }}"}, feedback: optimistic}
@@ -51,7 +54,7 @@ parts:
     items:
       - {type: button, text: Turn all off, icon: "mdi:lightbulb-off", on_tap: all_off, visible: any_on}
       - {type: button, text: Turn all on, icon: "mdi:lightbulb-on", on_tap: all_on,
-         visible: "{{ not any_on }}"}
+         visible: "{{ not any_on and not gone }}"}
   # What a tablet with older software shows instead of the swap.
   old_buttons:
     type: row
@@ -65,26 +68,37 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
+    # The bar takes the tile's height; without the bar, the button.
     header: tile
-    layout: [{use: all}, {use: old_line}, {use: old_buttons}]
+    layout:
+      - {use: bar, grow: true, when: [tablet.v2]}
+      - {use: all, when: ["!show_bar"]}
+      - {use: old_line}
+      - {use: old_buttons}
   wide:
     name: Wide
     grid: [12, 3]
-    header: tile
-    layout: [{use: bar}, {use: all}, {use: old_buttons}]
+    # The low chip header leaves the bar a height a finger can hold, with
+    # the button under it.
+    header: chip
+    state: short
+    layout: [{use: bar, grow: true}, {use: all}, {use: old_buttons}]
   large:
     name: Large
     grid: [12, 6]
     header: tile
+    # The count once, large, under the name; then the bar and the button.
+    state: none
+    align: top
     layout:
-      - {type: label, text: "{{ on_count }}", size: xl}
+      - {type: label, text: "{{ big }}", size: xl}
       - {type: label, text: "{{ of_total }}", size: m}
-      - {use: bar}
-      - {use: all}
+      - {use: bar, height: 72}
+      - {use: all, height: 56}
       - {use: old_line}
       - {use: old_buttons}
 
 preview:
   params: {lights: [light.kitchen, light.hall, light.sofa, light.desk]}
-  inputs: {on_count: 2, total: 4, any_on: true, pct: 60, line: "2 of 4 on",
+  inputs: {on_count: 2, total: 4, any_on: true, pct: 60, line: "2 of 4 on", big: 2,
            of_total: "of 4 lights on", gone: false}

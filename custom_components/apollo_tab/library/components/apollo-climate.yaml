@@ -71,8 +71,10 @@ variants:
     grid: [12, 6]
     header: title
     v1: apollo/thermostat
+    # As on the controls page: the dial narrower than the card, so its
+    # buttons sit at the foot of the arc and not in the card's corners.
     layout:
-      - {use: dial, buttons: 56}
+      - {type: row, items: [{use: dial, buttons: 56, width: 264}]}
       - {use: modes}
       - {use: presets, when: [show_presets]}
       - {use: line}
@@ -81,13 +83,20 @@ variants:
     grid: [18, 11]
     header: title
     picker: false
+    # A dial that does not crowd the number, its buttons at the foot of the
+    # arc, then each group of choices under its own word, so one lit cell
+    # per group reads as one choice. Each row of choices is 56 high
+    # (LOOK-NOTES decision 1).
     layout:
-      - {use: dial, buttons: 64}
-      - {use: modes}
-      - {use: presets}
-      - {type: choice, options: can.fan_modes, value: fan_at, on_change: set_fan_mode,
-         when: [can.fan_modes]}
+      - {type: row, height: 300, items: [{use: dial, buttons: 64, width: 360}]}
       - {use: line}
+      - {type: label, text: Mode, size: s, when: [can.modes, show_modes, modes_shown]}
+      - {use: modes, height: 56}
+      - {type: label, text: Preset, size: s, when: [can.presets]}
+      - {use: presets, height: 56}
+      - {type: label, text: Fan, size: s, when: [can.fan_modes]}
+      - {type: choice, options: can.fan_modes, value: fan_at, on_change: set_fan_mode,
+         when: [can.fan_modes], height: 56}
 detail: full
 
 preview:

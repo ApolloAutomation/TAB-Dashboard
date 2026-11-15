@@ -52,6 +52,8 @@ inputs:
 
 state: temp
 lit: none
+# A card too small for anything else shows the temperature, not its icon.
+alone: "{{ temp or '—' }}"
 
 parts:
   icon:      {type: image, value: icon, look: bare, side: true}
@@ -60,7 +62,10 @@ parts:
   details:   {type: label, text: "{{ details }}", size: s, when: [show_details]}
   # One cell of a day; `vars: {d: n}` on the use line says which day.
   name_cell: {type: label, text: "{{ day }}", size: s, align: centre}
-  icon_cell: {type: image, value: day_icon, look: bare}
+  # No forecast (the device is gone, or the call failed and gave no
+  # answer): no cell, never the empty picture.
+  icon_cell: {type: image, value: day_icon, look: bare,
+              visible: "{{ day_icon is string and day_icon.startswith('mdi:') }}"}
   high_cell: {type: label, text: "{{ (high | round(0) | int) ~ '°' if high is number else '' }}", size: m, align: centre}
   low_cell:  {type: label, text: "{{ (low | round(0) | int) ~ '°' if low is number else '' }}", size: s, align: centre}
 
@@ -79,13 +84,15 @@ variants:
     grid: [12, 6]
     header: none
     v1: apollo/weather
+    # From the top down: now, then the days.
+    align: top
     layout:
       # The icon beside the temperature, so the days get the whole width.
       - type: row
-        height: 72
+        height: 120
         items:
-          - {use: icon, side: false, width: 72}
-          - {use: temp}
+          - {use: icon, side: false, width: 96}
+          - {use: temp, size: xxl}
       - {use: condition}
       - {use: details}
       - type: row

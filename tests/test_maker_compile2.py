@@ -895,7 +895,8 @@ def test_choice_lists_and_their_values_on_the_server() -> None:
         {"rgb": None, "kelvin": 2700},
     ]
     assert effects["texts"] == ["Rainbow", "Night"]
-    assert fact["texts"] == ["Rainbow", "Night", "Fire"] and fact["rows"] == 2
+    # L2: three in two rows left one alone beside a hole; they take one row.
+    assert fact["texts"] == ["Rainbow", "Night", "Fire"] and fact["rows"] == 1
     assert result["actions"][f"{fact['i']}:change"]["options"] == [
         "Rainbow",
         "Night",

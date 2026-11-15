@@ -31,15 +31,19 @@ parts:
            text: "{{ state_attr(s, 'friendly_name') or s }}", on_tap: run, when: [show_names]}
   bare:   {type: button, for_each: scenes, as: s, icon: "{{ s_can.icon }}", on_tap: run,
            when: ["!show_names"]}
+  # Names only: four to a row leave too little room for an icon beside them.
+  words:  {type: button, for_each: scenes, as: s, text: "{{ state_attr(s, 'friendly_name') or s }}",
+           on_tap: run, when: [show_names]}
 
 variants:
   wide:
     name: Wide
     grid: [12, 3]
     # The title names the card; the buttons take the rest of its height.
+    # Up to four scenes share two rows, so a name like "Movie Night" fits.
     header: title
     layout:
-      - {use: named, per_row: 4, grow: true, when: ["per_row=4"]}
+      - {use: words, per_row: 4, two_rows: true, grow: true, when: ["per_row=4"]}
       - {use: named, per_row: 2, grow: true, when: ["per_row=2"]}
       - {use: bare, per_row: 4, grow: true, when: ["per_row=4"]}
       - {use: bare, per_row: 2, grow: true, when: ["per_row=2"]}

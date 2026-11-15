@@ -2662,9 +2662,7 @@
         ],
         "text": "Disarm",
         "icon": "mdi:shield-off",
-        "vis": {
-         "s": 2
-        },
+        "vis": false,
         "tap": {
          "policy": "confirm"
         },
@@ -2707,9 +2705,7 @@
       "warnings": [],
       "notes": []
      },
-     "values": {
-      "2": "False"
-     }
+     "values": {}
     },
     "large": {
      "card": {
@@ -2751,11 +2747,11 @@
         "t": "image",
         "r": [
          16,
-         140,
-         344,
-         104
+         18,
+         44,
+         44
         ],
-        "value": null,
+        "value": "mdi:shield-home",
         "look": 1,
         "c": {
          "s": 1,
@@ -2775,17 +2771,51 @@
        {
         "t": "label",
         "r": [
+         68,
          16,
-         252,
-         344,
-         36
+         292,
+         26
         ],
-        "px": 28,
-        "text": {
-         "s": 2
-        },
-        "al": 1,
+        "text": "Alarm",
+        "size": "m",
         "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         68,
+         42,
+         292,
+         22
+        ],
+        "text": "Disarmed",
+        "size": "s",
+        "i": 2
+       },
+       {
+        "t": "image",
+        "r": [
+         16,
+         72,
+         344,
+         216
+        ],
+        "value": null,
+        "look": 1,
+        "c": {
+         "s": 1,
+         "roles": {
+          "accent": "#FFB347",
+          "accent2": "#6CB4FF",
+          "bad": "#FF6B5E",
+          "good": "#4CC38A",
+          "info": "#6CB4FF",
+          "muted": "#9AA3AF",
+          "text": "#F2F4F7",
+          "warn": "#F5B547"
+         }
+        },
+        "i": 3
        },
        {
         "t": "button",
@@ -2801,7 +2831,7 @@
          "policy": "confirm"
         },
         "confirm": "Arm the alarm for home?",
-        "i": 2
+        "i": 4
        },
        {
         "t": "button",
@@ -2817,7 +2847,7 @@
          "policy": "confirm"
         },
         "confirm": "Arm the alarm for away?",
-        "i": 3
+        "i": 5
        },
        {
         "t": "button",
@@ -2829,14 +2859,12 @@
         ],
         "text": "Disarm",
         "icon": "mdi:shield-off",
-        "vis": {
-         "s": 3
-        },
+        "vis": false,
         "tap": {
          "policy": "confirm"
         },
         "confirm": "Disarm the alarm?",
-        "i": 4
+        "i": 6
        }
       ],
       "call": {
@@ -2874,10 +2902,7 @@
       "warnings": [],
       "notes": []
      },
-     "values": {
-      "2": "Disarmed",
-      "3": "False"
-     }
+     "values": {}
     }
    }
   },
@@ -2915,7 +2940,7 @@
       "name": "Large",
       "grid": [
        12,
-       6
+       5
       ],
       "picker": true,
       "needs_v2": false
@@ -3056,7 +3081,7 @@
         "t": "image",
         "r": [
          16,
-         18,
+         16,
          44,
          44
         ],
@@ -3067,10 +3092,10 @@
        {
         "t": "label",
         "r": [
-         68,
          16,
-         100,
-         26
+         68,
+         152,
+         28
         ],
         "text": "Appliance",
         "size": "m",
@@ -3079,9 +3104,9 @@
        {
         "t": "label",
         "r": [
-         68,
-         42,
-         100,
+         16,
+         98,
+         152,
          22
         ],
         "text": "Running",
@@ -3092,30 +3117,15 @@
         "t": "label",
         "r": [
          16,
-         108,
+         132,
          152,
-         44
+         36
         ],
-        "size": "l",
+        "px": 28,
         "text": {
          "s": 1
         },
         "i": 3
-       },
-       {
-        "t": "slider",
-        "r": [
-         16,
-         160,
-         152,
-         8
-        ],
-        "value": 60,
-        "min": 0,
-        "max": 100,
-        "step": 1,
-        "look": 1,
-        "i": 4
        }
       ],
       "call": {
@@ -3171,7 +3181,7 @@
       "variant": "large",
       "grid_options": {
        "columns": 12,
-       "rows": 6
+       "rows": 5
       }
      },
      "init": {
@@ -3181,7 +3191,7 @@
       "variant": "large",
       "demo": true,
       "w": 376,
-      "h": 376,
+      "h": 312,
       "entities": [],
       "header": null,
       "on": true,
@@ -3227,11 +3237,11 @@
         "t": "label",
         "r": [
          16,
-         214,
+         72,
          344,
-         44
+         60
         ],
-        "size": "l",
+        "px": 48,
         "text": {
          "s": 1
         },
@@ -3241,9 +3251,9 @@
         "t": "slider",
         "r": [
          16,
-         266,
+         140,
          344,
-         8
+         12
         ],
         "value": 60,
         "min": 0,
@@ -3256,7 +3266,7 @@
         "t": "label",
         "r": [
          16,
-         282,
+         160,
          344,
          22
         ],
@@ -3270,9 +3280,9 @@
         "t": "button",
         "r": [
          16,
-         312,
+         190,
          344,
-         48
+         64
         ],
         "text": "Start",
         "icon": "mdi:play",
@@ -3473,7 +3483,7 @@
         "r": [
          48,
          16,
-         148,
+         216,
          24
         ],
         "text": "Button",
@@ -3534,7 +3544,7 @@
         "t": "image",
         "r": [
          16,
-         18,
+         16,
          44,
          44
         ],
@@ -3545,10 +3555,10 @@
        {
         "t": "label",
         "r": [
-         68,
          16,
-         100,
-         26
+         68,
+         152,
+         28
         ],
         "text": "Button",
         "size": "m",
@@ -3935,9 +3945,9 @@
        {
         "t": "thermostat",
         "r": [
-         16,
          56,
-         344,
+         56,
+         264,
          218
         ],
         "value": 21,
@@ -4084,10 +4094,10 @@
        {
         "t": "thermostat",
         "r": [
-         16,
+         104,
          56,
-         536,
-         482
+         360,
+         300
         ],
         "value": 21,
         "min": 7,
@@ -4102,12 +4112,39 @@
         "i": 0
        },
        {
+        "t": "label",
+        "r": [
+         16,
+         364,
+         536,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 1
+        },
+        "al": 1,
+        "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         388,
+         536,
+         22
+        ],
+        "size": "s",
+        "text": "Mode",
+        "i": 2
+       },
+       {
         "t": "choice",
         "r": [
          16,
-         546,
+         418,
          536,
-         48
+         56
         ],
         "texts": [
          "heat",
@@ -4120,15 +4157,27 @@
         "change": {
          "policy": "progress"
         },
-        "i": 1
+        "i": 3
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         482,
+         536,
+         22
+        ],
+        "size": "s",
+        "text": "Preset",
+        "i": 4
        },
        {
         "t": "choice",
         "r": [
          16,
-         602,
+         512,
          536,
-         48
+         56
         ],
         "texts": [
          "eco",
@@ -4139,22 +4188,7 @@
         "change": {
          "policy": "progress"
         },
-        "i": 2
-       },
-       {
-        "t": "label",
-        "r": [
-         16,
-         658,
-         536,
-         22
-        ],
-        "size": "s",
-        "text": {
-         "s": 1
-        },
-        "al": 1,
-        "i": 3
+        "i": 5
        }
       ],
       "call": {
@@ -4601,7 +4635,7 @@
       "type": "toggle",
       "section": "look",
       "label": "The bar grows as it opens",
-      "help": "",
+      "help": "Only the window size draws the blind hanging down. The other sizes always fill as it opens",
       "when": [
        "show_position"
       ],
@@ -4709,6 +4743,24 @@
         "text": "Open 60%",
         "size": "s",
         "i": 2
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         128,
+         152,
+         40
+        ],
+        "value": 60,
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "change": {
+         "policy": "progress"
+        },
+        "i": 3
        }
       ],
       "call": {
@@ -4812,15 +4864,21 @@
         "i": 2
        },
        {
-        "t": "button",
+        "t": "slider",
         "r": [
          16,
-         264,
-         45,
-         48
+         72,
+         152,
+         224
         ],
-        "icon": "mdi:arrow-up",
-        "tap": {
+        "value": 40,
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "dir": 2,
+        "c": "#9AA3AF",
+        "change": {
          "policy": "progress"
         },
         "i": 3
@@ -4828,12 +4886,12 @@
        {
         "t": "button",
         "r": [
-         69,
-         264,
+         16,
+         304,
          45,
-         48
+         56
         ],
-        "icon": "mdi:stop",
+        "icon": "mdi:arrow-up",
         "tap": {
          "policy": "progress"
         },
@@ -4842,31 +4900,27 @@
        {
         "t": "button",
         "r": [
-         122,
-         264,
-         46,
-         48
+         69,
+         304,
+         45,
+         56
         ],
-        "icon": "mdi:arrow-down",
+        "icon": "mdi:stop",
         "tap": {
          "policy": "progress"
         },
         "i": 5
        },
        {
-        "t": "slider",
+        "t": "button",
         "r": [
-         16,
-         320,
-         152,
-         40
+         122,
+         304,
+         46,
+         56
         ],
-        "value": 40,
-        "min": 0,
-        "max": 100,
-        "step": 1,
-        "look": 1,
-        "change": {
+        "icon": "mdi:arrow-down",
+        "tap": {
          "policy": "progress"
         },
         "i": 6
@@ -4986,6 +5040,7 @@
         "step": 1,
         "look": 1,
         "dir": 2,
+        "c": "#9AA3AF",
         "change": {
          "policy": "progress"
         },
@@ -5107,7 +5162,7 @@
          152
         ],
         "value": null,
-        "look": 2,
+        "look": 1,
         "i": 0
        },
        {
@@ -5277,9 +5332,9 @@
          16,
          72,
          536,
-         56
+         72
         ],
-        "value": 40,
+        "value": 60,
         "min": 0,
         "max": 100,
         "step": 1,
@@ -5293,7 +5348,7 @@
         "t": "button",
         "r": [
          16,
-         136,
+         152,
          173,
          64
         ],
@@ -5307,7 +5362,7 @@
         "t": "button",
         "r": [
          197,
-         136,
+         152,
          173,
          64
         ],
@@ -5321,7 +5376,7 @@
         "t": "button",
         "r": [
          378,
-         136,
+         152,
          174,
          64
         ],
@@ -5566,6 +5621,7 @@
        "s": 1
       },
       "lit": 1,
+      "un": false,
       "widgets": [
        {
         "t": "thermostat",
@@ -5573,7 +5629,91 @@
          16,
          56,
          152,
-         76
+         112
+        ],
+        "value": 1840,
+        "min": 0,
+        "max": {
+         "s": 2
+        },
+        "step": 0.5,
+        "i": 0
+       }
+      ],
+      "call": {
+       "values": {
+        "options": {
+         "min": 0.0,
+         "low": 0.0,
+         "low_colour": "info",
+         "high": 0.0,
+         "high_colour": "warn",
+         "unit": ""
+        },
+        "can": {
+         "toggle": false,
+         "icon": "mdi:gauge",
+         "kind": null,
+         "entity": {
+          "toggle": false,
+          "icon": "mdi:gauge",
+          "kind": null
+         }
+        }
+       },
+       "uses": {}
+      },
+      "opener": false,
+      "warnings": [],
+      "notes": []
+     },
+     "values": {
+      "1": "False",
+      "2": 5000.0
+     }
+    },
+    "large": {
+     "card": {
+      "type": "custom:apollo-tab-card",
+      "component": "apollo/dial",
+      "variant": "large",
+      "grid_options": {
+       "columns": 12,
+       "rows": 6
+      }
+     },
+     "init": {
+      "schema": 2,
+      "component": "apollo/dial",
+      "name": "Gauge",
+      "variant": "large",
+      "demo": true,
+      "w": 376,
+      "h": 376,
+      "entities": [],
+      "header": {
+       "r": [
+        16,
+        16,
+        344,
+        32
+       ],
+       "icon": "mdi:gauge",
+       "title": "Gauge"
+      },
+      "on": {
+       "s": 1
+      },
+      "lit": 1,
+      "un": false,
+      "widgets": [
+       {
+        "t": "thermostat",
+        "r": [
+         16,
+         56,
+         344,
+         268
         ],
         "value": 1840,
         "min": 0,
@@ -5587,8 +5727,8 @@
         "t": "label",
         "r": [
          16,
-         140,
-         152,
+         332,
+         344,
          28
         ],
         "size": "m",
@@ -5629,106 +5769,7 @@
      "values": {
       "1": "False",
       "2": 5000.0,
-      "3": "1840 W"
-     }
-    },
-    "large": {
-     "card": {
-      "type": "custom:apollo-tab-card",
-      "component": "apollo/dial",
-      "variant": "large",
-      "grid_options": {
-       "columns": 12,
-       "rows": 6
-      }
-     },
-     "init": {
-      "schema": 2,
-      "component": "apollo/dial",
-      "name": "Gauge",
-      "variant": "large",
-      "demo": true,
-      "w": 376,
-      "h": 376,
-      "entities": [],
-      "header": {
-       "r": [
-        16,
-        16,
-        344,
-        32
-       ],
-       "icon": "mdi:gauge",
-       "title": "Gauge"
-      },
-      "on": {
-       "s": 1
-      },
-      "lit": 1,
-      "widgets": [
-       {
-        "t": "thermostat",
-        "r": [
-         16,
-         56,
-         344,
-         260
-        ],
-        "value": 1840,
-        "min": 0,
-        "max": {
-         "s": 2
-        },
-        "step": 0.5,
-        "i": 0
-       },
-       {
-        "t": "label",
-        "r": [
-         16,
-         324,
-         344,
-         36
-        ],
-        "px": 28,
-        "text": {
-         "s": 3
-        },
-        "al": 1,
-        "i": 1
-       }
-      ],
-      "call": {
-       "values": {
-        "options": {
-         "min": 0.0,
-         "low": 0.0,
-         "low_colour": "info",
-         "high": 0.0,
-         "high_colour": "warn",
-         "unit": ""
-        },
-        "can": {
-         "toggle": false,
-         "icon": "mdi:gauge",
-         "kind": null,
-         "entity": {
-          "toggle": false,
-          "icon": "mdi:gauge",
-          "kind": null
-         }
-        }
-       },
-       "uses": {}
-      },
-      "opener": false,
-      "warnings": [],
-      "notes": []
-     },
-     "values": {
-      "1": "False",
-      "2": 5000.0,
-      "3": "1840 W"
+      "3": "0 to 5000 W"
      }
     }
    }
@@ -5852,7 +5893,7 @@
         "t": "image",
         "r": [
          16,
-         18,
+         16,
          44,
          44
         ],
@@ -5864,10 +5905,10 @@
        {
         "t": "label",
         "r": [
-         68,
          16,
-         100,
-         26
+         68,
+         152,
+         28
         ],
         "text": "Lock",
         "size": "m",
@@ -5877,12 +5918,13 @@
         "t": "label",
         "r": [
          68,
-         42,
+         27,
          100,
          22
         ],
         "text": "Locked",
         "size": "s",
+        "al": 2,
         "i": 2
        },
        {
@@ -5912,9 +5954,7 @@
         ],
         "text": "Lock",
         "icon": "mdi:lock",
-        "vis": {
-         "s": 1
-        },
+        "vis": false,
         "tap": {
          "policy": "confirm"
         },
@@ -5946,9 +5986,7 @@
       "warnings": [],
       "notes": []
      },
-     "values": {
-      "1": "False"
-     }
+     "values": {}
     },
     "wide": {
      "card": {
@@ -6042,9 +6080,7 @@
         ],
         "text": "Lock",
         "icon": "mdi:lock",
-        "vis": {
-         "s": 3
-        },
+        "vis": false,
         "tap": {
          "policy": "confirm"
         },
@@ -6078,8 +6114,7 @@
      },
      "values": {
       "1": "lock.example",
-      "2": "Locked",
-      "3": "False"
+      "2": "Locked"
      }
     },
     "tall": {
@@ -6110,9 +6145,9 @@
         "t": "image",
         "r": [
          16,
-         140,
+         58,
          152,
-         104
+         136
         ],
         "value": null,
         "look": 1,
@@ -6123,7 +6158,7 @@
         "t": "label",
         "r": [
          16,
-         252,
+         202,
          152,
          28
         ],
@@ -6131,13 +6166,14 @@
         "text": {
          "s": 1
         },
+        "al": 1,
         "i": 1
        },
        {
         "t": "label",
         "r": [
          16,
-         282,
+         232,
          152,
          22
         ],
@@ -6145,15 +6181,16 @@
         "text": {
          "s": 2
         },
+        "al": 1,
         "i": 2
        },
        {
         "t": "button",
         "r": [
          16,
-         312,
+         304,
          152,
-         48
+         56
         ],
         "text": "Unlock",
         "icon": "mdi:lock-open",
@@ -6168,15 +6205,13 @@
         "t": "button",
         "r": [
          16,
-         312,
+         304,
          152,
-         48
+         56
         ],
         "text": "Lock",
         "icon": "mdi:lock",
-        "vis": {
-         "s": 3
-        },
+        "vis": false,
         "tap": {
          "policy": "confirm"
         },
@@ -6210,8 +6245,7 @@
      },
      "values": {
       "1": "lock.example",
-      "2": "Locked",
-      "3": "False"
+      "2": "Locked"
      }
     }
    }
@@ -6570,9 +6604,9 @@
         "t": "slider",
         "r": [
          16,
-         128,
+         72,
          344,
-         40
+         96
         ],
         "value": 50,
         "min": 0,
@@ -6708,9 +6742,9 @@
         "t": "slider",
         "r": [
          16,
-         208,
+         72,
          344,
-         40
+         96
         ],
         "value": 50,
         "min": 0,
@@ -6727,9 +6761,9 @@
         "t": "choice",
         "r": [
          16,
-         256,
+         176,
          344,
-         48
+         120
         ],
         "texts": [
          "Breeze",
@@ -6737,6 +6771,9 @@
         ],
         "value": null,
         "rows": 1,
+        "vis": {
+         "s": 1
+        },
         "change": {
          "policy": "optimistic"
         },
@@ -6746,13 +6783,16 @@
         "t": "button",
         "r": [
          16,
-         312,
+         304,
          344,
-         48
+         56
         ],
-        "text": "Turning",
+        "text": "Side to side",
         "icon": "mdi:autorenew",
         "value": false,
+        "vis": {
+         "s": 1
+        },
         "tap": {
          "policy": "optimistic"
         },
@@ -6803,7 +6843,9 @@
       "warnings": [],
       "notes": []
      },
-     "values": {}
+     "values": {
+      "1": "True"
+     }
     },
     "full": {
      "card": {
@@ -6884,7 +6926,7 @@
          16,
          72,
          536,
-         56
+         72
         ],
         "value": 50,
         "min": 0,
@@ -6901,9 +6943,9 @@
         "t": "choice",
         "r": [
          16,
-         136,
+         152,
          536,
-         104
+         120
         ],
         "texts": [
          "Breeze",
@@ -6911,6 +6953,9 @@
         ],
         "value": null,
         "rows": 2,
+        "vis": {
+         "s": 1
+        },
         "change": {
          "policy": "optimistic"
         },
@@ -6920,13 +6965,16 @@
         "t": "button",
         "r": [
          16,
-         248,
+         280,
          536,
-         48
+         56
         ],
-        "text": "Turning",
+        "text": "Side to side",
         "icon": "mdi:autorenew",
         "value": false,
+        "vis": {
+         "s": 1
+        },
         "tap": {
          "policy": "optimistic"
         },
@@ -6982,7 +7030,9 @@
        }
       ]
      },
-     "values": {}
+     "values": {
+      "1": "True"
+     }
     }
    }
   },
@@ -7212,9 +7262,9 @@
         "t": "image",
         "r": [
          16,
-         104,
-         72,
-         72
+         16,
+         96,
+         120
         ],
         "value": "mdi:weather-partly-cloudy",
         "look": 2,
@@ -7223,12 +7273,12 @@
        {
         "t": "label",
         "r": [
-         96,
-         104,
-         264,
-         72
+         120,
+         16,
+         240,
+         120
         ],
-        "px": 48,
+        "px": 96,
         "text": {
          "s": 1
         },
@@ -7238,7 +7288,7 @@
         "t": "label",
         "r": [
          16,
-         184,
+         144,
          344,
          28
         ],
@@ -7252,7 +7302,7 @@
         "t": "label",
         "r": [
          16,
-         214,
+         174,
          344,
          22
         ],
@@ -7266,7 +7316,7 @@
         "t": "label",
         "r": [
          16,
-         238,
+         198,
          62,
          22
         ],
@@ -7281,7 +7331,7 @@
         "t": "label",
         "r": [
          86,
-         238,
+         198,
          62,
          22
         ],
@@ -7296,7 +7346,7 @@
         "t": "label",
         "r": [
          156,
-         238,
+         198,
          62,
          22
         ],
@@ -7311,7 +7361,7 @@
         "t": "label",
         "r": [
          226,
-         238,
+         198,
          62,
          22
         ],
@@ -7326,7 +7376,7 @@
         "t": "label",
         "r": [
          296,
-         238,
+         198,
          64,
          22
         ],
@@ -7341,73 +7391,88 @@
         "t": "image",
         "r": [
          16,
-         268,
+         228,
          62,
          32
         ],
         "value": "mdi:weather-partly-cloudy",
         "look": 2,
+        "vis": {
+         "s": 9
+        },
         "i": 9
        },
        {
         "t": "image",
         "r": [
          86,
-         268,
+         228,
          62,
          32
         ],
         "value": "mdi:weather-partly-cloudy",
         "look": 2,
+        "vis": {
+         "s": 10
+        },
         "i": 10
        },
        {
         "t": "image",
         "r": [
          156,
-         268,
+         228,
          62,
          32
         ],
         "value": "mdi:weather-partly-cloudy",
         "look": 2,
+        "vis": {
+         "s": 11
+        },
         "i": 11
        },
        {
         "t": "image",
         "r": [
          226,
-         268,
+         228,
          62,
          32
         ],
         "value": "mdi:weather-partly-cloudy",
         "look": 2,
+        "vis": {
+         "s": 12
+        },
         "i": 12
        },
        {
         "t": "image",
         "r": [
          296,
-         268,
+         228,
          64,
          32
         ],
         "value": "mdi:weather-partly-cloudy",
         "look": 2,
+        "vis": {
+         "s": 13
+        },
         "i": 13
        },
        {
         "t": "label",
         "r": [
          16,
-         308,
+         268,
          62,
          28
         ],
         "size": "m",
         "text": {
-         "s": 9
+         "s": 14
         },
         "al": 1,
         "i": 14
@@ -7416,13 +7481,13 @@
         "t": "label",
         "r": [
          86,
-         308,
+         268,
          62,
          28
         ],
         "size": "m",
         "text": {
-         "s": 10
+         "s": 15
         },
         "al": 1,
         "i": 15
@@ -7431,13 +7496,13 @@
         "t": "label",
         "r": [
          156,
-         308,
+         268,
          62,
          28
         ],
         "size": "m",
         "text": {
-         "s": 11
+         "s": 16
         },
         "al": 1,
         "i": 16
@@ -7446,13 +7511,13 @@
         "t": "label",
         "r": [
          226,
-         308,
+         268,
          62,
          28
         ],
         "size": "m",
         "text": {
-         "s": 12
+         "s": 17
         },
         "al": 1,
         "i": 17
@@ -7461,13 +7526,13 @@
         "t": "label",
         "r": [
          296,
-         308,
+         268,
          64,
          28
         ],
         "size": "m",
         "text": {
-         "s": 13
+         "s": 18
         },
         "al": 1,
         "i": 18
@@ -7476,13 +7541,13 @@
         "t": "label",
         "r": [
          16,
-         338,
+         298,
          62,
          22
         ],
         "size": "s",
         "text": {
-         "s": 14
+         "s": 19
         },
         "al": 1,
         "i": 19
@@ -7491,13 +7556,13 @@
         "t": "label",
         "r": [
          86,
-         338,
+         298,
          62,
          22
         ],
         "size": "s",
         "text": {
-         "s": 15
+         "s": 20
         },
         "al": 1,
         "i": 20
@@ -7506,13 +7571,13 @@
         "t": "label",
         "r": [
          156,
-         338,
+         298,
          62,
          22
         ],
         "size": "s",
         "text": {
-         "s": 16
+         "s": 21
         },
         "al": 1,
         "i": 21
@@ -7521,13 +7586,13 @@
         "t": "label",
         "r": [
          226,
-         338,
+         298,
          62,
          22
         ],
         "size": "s",
         "text": {
-         "s": 17
+         "s": 22
         },
         "al": 1,
         "i": 22
@@ -7536,13 +7601,13 @@
         "t": "label",
         "r": [
          296,
-         338,
+         298,
          64,
          22
         ],
         "size": "s",
         "text": {
-         "s": 18
+         "s": 23
         },
         "al": 1,
         "i": 23
@@ -7580,16 +7645,21 @@
       "6": "Mon",
       "7": "Mon",
       "8": "Mon",
-      "9": "14\u00b0",
-      "10": "14\u00b0",
-      "11": "14\u00b0",
-      "12": "14\u00b0",
-      "13": "14\u00b0",
-      "14": "7\u00b0",
-      "15": "7\u00b0",
-      "16": "7\u00b0",
-      "17": "7\u00b0",
-      "18": "7\u00b0"
+      "9": "True",
+      "10": "True",
+      "11": "True",
+      "12": "True",
+      "13": "True",
+      "14": "14\u00b0",
+      "15": "14\u00b0",
+      "16": "14\u00b0",
+      "17": "14\u00b0",
+      "18": "14\u00b0",
+      "19": "7\u00b0",
+      "20": "7\u00b0",
+      "21": "7\u00b0",
+      "22": "7\u00b0",
+      "23": "7\u00b0"
      }
     }
    }
@@ -8412,7 +8482,7 @@
          220,
          22
         ],
-        "text": "On",
+        "text": "On \u00b7 68%",
         "size": "s",
         "i": 2
        },
@@ -8436,7 +8506,7 @@
          16,
          72,
          344,
-         44
+         96
         ],
         "value": 68,
         "min": 1,
@@ -8449,57 +8519,6 @@
          "policy": "optimistic"
         },
         "i": 4
-       },
-       {
-        "t": "slider",
-        "r": [
-         16,
-         124,
-         344,
-         44
-        ],
-        "value": 30,
-        "min": 0,
-        "max": 360,
-        "step": 1,
-        "look": 1,
-        "track": [
-         "#FF0000",
-         "#FFFF00",
-         "#00FF00",
-         "#00FFFF",
-         "#0000FF",
-         "#FF00FF",
-         "#FF0000"
-        ],
-        "nv": 1,
-        "vis": true,
-        "change": {
-         "policy": "optimistic"
-        },
-        "i": 5
-       },
-       {
-        "t": "slider",
-        "r": [
-         16,
-         124,
-         344,
-         44
-        ],
-        "value": 30,
-        "min": 0,
-        "max": 360,
-        "step": 1,
-        "look": 1,
-        "icon": "mdi:palette",
-        "vis": {
-         "s": 1
-        },
-        "change": {
-         "policy": "optimistic"
-        },
-        "i": 6
        }
       ],
       "call": {
@@ -8531,28 +8550,13 @@
          "max_kelvin": 6500
         }
        },
-       "uses": {
-        "5:change": {
-         "sat": {
-          "type": "number",
-          "slot": null
-         }
-        },
-        "6:change": {
-         "sat": {
-          "type": "number",
-          "slot": null
-         }
-        }
-       }
+       "uses": {}
       },
       "opener": true,
       "warnings": [],
       "notes": []
      },
-     "values": {
-      "1": "False"
-     }
+     "values": {}
     },
     "large": {
      "card": {
@@ -8617,7 +8621,7 @@
          220,
          22
         ],
-        "text": "On",
+        "text": "On \u00b7 68%",
         "size": "s",
         "i": 2
        },
@@ -8865,7 +8869,7 @@
          412,
          22
         ],
-        "text": "On",
+        "text": "On \u00b7 68%",
         "size": "s",
         "i": 2
        },
@@ -9223,7 +9227,7 @@
          44,
          44
         ],
-        "value": "mdi:lightbulb",
+        "value": "mdi:lightbulb-group",
         "look": 1,
         "i": 0
        },
@@ -9252,38 +9256,23 @@
         "i": 2
        },
        {
-        "t": "button",
+        "t": "slider",
         "r": [
          16,
-         120,
+         72,
          152,
-         48
+         96
         ],
-        "text": "Turn all off",
-        "icon": "mdi:lightbulb-off",
-        "vis": true,
-        "tap": {
+        "value": 60,
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "look": 1,
+        "icon": "mdi:brightness-6",
+        "change": {
          "policy": "optimistic"
         },
         "i": 3
-       },
-       {
-        "t": "button",
-        "r": [
-         16,
-         120,
-         152,
-         48
-        ],
-        "text": "Turn all on",
-        "icon": "mdi:lightbulb-on",
-        "vis": {
-         "s": 1
-        },
-        "tap": {
-         "policy": "optimistic"
-        },
-        "i": 4
        }
       ],
       "call": {
@@ -9355,15 +9344,20 @@
          ]
         }
        },
-       "uses": {}
+       "uses": {
+        "3:change": {
+         "targets": {
+          "type": "entities",
+          "slot": null
+         }
+        }
+       }
       },
       "opener": false,
       "warnings": [],
       "notes": []
      },
-     "values": {
-      "1": "False"
-     }
+     "values": {}
     },
     "wide": {
      "card": {
@@ -9393,21 +9387,21 @@
         "t": "image",
         "r": [
          16,
-         18,
-         44,
-         44
+         16,
+         24,
+         24
         ],
-        "value": "mdi:lightbulb",
-        "look": 1,
+        "value": "mdi:lightbulb-group",
+        "look": 2,
         "i": 0
        },
        {
         "t": "label",
         "r": [
-         68,
+         48,
          16,
-         292,
-         26
+         216,
+         24
         ],
         "text": "Lights together",
         "size": "m",
@@ -9416,22 +9410,25 @@
        {
         "t": "label",
         "r": [
-         68,
-         42,
-         292,
+         272,
+         17,
+         88,
          22
         ],
-        "text": "2 of 4 on",
+        "text": {
+         "s": 1
+        },
         "size": "s",
+        "al": 2,
         "i": 2
        },
        {
         "t": "slider",
         "r": [
          16,
-         72,
+         48,
          344,
-         40
+         64
         ],
         "value": 60,
         "min": 1,
@@ -9471,7 +9468,7 @@
         "text": "Turn all on",
         "icon": "mdi:lightbulb-on",
         "vis": {
-         "s": 1
+         "s": 2
         },
         "tap": {
          "policy": "optimistic"
@@ -9562,7 +9559,8 @@
       "notes": []
      },
      "values": {
-      "1": "False"
+      "1": "2 of 4 on",
+      "2": "False"
      }
     },
     "large": {
@@ -9597,7 +9595,7 @@
          44,
          44
         ],
-        "value": "mdi:lightbulb",
+        "value": "mdi:lightbulb-group",
         "look": 1,
         "i": 0
        },
@@ -9616,20 +9614,8 @@
        {
         "t": "label",
         "r": [
-         68,
-         42,
-         292,
-         22
-        ],
-        "text": "2 of 4 on",
-        "size": "s",
-        "i": 2
-       },
-       {
-        "t": "label",
-        "r": [
          16,
-         166,
+         72,
          344,
          60
         ],
@@ -9637,13 +9623,13 @@
         "text": {
          "s": 1
         },
-        "i": 3
+        "i": 2
        },
        {
         "t": "label",
         "r": [
          16,
-         228,
+         134,
          344,
          28
         ],
@@ -9651,15 +9637,15 @@
         "text": {
          "s": 2
         },
-        "i": 4
+        "i": 3
        },
        {
         "t": "slider",
         "r": [
          16,
-         264,
+         170,
          344,
-         40
+         72
         ],
         "value": 60,
         "min": 1,
@@ -9670,15 +9656,15 @@
         "change": {
          "policy": "optimistic"
         },
-        "i": 5
+        "i": 4
        },
        {
         "t": "button",
         "r": [
          16,
-         312,
+         250,
          344,
-         48
+         56
         ],
         "text": "Turn all off",
         "icon": "mdi:lightbulb-off",
@@ -9686,15 +9672,15 @@
         "tap": {
          "policy": "optimistic"
         },
-        "i": 6
+        "i": 5
        },
        {
         "t": "button",
         "r": [
          16,
-         312,
+         250,
          344,
-         48
+         56
         ],
         "text": "Turn all on",
         "icon": "mdi:lightbulb-on",
@@ -9704,7 +9690,7 @@
         "tap": {
          "policy": "optimistic"
         },
-        "i": 7
+        "i": 6
        }
       ],
       "call": {
@@ -9777,7 +9763,7 @@
         }
        },
        "uses": {
-        "5:change": {
+        "4:change": {
          "targets": {
           "type": "entities",
           "slot": null
@@ -10009,7 +9995,7 @@
          292,
          22
         ],
-        "text": "Debussy",
+        "text": "Clair de lune \u00b7 Debussy",
         "size": "s",
         "i": 2
        },
@@ -10172,28 +10158,24 @@
         "i": 2
        },
        {
-        "t": "slider",
+        "t": "label",
         "r": [
          16,
-         194,
+         118,
          344,
-         8
+         36
         ],
-        "value": 80,
-        "min": 0,
-        "max": {
+        "px": 28,
+        "text": {
          "s": 1
         },
-        "step": 1,
-        "look": 1,
-        "rate": 1,
         "i": 3
        },
        {
         "t": "label",
         "r": [
          16,
-         210,
+         156,
          344,
          22
         ],
@@ -10201,31 +10183,63 @@
         "text": {
          "s": 2
         },
-        "al": 2,
         "i": 4
+       },
+       {
+        "t": "slider",
+        "r": [
+         16,
+         186,
+         344,
+         8
+        ],
+        "value": 80,
+        "min": 0,
+        "max": {
+         "s": 3
+        },
+        "step": 1,
+        "look": 1,
+        "rate": 1,
+        "i": 5
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         202,
+         344,
+         22
+        ],
+        "size": "s",
+        "text": {
+         "s": 4
+        },
+        "al": 2,
+        "i": 6
        },
        {
         "t": "button",
         "r": [
          16,
-         240,
+         232,
          109,
-         64
+         72
         ],
         "icon": "mdi:skip-previous",
         "shape": 1,
         "tap": {
          "policy": "pulse"
         },
-        "i": 5
+        "i": 7
        },
        {
         "t": "button",
         "r": [
          133,
-         240,
+         232,
          109,
-         64
+         72
         ],
         "icon": "mdi:play-pause",
         "ic": "mdi:pause",
@@ -10234,22 +10248,22 @@
         "tap": {
          "policy": "optimistic"
         },
-        "i": 6
+        "i": 8
        },
        {
         "t": "button",
         "r": [
          250,
-         240,
+         232,
          110,
-         64
+         72
         ],
         "icon": "mdi:skip-next",
         "shape": 1,
         "tap": {
          "policy": "pulse"
         },
-        "i": 7
+        "i": 9
        },
        {
         "t": "button",
@@ -10264,7 +10278,7 @@
         "tap": {
          "policy": "optimistic"
         },
-        "i": 8
+        "i": 10
        },
        {
         "t": "slider",
@@ -10283,7 +10297,7 @@
         "change": {
          "policy": "optimistic"
         },
-        "i": 9
+        "i": 11
        }
       ],
       "call": {
@@ -10327,7 +10341,7 @@
         }
        },
        "uses": {
-        "8:tap": {
+        "10:tap": {
          "muted": {
           "type": "bool",
           "slot": null
@@ -10340,8 +10354,10 @@
       "notes": []
      },
      "values": {
-      "1": 300,
-      "2": "5:00"
+      "1": "Clair de lune",
+      "2": "Suite bergamasque",
+      "3": 300,
+      "4": "5:00"
      }
     },
     "hero": {
@@ -10660,7 +10676,7 @@
          484,
          22
         ],
-        "text": "Debussy",
+        "text": "Clair de lune \u00b7 Debussy",
         "size": "s",
         "i": 2
        },
@@ -10750,7 +10766,7 @@
          16,
          198,
          48,
-         48
+         56
         ],
         "icon": "mdi:volume-off",
         "value": false,
@@ -10765,7 +10781,7 @@
          72,
          198,
          480,
-         48
+         56
         ],
         "value": 40,
         "min": 0,
@@ -10782,11 +10798,12 @@
         "t": "button",
         "r": [
          16,
-         254,
+         262,
          264,
-         48
+         56
         ],
         "text": "Shuffle",
+        "icon": "mdi:shuffle",
         "value": false,
         "tap": {
          "policy": "optimistic"
@@ -10797,11 +10814,11 @@
         "t": "button",
         "r": [
          288,
-         254,
+         262,
          264,
-         48
+         56
         ],
-        "text": "On or off",
+        "text": "Power",
         "icon": "mdi:power",
         "tap": {
          "policy": "optimistic"
@@ -11010,7 +11027,7 @@
         "r": [
          48,
          16,
-         148,
+         216,
          24
         ],
         "text": "Number",
@@ -11020,12 +11037,14 @@
        {
         "t": "label",
         "r": [
-         204,
+         272,
          17,
-         156,
+         88,
          22
         ],
-        "text": "40 %",
+        "text": {
+         "s": 1
+        },
         "size": "s",
         "al": 2,
         "i": 2
@@ -11034,9 +11053,9 @@
         "t": "slider",
         "r": [
          16,
-         64,
+         56,
          344,
-         40
+         48
         ],
         "value": 40,
         "min": 0,
@@ -11079,7 +11098,9 @@
       "warnings": [],
       "notes": []
      },
-     "values": {}
+     "values": {
+      "1": "40 %"
+     }
     },
     "wide": {
      "card": {
@@ -11315,7 +11336,7 @@
       "on": null,
       "lit": 3,
       "un": {
-       "s": 1
+       "s": 2
       },
       "widgets": [
        {
@@ -11341,6 +11362,32 @@
         "text": "Link",
         "size": "m",
         "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         76,
+         116,
+         28
+        ],
+        "size": "s",
+        "text": "",
+        "i": 2
+       },
+       {
+        "t": "image",
+        "r": [
+         140,
+         76,
+         28,
+         28
+        ],
+        "value": {
+         "s": 1
+        },
+        "look": 2,
+        "i": 3
        }
       ],
       "call": {
@@ -11355,7 +11402,8 @@
       "notes": []
      },
      "values": {
-      "1": "False"
+      "1": "mdi:chevron-right",
+      "2": "False"
      }
     },
     "tile": {
@@ -11381,7 +11429,7 @@
       "on": null,
       "lit": 3,
       "un": {
-       "s": 1
+       "s": 2
       },
       "widgets": [
        {
@@ -11407,6 +11455,32 @@
         "text": "Link",
         "size": "m",
         "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         72,
+         116,
+         28
+        ],
+        "size": "s",
+        "text": "",
+        "i": 2
+       },
+       {
+        "t": "image",
+        "r": [
+         140,
+         72,
+         28,
+         28
+        ],
+        "value": {
+         "s": 1
+        },
+        "look": 2,
+        "i": 3
        }
       ],
       "call": {
@@ -11421,7 +11495,8 @@
       "notes": []
      },
      "values": {
-      "1": "False"
+      "1": "mdi:chevron-right",
+      "2": "False"
      }
     },
     "wide": {
@@ -11447,7 +11522,7 @@
       "on": null,
       "lit": 3,
       "un": {
-       "s": 1
+       "s": 2
       },
       "widgets": [
        {
@@ -11473,6 +11548,32 @@
         "text": "Link",
         "size": "m",
         "i": 1
+       },
+       {
+        "t": "label",
+        "r": [
+         16,
+         72,
+         308,
+         28
+        ],
+        "size": "s",
+        "text": "",
+        "i": 2
+       },
+       {
+        "t": "image",
+        "r": [
+         332,
+         72,
+         28,
+         28
+        ],
+        "value": {
+         "s": 1
+        },
+        "look": 2,
+        "i": 3
        }
       ],
       "call": {
@@ -11487,7 +11588,8 @@
       "notes": []
      },
      "values": {
-      "1": "False"
+      "1": "mdi:chevron-right",
+      "2": "False"
      }
     }
    }
@@ -11809,7 +11911,10 @@
       "5": "mdi:account",
       "7": "person.anna",
       "8": "person.ben",
-      "9": "person.cleo"
+      "9": "person.cleo",
+      "10": "\u2014",
+      "11": "\u2014",
+      "12": "\u2014"
      }
     },
     "tall": {
@@ -11838,7 +11943,7 @@
         152,
         32
        ],
-       "icon": "mdi:account",
+       "icon": "mdi:account-multiple",
        "title": "People"
       },
       "on": true,
@@ -11848,9 +11953,9 @@
         "t": "image",
         "r": [
          16,
-         260,
-         24,
-         28
+         56,
+         20,
+         96
         ],
         "value": {
          "s": 1
@@ -11874,12 +11979,12 @@
        {
         "t": "label",
         "r": [
-         48,
-         260,
+         44,
          56,
-         28
+         66,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 3
         },
@@ -11888,25 +11993,38 @@
        {
         "t": "label",
         "r": [
-         112,
-         260,
+         118,
          56,
-         28
+         50,
+         96
         ],
         "size": "s",
         "text": {
          "s": 4
         },
         "al": 2,
+        "c": {
+         "s": 2,
+         "roles": {
+          "accent": "#FFB347",
+          "accent2": "#6CB4FF",
+          "bad": "#FF6B5E",
+          "good": "#4CC38A",
+          "info": "#6CB4FF",
+          "muted": "#9AA3AF",
+          "text": "#F2F4F7",
+          "warn": "#F5B547"
+         }
+        },
         "i": 2
        },
        {
         "t": "image",
         "r": [
          16,
-         296,
-         24,
-         28
+         160,
+         20,
+         96
         ],
         "value": {
          "s": 5
@@ -11930,12 +12048,12 @@
        {
         "t": "label",
         "r": [
-         48,
-         296,
-         56,
-         28
+         44,
+         160,
+         66,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 7
         },
@@ -11944,25 +12062,38 @@
        {
         "t": "label",
         "r": [
-         112,
-         296,
-         56,
-         28
+         118,
+         160,
+         50,
+         96
         ],
         "size": "s",
         "text": {
          "s": 8
         },
         "al": 2,
+        "c": {
+         "s": 6,
+         "roles": {
+          "accent": "#FFB347",
+          "accent2": "#6CB4FF",
+          "bad": "#FF6B5E",
+          "good": "#4CC38A",
+          "info": "#6CB4FF",
+          "muted": "#9AA3AF",
+          "text": "#F2F4F7",
+          "warn": "#F5B547"
+         }
+        },
         "i": 5
        },
        {
         "t": "image",
         "r": [
          16,
-         332,
-         24,
-         28
+         264,
+         20,
+         96
         ],
         "value": {
          "s": 9
@@ -11986,12 +12117,12 @@
        {
         "t": "label",
         "r": [
-         48,
-         332,
-         56,
-         28
+         44,
+         264,
+         66,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 11
         },
@@ -12000,16 +12131,29 @@
        {
         "t": "label",
         "r": [
-         112,
-         332,
-         56,
-         28
+         118,
+         264,
+         50,
+         96
         ],
         "size": "s",
         "text": {
          "s": 12
         },
         "al": 2,
+        "c": {
+         "s": 10,
+         "roles": {
+          "accent": "#FFB347",
+          "accent2": "#6CB4FF",
+          "bad": "#FF6B5E",
+          "good": "#4CC38A",
+          "info": "#6CB4FF",
+          "muted": "#9AA3AF",
+          "text": "#F2F4F7",
+          "warn": "#F5B547"
+         }
+        },
         "i": 8
        }
       ],
@@ -12050,10 +12194,13 @@
      "values": {
       "1": "mdi:account",
       "3": "person.anna",
+      "4": "\u2014",
       "5": "mdi:account",
       "7": "person.ben",
+      "8": "\u2014",
       "9": "mdi:account",
-      "11": "person.cleo"
+      "11": "person.cleo",
+      "12": "\u2014"
      }
     }
    }
@@ -12335,7 +12482,7 @@
         "r": [
          48,
          16,
-         148,
+         216,
          24
         ],
         "text": "Status",
@@ -12345,9 +12492,9 @@
        {
         "t": "label",
         "r": [
-         204,
+         272,
          17,
-         156,
+         88,
          22
         ],
         "text": "21.4 \u00b0C",
@@ -12543,7 +12690,7 @@
          292,
          22
         ],
-        "text": "21.4 \u00b0C",
+        "text": "",
         "size": "s",
         "i": 2
        },
@@ -12551,7 +12698,7 @@
         "t": "label",
         "r": [
          16,
-         108,
+         72,
          344,
          60
         ],
@@ -12559,7 +12706,6 @@
         "text": {
          "s": 1
         },
-        "al": 2,
         "vis": true,
         "i": 3
        },
@@ -12567,7 +12713,7 @@
         "t": "label",
         "r": [
          16,
-         108,
+         72,
          344,
          60
         ],
@@ -12575,7 +12721,6 @@
         "text": {
          "s": 1
         },
-        "al": 2,
         "vis": {
          "s": 2
         },
@@ -12709,6 +12854,9 @@
         ],
         "value": "mdi:gauge",
         "look": 2,
+        "vis": {
+         "s": 1
+        },
         "i": 0
        },
        {
@@ -12716,26 +12864,26 @@
         "r": [
          48,
          68,
-         152,
+         224,
          28
         ],
         "size": "s",
         "text": {
-         "s": 1
+         "s": 2
         },
         "i": 1
        },
        {
         "t": "label",
         "r": [
-         208,
+         280,
          68,
-         152,
+         80,
          28
         ],
         "size": "s",
         "text": {
-         "s": 2
+         "s": 3
         },
         "al": 2,
         "i": 2
@@ -12750,6 +12898,9 @@
         ],
         "value": "mdi:gauge",
         "look": 2,
+        "vis": {
+         "s": 4
+        },
         "i": 3
        },
        {
@@ -12757,26 +12908,26 @@
         "r": [
          48,
          104,
-         152,
+         224,
          28
         ],
         "size": "s",
         "text": {
-         "s": 3
+         "s": 5
         },
         "i": 4
        },
        {
         "t": "label",
         "r": [
-         208,
+         280,
          104,
-         152,
+         80,
          28
         ],
         "size": "s",
         "text": {
-         "s": 4
+         "s": 6
         },
         "al": 2,
         "i": 5
@@ -12791,6 +12942,9 @@
         ],
         "value": "mdi:gauge",
         "look": 2,
+        "vis": {
+         "s": 7
+        },
         "i": 6
        },
        {
@@ -12798,26 +12952,26 @@
         "r": [
          48,
          140,
-         152,
+         224,
          28
         ],
         "size": "s",
         "text": {
-         "s": 5
+         "s": 8
         },
         "i": 7
        },
        {
         "t": "label",
         "r": [
-         208,
+         280,
          140,
-         152,
+         80,
          28
         ],
         "size": "s",
         "text": {
-         "s": 6
+         "s": 9
         },
         "al": 2,
         "i": 8
@@ -12856,12 +13010,15 @@
       "notes": []
      },
      "values": {
-      "1": "sensor.living_room",
-      "2": "unknown",
-      "3": "sensor.bedroom",
-      "4": "unknown",
-      "5": "sensor.outside",
-      "6": "unknown"
+      "1": "True",
+      "2": "sensor.living_room",
+      "3": "\u2014",
+      "4": "True",
+      "5": "sensor.bedroom",
+      "6": "\u2014",
+      "7": "True",
+      "8": "sensor.outside",
+      "9": "\u2014"
      }
     },
     "large": {
@@ -12890,7 +13047,7 @@
         344,
         32
        ],
-       "icon": "mdi:gauge",
+       "icon": "mdi:information-outline",
        "title": "List"
       },
       "on": null,
@@ -12901,9 +13058,9 @@
         "t": "image",
         "r": [
          16,
-         260,
+         56,
          24,
-         28
+         96
         ],
         "value": "mdi:gauge",
         "look": 2,
@@ -12913,11 +13070,11 @@
         "t": "label",
         "r": [
          48,
-         260,
-         152,
-         28
+         56,
+         216,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 1
         },
@@ -12926,12 +13083,12 @@
        {
         "t": "label",
         "r": [
-         208,
-         260,
-         152,
-         28
+         272,
+         56,
+         88,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 2
         },
@@ -12942,9 +13099,9 @@
         "t": "image",
         "r": [
          16,
-         296,
+         160,
          24,
-         28
+         96
         ],
         "value": "mdi:gauge",
         "look": 2,
@@ -12954,11 +13111,11 @@
         "t": "label",
         "r": [
          48,
-         296,
-         152,
-         28
+         160,
+         216,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 3
         },
@@ -12967,12 +13124,12 @@
        {
         "t": "label",
         "r": [
-         208,
-         296,
-         152,
-         28
+         272,
+         160,
+         88,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 4
         },
@@ -12983,9 +13140,9 @@
         "t": "image",
         "r": [
          16,
-         332,
+         264,
          24,
-         28
+         96
         ],
         "value": "mdi:gauge",
         "look": 2,
@@ -12995,11 +13152,11 @@
         "t": "label",
         "r": [
          48,
-         332,
-         152,
-         28
+         264,
+         216,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 5
         },
@@ -13008,12 +13165,12 @@
        {
         "t": "label",
         "r": [
-         208,
-         332,
-         152,
-         28
+         272,
+         264,
+         88,
+         96
         ],
-        "size": "s",
+        "size": "m",
         "text": {
          "s": 6
         },
@@ -13055,11 +13212,11 @@
      },
      "values": {
       "1": "sensor.living_room",
-      "2": "unknown",
+      "2": "\u2014",
       "3": "sensor.bedroom",
-      "4": "unknown",
+      "4": "\u2014",
       "5": "sensor.outside",
-      "6": "unknown"
+      "6": "\u2014"
      }
     }
    }
@@ -13100,7 +13257,7 @@
       "name": "Room",
       "grid": [
        9,
-       5
+       4
       ],
       "picker": true,
       "needs_v2": false
@@ -13255,7 +13412,7 @@
         "t": "image",
         "r": [
          16,
-         18,
+         16,
          44,
          44
         ],
@@ -13266,25 +13423,27 @@
        {
         "t": "label",
         "r": [
-         68,
          16,
-         100,
-         26
+         68,
+         152,
+         28
         ],
-        "text": "Room",
+        "text": {
+         "s": 2
+        },
         "size": "m",
         "i": 1
        },
        {
         "t": "label",
         "r": [
-         68,
-         42,
-         100,
+         16,
+         98,
+         152,
          22
         ],
         "text": {
-         "s": 2
+         "s": 3
         },
         "size": "s",
         "i": 2
@@ -13307,7 +13466,8 @@
      },
      "values": {
       "1": "False",
-      "2": ""
+      "2": "Room",
+      "3": ""
      }
     },
     "room": {
@@ -13317,7 +13477,7 @@
       "variant": "room",
       "grid_options": {
        "columns": 9,
-       "rows": 5
+       "rows": 4
       }
      },
      "init": {
@@ -13327,7 +13487,7 @@
       "variant": "room",
       "demo": false,
       "w": 280,
-      "h": 312,
+      "h": 248,
       "entities": [],
       "header": null,
       "on": {
@@ -13355,7 +13515,9 @@
          196,
          26
         ],
-        "text": "Room",
+        "text": {
+         "s": 2
+        },
         "size": "m",
         "i": 1
        },
@@ -13368,7 +13530,7 @@
          22
         ],
         "text": {
-         "s": 2
+         "s": 3
         },
         "size": "s",
         "i": 2
@@ -13391,7 +13553,8 @@
      },
      "values": {
       "1": "False",
-      "2": ""
+      "2": "Room",
+      "3": ""
      }
     }
    }
@@ -13540,13 +13703,12 @@
         "r": [
          16,
          56,
-         80,
-         112
+         168,
+         52
         ],
         "text": {
          "s": 1
         },
-        "icon": "mdi:palette",
         "tap": {
          "policy": "pulse"
         },
@@ -13555,15 +13717,14 @@
        {
         "t": "button",
         "r": [
-         104,
+         192,
          56,
-         80,
-         112
+         168,
+         52
         ],
         "text": {
          "s": 2
         },
-        "icon": "mdi:palette",
         "tap": {
          "policy": "pulse"
         },
@@ -13572,15 +13733,14 @@
        {
         "t": "button",
         "r": [
-         192,
-         56,
-         80,
-         112
+         16,
+         116,
+         168,
+         52
         ],
         "text": {
          "s": 3
         },
-        "icon": "mdi:palette",
         "tap": {
          "policy": "pulse"
         },
@@ -13589,15 +13749,14 @@
        {
         "t": "button",
         "r": [
-         280,
-         56,
-         80,
-         112
+         192,
+         116,
+         168,
+         52
         ],
         "text": {
          "s": 4
         },
-        "icon": "mdi:palette",
         "tap": {
          "policy": "pulse"
         },
@@ -13915,7 +14074,7 @@
         "r": [
          48,
          16,
-         148,
+         216,
          24
         ],
         "text": "Screen brightness",
@@ -13925,9 +14084,9 @@
        {
         "t": "label",
         "r": [
-         204,
+         272,
          17,
-         156,
+         88,
          22
         ],
         "text": "80%",
@@ -13939,9 +14098,9 @@
         "t": "slider",
         "r": [
          16,
-         64,
+         56,
          344,
-         40
+         48
         ],
         "value": 80,
         "min": 10,
@@ -14192,7 +14351,7 @@
          "Boost"
         ],
         "value": 1,
-        "rows": 1,
+        "rows": 2,
         "change": {
          "policy": "optimistic"
         },
@@ -14473,6 +14632,7 @@
       "header": null,
       "on": true,
       "lit": 0,
+      "un": false,
       "tap": {
        "policy": "optimistic"
       },
@@ -14494,7 +14654,7 @@
         "r": [
          48,
          16,
-         148,
+         216,
          24
         ],
         "text": "Switch",
@@ -14504,9 +14664,9 @@
        {
         "t": "label",
         "r": [
-         204,
+         272,
          17,
-         156,
+         88,
          22
         ],
         "text": "On",
@@ -14562,6 +14722,7 @@
       "header": null,
       "on": true,
       "lit": 0,
+      "un": false,
       "tap": {
        "policy": "optimistic"
       },
@@ -14570,7 +14731,7 @@
         "t": "image",
         "r": [
          16,
-         18,
+         16,
          44,
          44
         ],
@@ -14581,26 +14742,14 @@
        {
         "t": "label",
         "r": [
-         68,
          16,
-         100,
-         26
+         68,
+         152,
+         28
         ],
         "text": "Switch",
         "size": "m",
         "i": 1
-       },
-       {
-        "t": "label",
-        "r": [
-         68,
-         42,
-         100,
-         22
-        ],
-        "text": "On",
-        "size": "s",
-        "i": 2
        }
       ],
       "call": {
@@ -14650,6 +14799,7 @@
       "header": null,
       "on": true,
       "lit": 0,
+      "un": false,
       "tap": {
        "policy": "optimistic"
       },
@@ -14829,7 +14979,7 @@
         "r": [
          48,
          16,
-         148,
+         216,
          24
         ],
         "text": "Volume",
@@ -14839,9 +14989,9 @@
        {
         "t": "label",
         "r": [
-         204,
+         272,
          17,
-         156,
+         88,
          22
         ],
         "text": "64%",

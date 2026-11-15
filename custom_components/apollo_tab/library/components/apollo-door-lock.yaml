@@ -40,13 +40,16 @@ parts:
       - {type: button, text: Unlock, icon: "mdi:lock-open", on_tap: unlock,
          confirm: "Unlock this door?", visible: is_locked}
       - {type: button, text: Lock, icon: "mdi:lock", on_tap: lock,
-         confirm: "Lock this door?", visible: "{{ not is_locked }}"}
+         confirm: "Lock this door?", visible: open_now}
 
 variants:
   tile:
     name: Tile
     grid: [6, 3]
-    header: tile
+    # The name on its own line across the tile, the state beside the icon.
+    header: tile_v
+    trailing: state
+    state: none
     layout: [{use: lock_or_unlock}]
   wide:
     name: Wide
@@ -61,11 +64,15 @@ variants:
     name: Tall
     grid: [6, 6]
     header: none
+    # Badge, name and state as one block in the middle, the button at the
+    # foot. The badge is large, so no band opens above or below the block.
     layout:
-      - {type: image, value: icon, look: badge, colour: tone, height: 104}
-      - {type: label, text: "{{ state_attr(entity, 'friendly_name') or entity }}", size: m}
-      - {type: label, text: "{{ state }}", size: s}
-      - {use: lock_or_unlock}
+      - {type: space}
+      - {type: image, value: icon, look: badge, colour: tone, height: 136}
+      - {type: label, text: "{{ state_attr(entity, 'friendly_name') or entity }}", size: m, align: centre}
+      - {type: label, text: "{{ state }}", size: s, align: centre}
+      - {type: space}
+      - {use: lock_or_unlock, height: 56}
 
 preview:
   params: {entity: lock.example}

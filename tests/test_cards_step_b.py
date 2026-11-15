@@ -329,7 +329,17 @@ def test_the_climate_controls_page_holds_every_row() -> None:
     options = {"modes_shown": facts["climate.a"]["modes"][:6], "show_presets": True}
     result = _compile(component, "full", {"entity": "climate.a"}, options, facts)
     _inside(result, "full")
-    assert _kinds(result) == ["thermostat", "choice", "choice", "choice", "label"]
+    # L2: the line under the dial, then each group of choices under its word.
+    assert _kinds(result) == [
+        "thermostat",
+        "label",
+        "label",
+        "choice",
+        "label",
+        "choice",
+        "label",
+        "choice",
+    ]
 
 
 def test_the_example_cards_need_no_device() -> None:
@@ -1060,9 +1070,14 @@ def test_the_lock_and_the_alarm_ask_and_are_never_a_card_tap() -> None:
 
 
 async def test_the_group_counts_and_dims(hass: HomeAssistant) -> None:
-    """The count "2 of 3 on", the mean brightness of those on; gone when all are."""
+    """The count "2 of 3 on", the mean brightness of those on; gone when all are.
+
+    L2: Large says the count once, large, and no line under the name; the
+    line is on the smaller sizes. All gone: a dash and no button.
+    """
     component = COMPONENTS["apollo/light-group"]
     lights = ["light.a", "light.b", "light.c"]
+    tile = _compile(component, "tile", {"lights": lights}, {}, {})
     result = _compile(component, "large", {"lights": lights}, {}, {})
     hass.states.async_set("light.a", "on", {"brightness": 255})
     hass.states.async_set("light.b", "off")
@@ -1073,8 +1088,9 @@ async def test_the_group_counts_and_dims(hass: HomeAssistant) -> None:
         if w["t"] == "label" and isinstance(w["text"], dict)
     ]
     texts = [await _value(hass, result, w["text"]) for w in labels]
-    assert "2 of 3 on" in texts
+    assert "2 of 3 on" not in texts
     assert 2 in texts and "of 3 lights on" in texts
+    assert await _value(hass, tile, _label(tile, "s")["text"]) == "2 of 3 on"
     [bar] = [w for w in result["widgets"] if w["t"] == "slider"]
     assert await _value(hass, result, bar["value"]) == 60
     assert await _value(hass, result, result["on"]) is True
@@ -1082,6 +1098,11 @@ async def test_the_group_counts_and_dims(hass: HomeAssistant) -> None:
     for light in lights:
         hass.states.async_set(light, "unavailable")
     assert await _value(hass, result, result["un"]) is True
+    texts = [await _value(hass, result, w["text"]) for w in labels]
+    assert "—" in texts and "of 3 lights on" not in texts
+    buttons = [w for w in result["widgets"] if w["t"] == "button"]
+    assert [await _value(hass, result, b["vis"]) for b in buttons] == [False, False]
+    assert await _value(hass, tile, _label(tile, "s")["text"]) == "Unavailable"
 
 
 async def test_the_fan_and_cover_state_lines(hass: HomeAssistant) -> None:
@@ -1188,8 +1209,14 @@ async def test_the_gauge_colours_by_its_limits(hass: HomeAssistant) -> None:
     for state, tone in (("3500", "bad"), ("50", "info"), ("1000", None)):
         hass.states.async_set("sensor.p", state)
         assert await _value(hass, result, result["tint"]) == tone, state
+    # L2: the dial shows the number once; Tile has no line under it, Large
+    # the unit and the range.
+    assert not [w for w in result["widgets"] if w["t"] == "label"]
+    large = _compile(
+        component, "large", {"entity": "sensor.p", "max": 4000}, options, {}
+    )
     hass.states.async_set("sensor.p", "1840")
-    assert await _value(hass, result, _label(result, "m", 1)["text"]) == "1840 W"
+    assert await _value(hass, large, _label(large, "m", 1)["text"]) == "0 to 4000 W"
     unset = _compile(component, "tile", {"entity": "sensor.p"}, {}, {})
     hass.states.async_set("sensor.p", "99999")
     assert await _value(hass, unset, unset["tint"]) is None
@@ -1214,7 +1241,11 @@ async def test_the_list_shows_name_and_value(hass: HomeAssistant) -> None:
 
 
 async def test_the_room_line_and_count(hass: HomeAssistant) -> None:
-    """The state is "21.5°C · 46%"; the count "1 of 2 lights on"."""
+    """The temperature once, large; the header line "46% · 1 of 2 on".
+
+    L2: the header said the temperature that the card then showed large,
+    and named the temperature sensor, not the room.
+    """
     component = COMPONENTS["apollo/room"]
     params = {
         "temperature_sensor": "sensor.t",
@@ -1228,8 +1259,9 @@ async def test_the_room_line_and_count(hass: HomeAssistant) -> None:
     hass.states.async_set("light.b", "off")
     labels = [w for w in result["widgets"] if w["t"] == "label"]
     texts = [await _value(hass, result, w["text"]) for w in labels]
-    assert "21.5°C · 46%" in texts
-    assert "1 of 2 lights on" in texts
+    assert texts.count("21.5°C") == 1
+    assert "46% · 1 of 2 on" in texts
+    assert "Room" in texts
     assert await _value(hass, result, result["on"]) is True
 
 
@@ -1261,11 +1293,15 @@ async def test_the_appliance_time_left(hass: HomeAssistant) -> None:
         "remaining": "sensor.left",
         "progress": "sensor.done",
     }
-    result = _compile(component, "tile", params, {}, {})
+    # L2: Tile shows the time left under the name, with no room for the
+    # bar; Large shows both.
+    tile = _compile(component, "tile", params, {}, {})
+    result = _compile(component, "large", params, {}, {})
     hass.states.async_set("sensor.w", "running")
     hass.states.async_set("sensor.left", "41.6")
     hass.states.async_set("sensor.done", "60")
-    assert await _value(hass, result, _label(result, "l")["text"]) == "42 min"
+    assert await _value(hass, tile, tile["widgets"][-1]["text"]) == "42 min"
+    assert await _value(hass, result, result["widgets"][3]["text"]) == "42 min"
     assert await _value(hass, result, result["on"]) is True
     [bar] = [w for w in result["widgets"] if w["t"] == "slider"]
     assert "change" not in bar

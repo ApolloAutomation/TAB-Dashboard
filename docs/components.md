@@ -399,6 +399,7 @@ on: is_on                         # an input or template: when the card is lit
 tint: colour                      # an input or template that gives a colour
 state: state                      # the state line of the tile and chip headers
 unavailable: gone                 # default: the first device is unavailable
+alone: line                       # what a card too small for anything else shows
 lit: fill                         # fill, icon, outline or none; default fill
 tap: {default: toggle, choices: {}}   # what a tap on the card may do
 hold: detail                      # detail or none
@@ -419,9 +420,15 @@ preview: {params: {}, options: {}, can: {}, inputs: {}}
 - `v1` names a schema 1 card that is loaded, or is `note`. A `v1` that
   names a card that is not loaded is refused with `unknown_v1`. It is the
   default for the variants; a variant can have its own.
-- `on`, `tint`, `state` and `unavailable` are the name of an input, or a
-  template. YAML reads an unquoted key `on:` as true; at the top of a card
-  file it is read as `on`.
+- `on`, `tint`, `state`, `unavailable` and `alone` are the name of an
+  input, or a template. YAML reads an unquoted key `on:` as true; at the
+  top of a card file it is read as `on`.
+- `alone` is for a card that exists to show a reading. Made so small that
+  nothing else fits (3 by 1), it shows this text in the middle instead of
+  its icon. Left out, the icon shows.
+- `title` names an input that gives the card's name when the person has
+  not typed one, such as the room of a sensor. Left out, the name is the
+  first device's.
 - `hold: detail` lets a hold on the card open its controls page. It is the
   default when the file has a `detail` variant, and needs one.
 - `notes` holds up to 4 lines for the card's form, each `{text, when}`,
@@ -571,7 +578,9 @@ detail: full
 - A variant has `name`, `grid` (`[columns, rows]` on the page's grid of 36
   by 12), `header`, `trailing`, `layout` (1 to 24 items), and may have
   `v1`, `picker: false` (not offered in the picker, for a controls page)
-  and `align: top` (spare height goes below the rows instead of above).
+  `align: top` (spare height goes below the rows instead of above) and
+  `state` (for the chip and tile headers: an input that this size shows as
+  its state line instead of the card's `state`, or `none` for no line).
   A card has 1 to 6 variants.
 - The card is drawn in the variant the person picked, else the largest one
   that fits its size. Rows that do not fit are dropped from the end.
@@ -597,6 +606,10 @@ Header forms, each drawn from ordinary parts:
 output; it needs `on`), `more` (a button that opens the controls page; it
 needs `detail`), the name of an input (a short text), or `none`.
 
+A header leaves out a name narrower than 32 px rather than draw a letter
+and "…". A card too small for any of its parts shows its icon alone in the
+middle, so a tap on it is never on an empty box.
+
 ### Containers and loops
 
 | Item | Does |
@@ -607,7 +620,9 @@ needs `detail`), the name of an input (a short text), or `none`.
 
 Any item may have `height` (px) or `grow: true`. `for_each` repeats an
 item or a row; `as` names the current entry, and `per_row: n` sets how many
-copies share a row. `for_each` may name a param with several devices, a
+copies share a row; `at_most: n` keeps the first n copies, for a size that
+holds only so many; `two_rows: true` puts copies that would fill one row
+only (three up to `per_row`) in two rows of wider cells. `for_each` may name a param with several devices, a
 list fact (`can.modes`), a `colours` option, a `choice` option with
 `multiple`, or a list written in the file. A loop makes at most 16 copies
 and may not hold a loop, and a card has at most 48 widgets after its loops,
@@ -619,7 +634,7 @@ loading slow.
 The seven types of schema 1 take new keys, and there is one new type,
 `choice`. Every widget may have `when`, `visible`, `vars` (constants
 handed to the output it calls), `height`, `grow`, `width`, `weight`,
-`for_each`, `as`, `per_row` and `use`; all but `choice` may have `colour`
+`for_each`, `as`, `per_row`, `at_most`, `two_rows` and `use`; all but `choice` may have `colour`
 (an input, a template, `#RRGGBB` or a role); a label, button, switch,
 chart or image may have `on_hold: detail`.
 

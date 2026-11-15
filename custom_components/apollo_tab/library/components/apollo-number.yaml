@@ -15,7 +15,12 @@ options:
 
 inputs:
   now:  "{{ states(entity) | float(none) }}"
-  text: "{{ (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim }}"
+  # The state line: the number and its unit, or why there is none (never
+  # "unavailable °C").
+  text: >-
+    {{ (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim if now is number else state_translated(entity) }}
+  # The row's value column: a dash while there is no number (the bar fades).
+  short: "{{ text if now is number else '—' }}"
 
 outputs:
   set:  {action: {number: number.set_value, input_number: input_number.set_value},
@@ -29,6 +34,8 @@ outputs:
 
 state: text
 lit: none
+# A card too small for its bar shows the number, not its icon.
+alone: short
 
 parts:
   bar:     {type: slider, look: bar, value: now, min: "{{ can.min }}", max: "{{ can.max }}",
@@ -44,7 +51,8 @@ variants:
     name: Row
     grid: [12, 2]
     header: chip
-    layout: [{use: bar}, {use: buttons}]
+    state: short
+    layout: [{use: bar, height: 48}, {use: buttons}]
   wide:
     name: Wide
     grid: [12, 3]

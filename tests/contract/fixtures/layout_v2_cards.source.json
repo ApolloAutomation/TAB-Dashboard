@@ -1,7 +1,35 @@
 {
  "bindings": {
   "actions": {
-   "102:tap": {
+   "100:tap": {
+    "component": "apollo/switch",
+    "demo": false,
+    "entities": [
+     "switch.kettle"
+    ],
+    "output": "toggle",
+    "params": {
+     "entity": "switch.kettle"
+    },
+    "values": {
+     "can": {
+      "entity": {
+       "icon": "mdi:toggle-switch",
+       "kind": null,
+       "toggle": true
+      },
+      "icon": "mdi:toggle-switch",
+      "kind": null,
+      "toggle": true
+     },
+     "options": {
+      "word_off": "Off",
+      "word_on": "On"
+     }
+    },
+    "vars": {}
+   },
+   "103:tap": {
     "component": "apollo/button",
     "demo": false,
     "entities": [
@@ -26,7 +54,7 @@
     },
     "vars": {}
    },
-   "107:change": {
+   "108:change": {
     "component": "apollo/select",
     "demo": false,
     "entities": [
@@ -76,7 +104,7 @@
     },
     "vars": {}
    },
-   "112:change": {
+   "113:change": {
     "component": "apollo/number",
     "demo": false,
     "entities": [
@@ -111,7 +139,7 @@
     },
     "vars": {}
    },
-   "117:change": {
+   "118:change": {
     "component": "apollo/screen",
     "demo": false,
     "entities": [
@@ -150,7 +178,7 @@
     },
     "vars": {}
    },
-   "122:tap": {
+   "123:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -206,7 +234,7 @@
     },
     "vars": {}
    },
-   "123:change": {
+   "124:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -215,117 +243,6 @@
     "output": "set_brightness",
     "params": {
      "entity": "light.sofa"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": true,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "bar",
-      "effects_shown": [],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": true
-     }
-    },
-    "vars": {}
-   },
-   "124:change": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.sofa"
-    ],
-    "output": "set_hue",
-    "params": {
-     "entity": "light.sofa"
-    },
-    "uses": {
-     "sat": {
-      "slot": {
-       "kind": "template",
-       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
-       "variables": {
-        "bar_on_tile": true,
-        "can": {
-         "brightness": true,
-         "colour": true,
-         "effect_list": [],
-         "effects": false,
-         "entity": {
-          "brightness": true,
-          "colour": true,
-          "effect_list": [],
-          "effects": false,
-          "icon": "mdi:lightbulb",
-          "kind": null,
-          "max_kelvin": 6500,
-          "min_kelvin": 2000,
-          "temperature": true,
-          "toggle": true
-         },
-         "icon": "mdi:lightbulb",
-         "kind": null,
-         "max_kelvin": 6500,
-         "min_kelvin": 2000,
-         "temperature": true,
-         "toggle": true
-        },
-        "colour_control": "bar",
-        "effects_shown": [],
-        "entity": "light.sofa",
-        "favourites": [
-         "#FF453A",
-         "#FF9F0A",
-         "#FFD60A",
-         "#32D74B",
-         "#64D2FF",
-         "#0A84FF",
-         "#BF5AF2",
-         "2700K"
-        ],
-        "has": {
-         "entity": true
-        },
-        "show_brightness": true,
-        "show_saturation": false,
-        "show_white": true
-       }
-      },
-      "type": "number"
-     }
     },
     "values": {
      "can": {
@@ -387,7 +304,7 @@
      "sat": {
       "slot": {
        "kind": "template",
-       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "template": "{% set sat = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
        "variables": {
         "bar_on_tile": true,
         "can": {
@@ -490,9 +407,64 @@
     "entities": [
      "light.sofa"
     ],
-    "output": "set_white",
+    "output": "set_hue",
     "params": {
      "entity": "light.sofa"
+    },
+    "uses": {
+     "sat": {
+      "slot": {
+       "kind": "template",
+       "template": "{% set sat = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "variables": {
+        "bar_on_tile": true,
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "effect_list": [],
+         "effects": false,
+         "entity": {
+          "brightness": true,
+          "colour": true,
+          "effect_list": [],
+          "effects": false,
+          "icon": "mdi:lightbulb",
+          "kind": null,
+          "max_kelvin": 6500,
+          "min_kelvin": 2000,
+          "temperature": true,
+          "toggle": true
+         },
+         "icon": "mdi:lightbulb",
+         "kind": null,
+         "max_kelvin": 6500,
+         "min_kelvin": 2000,
+         "temperature": true,
+         "toggle": true
+        },
+        "colour_control": "bar",
+        "effects_shown": [],
+        "entity": "light.sofa",
+        "favourites": [
+         "#FF453A",
+         "#FF9F0A",
+         "#FFD60A",
+         "#32D74B",
+         "#64D2FF",
+         "#0A84FF",
+         "#BF5AF2",
+         "2700K"
+        ],
+        "has": {
+         "entity": true
+        },
+        "show_brightness": true,
+        "show_saturation": false,
+        "show_white": true
+       }
+      },
+      "type": "number"
+     }
     },
     "values": {
      "can": {
@@ -596,153 +568,13 @@
     },
     "vars": {}
    },
-   "12:tap": {
-    "component": "apollo/switch",
-    "demo": false,
-    "entities": [
-     "switch.kettle"
-    ],
-    "output": "toggle",
-    "params": {
-     "entity": "switch.kettle"
-    },
-    "values": {
-     "can": {
-      "entity": {
-       "icon": "mdi:toggle-switch",
-       "kind": null,
-       "toggle": true
-      },
-      "icon": "mdi:toggle-switch",
-      "kind": null,
-      "toggle": true
-     },
-     "options": {
-      "word_off": "Off",
-      "word_on": "On"
-     }
-    },
-    "vars": {}
-   },
-   "132:tap": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.ceiling"
-    ],
-    "output": "toggle",
-    "params": {
-     "entity": "light.ceiling"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": false,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": true,
-       "colour": false,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": false,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": false,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "none",
-      "effects_shown": [],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": false
-     }
-    },
-    "vars": {}
-   },
-   "133:change": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.ceiling"
-    ],
-    "output": "set_brightness",
-    "params": {
-     "entity": "light.ceiling"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": false,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": true,
-       "colour": false,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": false,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": false,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "none",
-      "effects_shown": [],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": false
-     }
-    },
-    "vars": {}
-   },
-   "138:tap": {
+   "128:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
      "light.sofa"
     ],
-    "output": "toggle",
+    "output": "set_white",
     "params": {
      "entity": "light.sofa"
     },
@@ -773,7 +605,7 @@
      },
      "options": {
       "bar_on_tile": true,
-      "colour_control": "both",
+      "colour_control": "bar",
       "effects_shown": [],
       "favourites": [
        "#FF453A",
@@ -786,19 +618,159 @@
        "2700K"
       ],
       "show_brightness": true,
-      "show_saturation": true,
+      "show_saturation": false,
       "show_white": true
      }
     },
     "vars": {}
    },
-   "139:change": {
+   "12:tap": {
+    "component": "apollo/switch",
+    "demo": false,
+    "entities": [
+     "switch.kettle"
+    ],
+    "output": "toggle",
+    "params": {
+     "entity": "switch.kettle"
+    },
+    "values": {
+     "can": {
+      "entity": {
+       "icon": "mdi:toggle-switch",
+       "kind": null,
+       "toggle": true
+      },
+      "icon": "mdi:toggle-switch",
+      "kind": null,
+      "toggle": true
+     },
+     "options": {
+      "word_off": "Off",
+      "word_on": "On"
+     }
+    },
+    "vars": {}
+   },
+   "133:tap": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.ceiling"
+    ],
+    "output": "toggle",
+    "params": {
+     "entity": "light.ceiling"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "none",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": false
+     }
+    },
+    "vars": {}
+   },
+   "134:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.ceiling"
+    ],
+    "output": "set_brightness",
+    "params": {
+     "entity": "light.ceiling"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "none",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": false
+     }
+    },
+    "vars": {}
+   },
+   "139:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
      "light.sofa"
     ],
-    "output": "set_brightness",
+    "output": "toggle",
     "params": {
      "entity": "light.sofa"
     },
@@ -910,64 +882,9 @@
     "entities": [
      "light.sofa"
     ],
-    "output": "set_hue",
+    "output": "set_brightness",
     "params": {
      "entity": "light.sofa"
-    },
-    "uses": {
-     "sat": {
-      "slot": {
-       "kind": "template",
-       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
-       "variables": {
-        "bar_on_tile": true,
-        "can": {
-         "brightness": true,
-         "colour": true,
-         "effect_list": [],
-         "effects": false,
-         "entity": {
-          "brightness": true,
-          "colour": true,
-          "effect_list": [],
-          "effects": false,
-          "icon": "mdi:lightbulb",
-          "kind": null,
-          "max_kelvin": 6500,
-          "min_kelvin": 2000,
-          "temperature": true,
-          "toggle": true
-         },
-         "icon": "mdi:lightbulb",
-         "kind": null,
-         "max_kelvin": 6500,
-         "min_kelvin": 2000,
-         "temperature": true,
-         "toggle": true
-        },
-        "colour_control": "both",
-        "effects_shown": [],
-        "entity": "light.sofa",
-        "favourites": [
-         "#FF453A",
-         "#FF9F0A",
-         "#FFD60A",
-         "#32D74B",
-         "#64D2FF",
-         "#0A84FF",
-         "#BF5AF2",
-         "2700K"
-        ],
-        "has": {
-         "entity": true
-        },
-        "show_brightness": true,
-        "show_saturation": true,
-        "show_white": true
-       }
-      },
-      "type": "number"
-     }
     },
     "values": {
      "can": {
@@ -1029,7 +946,7 @@
      "sat": {
       "slot": {
        "kind": "template",
-       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "template": "{% set sat = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
        "variables": {
         "bar_on_tile": true,
         "can": {
@@ -1132,15 +1049,15 @@
     "entities": [
      "light.sofa"
     ],
-    "output": "set_sat",
+    "output": "set_hue",
     "params": {
      "entity": "light.sofa"
     },
     "uses": {
-     "hue": {
+     "sat": {
       "slot": {
        "kind": "template",
-       "template": "{% set hue = ((state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
+       "template": "{% set sat = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
        "variables": {
         "bar_on_tile": true,
         "can": {
@@ -1243,9 +1160,64 @@
     "entities": [
      "light.sofa"
     ],
-    "output": "set_white",
+    "output": "set_sat",
     "params": {
      "entity": "light.sofa"
+    },
+    "uses": {
+     "hue": {
+      "slot": {
+       "kind": "template",
+       "template": "{% set hue = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
+       "variables": {
+        "bar_on_tile": true,
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "effect_list": [],
+         "effects": false,
+         "entity": {
+          "brightness": true,
+          "colour": true,
+          "effect_list": [],
+          "effects": false,
+          "icon": "mdi:lightbulb",
+          "kind": null,
+          "max_kelvin": 6500,
+          "min_kelvin": 2000,
+          "temperature": true,
+          "toggle": true
+         },
+         "icon": "mdi:lightbulb",
+         "kind": null,
+         "max_kelvin": 6500,
+         "min_kelvin": 2000,
+         "temperature": true,
+         "toggle": true
+        },
+        "colour_control": "both",
+        "effects_shown": [],
+        "entity": "light.sofa",
+        "favourites": [
+         "#FF453A",
+         "#FF9F0A",
+         "#FFD60A",
+         "#32D74B",
+         "#64D2FF",
+         "#0A84FF",
+         "#BF5AF2",
+         "2700K"
+        ],
+        "has": {
+         "entity": true
+        },
+        "show_brightness": true,
+        "show_saturation": true,
+        "show_white": true
+       }
+      },
+      "type": "number"
+     }
     },
     "values": {
      "can": {
@@ -1350,6 +1322,62 @@
     "vars": {}
    },
    "145:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.sofa"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.sofa"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "both",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": true,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "146:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1467,7 +1495,7 @@
     },
     "vars": {}
    },
-   "150:tap": {
+   "151:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1538,84 +1566,13 @@
     },
     "vars": {}
    },
-   "151:change": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.desk"
-    ],
-    "output": "set_brightness",
-    "params": {
-     "entity": "light.desk"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "effects": true,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [
-        "Candle",
-        "Rainbow",
-        "Party",
-        "Night"
-       ],
-       "effects": true,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2200,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2200,
-      "temperature": true,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "dots",
-      "effects_shown": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": true
-     }
-    },
-    "vars": {}
-   },
    "152:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
      "light.desk"
     ],
-    "output": "set_white",
+    "output": "set_brightness",
     "params": {
      "entity": "light.desk"
     },
@@ -1757,6 +1714,77 @@
     "entities": [
      "light.desk"
     ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.desk"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "dots",
+      "effects_shown": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "155:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.desk"
+    ],
     "options": [
      {
       "kelvin": null,
@@ -1884,7 +1912,7 @@
     },
     "vars": {}
    },
-   "155:change": {
+   "156:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -2470,7 +2498,7 @@
      "sat": {
       "slot": {
        "kind": "template",
-       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "template": "{% set sat = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
        "variables": {
         "bar_on_tile": true,
         "can": {
@@ -2581,7 +2609,7 @@
      "sat": {
       "slot": {
        "kind": "template",
-       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "template": "{% set sat = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
        "variables": {
         "bar_on_tile": true,
         "can": {
@@ -2692,7 +2720,7 @@
      "hue": {
       "slot": {
        "kind": "template",
-       "template": "{% set hue = ((state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
+       "template": "{% set hue = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
        "variables": {
         "bar_on_tile": true,
         "can": {
@@ -3168,7 +3196,7 @@
     },
     "vars": {}
    },
-   "66:tap": {
+   "68:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -3239,155 +3267,13 @@
     },
     "vars": {}
    },
-   "70:tap": {
+   "72:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
      "light.desk"
     ],
     "output": "toggle",
-    "params": {
-     "entity": "light.desk"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "effects": true,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [
-        "Candle",
-        "Rainbow",
-        "Party",
-        "Night"
-       ],
-       "effects": true,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2200,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2200,
-      "temperature": true,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "dots",
-      "effects_shown": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": true
-     }
-    },
-    "vars": {}
-   },
-   "71:change": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.desk"
-    ],
-    "output": "set_brightness",
-    "params": {
-     "entity": "light.desk"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "effects": true,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [
-        "Candle",
-        "Rainbow",
-        "Party",
-        "Night"
-       ],
-       "effects": true,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2200,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2200,
-      "temperature": true,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "dots",
-      "effects_shown": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": true
-     }
-    },
-    "vars": {}
-   },
-   "72:change": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.desk"
-    ],
-    "output": "set_white",
     "params": {
      "entity": "light.desk"
     },
@@ -3458,7 +3344,7 @@
     "entities": [
      "light.desk"
     ],
-    "output": "set_white",
+    "output": "set_brightness",
     "params": {
      "entity": "light.desk"
     },
@@ -3524,6 +3410,148 @@
     "vars": {}
    },
    "74:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.desk"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.desk"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "dots",
+      "effects_shown": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "75:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.desk"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.desk"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "dots",
+      "effects_shown": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "76:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -3656,7 +3684,7 @@
     },
     "vars": {}
    },
-   "75:tap": {
+   "77:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -3768,7 +3796,7 @@
     },
     "vars": {}
    },
-   "80:tap": {
+   "82:tap": {
     "component": "apollo/button",
     "demo": false,
     "entities": [
@@ -3821,7 +3849,7 @@
     },
     "vars": {}
    },
-   "94:tap": {
+   "96:tap": {
     "component": "apollo/switch",
     "demo": false,
     "entities": [
@@ -3830,34 +3858,6 @@
     "output": "toggle",
     "params": {
      "entity": "input_boolean.guest"
-    },
-    "values": {
-     "can": {
-      "entity": {
-       "icon": "mdi:toggle-switch",
-       "kind": null,
-       "toggle": true
-      },
-      "icon": "mdi:toggle-switch",
-      "kind": null,
-      "toggle": true
-     },
-     "options": {
-      "word_off": "Off",
-      "word_on": "On"
-     }
-    },
-    "vars": {}
-   },
-   "98:tap": {
-    "component": "apollo/switch",
-    "demo": false,
-    "entities": [
-     "switch.kettle"
-    ],
-    "output": "toggle",
-    "params": {
-     "entity": "switch.kettle"
     },
     "values": {
      "can": {
@@ -4166,7 +4166,7 @@
    {
     "kind": "template",
     "n": 8,
-    "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
+    "template": "{% set gone = (states(entity) in ['unavailable', 'unknown']) %}{{ gone }}",
     "variables": {
      "can": {
       "entity": {
@@ -4189,7 +4189,7 @@
    {
     "kind": "template",
     "n": 9,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 1500) -%}{%- for k in range(14, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 1500 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -4205,6 +4205,104 @@
      "entity": "switch.kettle",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      },
      "word_off": "Off",
      "word_on": "On"
@@ -4344,7 +4442,7 @@
    {
     "kind": "template",
     "n": 14,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 20 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2180) -%}{%- for k in range(20, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2180 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -4388,6 +4486,104 @@
      "has": {
       "entity": true
      },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
+     },
      "show_brightness": true,
      "show_saturation": false,
      "show_white": false
@@ -4396,7 +4592,7 @@
    {
     "kind": "template",
     "n": 15,
-    "template": "{% set state = (state_translated(entity)) %}{{ state }}",
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{% set level = ((pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '') %}{% set readout = ([state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K') if is_on and kelvin is number else ''] | select | join(' · ')) %}{{ readout }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -4774,7 +4970,7 @@
    {
     "kind": "template",
     "n": 23,
-    "template": "{% set state = (state_translated(entity)) %}{{ state }}",
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{% set level = ((pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '') %}{% set readout = ([state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K') if is_on and kelvin is number else ''] | select | join(' · ')) %}{{ readout }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -4876,7 +5072,7 @@
    {
     "kind": "template",
     "n": 25,
-    "template": "{% set hue = ((state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
+    "template": "{% set hue = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -4978,7 +5174,7 @@
    {
     "kind": "template",
     "n": 27,
-    "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+    "template": "{% set sat = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -5181,7 +5377,7 @@
    {
     "kind": "template",
     "n": 34,
-    "template": "{% set number = (states(entity) | float(none)) %}{% set reading %}{% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}{% endset %}{% set reading = reading | trim %}{% set unit_text = (unit or state_attr(entity, 'unit_of_measurement') or '') %}{% set line = ((reading ~ ' ' ~ unit_text) | trim if number is number else reading) %}{{ line }}",
+    "template": "{% set number = (states(entity) | float(none)) %}{% set reading %}{% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}{% endset %}{% set reading = reading | trim %}{% set unit_text = (unit or state_attr(entity, 'unit_of_measurement') or '') %}{% set line = ((reading ~ ' ' ~ unit_text) | trim if number is number else reading) %}{% set big_line = ('—' if states(entity) in ['unavailable', 'unknown'] else line) %}{{ big_line }}",
     "variables": {
      "can": {
       "entity": {
@@ -5324,7 +5520,7 @@
    {
     "kind": "template",
     "n": 39,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 9 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 980) -%}{%- for k in range(9, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 980 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -5342,13 +5538,111 @@
       "entity": true,
       "page": true
      },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
+     },
      "page": "more"
     }
    },
    {
     "kind": "template",
     "n": 40,
-    "template": "{% set reading = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ reading }}",
+    "template": "{% set reading = ('—' if states(entity) in ['unavailable', 'unknown'] else (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ reading }}",
     "variables": {
      "can": {
       "entity": {
@@ -5371,7 +5665,7 @@
    {
     "kind": "template",
     "n": 41,
-    "template": "{% set line = (state_attr(entity, 'friendly_name') or '') %}{{ line }}",
+    "template": "{{ 'mdi:chevron-right' }}",
     "variables": {
      "can": {
       "entity": {
@@ -5424,7 +5718,7 @@
    {
     "kind": "template",
     "n": 43,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 27 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2900) -%}{%- for k in range(27, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2900 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -5449,13 +5743,111 @@
      "entity": "input_number.target",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      }
     }
    },
    {
     "kind": "template",
     "n": 44,
-    "template": "{% set text = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ text }}",
+    "template": "{% set now = (states(entity) | float(none)) %}{% set text = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim if now is number else state_translated(entity)) %}{{ text }}",
     "variables": {
      "can": {
       "entity": {
@@ -5668,7 +6060,7 @@
    {
     "kind": "template",
     "n": 50,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2140) -%}{%- for k in range(20, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2140 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "brightness": true,
@@ -5698,6 +6090,104 @@
      "entity": "light.backlight",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      }
     }
    },
@@ -5795,7 +6285,7 @@
    {
     "kind": "template",
     "n": 54,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 9 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 1500) -%}{%- for k in range(14, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 1500 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -5811,6 +6301,104 @@
      "entity": "script.night",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      }
     }
    },
@@ -5830,6 +6418,19 @@
    {
     "kind": "template",
     "n": 56,
+    "template": "{{ 'mdi:chevron-right' }}",
+    "variables": {
+     "can": {},
+     "has": {
+      "entity": false,
+      "page": true
+     },
+     "page": "more"
+    }
+   },
+   {
+    "kind": "template",
+    "n": 57,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{{ is_on }}",
     "variables": {
      "bar_on_tile": true,
@@ -5896,12 +6497,12 @@
    {
     "entity": "light.desk",
     "kind": "colour",
-    "n": 57,
+    "n": 58,
     "of": "rgb"
    },
    {
     "kind": "template",
-    "n": 58,
+    "n": 59,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "bar_on_tile": true,
@@ -5967,8 +6568,8 @@
    },
    {
     "kind": "template",
-    "n": 59,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 20 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 60,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2180) -%}{%- for k in range(20, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2180 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -6027,71 +6628,103 @@
      "has": {
       "entity": true
      },
-     "show_brightness": true,
-     "show_saturation": false,
-     "show_white": true
-    }
-   },
-   {
-    "kind": "template",
-    "n": 60,
-    "template": "{% set state = (state_translated(entity)) %}{{ state }}",
-    "variables": {
-     "bar_on_tile": true,
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "effects": true,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [
-        "Candle",
-        "Rainbow",
-        "Party",
-        "Night"
-       ],
-       "effects": true,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2200,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2200,
-      "temperature": true,
-      "toggle": true
-     },
-     "colour_control": "dots",
-     "effects_shown": [
-      "Candle",
-      "Rainbow",
-      "Party",
-      "Night"
-     ],
-     "entity": "light.desk",
-     "favourites": [
-      "#FF453A",
-      "#FF9F0A",
-      "#FFD60A",
-      "#32D74B",
-      "#64D2FF",
-      "#0A84FF",
-      "#BF5AF2",
-      "2700K"
-     ],
-     "has": {
-      "entity": true
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      },
      "show_brightness": true,
      "show_saturation": false,
@@ -6101,7 +6734,7 @@
    {
     "kind": "template",
     "n": 61,
-    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{{ pct }}",
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{% set level = ((pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '') %}{% set readout = ([state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K') if is_on and kelvin is number else ''] | select | join(' · ')) %}{{ readout }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -6167,7 +6800,7 @@
    {
     "kind": "template",
     "n": 62,
-    "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
+    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{{ pct }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -6233,7 +6866,7 @@
    {
     "kind": "template",
     "n": 63,
-    "template": "{% set is_on = (is_state(entity, 'on')) %}{{ not is_on }}",
+    "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -6299,6 +6932,72 @@
    {
     "kind": "template",
     "n": 64,
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{{ not is_on }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "dots",
+     "effects_shown": [
+      "Candle",
+      "Rainbow",
+      "Party",
+      "Night"
+     ],
+     "entity": "light.desk",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 65,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{{ is_on }}",
     "variables": {
      "bar_on_tile": false,
@@ -6350,12 +7049,12 @@
    {
     "entity": "light.porch",
     "kind": "colour",
-    "n": 65,
+    "n": 66,
     "of": "rgb"
    },
    {
     "kind": "template",
-    "n": 66,
+    "n": 67,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "bar_on_tile": false,
@@ -6406,8 +7105,8 @@
    },
    {
     "kind": "template",
-    "n": 67,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 68,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 1500) -%}{%- for k in range(14, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 1500 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "bar_on_tile": false,
      "can": {
@@ -6451,6 +7150,104 @@
      "has": {
       "entity": true
      },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
+     },
      "show_brightness": false,
      "show_saturation": false,
      "show_white": false
@@ -6458,7 +7255,7 @@
    },
    {
     "kind": "template",
-    "n": 68,
+    "n": 69,
     "template": "{% set state = (state_translated(entity)) %}{{ state }}",
     "variables": {
      "bar_on_tile": false,
@@ -6509,7 +7306,7 @@
    },
    {
     "kind": "template",
-    "n": 69,
+    "n": 70,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set level = ((pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '') %}{{ level }}",
     "variables": {
      "bar_on_tile": false,
@@ -6560,7 +7357,7 @@
    },
    {
     "kind": "template",
-    "n": 70,
+    "n": 71,
     "template": "{% set gone = (is_state(entity, 'unavailable')) %}{{ gone }}",
     "variables": {
      "can": {
@@ -6581,8 +7378,8 @@
    },
    {
     "kind": "template",
-    "n": 71,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 72,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 1500) -%}{%- for k in range(14, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 1500 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6598,12 +7395,110 @@
      "entity": "button.doorbell",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      }
     }
    },
    {
     "kind": "template",
-    "n": 72,
+    "n": 73,
     "template": "{% set number = (states(entity) | float(none)) %}{% set active = ((highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])\n   or (highlight == 'above' and number is number and number > high)\n   or (highlight == 'below' and number is number and number < low)) %}{{ active }}",
     "variables": {
      "can": {
@@ -6633,7 +7528,7 @@
    },
    {
     "kind": "template",
-    "n": 73,
+    "n": 74,
     "template": "{% set number = (states(entity) | float(none)) %}{% set active = ((highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])\n   or (highlight == 'above' and number is number and number > high)\n   or (highlight == 'below' and number is number and number < low)) %}{% set tone = ((high_colour if highlight == 'above' else low_colour if highlight == 'below' else none) if active else none) %}{{ tone }}",
     "variables": {
      "can": {
@@ -6663,7 +7558,7 @@
    },
    {
     "kind": "template",
-    "n": 74,
+    "n": 75,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "can": {
@@ -6694,12 +7589,12 @@
    {
     "entity": "binary_sensor.door",
     "kind": "state_icon",
-    "n": 75
+    "n": 76
    },
    {
     "kind": "template",
-    "n": 76,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 27 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 77,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2900) -%}{%- for k in range(27, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2900 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6722,36 +7617,104 @@
      "highlight": "never",
      "low": 0.0,
      "low_colour": "info",
-     "unit": "",
-     "word_off": "",
-     "word_on": ""
-    }
-   },
-   {
-    "kind": "template",
-    "n": 77,
-    "template": "{% set number = (states(entity) | float(none)) %}{% set reading %}{% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}{% endset %}{% set reading = reading | trim %}{% set unit_text = (unit or state_attr(entity, 'unit_of_measurement') or '') %}{% set line = ((reading ~ ' ' ~ unit_text) | trim if number is number else reading) %}{{ line }}",
-    "variables": {
-     "can": {
-      "entity": {
-       "icon": "mdi:door",
-       "kind": "door",
-       "toggle": false
-      },
-      "icon": "mdi:door",
-      "kind": "door",
-      "toggle": false
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      },
-     "decimals": 1.0,
-     "entity": "binary_sensor.door",
-     "has": {
-      "entity": true
-     },
-     "high": 100.0,
-     "high_colour": "warn",
-     "highlight": "never",
-     "low": 0.0,
-     "low_colour": "info",
      "unit": "",
      "word_off": "",
      "word_on": ""
@@ -6760,7 +7723,7 @@
    {
     "kind": "template",
     "n": 78,
-    "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ is_number }}",
+    "template": "{% set gone_line = (state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else '') %}{{ gone_line }}",
     "variables": {
      "can": {
       "entity": {
@@ -6790,7 +7753,7 @@
    {
     "kind": "template",
     "n": 79,
-    "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ not is_number }}",
+    "template": "{% set number = (states(entity) | float(none)) %}{% set reading %}{% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}{% endset %}{% set reading = reading | trim %}{% set unit_text = (unit or state_attr(entity, 'unit_of_measurement') or '') %}{% set line = ((reading ~ ' ' ~ unit_text) | trim if number is number else reading) %}{% set big_line = ('—' if states(entity) in ['unavailable', 'unknown'] else line) %}{{ big_line }}",
     "variables": {
      "can": {
       "entity": {
@@ -6820,7 +7783,67 @@
    {
     "kind": "template",
     "n": 80,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ is_number }}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:door",
+       "kind": "door",
+       "toggle": false
+      },
+      "icon": "mdi:door",
+      "kind": "door",
+      "toggle": false
+     },
+     "decimals": 1.0,
+     "entity": "binary_sensor.door",
+     "has": {
+      "entity": true
+     },
+     "high": 100.0,
+     "high_colour": "warn",
+     "highlight": "never",
+     "low": 0.0,
+     "low_colour": "info",
+     "unit": "",
+     "word_off": "",
+     "word_on": ""
+    }
+   },
+   {
+    "kind": "template",
+    "n": 81,
+    "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ not is_number }}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:door",
+       "kind": "door",
+       "toggle": false
+      },
+      "icon": "mdi:door",
+      "kind": "door",
+      "toggle": false
+     },
+     "decimals": 1.0,
+     "entity": "binary_sensor.door",
+     "has": {
+      "entity": true
+     },
+     "high": 100.0,
+     "high_colour": "warn",
+     "highlight": "never",
+     "low": 0.0,
+     "low_colour": "info",
+     "unit": "",
+     "word_off": "",
+     "word_on": ""
+    }
+   },
+   {
+    "kind": "template",
+    "n": 82,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2140) -%}{%- for k in range(20, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2140 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6843,6 +7866,104 @@
      "highlight": "never",
      "low": 0.0,
      "low_colour": "info",
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
+     },
      "unit": "",
      "word_off": "",
      "word_on": ""
@@ -6850,7 +7971,7 @@
    },
    {
     "kind": "template",
-    "n": 81,
+    "n": 83,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{{ is_on }}",
     "variables": {
      "can": {
@@ -6873,55 +7994,8 @@
    },
    {
     "kind": "template",
-    "n": 82,
-    "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
-    "variables": {
-     "can": {
-      "entity": {
-       "icon": "mdi:toggle-switch",
-       "kind": null,
-       "toggle": true
-      },
-      "icon": "mdi:toggle-switch",
-      "kind": null,
-      "toggle": true
-     },
-     "entity": "input_boolean.guest",
-     "has": {
-      "entity": true
-     },
-     "word_off": "Off",
-     "word_on": "On"
-    }
-   },
-   {
-    "kind": "template",
-    "n": 83,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
-    "variables": {
-     "can": {
-      "entity": {
-       "icon": "mdi:toggle-switch",
-       "kind": null,
-       "toggle": true
-      },
-      "icon": "mdi:toggle-switch",
-      "kind": null,
-      "toggle": true
-     },
-     "component_name": "Switch",
-     "entity": "input_boolean.guest",
-     "has": {
-      "entity": true
-     },
-     "word_off": "Off",
-     "word_on": "On"
-    }
-   },
-   {
-    "kind": "template",
     "n": 84,
-    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off)) %}{{ state }}",
+    "template": "{% set gone = (states(entity) in ['unavailable', 'unknown']) %}{{ gone }}",
     "variables": {
      "can": {
       "entity": {
@@ -6944,7 +8018,7 @@
    {
     "kind": "template",
     "n": 85,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 9 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2140) -%}{%- for k in range(20, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2140 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6957,7 +8031,128 @@
       "toggle": true
      },
      "component_name": "Switch",
-     "entity": "switch.kettle",
+     "entity": "input_boolean.guest",
+     "has": {
+      "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
+     },
+     "word_off": "Off",
+     "word_on": "On"
+    }
+   },
+   {
+    "kind": "template",
+    "n": 86,
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off)) %}{{ state }}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:toggle-switch",
+       "kind": null,
+       "toggle": true
+      },
+      "icon": "mdi:toggle-switch",
+      "kind": null,
+      "toggle": true
+     },
+     "entity": "input_boolean.guest",
      "has": {
       "entity": true
      },
@@ -6967,8 +8162,8 @@
    },
    {
     "kind": "template",
-    "n": 86,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 87,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2140) -%}{%- for k in range(20, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2140 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6984,13 +8179,111 @@
      "entity": "script.night",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      }
     }
    },
    {
     "kind": "template",
-    "n": 87,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 88,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2140) -%}{%- for k in range(20, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2140 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "entity": {
@@ -7015,13 +8308,141 @@
      "entity": "input_number.target",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      }
     }
    },
    {
     "kind": "template",
-    "n": 88,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 27 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 89,
+    "template": "{% set now = (states(entity) | float(none)) %}{% set text = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim if now is number else state_translated(entity)) %}{% set short = (text if now is number else '—') %}{{ short }}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:numeric",
+       "kind": null,
+       "max": 26,
+       "min": 16,
+       "step": 0.5,
+       "toggle": false,
+       "unit": ""
+      },
+      "icon": "mdi:numeric",
+      "kind": null,
+      "max": 26,
+      "min": 16,
+      "step": 0.5,
+      "toggle": false,
+      "unit": ""
+     },
+     "control": "bar",
+     "entity": "input_number.target",
+     "has": {
+      "entity": true
+     }
+    }
+   },
+   {
+    "kind": "template",
+    "n": 90,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 2900) -%}{%- for k in range(27, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 2900 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "can": {
       "brightness": true,
@@ -7051,115 +8472,111 @@
      "entity": "light.backlight",
      "has": {
       "entity": true
+     },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
      }
     }
    },
    {
     "kind": "template",
-    "n": 89,
-    "template": "{% set hue = ((state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
-    "variables": {
-     "bar_on_tile": true,
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": true,
-      "toggle": true
-     },
-     "colour_control": "bar",
-     "effects_shown": [],
-     "entity": "light.sofa",
-     "favourites": [
-      "#FF453A",
-      "#FF9F0A",
-      "#FFD60A",
-      "#32D74B",
-      "#64D2FF",
-      "#0A84FF",
-      "#BF5AF2",
-      "2700K"
-     ],
-     "has": {
-      "entity": true
-     },
-     "show_brightness": true,
-     "show_saturation": false,
-     "show_white": true
-    }
-   },
-   {
-    "kind": "template",
-    "n": 90,
-    "template": "{% set is_on = (is_state(entity, 'on')) %}{{ not is_on }}",
-    "variables": {
-     "bar_on_tile": true,
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": true,
-      "toggle": true
-     },
-     "colour_control": "bar",
-     "effects_shown": [],
-     "entity": "light.sofa",
-     "favourites": [
-      "#FF453A",
-      "#FF9F0A",
-      "#FFD60A",
-      "#32D74B",
-      "#64D2FF",
-      "#0A84FF",
-      "#BF5AF2",
-      "2700K"
-     ],
-     "has": {
-      "entity": true
-     },
-     "show_brightness": true,
-     "show_saturation": false,
-     "show_white": true
-    }
-   },
-   {
-    "kind": "template",
     "n": 91,
-    "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{% set level = ((pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '') %}{% set readout = ([state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K') if is_on and kelvin is number else ''] | select | join(' · ')) %}{{ readout }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -7210,7 +8627,160 @@
    {
     "kind": "template",
     "n": 92,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 39 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "template": "{% set hue = (none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "bar",
+     "effects_shown": [],
+     "entity": "light.sofa",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 93,
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{{ not is_on }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "bar",
+     "effects_shown": [],
+     "entity": "light.sofa",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 94,
+    "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "bar",
+     "effects_shown": [],
+     "entity": "light.sofa",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 95,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 4100) -%}{%- for k in range(39, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 4100 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -7254,6 +8824,104 @@
      "has": {
       "entity": true
      },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
+     },
      "show_brightness": true,
      "show_saturation": false,
      "show_white": false
@@ -7261,8 +8929,8 @@
    },
    {
     "kind": "template",
-    "n": 93,
-    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 39 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "n": 96,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set m = namespace(w=0) -%}{%- for c in n -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- set ns = namespace(out=n, done=m.w <= 4100) -%}{%- for k in range(39, 0, -1) -%}{%- if not ns.done -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{%- set r = n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -%}{%- if r == n -%}{%- set ns.done = true -%}{%- else -%}{%- set m = namespace(w=0) -%}{%- for c in r -%}{%- set m.w = m.w + name_w.get(c, 140) -%}{%- endfor -%}{%- if m.w <= 4100 -%}{%- set ns.out = r -%}{%- set ns.done = true -%}{%- endif -%}{%- endif -%}{%- endif -%}{%- endfor -%}{{- ns.out -}}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -7321,6 +8989,104 @@
      "has": {
       "entity": true
      },
+     "name_w": {
+      " ": 48,
+      "!": 48,
+      "\"": 70,
+      "#": 127,
+      "$": 112,
+      "%": 152,
+      "&": 123,
+      "'": 38,
+      "(": 61,
+      ")": 61,
+      "*": 72,
+      "+": 105,
+      ",": 41,
+      "-": 69,
+      ".": 41,
+      "/": 63,
+      "0": 120,
+      "1": 67,
+      "2": 103,
+      "3": 103,
+      "4": 120,
+      "5": 103,
+      "6": 111,
+      "7": 108,
+      "8": 116,
+      "9": 111,
+      ":": 41,
+      ";": 41,
+      "<": 105,
+      "=": 105,
+      ">": 105,
+      "?": 103,
+      "@": 186,
+      "A": 132,
+      "B": 136,
+      "C": 130,
+      "D": 149,
+      "E": 121,
+      "F": 114,
+      "G": 139,
+      "H": 146,
+      "I": 56,
+      "J": 92,
+      "K": 129,
+      "L": 107,
+      "M": 172,
+      "N": 146,
+      "O": 151,
+      "P": 130,
+      "Q": 151,
+      "R": 131,
+      "S": 112,
+      "T": 106,
+      "U": 142,
+      "V": 128,
+      "W": 203,
+      "X": 121,
+      "Y": 116,
+      "Z": 118,
+      "[": 60,
+      "\\": 63,
+      "]": 60,
+      "^": 105,
+      "_": 90,
+      "`": 108,
+      "a": 108,
+      "b": 123,
+      "c": 103,
+      "d": 123,
+      "e": 110,
+      "f": 64,
+      "g": 124,
+      "h": 123,
+      "i": 50,
+      "j": 51,
+      "k": 111,
+      "l": 50,
+      "m": 190,
+      "n": 123,
+      "o": 114,
+      "p": 123,
+      "q": 123,
+      "r": 74,
+      "s": 90,
+      "t": 75,
+      "u": 122,
+      "v": 101,
+      "w": 162,
+      "x": 99,
+      "y": 101,
+      "z": 94,
+      "{": 63,
+      "|": 54,
+      "}": 63,
+      "~": 105,
+      "…": 124
+     },
      "show_brightness": true,
      "show_saturation": false,
      "show_white": true
@@ -7328,7 +9094,7 @@
    },
    {
     "kind": "template",
-    "n": 94,
+    "n": 97,
     "template": "{% set effect_at = (effects_shown.index(state_attr(entity, 'effect')) if state_attr(entity, 'effect') in effects_shown else none) %}{{ effect_at }}",
     "variables": {
      "bar_on_tile": true,
@@ -8003,7 +9769,7 @@
   }
  },
  "layout": {
-  "hash": "14ce4bf329abeb09",
+  "hash": "3bde18454860104f",
   "nav": [
    {
     "icon": "mdi:home",
@@ -8362,13 +10128,12 @@
       },
       "w": [
        {
-        "icon": "mdi:palette",
         "id": 20,
         "r": [
          116,
          524,
-         109,
-         112
+         168,
+         52
         ],
         "t": "button",
         "tap": {
@@ -8379,13 +10144,12 @@
         }
        },
        {
-        "icon": "mdi:palette",
         "id": 21,
         "r": [
-         233,
+         292,
          524,
-         109,
-         112
+         168,
+         52
         ],
         "t": "button",
         "tap": {
@@ -8396,13 +10160,12 @@
         }
        },
        {
-        "icon": "mdi:palette",
         "id": 22,
         "r": [
-         350,
-         524,
-         110,
-         112
+         116,
+         584,
+         344,
+         52
         ],
         "t": "button",
         "tap": {
@@ -8854,8 +10617,8 @@
         "id": 44,
         "r": [
          692,
-         568,
-         152,
+         540,
+         116,
          44
         ],
         "size": "l",
@@ -8866,15 +10629,15 @@
        },
        {
         "id": 45,
+        "look": 2,
         "r": [
-         692,
-         614,
-         152,
-         22
+         816,
+         540,
+         28,
+         44
         ],
-        "size": "s",
-        "t": "label",
-        "text": {
+        "t": "image",
+        "value": {
          "s": 41
         }
        }
@@ -9006,7 +10769,7 @@
          344,
          112
         ],
-        "rows": 1,
+        "rows": 2,
         "t": "choice",
         "texts": [
          "Eco",
@@ -9052,7 +10815,7 @@
         "r": [
          916,
          484,
-         148,
+         216,
          24
         ],
         "size": "m",
@@ -9065,9 +10828,9 @@
         "al": 2,
         "id": 57,
         "r": [
-         1072,
+         1140,
          485,
-         156,
+         88,
          22
         ],
         "size": "s",
@@ -9087,9 +10850,9 @@
         "min": 10,
         "r": [
          884,
-         532,
+         524,
          344,
-         40
+         48
         ],
         "step": 1,
         "t": "slider",
@@ -9122,7 +10885,7 @@
         "look": 1,
         "r": [
          884,
-         614,
+         612,
          44,
          44
         ],
@@ -9132,10 +10895,10 @@
        {
         "id": 61,
         "r": [
-         936,
-         612,
-         100,
-         26
+         884,
+         664,
+         152,
+         28
         ],
         "size": "m",
         "t": "label",
@@ -9187,6 +10950,32 @@
         "size": "m",
         "t": "label",
         "text": "Link"
+       },
+       {
+        "id": 65,
+        "r": [
+         1076,
+         672,
+         116,
+         28
+        ],
+        "size": "s",
+        "t": "label",
+        "text": ""
+       },
+       {
+        "id": 66,
+        "look": 2,
+        "r": [
+         1200,
+         672,
+         28,
+         28
+        ],
+        "t": "image",
+        "value": {
+         "s": 56
+        }
        }
       ]
      }
@@ -9199,7 +10988,7 @@
     "view": 1,
     "w": [
      {
-      "id": 65,
+      "id": 67,
       "r": [
        100,
        20,
@@ -9215,10 +11004,10 @@
        "local": "go_to_page",
        "page": "more~1"
       },
-      "id": 66,
+      "id": 68,
       "lit": 0,
       "on": {
-       "s": 56
+       "s": 57
       },
       "r": [
        100,
@@ -9231,17 +11020,17 @@
        "policy": "optimistic"
       },
       "tint": {
-       "s": 57
+       "s": 58
       },
       "un": {
-       "s": 58
+       "s": 59
       },
       "w": [
        {
         "c": {
-         "s": 57
+         "s": 58
         },
-        "id": 67,
+        "id": 69,
         "look": 1,
         "r": [
          116,
@@ -9253,7 +11042,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 68,
+        "id": 70,
         "r": [
          168,
          100,
@@ -9263,11 +11052,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 59
+         "s": 60
         }
        },
        {
-        "id": 69,
+        "id": 71,
         "r": [
          168,
          126,
@@ -9277,11 +11066,11 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 60
+         "s": 61
         }
        },
        {
-        "id": 70,
+        "id": 72,
         "r": [
          396,
          106,
@@ -9293,18 +11082,18 @@
          "policy": "optimistic"
         },
         "value": {
-         "s": 56
+         "s": 57
         }
        },
        {
         "c": {
-         "s": 57
+         "s": 58
         },
         "change": {
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 71,
+        "id": 73,
         "look": 1,
         "max": 100,
         "min": 1,
@@ -9317,14 +11106,14 @@
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 61
+         "s": 62
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 72,
+        "id": 74,
         "look": 1,
         "max": 6500,
         "min": 2200,
@@ -9345,10 +11134,10 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 62
+         "s": 63
         },
         "vis": {
-         "s": 56
+         "s": 57
         }
        },
        {
@@ -9356,7 +11145,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:white-balance-sunny",
-        "id": 73,
+        "id": 75,
         "look": 1,
         "max": 6500,
         "min": 2200,
@@ -9369,10 +11158,10 @@
         "step": 50,
         "t": "slider",
         "value": {
-         "s": 62
+         "s": 63
         },
         "vis": {
-         "s": 63
+         "s": 64
         }
        },
        {
@@ -9389,7 +11178,7 @@
          "#BF5AF2",
          "#FFA757"
         ],
-        "id": 74,
+        "id": 76,
         "look": 1,
         "r": [
          116,
@@ -9404,10 +11193,10 @@
      },
      {
       "component": "apollo/light",
-      "id": 75,
+      "id": 77,
       "lit": 0,
       "on": {
-       "s": 64
+       "s": 65
       },
       "r": [
        100,
@@ -9420,17 +11209,17 @@
        "policy": "optimistic"
       },
       "tint": {
-       "s": 65
+       "s": 66
       },
       "un": {
-       "s": 66
+       "s": 67
       },
       "w": [
        {
         "c": {
-         "s": 65
+         "s": 66
         },
-        "id": 76,
+        "id": 78,
         "look": 1,
         "r": [
          116,
@@ -9442,7 +11231,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 77,
+        "id": 79,
         "r": [
          116,
          536,
@@ -9452,11 +11241,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 67
+         "s": 68
         }
        },
        {
-        "id": 78,
+        "id": 80,
         "r": [
          116,
          566,
@@ -9466,12 +11255,12 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 68
+         "s": 69
         }
        },
        {
         "al": 2,
-        "id": 79,
+        "id": 81,
         "r": [
          168,
          495,
@@ -9481,14 +11270,14 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 69
+         "s": 70
         }
        }
       ]
      },
      {
       "component": "apollo/button",
-      "id": 80,
+      "id": 82,
       "lit": 3,
       "r": [
        292,
@@ -9501,11 +11290,11 @@
        "policy": "pulse"
       },
       "un": {
-       "s": 70
+       "s": 71
       },
       "w": [
        {
-        "id": 81,
+        "id": 83,
         "look": 1,
         "r": [
          308,
@@ -9517,7 +11306,7 @@
         "value": "mdi:gesture-tap-button"
        },
        {
-        "id": 82,
+        "id": 84,
         "r": [
          308,
          536,
@@ -9527,13 +11316,13 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 71
+         "s": 72
         }
        }
       ]
      },
      {
-      "id": 83,
+      "id": 85,
       "r": [
        484,
        20,
@@ -9545,10 +11334,10 @@
      },
      {
       "component": "apollo/reading",
-      "id": 84,
+      "id": 86,
       "lit": 1,
       "on": {
-       "s": 72
+       "s": 73
       },
       "r": [
        484,
@@ -9568,10 +11357,10 @@
         "text": "#E8EAED",
         "warn": "#F5B547"
        },
-       "s": 73
+       "s": 74
       },
       "un": {
-       "s": 74
+       "s": 75
       },
       "w": [
        {
@@ -9586,9 +11375,9 @@
           "text": "#E8EAED",
           "warn": "#F5B547"
          },
-         "s": 73
+         "s": 74
         },
-        "id": 85,
+        "id": 87,
         "look": 1,
         "r": [
          500,
@@ -9598,11 +11387,11 @@
         ],
         "t": "image",
         "value": {
-         "s": 75
+         "s": 76
         }
        },
        {
-        "id": 86,
+        "id": 88,
         "r": [
          552,
          100,
@@ -9612,11 +11401,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 76
+         "s": 77
         }
        },
        {
-        "id": 87,
+        "id": 89,
         "r": [
          552,
          126,
@@ -9626,50 +11415,48 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 77
-        }
-       },
-       {
-        "al": 2,
-        "id": 88,
-        "px": 48,
-        "r": [
-         500,
-         192,
-         344,
-         60
-        ],
-        "t": "label",
-        "text": {
-         "s": 77
-        },
-        "vis": {
          "s": 78
         }
        },
        {
-        "al": 2,
-        "id": 89,
-        "px": 28,
+        "id": 90,
+        "px": 48,
         "r": [
          500,
-         192,
+         156,
          344,
          60
         ],
         "t": "label",
         "text": {
-         "s": 77
+         "s": 79
         },
         "vis": {
+         "s": 80
+        }
+       },
+       {
+        "id": 91,
+        "px": 28,
+        "r": [
+         500,
+         156,
+         344,
+         60
+        ],
+        "t": "label",
+        "text": {
          "s": 79
+        },
+        "vis": {
+         "s": 81
         }
        }
       ]
      },
      {
       "component": "apollo/reading",
-      "id": 90,
+      "id": 92,
       "lit": 1,
       "on": {
        "s": 30
@@ -9699,7 +11486,7 @@
       },
       "w": [
        {
-        "id": 91,
+        "id": 93,
         "look": 2,
         "r": [
          500,
@@ -9713,26 +11500,26 @@
         }
        },
        {
-        "id": 92,
+        "id": 94,
         "r": [
          532,
          292,
-         148,
+         216,
          24
         ],
         "size": "m",
         "t": "label",
         "text": {
-         "s": 80
+         "s": 82
         }
        },
        {
         "al": 2,
-        "id": 93,
+        "id": 95,
         "r": [
-         688,
+         756,
          293,
-         156,
+         88,
          22
         ],
         "size": "s",
@@ -9745,10 +11532,10 @@
      },
      {
       "component": "apollo/switch",
-      "id": 94,
+      "id": 96,
       "lit": 0,
       "on": {
-       "s": 81
+       "s": 83
       },
       "r": [
        484,
@@ -9761,11 +11548,11 @@
        "policy": "optimistic"
       },
       "un": {
-       "s": 82
+       "s": 84
       },
       "w": [
        {
-        "id": 95,
+        "id": 97,
         "look": 2,
         "r": [
          500,
@@ -9777,39 +11564,39 @@
         "value": "mdi:toggle-switch"
        },
        {
-        "id": 96,
+        "id": 98,
         "r": [
          532,
          356,
-         148,
+         216,
          24
         ],
         "size": "m",
         "t": "label",
         "text": {
-         "s": 83
+         "s": 85
         }
        },
        {
         "al": 2,
-        "id": 97,
+        "id": 99,
         "r": [
-         688,
+         756,
          357,
-         156,
+         88,
          22
         ],
         "size": "s",
         "t": "label",
         "text": {
-         "s": 84
+         "s": 86
         }
        }
       ]
      },
      {
       "component": "apollo/switch",
-      "id": 98,
+      "id": 100,
       "lit": 0,
       "on": {
        "s": 7
@@ -9829,11 +11616,11 @@
       },
       "w": [
        {
-        "id": 99,
+        "id": 101,
         "look": 1,
         "r": [
          500,
-         422,
+         420,
          44,
          44
         ],
@@ -9841,38 +11628,24 @@
         "value": "mdi:toggle-switch"
        },
        {
-        "id": 100,
+        "id": 102,
         "r": [
-         552,
-         420,
-         100,
-         26
+         500,
+         472,
+         152,
+         28
         ],
         "size": "m",
         "t": "label",
         "text": {
-         "s": 85
-        }
-       },
-       {
-        "id": 101,
-        "r": [
-         552,
-         446,
-         100,
-         22
-        ],
-        "size": "s",
-        "t": "label",
-        "text": {
-         "s": 10
+         "s": 9
         }
        }
       ]
      },
      {
       "component": "apollo/button",
-      "id": 102,
+      "id": 103,
       "lit": 3,
       "r": [
        484,
@@ -9889,7 +11662,7 @@
       },
       "w": [
        {
-        "id": 103,
+        "id": 104,
         "look": 2,
         "r": [
          500,
@@ -9901,23 +11674,23 @@
         "value": "mdi:script-text-outline"
        },
        {
-        "id": 104,
+        "id": 105,
         "r": [
          532,
          548,
-         148,
+         216,
          24
         ],
         "size": "m",
         "t": "label",
         "text": {
-         "s": 86
+         "s": 87
         }
        }
       ]
      },
      {
-      "id": 105,
+      "id": 106,
       "r": [
        868,
        20,
@@ -9941,7 +11714,7 @@
         "s": 46
        }
       },
-      "id": 106,
+      "id": 107,
       "lit": 3,
       "r": [
        868,
@@ -9958,7 +11731,7 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 107,
+        "id": 108,
         "r": [
          884,
          140,
@@ -9981,7 +11754,7 @@
      },
      {
       "component": "apollo/number",
-      "id": 108,
+      "id": 109,
       "lit": 3,
       "r": [
        868,
@@ -9995,7 +11768,7 @@
       },
       "w": [
        {
-        "id": 109,
+        "id": 110,
         "look": 2,
         "r": [
          884,
@@ -10007,47 +11780,47 @@
         "value": "mdi:numeric"
        },
        {
-        "id": 110,
+        "id": 111,
         "r": [
          916,
          484,
-         148,
+         216,
          24
         ],
         "size": "m",
         "t": "label",
         "text": {
-         "s": 87
+         "s": 88
         }
        },
        {
         "al": 2,
-        "id": 111,
+        "id": 112,
         "r": [
-         1072,
+         1140,
          485,
-         156,
+         88,
          22
         ],
         "size": "s",
         "t": "label",
         "text": {
-         "s": 44
+         "s": 89
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 112,
+        "id": 113,
         "look": 1,
         "max": 26,
         "min": 16,
         "r": [
          884,
-         532,
+         524,
          344,
-         40
+         48
         ],
         "step": 0.5,
         "t": "slider",
@@ -10059,7 +11832,7 @@
      },
      {
       "component": "apollo/screen",
-      "id": 113,
+      "id": 114,
       "lit": 3,
       "r": [
        868,
@@ -10073,7 +11846,7 @@
       },
       "w": [
        {
-        "id": 114,
+        "id": 115,
         "look": 1,
         "r": [
          884,
@@ -10085,7 +11858,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 115,
+        "id": 116,
         "r": [
          936,
          612,
@@ -10095,11 +11868,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 88
+         "s": 90
         }
        },
        {
-        "id": 116,
+        "id": 117,
         "r": [
          936,
          638,
@@ -10117,7 +11890,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 117,
+        "id": 118,
         "look": 1,
         "max": 100,
         "min": 10,
@@ -10146,7 +11919,7 @@
     "w": [
      {
       "component": "apollo/light",
-      "id": 118,
+      "id": 119,
       "lit": 0,
       "on": {
        "s": 1
@@ -10169,7 +11942,7 @@
         "c": {
          "s": 2
         },
-        "id": 119,
+        "id": 120,
         "look": 1,
         "r": [
          420,
@@ -10181,7 +11954,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 120,
+        "id": 121,
         "r": [
          472,
          272,
@@ -10193,7 +11966,7 @@
         "text": "Sofa lamp"
        },
        {
-        "id": 121,
+        "id": 122,
         "r": [
          472,
          298,
@@ -10203,11 +11976,11 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 4
+         "s": 91
         }
        },
        {
-        "id": 122,
+        "id": 123,
         "r": [
          892,
          278,
@@ -10230,7 +12003,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 123,
+        "id": 124,
         "look": 1,
         "max": 100,
         "min": 1,
@@ -10250,7 +12023,7 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 124,
+        "id": 125,
         "look": 1,
         "max": 360,
         "min": 0,
@@ -10273,7 +12046,7 @@
          "#FF0000"
         ],
         "value": {
-         "s": 89
+         "s": 92
         },
         "vis": {
          "s": 1
@@ -10284,7 +12057,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:palette",
-        "id": 125,
+        "id": 126,
         "look": 1,
         "max": 360,
         "min": 0,
@@ -10297,17 +12070,17 @@
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 89
+         "s": 92
         },
         "vis": {
-         "s": 90
+         "s": 93
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 126,
+        "id": 127,
         "look": 1,
         "max": 6500,
         "min": 2000,
@@ -10328,7 +12101,7 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 91
+         "s": 94
         },
         "vis": {
          "s": 1
@@ -10339,7 +12112,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:white-balance-sunny",
-        "id": 127,
+        "id": 128,
         "look": 1,
         "max": 6500,
         "min": 2000,
@@ -10352,10 +12125,10 @@
         "step": 50,
         "t": "slider",
         "value": {
-         "s": 91
+         "s": 94
         },
         "vis": {
-         "s": 90
+         "s": 93
         }
        }
       ]
@@ -10371,7 +12144,7 @@
     "w": [
      {
       "component": "apollo/light",
-      "id": 128,
+      "id": 129,
       "lit": 0,
       "on": {
        "s": 11
@@ -10394,7 +12167,7 @@
         "c": {
          "s": 12
         },
-        "id": 129,
+        "id": 130,
         "look": 1,
         "r": [
          420,
@@ -10406,7 +12179,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 130,
+        "id": 131,
         "r": [
          472,
          336,
@@ -10416,11 +12189,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 92
+         "s": 95
         }
        },
        {
-        "id": 131,
+        "id": 132,
         "r": [
          472,
          362,
@@ -10434,7 +12207,7 @@
         }
        },
        {
-        "id": 132,
+        "id": 133,
         "r": [
          892,
          342,
@@ -10457,7 +12230,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 133,
+        "id": 134,
         "look": 1,
         "max": 100,
         "min": 1,
@@ -10486,7 +12259,7 @@
     "w": [
      {
       "component": "apollo/light",
-      "id": 134,
+      "id": 135,
       "lit": 0,
       "on": {
        "s": 21
@@ -10509,7 +12282,7 @@
         "c": {
          "s": 2
         },
-        "id": 135,
+        "id": 136,
         "look": 1,
         "r": [
          420,
@@ -10521,7 +12294,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 136,
+        "id": 137,
         "r": [
          472,
          208,
@@ -10533,7 +12306,7 @@
         "text": "Sofa lamp"
        },
        {
-        "id": 137,
+        "id": 138,
         "r": [
          472,
          234,
@@ -10547,7 +12320,7 @@
         }
        },
        {
-        "id": 138,
+        "id": 139,
         "r": [
          892,
          214,
@@ -10570,7 +12343,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 139,
+        "id": 140,
         "look": 1,
         "max": 100,
         "min": 1,
@@ -10590,7 +12363,7 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 140,
+        "id": 141,
         "look": 1,
         "max": 360,
         "min": 0,
@@ -10624,7 +12397,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:palette",
-        "id": 141,
+        "id": 142,
         "look": 1,
         "max": 360,
         "min": 0,
@@ -10651,7 +12424,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:palette-outline",
-        "id": 142,
+        "id": 143,
         "look": 1,
         "max": 100,
         "min": 0,
@@ -10671,7 +12444,7 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 143,
+        "id": 144,
         "look": 1,
         "max": 6500,
         "min": 2000,
@@ -10703,7 +12476,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:white-balance-sunny",
-        "id": 144,
+        "id": 145,
         "look": 1,
         "max": 6500,
         "min": 2000,
@@ -10736,7 +12509,7 @@
          "#BF5AF2",
          "#FFA757"
         ],
-        "id": 145,
+        "id": 146,
         "look": 1,
         "r": [
          420,
@@ -10760,10 +12533,10 @@
     "w": [
      {
       "component": "apollo/light",
-      "id": 146,
+      "id": 147,
       "lit": 0,
       "on": {
-       "s": 56
+       "s": 57
       },
       "r": [
        404,
@@ -10773,17 +12546,17 @@
       ],
       "t": "card",
       "tint": {
-       "s": 57
+       "s": 58
       },
       "un": {
-       "s": 58
+       "s": 59
       },
       "w": [
        {
         "c": {
-         "s": 57
+         "s": 58
         },
-        "id": 147,
+        "id": 148,
         "look": 1,
         "r": [
          420,
@@ -10795,7 +12568,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 148,
+        "id": 149,
         "r": [
          472,
          208,
@@ -10805,11 +12578,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 93
+         "s": 96
         }
        },
        {
-        "id": 149,
+        "id": 150,
         "r": [
          472,
          234,
@@ -10819,11 +12592,11 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 60
+         "s": 61
         }
        },
        {
-        "id": 150,
+        "id": 151,
         "r": [
          892,
          214,
@@ -10835,18 +12608,18 @@
          "policy": "optimistic"
         },
         "value": {
-         "s": 56
+         "s": 57
         }
        },
        {
         "c": {
-         "s": 57
+         "s": 58
         },
         "change": {
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 151,
+        "id": 152,
         "look": 1,
         "max": 100,
         "min": 1,
@@ -10859,14 +12632,14 @@
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 61
+         "s": 62
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 152,
+        "id": 153,
         "look": 1,
         "max": 6500,
         "min": 2200,
@@ -10887,10 +12660,10 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 62
+         "s": 63
         },
         "vis": {
-         "s": 56
+         "s": 57
         }
        },
        {
@@ -10898,7 +12671,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:white-balance-sunny",
-        "id": 153,
+        "id": 154,
         "look": 1,
         "max": 6500,
         "min": 2200,
@@ -10911,10 +12684,10 @@
         "step": 50,
         "t": "slider",
         "value": {
-         "s": 62
+         "s": 63
         },
         "vis": {
-         "s": 63
+         "s": 64
         }
        },
        {
@@ -10931,7 +12704,7 @@
          "#BF5AF2",
          "#FFA757"
         ],
-        "id": 154,
+        "id": 155,
         "look": 1,
         "r": [
          420,
@@ -10946,7 +12719,7 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 155,
+        "id": 156,
         "r": [
          420,
          472,
@@ -10962,7 +12735,7 @@
          "Night"
         ],
         "value": {
-         "s": 94
+         "s": 97
         }
        }
       ]
@@ -11832,7 +13605,7 @@
     {
      "kind": "template",
      "n": 17,
-     "template": "{% set reading = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ reading }}",
+     "template": "{% set reading = ('—' if states(entity) in ['unavailable', 'unknown'] else (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ reading }}",
      "variables": {
       "can": {
        "entity": {
@@ -11916,7 +13689,7 @@
     {
      "kind": "template",
      "n": 20,
-     "template": "{% set text = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ text }}",
+     "template": "{% set now = (states(entity) | float(none)) %}{% set text = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim if now is number else state_translated(entity)) %}{{ text }}",
      "variables": {
       "can": {
        "entity": {

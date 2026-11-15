@@ -503,7 +503,8 @@ async def test_the_weather_now(hass: HomeAssistant) -> None:
     result = _forecast({})
     labels = [w for w in result["widgets"] if w["t"] == "label"]
     temp, condition, details = labels[0], labels[1], labels[2]
-    assert temp["px"] == 48
+    # L2: 96 px beside the icon, so Large has no empty band at the top.
+    assert temp["px"] == 96
     assert await _value(hass, result, temp["text"]) == "12°"
     assert await _value(hass, result, condition["text"]) == "partlycloudy"
     assert await _value(hass, result, details["text"]) == (

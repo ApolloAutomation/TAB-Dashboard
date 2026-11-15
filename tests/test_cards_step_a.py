@@ -284,6 +284,7 @@ def test_the_shipped_light_is_the_light_of_d1() -> None:
     wide = d1["variants"]["wide"]["layout"]
     assert wide.pop(2) == {"use": "dots", "when": ["can.colour", "colour_control=dots"]}
     _first_look_changes(d1)
+    _second_look_changes(d1)
     assert shipped == d1
 
 
@@ -327,6 +328,28 @@ def _first_look_changes(d1: dict) -> None:
     # Decision 1: each row at least 56 high, brightness the tallest.
     for row, height in zip(full["layout"], (72, 56, 56, 56, 56, 120), strict=True):
         row["height"] = height
+
+
+def _second_look_changes(d1: dict) -> None:
+    """Apply what the look review of every card changed (package L2)."""
+    inputs, variants = d1["inputs"], d1["variants"]
+    # Only the bar of the mode the lamp is in has a marker: no hue or
+    # strength while it shows a white.
+    for name, index in (("hue", 0), ("sat", 1)):
+        inputs[name] = (
+            "{{ none if state_attr(entity, 'color_mode') == 'color_temp' else"
+            " (state_attr(entity, 'hs_color') or [none, none])[" + str(index) + "] }}"
+        )
+    # The larger sizes say the brightness and the white in the header.
+    inputs["readout"] = (
+        "{{ [state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K')"
+        " if is_on and kelvin is number else ''] | select | join(' · ') }}"
+    )
+    for name in ("wide", "large", "full"):
+        variants[name]["state"] = "readout"
+    # Wide: one bar of the card's height; two would each be under 48 px.
+    variants["wide"]["layout"] = [{"use": "dim", "grow": True}, {"use": "power"}]
+    d1["preview"]["inputs"]["readout"] = "On · 68%"
 
 
 @pytest.mark.parametrize("component_id", list(STEP_A))
@@ -766,32 +789,17 @@ def _assert_on_and_off_copies(result: dict, on: dict, off: dict, icon: str) -> N
 
 
 def test_the_owners_lamp_wide_large_and_controls() -> None:
-    """Wide: header with switch, bar, colour bar. Large: bar, colour, warm to cool.
+    """Wide: header with switch and one tall bar. Large: bar, colour, warm to cool.
 
     Controls: the same rows larger; no effects for a lamp that has none. The
-    colour and white bars have a faded copy for a lamp that is off.
+    colour and white bars have a faded copy for a lamp that is off. (L2: the
+    Wide colour bar went; with it both bars were under 48 px.)
     """
     wide_result = _light_card(OWNER_LAMP_RAW, "wide", 12, 3)
     wide = _cards(wide_result["layout"])[0]
     head = [("badge",), ("label", "m", 0), ("label", "s", 0), ("switch",)]
-    assert [_shape(w) for w in wide["w"]] == [
-        *head,
-        ("slider", "bar"),
-        ("slider", "hue"),
-        ("slider", "bar"),
-    ]
-    hue = wide["w"][5]
-    assert hue["track"] == [
-        "#FF0000",
-        "#FFFF00",
-        "#00FF00",
-        "#00FFFF",
-        "#0000FF",
-        "#FF00FF",
-        "#FF0000",
-    ]
-    assert (hue["min"], hue["max"], hue["nv"]) == (0, 360, 1)
-    _assert_on_and_off_copies(wide_result, hue, wide["w"][6], "mdi:palette")
+    assert [_shape(w) for w in wide["w"]] == [*head, ("slider", "bar")]
+    assert wide["w"][4]["r"][3] == 96
     large_result = _light_card(OWNER_LAMP_RAW, "large", 12, 6)
     large, detail = _cards(large_result["layout"])
     bars = [
@@ -1152,7 +1160,8 @@ async def test_each_scene_runs_its_own_device(hass: HomeAssistant) -> None:
         "type": "custom:apollo-tab-card",
         "component": "apollo/scenes",
         "params": {"scenes": ["scene.movie", "script.night", "scene.dinner"]},
-        "grid_options": {"columns": 12, "rows": 3},
+        # Large: Wide shows the names only (L2), Large the icons too.
+        "grid_options": {"columns": 12, "rows": 6},
     }
     result = _convert(_dashboard(entry), {}, 2)
     built = _cards(result["layout"])[0]
@@ -1337,13 +1346,20 @@ def test_the_link_goes_to_its_page() -> None:
 
 
 def test_the_link_shows_a_reading_when_it_has_a_device() -> None:
-    """`has.entity` adds the reading at 34 px and the device's name."""
+    """`has.entity` adds the reading at 34 px, with an arrow beside it.
+
+    L2: the device's name under the reading is gone, the header names it
+    already; the arrow says a tap goes to a page.
+    """
     component = COMPONENTS["apollo/page-link"]
     result = _compile(
         component, "tile", {"page": "climate", "entity": "sensor.temperature"}, {}, {}
     )
     labels = [w for w in result["widgets"] if w["t"] == "label"]
-    assert [w["size"] for w in labels][-2:] == ["l", "s"]
+    assert [w["size"] for w in labels][-2:] == ["m", "l"]
+    arrow = result["widgets"][-1]
+    assert (arrow["t"], arrow["look"], arrow["r"][2]) == ("image", 2, 28)
+    assert arrow["r"][1] >= labels[-1]["r"][1]
 
 
 # ---------------------------------------------------------------- words
@@ -1600,19 +1616,21 @@ def test_a_large_dropdown_has_no_pillars() -> None:
     }
     tall = compile_card2(component, validate_card_config2(component, raw), facts, 2)
     assert _choice_cells(tall) == (168, 148)
-    # At its own size Wide keeps one row of four.
+    # At its own size Wide has two rows of two: in one row of four the
+    # chosen "Standard" was cut (L2).
     wide = _compile(component, "wide", {"entity": "select.mode"}, {}, facts)
-    assert _choice_cells(wide) == (80, 112)
+    assert _choice_cells(wide) == (168, 52)
 
 
 def test_eight_scenes_on_wide_show_their_names() -> None:
     """L1 round 2: buttons of 80 by 52 cut every name to "Sce…".
 
-    Too low to stack icon and name, they show the name alone. Four scenes
-    in one row are tall enough to stack, and keep their icons.
+    Too low to stack icon and name, they show the name alone. L2: four
+    scenes in one row show the name alone too; beside a 16 px icon "Movie
+    Night" was cut, and the icon was too small to read from the room.
     """
     component = COMPONENTS["apollo/scenes"]
-    for count, icons in ((8, False), (4, True)):
+    for count, icons in ((8, False), (4, False)):
         scenes = [f"scene.s{n}" for n in range(count)]
         facts = {entity: facts_of({"domain": "scene"}) for entity in scenes}
         result = _compile(component, "wide", {"scenes": scenes}, {}, facts)
@@ -1815,7 +1833,12 @@ async def test_the_screen_and_link_texts(hass: HomeAssistant) -> None:
         {"unit_of_measurement": "°C", "friendly_name": "Living room"},
     )
     assert await _value(hass, link, _label(link, "l")["text"]) == "21.4 °C"
-    assert await _value(hass, link, _label(link, "s")["text"]) == "Living room"
+    assert await _value(hass, link, link["widgets"][-1]["value"]) == "mdi:chevron-right"
+    # L2: the name once, in the header; a device that is gone reads "—".
+    labels = [w for w in link["widgets"] if w["t"] == "label"]
+    assert not [w for w in labels if w.get("size") == "s"]
+    hass.states.async_set("sensor.temperature", "unavailable")
+    assert await _value(hass, link, _label(link, "l")["text"]) == "—"
 
 
 async def test_the_scenes_card_is_gone_only_when_every_scene_is(

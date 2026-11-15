@@ -32,13 +32,19 @@ inputs:
   pct:       "{{ ((state_attr(entity, 'brightness') or 0) / 2.55) | round | int }}"
   colour:    {source: colour, entity: "{{ entity }}", of: rgb}       # none while off
   hue_tone:  {source: colour, entity: "{{ entity }}", of: hue}       # the hue at full strength
-  hue:       "{{ (state_attr(entity, 'hs_color') or [none, none])[0] }}"
-  sat:       "{{ (state_attr(entity, 'hs_color') or [none, none])[1] }}"
+  # No hue while the lamp shows a white: only the bar of the mode it is in
+  # has a marker.
+  hue:       "{{ none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[0] }}"
+  sat:       "{{ none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1] }}"
   kelvin:    "{{ state_attr(entity, 'color_temp_kelvin') }}"          # none while the light shows a colour
   effect_at: "{{ effects_shown.index(state_attr(entity, 'effect')) if state_attr(entity, 'effect') in effects_shown else none }}"
   # No text for a lamp that has no brightness, so its tile is badge, name, state.
   level:     "{{ (pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '' }}"
   state:     "{{ state_translated(entity) }}"
+  # The header line of the larger sizes: the state, the brightness, and the
+  # white while the lamp shows one ("On · 55% · 3000 K").
+  readout: >-
+    {{ [state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K') if is_on and kelvin is number else ''] | select | join(' · ') }}
 
 outputs:
   toggle:         {action: light.toggle,  data: {entity_id: "{{ entity }}"}, feedback: optimistic}
@@ -118,14 +124,13 @@ variants:
     grid: [12, 3]
     header: tile
     trailing: switch
+    state: readout
     v1: apollo/light-slider
-    # The bars take the card's height: no empty band under the header.
+    # One bar that takes the card's height: two would be under 48 px each,
+    # too low for a finger. Colour and white are a hold away, on the
+    # controls page.
     layout:
       - {use: dim, grow: true}
-      - {use: hue}
-      # Eight favourites need two rows of dots, more than a wide card holds:
-      # they are on Large and on the controls page.
-      - {use: white, when: [can.temperature, show_white, "!can.colour"]}
       - {use: power}
   large:
     name: Large
@@ -135,6 +140,7 @@ variants:
     needs_text: This light only turns on and off
     header: tile
     trailing: switch
+    state: readout
     v1: apollo/light-slider
     layout: [{use: dim, grow: true}, {use: hue}, {use: sat, grow: true}, {use: white}, {use: dots}]
   full:
@@ -146,6 +152,7 @@ variants:
     needs_text: This light only turns on and off
     header: tile
     trailing: switch
+    state: readout
     picker: false
     # One order on every lamp; each row at least 56 high, brightness the
     # tallest, swatches 56 across. The page cuts the card under its rows.
@@ -161,4 +168,4 @@ detail: full
 preview:
   can: {brightness: true, colour: true, temperature: true, effects: false, min_kelvin: 2000, max_kelvin: 6500}
   inputs: {is_on: true, pct: 68, colour: 16757575, hue_tone: 16744448, hue: 30, sat: 58, kelvin: null,
-           level: "68%", state: "On"}
+           level: "68%", state: "On", readout: "On · 68%"}

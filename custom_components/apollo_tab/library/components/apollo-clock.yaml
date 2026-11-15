@@ -20,6 +20,8 @@ inputs:
   text:     "{{ now().strftime('%H:%M' if hours == '24' else '%-I:%M') }}"
 
 lit: none
+# A card too small for the digits shows the time as text, not its icon.
+alone: text
 
 parts:
   time_24:  {type: label, clock: 24, value: clock, size: xxl, align: centre,

@@ -12,7 +12,8 @@ params:
 inputs:
   vol:   "{{ ((state_attr(entity, 'volume_level') or 0) * 100) | round | int }}"
   muted: "{{ state_attr(entity, 'is_volume_muted') == true }}"
-  text:  "{{ vol }}%"
+  # While the player is gone: its state, not "0%".
+  text:  "{{ state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else vol ~ '%' }}"
 
 outputs:
   set_volume: {action: media_player.volume_set,
@@ -22,6 +23,8 @@ outputs:
 
 state: text
 lit: none
+# A card too small for its bar shows the volume, not its icon.
+alone: "{{ '—' if states(entity) in ['unavailable', 'unknown'] else vol ~ '%' }}"
 
 variants:
   row:
@@ -33,7 +36,7 @@ variants:
         items:
           - {type: button, icon: "mdi:volume-off", selected: muted, on_tap: mute, width: 48,
              when: [tablet.v2]}
-          - {type: slider, look: bar, value: vol, min: 0, max: 100, on_change: set_volume}
+          - {type: slider, look: bar, value: vol, min: 0, max: 100, on_change: set_volume, height: 48}
 
 preview:
   params: {entity: media_player.example}

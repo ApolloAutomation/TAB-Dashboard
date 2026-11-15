@@ -30,7 +30,7 @@ variants:
     name: Row
     grid: [12, 2]
     header: chip
-    layout: [{use: bar}]
+    layout: [{use: bar, height: 48}]
   wide:
     name: Wide
     grid: [12, 3]

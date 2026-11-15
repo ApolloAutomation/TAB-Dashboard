@@ -34,7 +34,10 @@ inputs:
   hi168:  {source: statistics, entity: "{{ entity }}", stat: max, hours: 168}
   hour_now: "{{ now().hour }}"
   unit_text: "{{ state_attr(entity, 'unit_of_measurement') or '' }}"
-  reading: "{{ (states(entity) ~ ' ' ~ unit_text) | trim }}"
+  # A dash while the sensor has no number, as on Status: never a cut
+  # "unavailabl…" with its unit.
+  reading: >-
+    {{ (states(entity) ~ ' ' ~ unit_text) | trim if states(entity) | float(none) is number else '—' }}
   # "41 to 52 W": the lowest and highest the recorder's statistics hold.
   range6:   "{{ ((lo6 | round(1)) ~ ' to ' ~ (hi6 | round(1)) ~ ' ' ~ unit_text) | trim if lo6 is number and hi6 is number else '' }}"
   range24:  "{{ ((lo24 | round(1)) ~ ' to ' ~ (hi24 | round(1)) ~ ' ' ~ unit_text) | trim if lo24 is number and hi24 is number else '' }}"
@@ -44,6 +47,8 @@ inputs:
 
 state: reading
 lit: none
+# A card too small for the graph shows the reading, not its icon.
+alone: reading
 
 parts:
   reading: {type: label, text: "{{ reading }}", size: ml}

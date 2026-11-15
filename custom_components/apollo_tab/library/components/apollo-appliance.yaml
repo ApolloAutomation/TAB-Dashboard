@@ -57,18 +57,25 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
-    header: tile
-    layout: [{use: left}, {use: bar}, {use: old_bar}]
+    # The name across the whole tile, the time left under it. The bar needs
+    # more height than is left: it is on Large.
+    header: tile_v
+    # A tablet with older software keeps the time left at its old size.
+    layout: [{use: left, size: ml, when: [tablet.v2]}, {use: left, when: ["!tablet.v2"]}, {use: old_bar}]
   large:
     name: Large
-    grid: [12, 6]
+    # Five rows end under the buttons; six left an empty foot of 106 px.
+    grid: [12, 5]
     header: tile
+    # The time left right under the header, large; the buttons follow it,
+    # so no band opens between them when there is no programme.
+    align: top
     layout:
-      - {use: left}
-      - {use: bar}
+      - {use: left, size: xl}
+      - {use: bar, height: 12}
       - {use: old_bar}
       - {use: programme}
-      - {use: buttons}
+      - {use: buttons, height: 64}
 
 preview:
   params: {state: sensor.washer, remaining: sensor.washer_left, progress: sensor.washer_done,

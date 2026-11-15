@@ -36,6 +36,12 @@ inputs:
     {{ sources_shown.index(state_attr(entity, 'source')) if state_attr(entity, 'source') in sources_shown else none }}
   shuffling:   "{{ state_attr(entity, 'shuffle') == true }}"
   line:        "{{ artist if artist else state }}"
+  # What is playing: the track, else the player's state.
+  track:       "{{ state_attr(entity, 'media_title') or state }}"
+  # The album under the track, unless it only says the track again.
+  album_line:  "{{ '' if album == track else album }}"
+  # The track and the artist on one line, for the header of the narrow sizes.
+  now_line:    "{{ [state_attr(entity, 'media_title') or '', artist] | select | join(' · ') or state }}"
 
 outputs:
   play_pause:  {action: media_player.media_play_pause, data: {entity_id: "{{ entity }}"}, feedback: optimistic}
@@ -93,24 +99,29 @@ parts:
   more:
     type: row
     items:
-      - {type: button, text: Shuffle, selected: shuffling, on_tap: shuffle, when: [can.shuffle]}
-      - {type: button, text: "On or off", icon: "mdi:power", on_tap: power, when: [can.power]}
+      - {type: button, text: Shuffle, icon: "mdi:shuffle", selected: shuffling, on_tap: shuffle, when: [can.shuffle]}
+      - {type: button, text: Power, icon: "mdi:power", on_tap: power, when: [can.power]}
 
 variants:
   wide:
     name: Wide
     grid: [12, 3]
     header: tile
+    state: now_line
     layout: [{use: buttons}]
   large:
     name: Large
     grid: [12, 6]
     header: tile
+    # The header names the player and the artist; the track is the large
+    # line under it.
     layout:
+      - {type: label, text: "{{ track }}", size: ml}
+      - {type: label, text: "{{ album_line }}", size: s}
       - {use: progress}
       - {use: length}
-      - {use: round_buttons, height: 64}
-      - {use: volume}
+      - {use: round_buttons, height: 72}
+      - {use: volume, height: 48}
   hero:
     name: Now playing
     grid: [24, 9]
@@ -119,7 +130,7 @@ variants:
       - {type: image, value: "{{ 'mdi:music-note' }}", look: badge, side: true}
       - {type: label, text: "{{ title }}", size: l}
       - {type: label, text: "{{ artist }}", size: m}
-      - {type: label, text: "{{ album }}", size: s}
+      - {type: label, text: "{{ album_line }}", size: s}
       - {type: label, text: "{{ state }}", size: s}
       - {use: progress}
       - {use: round_buttons, height: 96}
@@ -128,14 +139,16 @@ variants:
     name: Controls
     grid: [18, 11]
     header: tile
+    state: now_line
     picker: false
+    # Every row a finger uses at least 56 high (LOOK-NOTES decision 1).
     layout:
       - {use: progress}
       - {use: length}
       - {use: round_buttons, height: 72}
-      - {use: volume, height: 48}
-      - {use: sources, rows: 2}
-      - {use: more}
+      - {use: volume, height: 56}
+      - {use: sources, rows: 2, height: 120}
+      - {use: more, height: 56}
 detail: full
 
 preview:
@@ -143,4 +156,5 @@ preview:
   can: {previous: true, next: true, volume: true, mute: true, shuffle: true, power: true, sources: []}
   inputs: {title: Clair de lune, artist: Debussy, album: Suite bergamasque, state: Playing,
            playing: true, play_icon: "mdi:pause", vol: 40, muted: false, pos: 80, length: 300,
-           rate: 1, length_text: "5:00", source_at: null, shuffling: false, line: Debussy}
+           rate: 1, length_text: "5:00", source_at: null, shuffling: false, line: Debussy,
+           track: Clair de lune, album_line: Suite bergamasque, now_line: "Clair de lune · Debussy"}

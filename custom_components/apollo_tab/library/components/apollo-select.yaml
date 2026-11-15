@@ -42,7 +42,8 @@ variants:
     grid: [12, 3]
     header: title
     # The choices take the card's height: no empty band under the title.
-    layout: [{use: choices, grow: true}, {use: old_now}, {use: old_previous}, {use: old_next}]
+    # Two rows, so each choice is wide enough for its whole name.
+    layout: [{use: choices, grow: true, rows: 2}, {use: old_now}, {use: old_previous}, {use: old_next}]
   large:
     name: Large
     grid: [12, 6]

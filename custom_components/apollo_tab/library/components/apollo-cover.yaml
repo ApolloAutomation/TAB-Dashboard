@@ -18,6 +18,7 @@ options:
   show_tilt:     {type: toggle, section: controls, label: Tilt bar, default: false,
                   needs: can.tilt, needs_text: This one cannot tilt}
   turn_round:    {type: toggle, section: look, label: The bar grows as it opens, default: false,
+                  help: Only the window size draws the blind hanging down. The other sizes always fill as it opens,
                   when: [show_position]}
 
 inputs:
@@ -54,11 +55,17 @@ tap:
 hold: detail
 
 parts:
-  # How far it is closed, as a blind hangs; or how far it is open.
+  # The window size draws how far it is closed, as a blind hangs, or how far
+  # it is open. A bar across always fills as it opens, so it agrees with
+  # "Open 60%" and a drag to 80 opens it to 80. The accent always marks the
+  # open part: the hanging blind is drawn in the muted colour, so the Tall
+  # card and its controls page do not colour opposite parts.
   closed_bar: {type: slider, look: bar, value: closed, min: 0, max: 100, on_change: set_closed,
-               when: [can.position, show_position, "!turn_round"]}
+               colour: muted, when: [can.position, show_position, "!turn_round"]}
   open_bar:   {type: slider, look: bar, value: pos, min: 0, max: 100, on_change: set_position,
                when: [can.position, show_position, turn_round]}
+  bar:        {type: slider, look: bar, value: pos, min: 0, max: 100, on_change: set_position,
+               when: [can.position, show_position]}
   tilt_bar:   {type: slider, look: bar, value: tilt, min: 0, max: 100, on_change: set_tilt,
                when: [can.tilt, show_tilt]}
   buttons:
@@ -85,13 +92,18 @@ variants:
     name: Tile
     grid: [6, 3]
     header: tile_v
-    layout: [{use: old_buttons}]
+    layout: [{use: bar, when: [tablet.v2]}, {use: old_buttons}]
   tall:
     name: Tall
     grid: [6, 6]
     header: tile
     v1: apollo/blinds
-    layout: [{use: buttons}, {use: closed_bar}, {use: open_bar}, {use: tilt_bar}]
+    # As the window: the blind fills the height, the buttons under it.
+    layout:
+      - {use: closed_bar, direction: down, grow: true}
+      - {use: open_bar, direction: up, grow: true}
+      - {use: tilt_bar}
+      - {use: buttons, height: 56}
   window:
     name: Window
     grid: [6, 9]
@@ -108,7 +120,7 @@ variants:
     needs_text: Only for a garage door, a gate or a door
     header: none
     layout:
-      - {type: image, value: icon, look: bare, side: true, when: [tablet.v2]}
+      - {type: image, value: icon, look: badge, side: true, when: [tablet.v2]}
       - {type: label, text: "{{ name }}", size: m, when: [tablet.v2]}
       - {type: label, text: "{{ state }}", size: s, when: [tablet.v2]}
       - {use: open_or_close}
@@ -119,9 +131,8 @@ variants:
     header: tile
     picker: false
     layout:
-      - {use: closed_bar, height: 56}
-      - {use: open_bar, height: 56}
-      - {use: tilt_bar, height: 48}
+      - {use: bar, height: 72}
+      - {use: tilt_bar, height: 56}
       - {use: buttons, height: 64}
 detail: full
 

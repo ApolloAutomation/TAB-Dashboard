@@ -236,6 +236,9 @@ _STATE_ICONS = {
     ("lock", None, "open"): "mdi:lock-open",
     ("lock", None, "opening"): "mdi:lock-open",
     ("lock", None, "jammed"): "mdi:lock-alert",
+    # Whether it is locked is not known: no padlock that says either.
+    ("lock", None, "unavailable"): "mdi:lock-alert",
+    ("lock", None, "unknown"): "mdi:lock-alert",
     ("lock", None, None): "mdi:lock-outline",
     ("alarm_control_panel", None, "disarmed"): "mdi:shield-off",
     ("alarm_control_panel", None, "armed_home"): "mdi:shield-home",

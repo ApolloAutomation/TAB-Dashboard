@@ -18,6 +18,8 @@ options:
 inputs:
   armed:    "{{ states(entity) not in ['disarmed', 'unavailable', 'unknown'] }}"
   disarmed: "{{ is_state(entity, 'disarmed') }}"
+  # No button while the panel is gone, as on the lock.
+  can_disarm: "{{ states(entity) not in ['disarmed', 'unavailable', 'unknown'] }}"
   state:    "{{ state_translated(entity) }}"
   icon:     {source: state_icon, entity: "{{ entity }}"}
   tone:     "{{ 'bad' if is_state(entity, 'triggered') else 'good' if armed else none }}"
@@ -58,7 +60,7 @@ parts:
           - {type: button, text: Holiday, on_tap: arm_vacation,
              confirm: "Arm the alarm for a holiday?", when: [can.vacation, modes=vacation]}
       - {type: button, text: Disarm, icon: "mdi:shield-off", on_tap: disarm,
-         confirm: "Disarm the alarm?", visible: "{{ not disarmed }}"}
+         confirm: "Disarm the alarm?", visible: can_disarm}
   code_line: {type: label, text: This alarm needs a code. Use Home Assistant., size: s,
               when: [can.needs_code]}
   # What a tablet with older software shows on the wide card: every button.
@@ -84,15 +86,16 @@ variants:
   large:
     name: Large
     grid: [12, 6]
-    header: none
+    # The same header as Wide; the shield takes the room between it and
+    # the buttons.
+    header: tile
     v1: apollo/alarm-panel
     layout:
-      - {type: image, value: icon, look: badge, colour: tone, height: 104}
-      - {type: label, text: "{{ state }}", size: ml, align: centre}
+      - {type: image, value: icon, look: badge, colour: tone}
       - {use: arm_or_disarm, height: 64}
       - {use: code_line}
 
 preview:
   params: {entity: alarm_control_panel.example}
   can: {home: true, away: true, night: false, vacation: false, needs_code: false}
-  inputs: {armed: false, disarmed: true, state: Disarmed}
+  inputs: {armed: false, disarmed: true, can_disarm: false, state: Disarmed}

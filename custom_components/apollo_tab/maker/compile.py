@@ -6,7 +6,10 @@ from typing import Any
 
 from .const import FOR_EACH_MAX, MAX_WIDGETS
 from .errors import MakerError
-from .geometry import card_size_px, layout_card
+from .geometry import PAD, card_size_px, layout_card
+
+ICON_ALONE = 48  # the most an icon alone in a tiny card is across
+ICON_ALONE_MIN = 24
 
 _PARAM_REF = re.compile(r"\{\{\s*([a-z][a-z0-9_]*)\s*\}\}")
 
@@ -84,6 +87,20 @@ class _Compiler:
         laid = layout_card(geo_items, width, height, self.component["header"])
         header = self._header(laid["header"])
         widgets = self._widgets(expanded, laid["rects"])
+        if not widgets and header is None and self.component["icon"] is not None:
+            # A card too small for anything shows its icon, not an empty box.
+            side = max(min(width, height, ICON_ALONE + 2 * PAD) - 2 * PAD, 0)
+            if side >= ICON_ALONE_MIN:
+                rect = [(width - side) // 2, (height - side) // 2, side, side]
+                widgets.append(
+                    {
+                        "i": len(expanded),
+                        "t": "image",
+                        "r": rect,
+                        "value": self.component["icon"],
+                        "refresh": 0,
+                    }
+                )
         clipped = laid["clipped"] or any(rect is None for rect in laid["rects"])
         return {
             "component": self.component["id"],

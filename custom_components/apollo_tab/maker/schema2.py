@@ -136,6 +136,8 @@ _TOP_KEYS = {
     "tint",
     "state",
     "unavailable",
+    "alone",
+    "title",
     "lit",
     "tap",
     "hold",
@@ -166,6 +168,8 @@ _WIDGET_COMMON = {
     "for_each",
     "as",
     "per_row",
+    "at_most",
+    "two_rows",
     "use",
 }
 _WIDGET_KEYS = {
@@ -1429,7 +1433,7 @@ def _loop(item: dict, path: str, ctx: _Ctx, scope: dict) -> dict | None:
     for_each = item.get("for_each")
     as_name = item.get("as")
     if for_each is None:
-        if as_name is not None or "per_row" in item:
+        if as_name is not None or {"per_row", "at_most", "two_rows"} & set(item):
             raise MakerError("bad_value", f"{path}.as", "'as' needs 'for_each'")
         return None
     if scope:
@@ -1451,6 +1455,13 @@ def _loop(item: dict, path: str, ctx: _Ctx, scope: dict) -> dict | None:
         )
     loop["as"] = as_name
     loop["per_row"] = _int(item.get("per_row", 1), f"{path}.per_row", 1, 8)
+    if "at_most" in item:
+        # At most this many copies: a card that holds only so many.
+        loop["at_most"] = _int(item["at_most"], f"{path}.at_most", 1, MAX_LOOP_COPIES_2)
+        loop["copies"] = min(loop["copies"], loop["at_most"])
+    if "two_rows" in item:
+        # Copies that would fill one row only share two rows instead.
+        loop["two_rows"] = _bool(item["two_rows"], f"{path}.two_rows")
     return loop
 
 
@@ -1601,7 +1612,17 @@ def _row(item: dict, path: str, ctx: _Ctx, where: str, scope: dict) -> dict:
     """Validate a row: up to 8 widgets side by side."""
     _reject_unknown_keys(
         item,
-        {"type", "items", "when", "visible", "height", "for_each", "as", "per_row"},
+        {
+            "type",
+            "items",
+            "when",
+            "visible",
+            "height",
+            "for_each",
+            "as",
+            "per_row",
+            "at_most",
+        },
         path,
     )
     loop = _loop(item, path, ctx, scope)
@@ -2037,6 +2058,7 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
             "align",
             "needs",
             "needs_text",
+            "state",
         },
         path,
     )
@@ -2071,6 +2093,7 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
         "v1": _v1(spec.get("v1"), f"{prefix}v1"),
         "needs": needs,
         "needs_text": needs_text,
+        "state": _variant_state(spec, prefix, header, ctx),
     }
     layout = _required(spec, "layout", path)
     lpath = f"{prefix}layout"
@@ -2085,6 +2108,34 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
     ]
     out["widgets"] = ctx.widgets
     return out
+
+
+def _variant_state(spec: dict, prefix: str, header: str, ctx: _Ctx) -> dict | None:
+    """Validate a variant's own state line: an input, or none for no line.
+
+    Left out, the header shows the card's `state`.
+    """
+    if "state" not in spec:
+        return None
+    path = f"{prefix}state"
+    if header not in ("chip", "tile", "tile_v"):
+        raise MakerError("bad_value", path, "state is for the chip and tile headers")
+    value = spec["state"]
+    if value == "none":
+        return {"form": "none"}
+    if isinstance(value, str) and value in ctx.inputs:
+        return {"form": "input", "input": value}
+    raise MakerError("bad_value", path, "state is an input or none")
+
+
+def _card_title(doc: dict, ctx: _Ctx) -> dict | None:
+    """Validate the card's own title: an input, used when the person set none."""
+    if "title" not in doc:
+        return None
+    value = doc["title"]
+    if isinstance(value, str) and value in ctx.inputs:
+        return {"form": "input", "input": value}
+    raise MakerError("bad_value", "title", "title is an input")
 
 
 def _trailing(
@@ -2352,7 +2403,8 @@ def validate_component2(doc: dict) -> dict:
     _validate_inputs(doc.get("inputs"), ctx)
     _validate_outputs(doc.get("outputs"), ctx)
     card = {
-        key: _card_mark(doc, key, ctx) for key in ("on", "tint", "state", "unavailable")
+        key: _card_mark(doc, key, ctx)
+        for key in ("on", "tint", "state", "unavailable", "alone")
     }
     lit = _choose(doc, "lit", LIT_LOOKS, "", "fill")
     tap = _validate_tap(doc.get("tap"), ctx)
@@ -2397,6 +2449,7 @@ def validate_component2(doc: dict) -> dict:
         "inputs": ctx.inputs,
         "outputs": ctx.outputs,
         **card,
+        "title_input": _card_title(doc, ctx),
         "lit": lit,
         "tap": tap,
         "hold": hold,

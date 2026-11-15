@@ -11,7 +11,8 @@ params:
   entity: {domain: any, optional: true, label: Reading from}
 
 inputs:
-  reading: "{{ (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim }}"
+  reading: >-
+    {{ '—' if states(entity) in ['unavailable', 'unknown'] else (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim }}
   line:    "{{ state_attr(entity, 'friendly_name') or '' }}"
   gone:    "{{ false }}"
 
@@ -27,9 +28,25 @@ tap:
     none: {label: Does nothing}
 
 parts:
-  reading:  {type: label, text: "{{ reading }}", size: l, when: [has.entity]}
-  line:     {type: label, text: "{{ line }}", size: s, when: [has.entity, tablet.v2]}
-  # What a tablet with older software shows: a button that goes to the page.
+  # The reading, and an arrow that says a tap goes somewhere.
+  reading:
+    type: row
+    when: [tablet.v2]
+    items:
+      - {type: label, text: "{{ reading }}", size: l, when: [has.entity]}
+      - {type: label, text: "", size: s, when: ["!has.entity"]}
+      - {type: image, value: "{{ 'mdi:chevron-right' }}", look: bare, width: 28, height: 28}
+  # The same in the small card's one line.
+  small_reading:
+    type: row
+    when: [tablet.v2]
+    items:
+      - {type: label, text: "{{ reading }}", size: m, when: [has.entity]}
+      - {type: label, text: "", size: s, when: ["!has.entity"]}
+      - {type: image, value: "{{ 'mdi:chevron-right' }}", look: bare, width: 28, height: 28}
+  # What a tablet with older software shows: the reading and a button that
+  # goes to the page.
+  old_reading: {type: label, text: "{{ reading }}", size: l, when: [has.entity, "!tablet.v2"]}
   old_go:   {type: button, icon: "mdi:arrow-right", text: Open, on_tap: go, when: ["!tablet.v2"]}
 
 variants:
@@ -37,17 +54,20 @@ variants:
     name: Small
     grid: [6, 2]
     header: tile
-    layout: [{use: old_go}]
+    layout: [{use: small_reading}, {use: old_go}]
   tile:
     name: Tile
     grid: [6, 3]
     header: tile
-    layout: [{use: reading}, {use: line}, {use: old_go}]
+    # The reading right under the name, as on Status.
+    align: top
+    layout: [{use: reading}, {use: old_reading}, {use: old_go}]
   wide:
     name: Wide
     grid: [12, 3]
     header: tile
-    layout: [{use: reading}, {use: line}, {use: old_go}]
+    align: top
+    layout: [{use: reading}, {use: old_reading}, {use: old_go}]
 
 preview:
   params: {page: home}
