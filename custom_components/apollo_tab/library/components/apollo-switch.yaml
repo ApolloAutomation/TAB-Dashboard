@@ -50,18 +50,23 @@ variants:
   small:
     name: Small
     grid: [6, 2]
-    # The name on its own line across the card; the fill says on or off
-    # and the fade that it is gone.
-    header: tile_v
-    state: none
+    # As the Tile without its button: the word beside the badge, the name
+    # across the card under them (LOOK-NOTES decision 14).
+    header: tile
     layout:
       - {use: old_switch}
   tile:
     name: Tile
     grid: [6, 3]
-    header: tile_v
-    trailing: switch
+    # The badge with the word beside it ("On", "unavailable"), the name
+    # across the tile under them; one large power button takes the foot, as
+    # on the light that only turns on and off (LOOK-NOTES decision 14). In a
+    # taller card it stops at 120, as that light's does.
+    header: tile
     layout:
+      - {type: button, icon: "mdi:power", on_tap: toggle, selected: is_on, big_icon: true,
+         grow: true, most: 120, when: [tablet.v2]}
+      - {use: old_switch}
       - {use: old_state}
 
 preview:

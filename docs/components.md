@@ -423,6 +423,17 @@ preview: {params: {}, options: {}, can: {}, inputs: {}}
 - `on`, `tint`, `state`, `unavailable` and `alone` are the name of an
   input, or a template. YAML reads an unquoted key `on:` as true; at the
   top of a card file it is read as `on`.
+- `unavailable` should also hold when the devices are missing from Home
+  Assistant: a card whose device is gone shows its name and the faded look,
+  not an empty card. The built-in cards use `expand(x) | count == 0` or
+  `reject('has_value')` for this. Dropdown Large with no list of choices
+  shows a dash under its header line, which says the state, once; Dropdown
+  Wide, whose title has no state line, says the state once on its line.
+  Wide also says the choice at its title's right while it is not among the
+  choices shown, so a choice that no cell lights still shows.
+- In a layout v2 a schema 1 card that shows a camera's picture (Camera
+  snapshot) fades the same way while its camera is unavailable or unknown.
+  Other schema 1 cards stay as they are, and a layout v1 never fades them.
 - `alone` is for a card that exists to show a reading. Made so small that
   nothing else fits (3 by 1), it shows this text in the middle instead of
   its icon. Left out, the icon shows.
@@ -578,12 +589,53 @@ detail: full
 - A variant has `name`, `grid` (`[columns, rows]` on the page's grid of 36
   by 12), `header`, `trailing`, `layout` (1 to 24 items), and may have
   `v1`, `picker: false` (not offered in the picker, for a controls page)
-  `align: top` (spare height goes below the rows instead of above) and
+  `align: top` (kept for older files: it changes nothing, see below),
   `state` (for the chip and tile headers: an input that this size shows as
-  its state line instead of the card's `state`, or `none` for no line).
-  A card has 1 to 6 variants.
+  its state line instead of the card's `state`, or `none` for no line; a
+  title header shows it at its right, in a card wide enough that the title
+  keeps 126 px) and
+  `badge: false` (for the tile header: see the header forms). A card has 1
+  to 6 variants.
 - The card is drawn in the variant the person picked, else the largest one
-  that fits its size. Rows that do not fit are dropped from the end.
+  that fits its size. A picked variant whose `needs` does not hold for the
+  device gives the largest one that does and fits.
+- Rows stack down from the header with the theme's gap. The spare height
+  goes to the rows marked `grow` (shared between them); without one it
+  stays empty under the last row. A row with `most: 56` grows to 56 px at
+  most; the rows that grow on share what it leaves, else it stays at the
+  foot. In a card drawn larger than its size's grid a row with
+  `most_grown` (at least its `most`) grows to that instead: the main row of
+  a grown card takes more of it. In such a card a bar a finger moves,
+  with no `most` or `most_grown` of its own, grows to its width at most:
+  a bar fills from left to right, so taller than wide it reads as an
+  upright fader that moves sideways. A bar with `direction: up` or `down`
+  (a blind) is meant to be upright: it takes the free height. A row with
+  its own `most` keeps it.
+  A row with a thermostat grows to its width at most: the dial is
+  round. A row of badge images grows to its widest badge at most, for the
+  same reason. Rows that do not fit are dropped: first the rows with
+  `drop`, the lowest number first, then from the end.
+- Large empty feet: in a card drawn larger than its size's grid (grown,
+  or a stored size) the rows first grow to their `most_grown` (a lamp's
+  brightness to 320 px, its colour, strength and white bars to 144, the
+  power button of an on/off lamp to 160), and a bar with no `most` of its
+  own stops at its width (a Light Tile six columns wide stops its bar at
+  152; Light Wide, Lights together, Number and Screen the same). The number
+  of a lamp that only dims stops at 152 at every size, so no band over
+  56 px is left above or under it; its bar takes the rest, up to 128 and
+  in a grown card up to 320. When more than 56 px would then stay empty under the
+  rows, that card, and any card with a picture column, shares it above
+  the header and under the rows: the header, the picture and the rows
+  move down together, so the first row always follows the header with the
+  theme's gap and the card reads as one block. Rows beside a picture first
+  sit in the middle of the picture's height. The owner's lamp
+  (brightness, colour and white) fills a card of twelve rows and keeps its
+  header at the top. A card with no rows under its header (Switch Small
+  drawn larger) keeps its header at the top and its foot. A card at its
+  own size keeps its foot, and a controls page fills from the top.
+- A row of two or more buttons whose buttons would be under 48 px wide with
+  the gap of 8 uses a gap of 4 when that makes them 48 (Blinds and doors
+  Window and Tall: up, stop and down).
 - `detail` names the variant of the card's controls page. Home Assistant
   adds that page to the tablet for a card that can open it: by a hold, by
   the tap choice `detail`, or by an item with `on_tap: detail`. On the
@@ -598,7 +650,7 @@ Header forms, each drawn from ordinary parts:
 |---|---|
 | `title` | The schema 1 header: icon, title, a switch at the right from 300 px width. The default |
 | `chip` | Icon, name, and the state at the right. The only form for a card one row high, besides `none` |
-| `tile` | A badge, the name over the state, then the `trailing` part |
+| `tile` | A badge, the name over the state, then the `trailing` part. Where the name beside the badge would be under 126 px (a six column card), it stacks when the rows still fit: the badge and the state in one line, the name across the card under them. With no state line and nothing trailing the badge keeps its line when the rows still fit; a card with a dial, a chart or a picture gives it the name alone (the Gauge Tile). With `badge: false` and nothing trailing such a card shows no badge: the name across the card, on two lines of 24 px when every row keeps its place and height, else on one, and the state line under it (Status, Link and Thermostat Tile) |
 | `tile_v` | The badge at the top left and the `trailing` part at the top right, the name and state under them |
 | `none` | Nothing |
 
@@ -610,6 +662,72 @@ A header leaves out a name narrower than 32 px rather than draw a letter
 and "…". A card too small for any of its parts shows its icon alone in the
 middle, so a tap on it is never on an empty box.
 
+A device's name is cut in the middle, never at its end: "Living…Lamp 1",
+so two lamps of one room can be told apart. The end kept is the last word,
+with the word before it when the last is shorter than 4. In a narrow name
+(under 12 characters) the end may take all but three characters
+("Li…Lamp 1"). One word, or an end too long, is cut by characters
+("Superlo…spaces"). Spaces around a name do not count. The cut keeps as
+much of the name as fits its room, measured in the font's own widths, so a
+name of narrow letters is not cut early. It holds for every
+place a device's name is drawn, each measured in its own text size: the
+tile and chip name (18 px), the `title` header (16 px, beside its icon), a
+label of size `s`, `m` or `l` in the body that shows a device's name
+(`{{ state_attr(x, 'friendly_name') or x }}`, directly or through an
+input, or after another text, `{{ T if C else state_attr(x, 'friendly_name')
+or x }}`, which shows T while C holds: List rows and their "+2 more", the Room's extra reading, the Media Now playing name), a
+button's text that is a device's name (Scenes, 15 px), and in a layout v2
+the caption of a schema 1 card (the Camera snapshot). A name on two lines
+puts whole words on the first and cuts only the rest ("Upstairs Guest"
+over "Bedroom…Lamp"). A name that shares its line with a value at its
+right (the chip's state; a List row's value: a label followed by a
+right-aligned label of size `s`, `m` or `l`) gets what the value shown
+leaves of the line: its label spans the line and the value is drawn over
+its end, so "Living Room Temperature" stays whole beside "21.4 °C". A
+value as wide as its column leaves the name what a fixed column would. A
+device Home Assistant does not know is named by its object id in words
+("David" for `person.david`). Song titles and other
+texts that are not a device's name are cut at their end by the tablet.
+
+Every size of a built-in card about one device has the tile header with
+its badge, except these:
+
+| Card | Header | Why |
+|---|---|---|
+| Gauge Tile | the name alone | The dial needs the height of the badge line. |
+| Status Tile, Link Tile, Link Small | the name alone, on two lines (`badge: false`) | Beside the badge 100 px are left, and stacked under an empty badge line the name was cut to "Living…rature". Two lines read "Living Room" over "Temperature" and keep the value's height. Without a value the Status Tile shows a dash, and the line under it says why ("unavailable"). |
+| Thermostat Tile | the name alone, on two lines (`badge: false`), no state line | The number and the two 48 px buttons do not fit under a stacked header, and beside the badge the name was four letters and four; on one line it was "Liv…Thermostat". Two lines read "Living Room" over "Thermostat". "Now 20.5" stands small beside the target (at 28 px), without "°": six columns leave it 70 px beside "21.5°". The target starts at the card's left edge, under the name, in a wider card too. Without a target the state takes the row ("unavailable"). The card's light says heating or cooling. |
+| Dropdown Wide | `title` | 8 choices need 104 px; under a tile header 96 are left. Dropdown Large has the tile header with 16 choices. |
+| Status, Button and Switch Chip; Number, Volume and Screen brightness Row | `chip` | One or two rows high: the chip is the only header that fits a row of 56 px. |
+| Lock Wide, Blinds and doors Door | `none` | A large badge at the side, with the name and the state beside it: a tile header would draw the badge twice. |
+| Weather Wide and Large | `none` | The weather's picture, the temperature and the days take the card. |
+| Media Now playing | `none` | The picture column and the track take the card; with no track the player's name is the large line. |
+| Clock Wide and Large | `none` | No device: the time is the card. |
+
+Cards about several devices have no one badge or state to show: Scenes
+Wide and Large and List Large have `title`, List Wide and People Wide
+`none`, People Tall `title`, Lights together Wide `chip`, and the Room Tile
+`tile_v` with the room's name.
+
+Other rules of the built-in cards:
+
+- Scenes Large rows are 56 px at most (`most: 56`); the rest is a foot.
+- Link Tile's reading stops at 92 px (what the tile leaves under a name of
+  two lines) and Button Tile's big button at 120 px when the card grows.
+- A row of choices that does not fit (a Dropdown Wide set to show 16) is
+  replaced by the choice now, at size `ml`, and the editor says that
+  something did not fit: the card is never empty under its title.
+- A card whose device is missing from Home Assistant fades as when it is
+  unavailable and shows its name. The Link card fades when its reading's
+  device is gone or missing; a tap on it still goes to the page.
+- Number's minus and plus go to the next value on the step's grid: with a
+  step of 0.5, 20.3 goes to 20 or 20.5, never 19.8 or 20.8.
+- Thermostat Tile's small text beside the target says the temperature now
+  ("Now 20.5"); the large number is the target. Off, or with no reading,
+  it says the state.
+- A light that can only dim says "Off" once, in its header line; the large
+  number is a dash while it is off.
+
 ### Containers and loops
 
 | Item | Does |
@@ -618,7 +736,9 @@ middle, so a tap on it is never on an empty box.
 | `{type: swap, items: [...]}` | 2 to 8 items that share one place; each needs `visible`. An item is a widget or a row. For "Lock" or "Unlock", "Start" or "Pause". |
 | `{type: space}` | Takes spare height. |
 
-Any item may have `height` (px) or `grow: true`. `for_each` repeats an
+Any item may have `height` (px) or `grow: true`, and an item of the
+variant's layout `drop: n` (1 to 8): when the rows do not fit, it goes
+before the rows without it. `for_each` repeats an
 item or a row; `as` names the current entry, and `per_row: n` sets how many
 copies share a row; `at_most: n` keeps the first n copies, for a size that
 holds only so many; `two_rows: true` puts copies that would fill one row
@@ -633,21 +753,22 @@ loading slow.
 
 The seven types of schema 1 take new keys, and there is one new type,
 `choice`. Every widget may have `when`, `visible`, `vars` (constants
-handed to the output it calls), `height`, `grow`, `width`, `weight`,
+handed to the output it calls; a var may not take the name of a loop or
+its `<as>_can`), `height`, `grow`, `drop`, `most`, `most_grown`, `width`, `weight`,
 `for_each`, `as`, `per_row`, `at_most`, `two_rows` and `use`; all but `choice` may have `colour`
 (an input, a template, `#RRGGBB` or a role); a label, button, switch,
 chart or image may have `on_hold: detail`.
 
 | Type | New keys |
 |---|---|
-| `label` | `size`: `s`, `m`, `ml`, `l`, `xl`, `xxl` or `huge` (14 to 192 px); `align`: `left`, `centre` or `right`; `clock`: `24` or `12`, with `value` (minutes after midnight) |
+| `label` | `size`: `s`, `m`, `ml`, `l`, `xl`, `xxl` or `huge` (14 to 192 px); `align`: `left`, `centre` or `right`; `clock`: `24` or `12`, with `value` (minutes after midnight); `fits: {min, max, step, unit}` (numbers or lookups such as `"{{ can.max }}"`; `step` 1 and `unit` empty when left out): in a row the label is at least as wide as the widest number of that range with its unit, so it is never cut (the Thermostat Tile's target "104.5°"), and at most as wide as the card; `short` (a template, with `text` a template, at sizes `s`, `m` and `l`): a shorter text shown when `text` does not fit the label, and nothing when that does not fit either, so a number is never cut ("Now 101.5", then "101.5") |
 | `button` | `selected` (an input or template); `icon_live` (an input or template, with `icon` as the fixed one); `shape`: `box`, `round` or `bare`; `big_icon: true` |
 | `switch` | `colour` |
 | `slider` | `look`: `knob` or `bar`; `direction`: `right`, `up` or `down`; `track`: `hue`, `{kelvin: [low, high]}` or a list of up to 8 colours; `icon`; `keep_active: true`; `rate` (an input or template: how much the value grows each second, for a progress bar that moves by itself) |
 | `thermostat` | `mark`; `buttons`: 36 to 64 px |
 | `chart` | `kind`: `line`, `steps` or `bars`; `mark` |
 | `image` | `look`: `box`, `badge` or `bare` |
-| `choice` | `value` (an input that gives the index), `options` (a list of `{value, text, icon, colour}`, up to 16, or a list fact, or a `colours` or multiple `choice` option), `rows`, `look`: `cells` or `dots`, `on_change`, `confirm` |
+| `choice` | `value` (an input that gives the index), `options` (a list of `{value, text, icon, colour}`, up to 16, or a list fact, or a `colours` or multiple `choice` option), `rows`, `look`: `cells` or `dots`, `on_change`, `confirm`. A choice takes more rows than `rows`, up to one per option and four, when that shows each text whole and costs no other row (three fan presets in six columns: two rows); else a text too wide for its cell is cut in the middle ("Progr…12") |
 
 `track: hue` is the colour wheel, `track: {kelvin: [low, high]}` runs from
 warm to cool white. `min`, `max` and `step` that come from a fact, an
@@ -704,7 +825,14 @@ by_hour:  {source: statistics, entity: "{{ entity }}", buckets: hour, period: to
   several devices of the action's domain, and its `result` may name a loop
   entry or an item's `vars`: every copy then renders its own value.
   Inputs with the same action and data share one call, used for half the
-  input's `refresh`:
+  input's `refresh`. Home Assistant checks the list of read actions again
+  when it runs the call.
+- A loop name gives such an input an entity only inside its loop, and
+  only a device the card was set up with. Inputs that read the same
+  history (entity and hours) share one read for every card, copy and
+  tablet. A card makes at most 16 different history, statistics and
+  read-action reads; one past them is left out and the card says part of
+  it does not fit:
 
 ```yaml
 high:
@@ -734,6 +862,9 @@ A card has at most 16 outputs. As in schema 1 an output has `action`,
   an `entities` input in `uses`. After the template it is one entity id or
   a list of 1 to 16, each a device the card was set up with and of the
   service's domain. Anything else is refused.
+- `code` is refused in the `data` of every output, not only of a lock or
+  alarm service: a card never carries a code. It is checked when the file
+  loads and again at the call, in schema 1 and 2.
 - A list as a data value is allowed only for the colour keys `hs_color`,
   `rgb_color`, `rgbw_color`, `rgbww_color` and `xy_color`; each entry must
   end as a number. A mapping is never allowed.

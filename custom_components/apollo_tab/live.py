@@ -30,8 +30,10 @@ from .const import DOMAIN
 from .maker import outputs as out2
 from .maker.compile import compile_card, public_card
 from .maker.const import (
+    CODE_KEYS,
     COLOUR_DATA_KEYS,
     CONFIRM_COVER_CLASSES,
+    READ_ACTIONS,
     SENSITIVE_DOMAINS,
     TARGET_KEYS,
 )
@@ -53,6 +55,8 @@ if TYPE_CHECKING:
 
 HISTORY_POINTS = 120
 HISTORY_REFRESH_SECONDS = 300
+# A history read is shared for a little less than its refresh.
+HISTORY_MIN_AGE_S = HISTORY_REFRESH_SECONDS - 10
 # A statistics input is read again no sooner than this (C.2.8). Its timer
 # runs a little slower, so each tick finds the shared value due.
 STATISTICS_MIN_AGE_S = 300
@@ -255,8 +259,11 @@ async def async_fetch_action(hass: HomeAssistant, slot: dict) -> Any:
     Slots with the same action and data share one call (C.2.8): the copies
     of a loop each render their own result from the one response. A kept
     response is used for half the slot's refresh time, so each slot's own
-    timer still finds it due.
+    timer still finds it due. The list of read actions is checked again
+    here, as an output's action is at its call: only those run.
     """
+    if slot.get("action") not in READ_ACTIONS:
+        return []
     domain, _, service = slot["action"].partition(".")
     try:
         response = await shared_fetches(hass).async_get(
@@ -392,10 +399,24 @@ async def async_fetch_statistics(hass: HomeAssistant, slot: dict) -> Any:
         return empty
 
 
+async def async_fetch_shared_history(hass: HomeAssistant, slot: dict) -> list[float]:
+    """Return a history slot's numbers, read once for every reader.
+
+    Cards, loop copies, tablets and their new sessions that ask for the
+    same entity and hours share one recorder read, kept a little shorter
+    than the refresh so each slot's own timer finds it due.
+    """
+    return await shared_fetches(hass).async_get(
+        _fetch_key("history", slot["entity"], slot["hours"]),
+        HISTORY_MIN_AGE_S,
+        partial(async_fetch_history, hass, slot["entity"], slot["hours"]),
+    )
+
+
 async def async_fetch_value(hass: HomeAssistant, slot: dict) -> Any:
     """Fetch one history, action or statistics slot."""
     if slot["kind"] == "history":
-        return await async_fetch_history(hass, slot["entity"], slot["hours"])
+        return await async_fetch_shared_history(hass, slot)
     if slot["kind"] == "statistics":
         return await async_fetch_statistics(hass, slot)
     return await async_fetch_action(hass, slot)
@@ -1408,6 +1429,8 @@ def _render_data2(
             "not_allowed",
             f"Output data may not target {', '.join(sorted(target_keys))}",
         )
+    if CODE_KEYS & rendered.keys():
+        raise CallError("not_allowed", "Output data may not carry a code")
     return rendered
 
 
@@ -1575,6 +1598,8 @@ async def async_run_output(
             "not_allowed",
             f"Output data may not target {', '.join(sorted(target_keys))}",
         )
+    if CODE_KEYS & service_data.keys():
+        raise CallError("not_allowed", "Output data may not carry a code")
     # No rendered value is a list or a mapping (C.2.8), for schema 1 too:
     # only a text, a number, yes or no, or none goes out (no set, no bytes).
     for key, item in service_data.items():

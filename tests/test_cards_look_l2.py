@@ -174,7 +174,11 @@ def test_a_card_about_several_devices_has_its_own_icon() -> None:
 
 
 def test_a_variant_may_say_its_own_state_line() -> None:
-    """`state` on a variant: an input or none; only for chip and tile headers."""
+    """`state` on a variant: an input or none; for chip, tile and title headers.
+
+    L5: a title header shows it at its right (Dropdown Wide), so "title"
+    left the bad list; a header of none still has no place for it.
+    """
     base = _doc(
         inputs={"is_on": "{{ is_state(entity, 'on') }}", "words": "{{ 'Hi' }}"},
         state="is_on",
@@ -195,7 +199,7 @@ def test_a_variant_may_say_its_own_state_line() -> None:
             [state] = states
             [slot] = [s for s in result["slots"] if s["n"] == state["text"]["s"]]
             assert shown in slot["template"]
-    for bad, header in (("nothing", "tile"), ("words", "title")):
+    for bad, header in (("nothing", "tile"), ("words", "none")):
         doc = copy.deepcopy(base)
         doc["variants"]["tile"].update({"state": bad, "header": header})
         with pytest.raises(MakerError, match="state"):
@@ -235,7 +239,8 @@ async def test_the_room_is_named_after_its_area_and_says_the_rest(
     hass.states.async_set("sensor.t", "21.5", {"unit_of_measurement": "°C"})
     hass.states.async_set("light.a", "on")
     texts = [await _value(hass, result, t) for t in _texts(result)]
-    assert texts[:3] == ["Room", "1 of 1 on", "21.5°C"]
+    # L4 round 2: value, space, unit, as on the reading cards.
+    assert texts[:3] == ["Room", "1 of 1 on", "21.5 °C"]
 
 
 def test_a_chip_gives_the_name_two_thirds() -> None:
@@ -394,8 +399,12 @@ async def test_the_lock_shows_no_button_while_it_is_gone(hass: HomeAssistant) ->
     hass.states.async_set("lock.a", "unlocked")
     assert [await _value(hass, result, b["vis"]) for b in buttons] == [False, True]
     tall = _compile(lock, "tall", {"entity": "lock.a"}, {}, {})
-    badge = tall["widgets"][0]
-    assert badge["t"] == "image" and badge["r"][1] > 16 + 40
+    # LOOK-NOTES decision 14: Lock Tall has the tile header; the large
+    # badge sits under it.
+    badge = max(
+        (w for w in tall["widgets"] if w["t"] == "image"), key=lambda w: w["r"][3]
+    )
+    assert badge["r"][1] >= 16 + 48 + 8
 
 
 async def test_media_shows_what_is_playing(hass: HomeAssistant) -> None:

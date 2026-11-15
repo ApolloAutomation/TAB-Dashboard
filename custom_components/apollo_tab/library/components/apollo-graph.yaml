@@ -59,7 +59,10 @@ variants:
   wide:
     name: Wide
     grid: [12, 3]
-    header: title
+    # The badge and the name (LOOK-NOTES decision 14); the reading is the
+    # line under it, so the header has no state line of its own.
+    header: tile
+    state: none
     v1: apollo/sensor-graph
     layout:
       # The reading, and the range at its right: the chart gets the rest.
@@ -93,7 +96,8 @@ variants:
   large:
     name: Large
     grid: [12, 6]
-    header: title
+    header: tile
+    state: none
     v1: apollo/sensor-graph
     layout:
       - {use: reading}

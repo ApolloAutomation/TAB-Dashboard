@@ -25,11 +25,15 @@ inputs:
 outputs:
   set:  {action: {number: number.set_value, input_number: input_number.set_value},
          data: {entity_id: "{{ entity }}", value: "{{ value }}"}, feedback: optimistic}
+  # Minus and plus go to the next step of the number's grid (min, min +
+  # step, ...), kept in range, and give a step's number, not 0.30000000000000004.
   down: {action: {number: number.set_value, input_number: input_number.set_value}, uses: {now: number},
-         data: {entity_id: "{{ entity }}", value: "{{ [now - can.step, can.min] | max }}"},
+         data: {entity_id: "{{ entity }}",
+                value: "{{ [(((now - can.min) / can.step) | round(6) | round(0, 'ceil') - 1) * can.step + can.min, can.min] | max | round(6) }}"},
          feedback: optimistic}
   up:   {action: {number: number.set_value, input_number: input_number.set_value}, uses: {now: number},
-         data: {entity_id: "{{ entity }}", value: "{{ [now + can.step, can.max] | min }}"},
+         data: {entity_id: "{{ entity }}",
+                value: "{{ [(((now - can.min) / can.step) | round(6) | round(0, 'floor') + 1) * can.step + can.min, can.max] | min | round(6) }}"},
          feedback: optimistic}
 
 state: text

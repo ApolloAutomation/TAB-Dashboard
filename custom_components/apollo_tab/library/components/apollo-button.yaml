@@ -11,7 +11,9 @@ params:
 
 inputs:
   name: "{{ state_attr(entity, 'friendly_name') or entity }}"
-  gone: "{{ is_state(entity, 'unavailable') }}"
+  # Gone, or missing from Home Assistant: the card fades. A button's state
+  # is "unknown" until it is first pressed, so that is not gone.
+  gone: "{{ is_state(entity, 'unavailable') or expand(entity) | count == 0 }}"
 
 outputs:
   press: {action: {button: button.press, input_button: input_button.press, script: script.turn_on,
@@ -41,15 +43,20 @@ variants:
   small:
     name: Small
     grid: [6, 2]
-    # The name on its own line across the card.
-    header: tile_v
+    # The badge, the name across the card under it, as on the other tiles
+    # (LOOK-NOTES decision 14).
+    header: tile
     layout:
       - {use: old_button}
   tile:
     name: Tile
     grid: [6, 3]
-    header: tile_v
+    # As Small; a large button takes the foot (LOOK-NOTES decision 14). In
+    # a taller card it stops at 120, as the Switch Tile's does.
+    header: tile
     layout:
+      - {type: button, icon: "mdi:play", on_tap: press, big_icon: true, grow: true,
+         most: 120, when: [tablet.v2]}
       - {use: old_button}
 
 preview:

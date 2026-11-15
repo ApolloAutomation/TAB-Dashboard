@@ -33,6 +33,7 @@ from .const import (
     ALLOWED_SERVICES,
     CARD_GROUPS,
     CHOICE_KEY_RE,
+    CODE_KEYS,
     COLOUR_DATA_KEYS,
     COLOUR_ROLES,
     DATA_KEY_RE,
@@ -154,6 +155,9 @@ _TOP_KEYS = {
     "align",
 }
 
+# The longest unit after a label's `fits` number ("°", " °C", " kWh").
+MAX_FITS_UNIT = 8
+
 # Keys every widget may carry, then the keys of each type. `colour` is not
 # offered on a choice and `on_hold` only where contract v2 has `hold`.
 _WIDGET_COMMON = {
@@ -171,9 +175,22 @@ _WIDGET_COMMON = {
     "at_most",
     "two_rows",
     "use",
+    "drop",
+    "most",
+    "most_grown",
 }
 _WIDGET_KEYS = {
-    "label": {"text", "size", "align", "clock", "value", "on_tap", "confirm"},
+    "label": {
+        "text",
+        "size",
+        "align",
+        "clock",
+        "value",
+        "on_tap",
+        "confirm",
+        "fits",
+        "short",
+    },
     "button": {
         "text",
         "icon",
@@ -1112,6 +1129,8 @@ def _validate_data2(raw: object, path: str) -> dict:
             raise MakerError(
                 "bad_value", kpath, f"{key} would reach beyond the picked entity"
             )
+        if key in CODE_KEYS:
+            raise MakerError("bad_value", kpath, "a card carries no code (D.4)")
         if isinstance(value, list):
             if key not in COLOUR_DATA_KEYS:
                 raise MakerError(
@@ -1403,6 +1422,17 @@ def _choice_options(value: object, path: str, ctx: _Ctx, env: dict) -> dict:
     return {"kind": "list", "entries": entries}
 
 
+def _names_a_loop(name: str, ctx: _Ctx) -> bool:
+    """Return whether a name is a loop's `as` name or its `<as>_can`.
+
+    A var of that name would hand an input or an output another entity
+    than the loop's (C.2.8): the loop's names win in no order.
+    """
+    if name in ctx.loops:
+        return True
+    return name.endswith("_can") and name[: -len("_can")] in ctx.loops
+
+
 def _vars(raw: object, path: str, ctx: _Ctx) -> dict:
     """Validate an item's vars: names that hide nothing, constant values."""
     if raw is None:
@@ -1414,7 +1444,7 @@ def _vars(raw: object, path: str, ctx: _Ctx) -> dict:
     for name, value in values.items():
         vpath = f"{path}.{name}"
         _name(name, vpath)
-        if name in ctx.used:
+        if name in ctx.used or _names_a_loop(name, ctx):
             raise MakerError("bad_name", vpath, f"{name!r} would hide another name")
         if not isinstance(value, str | int | float | bool) or _is_template(value):
             raise MakerError("bad_value", vpath, "a var is a constant")
@@ -1445,7 +1475,7 @@ def _loop(item: dict, path: str, ctx: _Ctx, scope: dict) -> dict | None:
     _name(as_name, f"{path}.as")
     if as_name in ctx.used or as_name in ctx.vars_names:
         raise MakerError("duplicate_name", f"{path}.as", f"duplicate name {as_name!r}")
-    if loop["kind"] == "param" and f"{as_name}_can" in ctx.used:
+    if f"{as_name}_can" in ctx.used or f"{as_name}_can" in ctx.vars_names:
         raise MakerError("duplicate_name", f"{path}.as", f"{as_name}_can is taken")
     key = (loop["kind"], loop.get("name"), repr(loop.get("entries")))
     previous = ctx.loops.setdefault(as_name, {"key": key, "loop": loop})
@@ -1605,6 +1635,30 @@ def _size_keys(item: dict, path: str, where: str) -> dict:
             out["width"] = _int(item["width"], f"{path}.width", 1, 1160)
         if "weight" in item:
             out["weight"] = _int(item["weight"], f"{path}.weight", 1, 12)
+    if "drop" in item:
+        # When the rows do not fit, this row goes first, the lowest first.
+        if where in ("row", "swap"):
+            raise MakerError(
+                "bad_value", f"{path}.drop", "drop is for a row of the card"
+            )
+        out["drop"] = _int(item["drop"], f"{path}.drop", 1, 8)
+    if "most" in item:
+        # A row that grows takes spare height up to this many pixels.
+        if where in ("row", "swap"):
+            raise MakerError(
+                "bad_value", f"{path}.most", "most is for a row of the card"
+            )
+        if "height" in item:
+            raise MakerError("bad_value", path, "height or most, not both")
+        out["most"] = _int(item["most"], f"{path}.most", 16, 696)
+    if "most_grown" in item:
+        # In a card drawn larger than its grid the row takes up to this
+        # instead: the main row of a grown card fills more of it (L4).
+        if "most" not in item:
+            raise MakerError("bad_value", f"{path}.most_grown", "most_grown needs most")
+        out["most_grown"] = _int(
+            item["most_grown"], f"{path}.most_grown", out["most"], 696
+        )
     return out
 
 
@@ -1618,6 +1672,10 @@ def _row(item: dict, path: str, ctx: _Ctx, where: str, scope: dict) -> dict:
             "when",
             "visible",
             "height",
+            "grow",
+            "drop",
+            "most",
+            "most_grown",
             "for_each",
             "as",
             "per_row",
@@ -1670,7 +1728,11 @@ def _swap(item: dict, path: str, ctx: _Ctx, where: str, scope: dict) -> dict:
     """Validate a swap: items that share one place, each with visible."""
     if where in ("row", "swap"):
         raise MakerError(_BAD_NESTING, path, f"a {where} may not hold a swap")
-    _reject_unknown_keys(item, {"type", "items", "when", "height"}, path)
+    _reject_unknown_keys(
+        item,
+        {"type", "items", "when", "height", "drop", "most", "most_grown"},
+        path,
+    )
     raw_items = _required(item, "items", path)
     if not isinstance(raw_items, list) or not 2 <= len(raw_items) <= MAX_ROW_ITEMS_2:
         raise MakerError(
@@ -1827,7 +1889,41 @@ def _label_body(item: dict, path: str, ctx: _Ctx, env: dict) -> dict:
     on_tap = _trigger(item, "on_tap", path, ctx)
     out["on_tap"] = on_tap
     out["confirm"] = _confirm(item, path, ctx, env, on_tap)
+    if "fits" in item:
+        out["fits"] = _fits(item["fits"], f"{path}.fits", ctx, env)
+    if "short" in item:
+        # A shorter text for a label too narrow for its text; when that
+        # does not fit either, the label is empty. Never a cut number.
+        if "text" not in item:
+            raise MakerError("bad_value", f"{path}.short", "short needs text")
+        out["short"] = _mark(
+            item["short"], f"{path}.short", ctx, env, inputs=False, const=_text_const
+        )
     return out
+
+
+def _fits(spec: object, path: str, ctx: _Ctx, env: dict) -> dict:
+    """Validate a label's `fits`: the range of numbers it must show whole.
+
+    {min, max, step, unit}: min and max as a slider's (a number, a lookup
+    or a template), step 1 when left out, unit a short text after the
+    number. The label is at least as wide as the widest of them.
+    """
+    if not isinstance(spec, dict):
+        raise MakerError("bad_value", path, "fits is {min, max, step, unit}")
+    _reject_unknown_keys(spec, {"min", "max", "step", "unit"}, path)
+    for key in ("min", "max"):
+        if key not in spec:
+            raise MakerError("missing_key", f"{path}.{key}", f"fits needs {key}")
+    unit = spec.get("unit", "")
+    if not isinstance(unit, str) or len(unit) > MAX_FITS_UNIT:
+        raise MakerError("bad_value", f"{path}.unit", "unit is a short text")
+    return {
+        "min": _bound(spec, "min", 0.0, path, ctx, env),
+        "max": _bound(spec, "max", 100.0, path, ctx, env),
+        "step": _bound(spec, "step", 1.0, path, ctx, env),
+        "unit": unit,
+    }
 
 
 def _button_body(item: dict, path: str, ctx: _Ctx, env: dict) -> dict:
@@ -2059,6 +2155,7 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
             "needs",
             "needs_text",
             "state",
+            "badge",
         },
         path,
     )
@@ -2083,6 +2180,11 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
             "a card one row high has room for a chip only",
         )
     trailing = _trailing(spec, prefix, header, ctx, card)
+    # false: a tile whose name beside the badge would be cut shows the name
+    # alone, across the card, on up to two lines (a reading tile, L4).
+    badge = _bool(spec.get("badge", True), f"{prefix}badge")
+    if not badge and header != "tile":
+        raise MakerError("bad_value", f"{prefix}badge", "badge is for the tile header")
     out = {
         "name": name,
         "grid": [columns, rows],
@@ -2094,6 +2196,7 @@ def _variant(spec: object, path: str, ctx: _Ctx, card: dict) -> dict:
         "needs": needs,
         "needs_text": needs_text,
         "state": _variant_state(spec, prefix, header, ctx),
+        "badge": badge,
     }
     layout = _required(spec, "layout", path)
     lpath = f"{prefix}layout"
@@ -2118,8 +2221,10 @@ def _variant_state(spec: dict, prefix: str, header: str, ctx: _Ctx) -> dict | No
     if "state" not in spec:
         return None
     path = f"{prefix}state"
-    if header not in ("chip", "tile", "tile_v"):
-        raise MakerError("bad_value", path, "state is for the chip and tile headers")
+    if header not in ("chip", "tile", "tile_v", "title"):
+        raise MakerError(
+            "bad_value", path, "state is for the chip, tile and title headers"
+        )
     value = spec["state"]
     if value == "none":
         return {"form": "none"}

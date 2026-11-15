@@ -10,7 +10,8 @@ params:
   entities: {domain: any, multiple: true, max: 8, label: Devices}
 
 inputs:
-  gone: "{{ entities | select('is_state', 'unavailable') | list | count == entities | count }}"
+  # Every device gone, or missing from Home Assistant: the card fades.
+  gone: "{{ entities | reject('has_value') | list | count == entities | count }}"
 
 unavailable: gone
 lit: none
@@ -64,9 +65,9 @@ variants:
     name: Large
     grid: [12, 6]
     header: title
-    # The lines start under the title and share its height.
-    align: top
-    layout: [{use: lines}, {use: old_lines}]
+    # The lines share the room under the title, 56 high at most; what is left stays at
+    # the foot (LOOK-NOTES decision 12).
+    layout: [{use: lines, most: 56}, {use: old_lines}]
 
 preview:
   params: {entities: [sensor.living_room, sensor.bedroom, sensor.outside]}

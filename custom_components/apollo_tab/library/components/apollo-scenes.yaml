@@ -17,7 +17,10 @@ options:
                choices: {"2": Two, "4": Four}}
 
 inputs:
-  gone: "{{ scenes | select('is_state', 'unavailable') | list | count == scenes | count }}"
+  # Every scene gone or missing from Home Assistant: the card fades. A
+  # scene that never ran is "unknown", which is not gone.
+  gone: >-
+    {{ scenes | select('is_state', 'unavailable') | list | count + (scenes | count - expand(scenes) | count) >= scenes | count }}
 
 outputs:
   run: {action: {scene: scene.turn_on, script: script.turn_on}, data: {entity_id: "{{ s }}"},
@@ -51,10 +54,11 @@ variants:
     name: Large
     grid: [12, 6]
     header: title
-    # The buttons share the card's height, as on Wide.
+    # The rows of buttons grow to 56 at most, as List rows do; a card with
+    # few scenes keeps the rest as its foot (coordinator, L4).
     layout:
-      - {use: named, per_row: 2, big_icon: true, grow: true}
-      - {use: bare, per_row: 2, big_icon: true, grow: true}
+      - {use: named, per_row: 2, big_icon: true, grow: true, most: 56}
+      - {use: bare, per_row: 2, big_icon: true, grow: true, most: 56}
 
 preview:
   params: {scenes: [scene.movie, scene.dinner, scene.relax, scene.all_off]}

@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable, Mapping, Set
 from typing import Any
 
-from .compile import compile_card
+from .compile import add_unavailable, compile_card, cut_names
 from .compile2 import compile_card2, role_table, validate_card_config2
 from .compile2_v1 import compile_card2_v1, level1_names, note_card, variant_of
 from .const import (
@@ -693,6 +693,9 @@ def _convert_card(
         return None
     if compiled.get("demo"):
         warnings.append(_warning("params_incomplete", vi, si, ci))
+    if env["dl"] == 2:
+        add_unavailable(component, card_config, compiled)
+        cut_names(component, card_config, compiled)
     if "element_clipped" in (compiled.get("warnings") or []):
         warnings.append(_warning("element_clipped", vi, si, ci))
     if card.get("visibility"):
@@ -1118,24 +1121,49 @@ def _apply_caps(page: dict, warnings: list[dict], dl: int = 1) -> None:
 def _cap_tracks(
     page: dict, item: dict, tracks: int, warnings: list[dict]
 ) -> tuple[dict, int]:
-    """Take the track off the sliders of a card past the page's budget."""
+    """Take the track off the sliders of a card past the page's budget.
+
+    A bar without its colours would read as a level ("22 %" of a white
+    bar). Where the same place holds a copy with an icon and no track (a
+    lamp's colour and white bars while it is off), that copy shows
+    always and the bar that lost its track never does (L5).
+    """
     widgets = item["compiled"].get("widgets") or []
-    over = False
-    out = []
-    for widget in widgets:
+    over: list[int] = []
+    for index, widget in enumerate(widgets):
         if (
             isinstance(widget, dict)
             and widget.get("t") == "slider"
             and "track" in widget
         ):
             if tracks >= MAX_TRACKS_PER_PAGE:
-                widget = {key: value for key, value in widget.items() if key != "track"}
-                over = True
+                over.append(index)
             else:
                 tracks += 1
-        out.append(widget)
     if not over:
         return item, tracks
+    out = list(widgets)
+    for index in over:
+        widget = {key: value for key, value in widgets[index].items() if key != "track"}
+        plain = next(
+            (
+                other
+                for other, copy in enumerate(widgets)
+                if other != index
+                and isinstance(copy, dict)
+                and copy.get("t") == "slider"
+                and copy.get("r") == widget.get("r")
+                and "icon" in copy
+                and "track" not in copy
+            ),
+            None,
+        )
+        if plain is not None:
+            widget["vis"] = False
+            out[plain] = {
+                key: value for key, value in out[plain].items() if key != "vis"
+            }
+        out[index] = widget
     warnings.append(
         _warning(
             "over_budget_tracks",
@@ -1234,6 +1262,9 @@ def _build_card(
         out["header"] = built_header
     if compiled.get("on") is not None:
         out["on"] = _renumber(compiled["on"], ctx)
+    if compiled.get("un") is not None:
+        # Only a layout v2 gives a schema 1 card one (add_unavailable).
+        out["un"] = _renumber(compiled["un"], ctx)
     if item.get("style"):
         out["style"] = item["style"]
     widget_ids: dict[int, int] = {}

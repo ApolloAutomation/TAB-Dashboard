@@ -45,6 +45,14 @@ inputs:
   # white while the lamp shows one ("On · 55% · 3000 K").
   readout: >-
     {{ [state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K') if is_on and kelvin is number else ''] | select | join(' · ') }}
+  # The tile's state line: the state and the brightness ("On · 68%").
+  tile_line: "{{ [state_translated(entity), level] | select | join(' · ') }}"
+  # Large for a lamp that only dims shows its brightness large, so its
+  # header line says only the state: two lines, as on every Large card.
+  large_line: "{{ readout if can.colour or can.temperature else state_translated(entity) }}"
+  # The brightness, or a dash while there is none: the header line says why
+  # ("Off", "unavailable"), so "Off" shows once.
+  big:       "{{ level if level else '—' }}"
 
 outputs:
   toggle:         {action: light.toggle,  data: {entity_id: "{{ entity }}"}, feedback: optimistic}
@@ -106,19 +114,25 @@ parts:
             when: [can.effects, effects_shown]}
   switch:  {type: switch, value: is_on, on_tap: toggle}
   # A lamp that only turns on and off: one large button fills the wide card.
+  # In a taller card it stops at 120, not a block of light in a dark room;
+  # in a card grown past its grid at 160 (L4).
   power:   {type: button, icon: mdi:power, on_tap: toggle, selected: is_on, big_icon: true, grow: true,
-            when: ["!can.brightness"]}
+            most: 120, most_grown: 160, when: ["!can.brightness"]}
 
 variants:
   tile:
     name: Tile
     grid: [6, 3]
-    header: tile_v
-    trailing: level                       # "68%" at the top right
+    # As Lights together: the name over "On · 68%", then the bar takes the
+    # tile's height (LOOK-NOTES decision 10). The level joins the state
+    # line: a column at the right would leave the name four letters.
+    header: tile
+    state: tile_line
     v1: apollo/light-tile
     layout:
-      - {use: dim, when: [can.brightness, show_brightness, bar_on_tile]}
+      - {use: dim, grow: true, when: [can.brightness, show_brightness, bar_on_tile]}
       - {use: level, when: [can.brightness, "!bar_on_tile"]}
+      - {use: power}
   wide:
     name: Wide
     grid: [12, 3]
@@ -140,9 +154,31 @@ variants:
     needs_text: This light only turns on and off
     header: tile
     trailing: switch
-    state: readout
     v1: apollo/light-slider
-    layout: [{use: dim, grow: true}, {use: hue}, {use: sat, grow: true}, {use: white}, {use: dots}]
+    # Every row at least 48 high. When they do not fit, the favourite dots
+    # go first, then saturation; both stay on the controls page (LOOK-NOTES
+    # decision 11). A lamp that only dims shows its brightness large, in the
+    # middle of the room over a bar of 128, not one bar of the card's height;
+    # the number stops at 152, so the bar follows it in a taller card.
+    # Colour, strength and white stop at 72: the height left over goes to
+    # brightness, up to 192; a card grown taller keeps the rest as its foot
+    # (LOOK-NOTES decision 12). Grown past its grid every bar goes further,
+    # brightness to 320, colour, strength and white to 144, so the owner's
+    # lamp (brightness, colour, white) fills a card of twelve rows. The
+    # number of a lamp that only dims keeps its 152 there and its bar takes
+    # the height, up to 320: no band over 56 above or under the number. A
+    # foot over 56 is shared above the header and under the rows (L4).
+    state: large_line
+    layout:
+      - {type: label, text: "{{ big }}", size: xxl, align: centre, grow: true, most: 152,
+         when: ["!can.colour", "!can.temperature"]}
+      - {use: dim, grow: true, most: 128, most_grown: 320, when: ["!can.colour", "!can.temperature"]}
+      - {use: dim, grow: true, most: 192, most_grown: 320, when: [can.colour]}
+      - {use: dim, grow: true, most: 192, most_grown: 320, when: ["!can.colour", can.temperature]}
+      - {use: hue, most: 72, most_grown: 144}
+      - {use: sat, grow: true, most: 72, most_grown: 144, drop: 2}
+      - {use: white, most: 72, most_grown: 144}
+      - {use: dots, drop: 1}
   full:
     name: Controls
     grid: [18, 11]
@@ -168,4 +204,5 @@ detail: full
 preview:
   can: {brightness: true, colour: true, temperature: true, effects: false, min_kelvin: 2000, max_kelvin: 6500}
   inputs: {is_on: true, pct: 68, colour: 16757575, hue_tone: 16744448, hue: 30, sat: 58, kelvin: null,
-           level: "68%", state: "On", readout: "On · 68%"}
+           level: "68%", state: "On", readout: "On · 68%", tile_line: "On · 68%",
+           large_line: "On · 68%", big: "68%"}

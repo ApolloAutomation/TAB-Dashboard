@@ -282,23 +282,9 @@ async def test_number_and_graph_never_say_unavailable_with_a_unit(
             {},
         ),
         ("apollo/fan-speed", "large", {"entity": "fan.a"}, {"fan.a": FAN_RAW}),
-        (
-            "apollo/fan-speed",
-            "large",
-            {"entity": "fan.a"},
-            {
-                "fan.a": {
-                    **FAN_RAW,
-                    "registry": {
-                        **FAN_RAW["registry"],
-                        "capabilities": {
-                            "preset_modes": ["auto", "sleep", "breeze"],
-                            "percentage_step": 25,
-                        },
-                    },
-                }
-            },
-        ),
+        # A fan with three presets leaves an empty foot: its presets are
+        # 56 high, not stretched (LOOK-NOTES decision 12; see
+        # test_cards_look_l3.py).
     ],
 )
 def test_no_empty_foot_at_the_default_size(

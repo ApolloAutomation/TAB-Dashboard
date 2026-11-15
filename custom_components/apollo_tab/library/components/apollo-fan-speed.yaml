@@ -26,7 +26,8 @@ inputs:
     {{ can.presets.index(state_attr(entity, 'preset_mode')) if state_attr(entity, 'preset_mode') in can.presets else none }}
   turning:   "{{ state_attr(entity, 'oscillating') }}"
   gone:      "{{ states(entity) in ['unavailable', 'unknown'] }}"
-  state:     "{{ state_translated(entity) ~ (', ' ~ pct ~ '%' if is_on and can.speed else '') }}"
+  # "On · 50%", joined as the lights join their state line.
+  state:     "{{ state_translated(entity) ~ (' · ' ~ pct ~ '%' if is_on and can.speed else '') }}"
 
 outputs:
   toggle:     {action: fan.toggle, data: {entity_id: "{{ entity }}"}, feedback: optimistic}
@@ -62,8 +63,10 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
-    header: tile_v
-    layout: [{use: speed}]
+    # As Lights together: the name over "On · 50%", then the bar takes the
+    # tile's height (LOOK-NOTES decision 10).
+    header: tile
+    layout: [{use: speed, grow: true}]
   wide:
     name: Wide
     grid: [12, 3]
@@ -77,11 +80,10 @@ variants:
     grid: [12, 6]
     header: tile
     trailing: switch
-    # The controls stack down from the header, the bar the tallest. The
-    # presets take what is left, so a fan with few presets leaves no empty
-    # foot.
-    align: top
-    layout: [{use: speed, height: 96}, {use: presets, grow: true}, {use: turning, height: 56}]
+    # The controls stack down from the header, the bar the tallest. Each
+    # row of presets is 56 high; what is left stays at the foot (LOOK-NOTES
+    # decision 12).
+    layout: [{use: speed, height: 96}, {use: presets, height: 56}, {use: turning, height: 56}]
   full:
     name: Controls
     grid: [18, 11]
@@ -99,4 +101,4 @@ detail: full
 preview:
   params: {entity: fan.example}
   can: {speed: true, oscillate: true, presets: [Breeze, Sleep], step: 25}
-  inputs: {is_on: true, pct: 50, preset_at: null, turning: false, gone: false, state: "On, 50%"}
+  inputs: {is_on: true, pct: 50, preset_at: null, turning: false, gone: false, state: "On · 50%"}

@@ -77,8 +77,9 @@ variants:
     grid: [6, 3]
     header: tile_v
     trailing: level
+    # A bar that only shows: a tile_v header leaves no slider 48 high.
     layout:
-      - {use: dim}
+      - {type: slider, look: bar, value: pct, min: 0, max: 100}
   wide:
     name: Wide
     grid: [12, 3]

@@ -449,10 +449,14 @@ def test_the_light_offers_large_only_for_a_lamp_that_dims() -> None:
 
 @pytest.mark.parametrize(
     ("facts", "variant"),
-    [(COLOUR_LAMP, "large"), (DIM_LAMP, "large"), (ONOFF_LAMP, "tile")],
+    [(COLOUR_LAMP, "large"), (DIM_LAMP, "large"), (ONOFF_LAMP, "wide")],
 )
 def test_a_stored_large_light(facts: dict, variant: str) -> None:
-    """The colour lamp and the dim-only lamp keep Large; the on/off lamp gets Tile."""
+    """The colour lamp and the dim-only lamp keep Large; the on/off lamp gets Wide.
+
+    Wide is the largest size that holds and fits 12 x 6 (LOOK-NOTES decision
+    14; it was Tile, the first size of the picker).
+    """
     stored = {"variant": "large", "grid_options": {"columns": 12, "rows": 6}}
     result = _compile(LIGHT, facts, **stored)
     assert result["variant"] == variant
@@ -470,17 +474,17 @@ def test_a_large_light_card_with_no_variant_stored(facts: dict, variant: str) ->
 
 
 def test_the_version_1_form_reads_the_facts_for_the_variant() -> None:
-    """Large stored for an on/off lamp gives the Tile's old card (C.6)."""
+    """Large stored for an on/off lamp gives the Wide's old card (C.6, decision 14)."""
     stored = {"variant": "large", "grid_options": {"columns": 12, "rows": 6}}
     cfg = validate_card_config2(LIGHT, {"params": {"entity": "light.lamp"}, **stored})
     assert variant_of(LIGHT, cfg, {"light.lamp": COLOUR_LAMP}) == "large"
-    assert variant_of(LIGHT, cfg, {"light.lamp": ONOFF_LAMP}) == "tile"
+    assert variant_of(LIGHT, cfg, {"light.lamp": ONOFF_LAMP}) == "wide"
     colour = _convert(LIGHT, COLOUR_LAMP, 1, **stored)
     onoff = _convert(LIGHT, ONOFF_LAMP, 1, **stored)
     [colour_card] = [w for w in colour["layout"]["pages"][0]["w"] if w["t"] == "card"]
     [onoff_card] = [w for w in onoff["layout"]["pages"][0]["w"] if w["t"] == "card"]
     assert colour_card["component"] == "apollo/light-slider"
-    assert onoff_card["component"] == "apollo/light-tile"
+    assert onoff_card["component"] == "apollo/light-slider"
 
 
 def test_the_light_needs_brightness_for_large_and_its_controls() -> None:

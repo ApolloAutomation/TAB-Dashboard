@@ -7,6 +7,7 @@ from .const import (
     ALLOWED_ACTION_DOMAINS,
     ALLOWED_DOMAIN_SERVICES,
     BORDERS,
+    CODE_KEYS,
     COLOR_RE,
     CORNERS,
     DATA_KEY_RE,
@@ -219,6 +220,8 @@ def _validate_data(data: object, path: str, *, allow_templates: bool) -> dict:
             raise MakerError(
                 "bad_value", kpath, f"{key} would reach beyond the picked entity"
             )
+        if key in CODE_KEYS:
+            raise MakerError("bad_value", kpath, "a card carries no code (D.4)")
         if isinstance(value, bool | int | float):
             continue
         if isinstance(value, str):

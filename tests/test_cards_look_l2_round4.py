@@ -180,8 +180,10 @@ async def test_the_room_caption_has_no_unit_while_its_device_is_gone(
             for w in labels
             if isinstance(w["text"], dict)
         ]
-        [line] = [t for t in texts if str(t).startswith("House Power")]
-        return line
+        # LOOK-NOTES decision 14: the name and the value are two labels
+        # side by side; the value is never cut.
+        start = next(i for i, t in enumerate(texts) if str(t) == "House Power")
+        return ": ".join(str(t) for t in texts[start : start + 2])
 
     hass.states.async_set("sensor.p", "1840", attributes)
     assert await caption() == "House Power: 1840 W"

@@ -70,14 +70,17 @@ async def test_the_gauge_says_when_its_sensor_is_gone(hass: HomeAssistant) -> No
         texts = [await _value(hass, result, t) for t in _texts(result)]
         assert "0" not in " ".join(str(t) for t in texts), variant
         if variant == "large":
-            assert texts == ["unavailable"]
+            # LOOK-NOTES decision 14: the tile header's name, then the line.
+            # L4 round 2: a sensor with no name is named by its object id.
+            assert texts == ["P", "unavailable"]
         hass.states.async_set("sensor.p", "1840", {"unit_of_measurement": "W"})
         assert await _value(hass, result, dial["value"]) == 1840
         assert await _value(hass, result, result["un"]) is False
         texts = [await _value(hass, result, t) for t in _texts(result)]
         if variant == "large":
-            assert texts == ["0 to 5000 W"]
-    assert _texts(_compile(gauge, "tile", {"entity": "sensor.p"}, {}, {})) == []
+            assert texts == ["P", "0 to 5000 W"]
+    # LOOK-NOTES decision 14: on Tile the header's name is the one text.
+    assert len(_texts(_compile(gauge, "tile", {"entity": "sensor.p"}, {}, {}))) == 1
 
 
 async def test_the_room_is_honest_while_its_devices_are_gone(
@@ -107,7 +110,7 @@ async def test_the_room_is_honest_while_its_devices_are_gone(
         hass.states.async_set("sensor.h", "48")
         hass.states.async_set("light.a", "off")
         texts = [await _value(hass, result, t) for t in _texts(result)]
-        assert "48% · 0 of 3 on" in texts and "21.5°C" in texts, texts
+        assert "48% · 0 of 3 on" in texts and "21.5 °C" in texts, texts
         if buttons:
             assert [await _value(hass, result, b["vis"]) for b in buttons] == [
                 False,
@@ -202,8 +205,11 @@ def test_a_short_list_shares_the_height_of_its_card(
     assert len(rows) == len(entities)
     assert rows[0] == 16 + 32 + 8
     bottom = max(w["r"][1] + w["r"][3] for w in result["widgets"])
-    assert result["h"] - 16 - bottom < 8
-    assert {w["r"][3] for w in result["widgets"]} == {result["widgets"][0]["r"][3]}
+    [height] = {w["r"][3] for w in result["widgets"] if w["t"] == "label"}
+    # LOOK-NOTES decisions 12 and 14: the lines share the height up to 56
+    # each; a short list leaves the rest at the foot.
+    assert height <= 56
+    assert result["h"] - 16 - bottom < 8 or height == 56
 
 
 def test_people_tall_keeps_a_short_name_whole() -> None:
@@ -223,7 +229,10 @@ def test_a_list_value_has_the_room_of_a_value_and_the_name_the_rest() -> None:
         )
         icon, name, value = result["widgets"][:3]
         assert value["r"][2] == value_w
-        assert name["r"][0] + name["r"][2] + 8 == value["r"][0]
+        # L4 round 3 (critic major, decision 14): the name's label spans
+        # the line and gets the room the value shown leaves (room_beside);
+        # the value is drawn over its end.
+        assert name["r"][0] + name["r"][2] == value["r"][0] + value["r"][2]
         assert value["r"][0] + value["r"][2] == result["w"] - 16
 
 
@@ -316,7 +325,8 @@ def test_a_tile_v_header_without_a_state_line_ends_under_the_name() -> None:
     assert laid["header"]["name"] == [16, 68, 152, 28]
     assert TILE_V_NO_STATE_H == 80
     [[[button]]] = laid["rects"]
-    assert button[1] >= 16 + 80 + 8 and button[1] + button[3] == 184 - 16
+    # The row sits right under the name (LOOK-NOTES decision 12).
+    assert button[1] == 16 + 80 + 8
     full = layout_card2([], 184, 184, "tile_v", None)["header"]
     assert "state" in full
 
@@ -335,7 +345,10 @@ async def test_the_small_and_tile_names_are_not_cut(hass: HomeAssistant) -> None
     lock = _compile(
         COMPONENTS["apollo/door-lock"], "tile", {"entity": "lock.f"}, {}, {}
     )
-    state = next(w for w in lock["widgets"] if w["t"] == "label" and w.get("al") == 2)
+    # LOOK-NOTES decision 14: the tile header on the Lock Tile, so its state
+    # sits beside the badge as on every tile, not at the right edge.
+    assert not [w for w in lock["widgets"] if w.get("al") == 2]
+    state = next(w for w in lock["widgets"] if w["t"] == "label" and w["r"][0] == 68)
     hass.states.async_set("lock.f", "locked")
     assert await _value(hass, lock, state["text"]) == "locked"
     switch = _compile(
@@ -368,9 +381,11 @@ def test_up_to_four_scenes_share_two_rows_on_wide() -> None:
     scenes = COMPONENTS["apollo/scenes"]
     for count, widths in (
         (4, [168, 168, 168, 168]),
-        (3, [168, 168, 344]),
+        # LOOK-NOTES decision 14: no lone full-width button, and the
+        # column count that cuts the least (six share two rows of three).
+        (3, [168, 168, 168]),
         (2, [168, 168]),
-        (6, [80, 80, 80, 80, 168, 168]),
+        (6, [109, 109, 110, 109, 109, 110]),
     ):
         result = _compile(scenes, "wide", {"scenes": SCENES[:count]}, {}, {})
         _inside(result, str(count))

@@ -62,9 +62,9 @@ variants:
     name: Tall
     grid: [6, 6]
     header: title
-    # The list starts under the title; its lines share the height.
-    align: top
-    layout: [{use: lines}, {use: old_lines}]
+    # The lines share the room under the title, 56 high at most; what is left stays at
+    # the foot (LOOK-NOTES decisions 12 and 14).
+    layout: [{use: lines, most: 56}, {use: old_lines}]
 
 preview:
   params: {people: [person.anna, person.ben, person.cleo]}

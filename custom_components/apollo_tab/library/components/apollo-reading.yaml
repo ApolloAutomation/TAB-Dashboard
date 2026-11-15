@@ -73,6 +73,8 @@ parts:
     items:
       - {type: label, text: "{{ big_line }}", size: xl, visible: is_number}
       - {type: label, text: "{{ big_line }}", size: ml, visible: "{{ not is_number }}"}
+  # The tile's state line goes under its value: why there is none.
+  gone:    {type: label, text: "{{ gone_line }}", size: s, when: [tablet.v2]}
   # What a tablet with older software shows instead.
   old: {type: label, text: "{{ line }}", size: l, when: ["!tablet.v2"]}
 
@@ -90,13 +92,17 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
-    header: none
+    # As the Link Tile: the name alone, on two lines ("Living Room" over
+    # "Temperature"), then the value; a badge would leave the name a few
+    # letters under an empty line (L4). Without a value a dash, and the
+    # line under it says why.
+    header: tile
+    badge: false
+    state: none
     v1: apollo/sensor-value
     layout:
-      - {type: row, when: [tablet.v2], height: 44,
-         items: [{type: image, value: icon, look: badge, colour: tone, width: 44}]}
       - {use: big}
-      - {type: label, text: "{{ state_attr(entity, 'friendly_name') or entity }}", size: m}
+      - {use: gone}
       - {use: old}
   wide:
     name: Wide
