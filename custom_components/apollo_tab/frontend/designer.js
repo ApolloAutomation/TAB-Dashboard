@@ -22,6 +22,8 @@ import {
   focusLost,
   icon,
   makeButton,
+  resetParts,
+  showPart,
   restoreFocus,
   screenHeading,
   uid,
@@ -35,13 +37,16 @@ import {
   addPage,
   canMove,
   canRedo,
+  biggerSize,
   canUndo,
   cardKind,
+  cardPlace,
   classifyRemote,
   componentOf,
   createHistory,
   dashboardNotes,
   devicesLeft,
+  duplicateCard,
   followItem,
   getCard,
   historyCloseGroup,
@@ -56,6 +61,7 @@ import {
   moveItem,
   movePage,
   nextDashboardTitle,
+  olderCards,
   omittedOnPage,
   pageItems,
   pageKind,
@@ -74,6 +80,7 @@ import {
   setStyleKey,
   setVariant,
   stableStringify,
+  swapAllOlder,
   swapCard,
   setPageIcon,
   setTheme,
@@ -616,6 +623,8 @@ export class ApolloTabDesigner extends HTMLElement {
     this._hostObserver = new ResizeObserver(() => this._checkLayout());
     this._hostObserver.observe(this);
     this._setBand(this._measureBand());
+    // Each visit starts with the inspector's parts in their usual state.
+    resetParts();
     this._start();
   }
 
@@ -3003,6 +3012,8 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   _showMoveToPage(source) {
+    // Move to page is in Size and place, which opens for it.
+    showPart("place");
     this._select(source, "row");
     const field = this._els.side?.querySelector('[data-test="move-page"]');
     if (field) {
@@ -3181,32 +3192,26 @@ export class ApolloTabDesigner extends HTMLElement {
     }
     this._keepFocus(side, () => {
       side.replaceChildren();
+      side.classList.toggle("inspecting", Boolean(card));
       if (card) {
-        // "Done" lets the card go and brings the card list back.
-        const top = el("div", "side-top");
-        const close = makeButton(null, {
-          className: "sheet-close",
-          test: "close-panel",
-          focus: "close-panel",
-          onClick: () => this._closeForm(),
-        });
-        close.append(icon("mdi:check"), el("span", null, t("editor.close_panel")));
-        top.append(close);
-        side.append(top);
+        // The inspector: its header stays in view (in the edit mode it is
+        // the first row, above the strip of the picture) and the parts under
+        // it scroll. "Done" in the header lets the card go.
         const form = this._itemForm(source, card);
+        const head = form.querySelector(".inspector-head");
+        const body = form.querySelector(".inspector-body");
+        side.append(head);
         if (edit) {
           side.append(this._editPreviewStrip());
-          const scroller = el("div", "edit-form");
-          scroller.append(form);
-          side.append(scroller);
-          this._els.editForm = scroller;
-          if (sourceKey(source) === this._sideKey) {
-            scroller.scrollTop = formScroll;
-          }
-        } else {
-          side.append(form);
         }
-        this._els.sideNotes = form.querySelector(".item-notes");
+        const scroller = el("div", "edit-form");
+        scroller.append(body);
+        side.append(scroller);
+        this._els.editForm = scroller;
+        if (sourceKey(source) === this._sideKey) {
+          scroller.scrollTop = formScroll;
+        }
+        this._els.sideNotes = body.querySelector(".item-notes");
         this._fillSideNotes();
         this._sideToTop(sourceKey(source));
         return;
@@ -3528,6 +3533,20 @@ export class ApolloTabDesigner extends HTMLElement {
       rename.append(icon("mdi:pencil"), el("span", null, t("editor.rename")));
       extra.push(rename);
     }
+    if (!this._readOnly && olderCards(this._draft, this._library).length) {
+      // Swaps every older card that has a newer one, as one undo step.
+      const newer = makeButton(null, {
+        className: "menu-item",
+        test: "use-newer-everywhere",
+        focus: "use-newer-everywhere",
+        onClick: () => {
+          this._popover?.close();
+          this._commit(swapAllOlder(this._draft, this._library));
+        },
+      });
+      newer.append(icon("mdi:swap-horizontal"), el("span", null, t("editor.use_newer")));
+      extra.push(newer);
+    }
     if (this._compact) {
       const theme = makeButton(null, {
         className: "menu-item",
@@ -3671,6 +3690,13 @@ export class ApolloTabDesigner extends HTMLElement {
         },
         onVariant: (id) => this._commit(setVariant(this._draft, source, component, id)),
         onLook: (look, value) => this._commit(setStyleKey(this._draft, source, look, value)),
+        onStyleReset: () => this._commit(updateCard(this._draft, source, { style: undefined })),
+        onDuplicate: () => this._duplicate(source),
+        onDone: () => this._closeForm(),
+        place: cardPlace(this._draft, source),
+        // Tablets that show this dashboard with older software, which draw
+        // the newer cards simpler (A16).
+        olderTablets: this._olderTablets(),
         compact: this._compact,
         themes: this._library?.themes || [],
         dashboardTheme: this._themeId(),
@@ -3691,7 +3717,8 @@ export class ApolloTabDesigner extends HTMLElement {
           this._commit(updateCard(this._draft, source, { params }), {
             key: continuous ? `${key}:param:${name}` : null,
             continuous,
-            side: false,
+            // A new device renames the header; a typed number keeps the form.
+            side: !continuous,
           });
         },
         onTitle: (text) =>
@@ -3711,7 +3738,9 @@ export class ApolloTabDesigner extends HTMLElement {
           this._commit(updateCard(this._draft, source, { style: mergeStyle(getCard(this._draft, source)?.style, style) }), {
             key: continuous ? `${key}:${field}` : null,
             continuous,
-            side: false,
+            // A swatch or choice draws the form again (its tick, Fade to,
+            // Reset look); dragging and typing keep the form as it is.
+            side: !continuous,
           }),
         onMove: move,
         onRemove: remove,
@@ -3723,6 +3752,9 @@ export class ApolloTabDesigner extends HTMLElement {
       return buildHeadingForm({
         readOnly,
         isCard,
+        compact: this._compact,
+        onDone: () => this._closeForm(),
+        place: isCard ? cardPlace(this._draft, source) : null,
         text: String(card.heading ?? ""),
         canEarlier: isCard && canMove(this._draft, source, -1),
         canLater: isCard && canMove(this._draft, source, 1),
@@ -3739,6 +3771,8 @@ export class ApolloTabDesigner extends HTMLElement {
     const row = this._rows.find((entry) => entry.key === key);
     return buildOtherForm({
       readOnly,
+      compact: this._compact,
+      onDone: () => this._closeForm(),
       name: row ? this._rowName(row) : "",
       device: row ? deviceText(this._hass, row.entities) : "",
       onRemove: remove,
@@ -3780,14 +3814,57 @@ export class ApolloTabDesigner extends HTMLElement {
     return null;
   }
 
+  // A copy of the card right after it, selected; one step for Undo.
+  _duplicate(source) {
+    const result = duplicateCard(this._draft, source);
+    if (!result.source) {
+      return;
+    }
+    this._selected = result.source;
+    this._screenFor = sourceKey(result.source);
+    if (this._commit(result.config)) {
+      this._showToast(t("toast.card_copied"));
+      this._els.side?.querySelector(".side-title")?.focus({ preventScroll: true });
+    }
+  }
+
+  // The next larger named size of the card, or one step taller.
+  _bigger(source) {
+    const card = source ? getCard(this._draft, source) : null;
+    const component = card ? componentOf(card, this._library) : null;
+    if (!component) {
+      return;
+    }
+    const next = biggerSize(card, component);
+    if (next.variant) {
+      this._commit(setVariant(this._draft, source, component, next.variant));
+    } else if (next.h) {
+      const resized = resizeCard(this._draft, source, next.w, next.h);
+      this._commit(component.schema === 2 ? updateCard(resized, source, { variant: undefined }) : resized);
+    }
+  }
+
+  // The names of the tablets that show this dashboard and draw some of its
+  // cards simpler, because their software is older.
+  _olderTablets() {
+    const tablets = Array.isArray(this._tablets) ? this._tablets : [];
+    return tabletsShowing(tablets, this._urlPath)
+      .filter((tablet) => Number(tablet.simpler) > 0)
+      .map((tablet) => tabletName(tablet));
+  }
+
   _fillSideNotes() {
     const container = this._els.sideNotes;
     if (!container || !this._selected) {
       return;
     }
     const row = this._rows.find((entry) => entry.key === this._selectedKey());
+    const source = this._selected;
     fillItemNotes(container, this._preview ? row : null, {
       onOpenAdvanced: this._readOnly ? null : () => this._openAdvanced(),
+      // "Make the card bigger": the next larger named size, or one step
+      // taller when the card has none.
+      onBigger: this._readOnly ? null : () => this._bigger(source),
     });
   }
 
@@ -3908,19 +3985,58 @@ export class ApolloTabDesigner extends HTMLElement {
     }
     region.style.maxWidth = `${Math.max(0, area.width - 32)}px`;
     const { width: w, height: h } = toast.getBoundingClientRect();
+    let left = area.left + (area.width - w) / 2;
     if (place === "stage") {
       const strip = statusStrip?.isConnected ? statusStrip.getBoundingClientRect() : null;
       const frame = device?.isConnected ? device.getBoundingClientRect() : null;
       if (strip?.height && frame?.height && bottom - h < frame.bottom + 8) {
         bottom = strip.bottom - 4;
         place = "strip";
+        // On the strip it keeps off the strip's words ("Screen 2 of 2").
+        left = this._stripGap(statusStrip, w) ?? left;
+      }
+    } else if (place === "fab") {
+      // On a phone it sits beside the floating button when it fits there, so
+      // it covers no more of the list than the button does.
+      const fab = addCard?.isConnected ? addCard.getBoundingClientRect() : null;
+      if (fab?.height && fab.left - 8 - (box.left + 16) >= w) {
+        left = box.left + 16 + (fab.left - 8 - (box.left + 16) - w) / 2;
+        bottom = fab.bottom - (fab.height - h) / 2;
+        place = "fab-side";
       }
     }
     Object.assign(region.style, {
-      left: `${area.left + (area.width - w) / 2 - box.left}px`,
+      left: `${left - box.left}px`,
       top: `${bottom - h - box.top}px`,
     });
     region.dataset.place = place;
+  }
+
+  // The left edge for a toast w px wide in the widest free stretch of the
+  // status strip, between the things shown on it; null when none is wide
+  // enough.
+  _stripGap(stripNode, w) {
+    const strip = stripNode.getBoundingClientRect();
+    const taken = [];
+    for (const part of stripNode.children) {
+      for (const child of part.children) {
+        const rect = child.getBoundingClientRect();
+        if (rect.width > 1 && rect.height > 1) {
+          taken.push([rect.left, rect.right]);
+        }
+      }
+    }
+    taken.sort((a, b) => a[0] - b[0]);
+    let from = strip.left + 8;
+    let best = null;
+    for (const [start, end] of [...taken, [strip.right - 8, strip.right - 8]]) {
+      const room = start - 8 - from;
+      if (room >= w && (!best || room > best.room)) {
+        best = { from, room };
+      }
+      from = Math.max(from, end + 8);
+    }
+    return best ? best.from + (best.room - w) / 2 : null;
   }
 
   // Places the toast again once the page has settled, after a scroll, a

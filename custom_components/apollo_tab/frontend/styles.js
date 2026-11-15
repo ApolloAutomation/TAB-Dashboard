@@ -2144,6 +2144,341 @@ export const formStyles = `
 .newer-card > p {
   margin: 0;
 }
+/* The inspector's body: the notes, then the parts, one under another. */
+.inspector-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+/* A part folds: a 48 px row with a chevron, the title and a summary at
+   the end, then its rows. */
+details.part {
+  min-width: 0;
+  border-top: 1px solid var(--tab-line);
+}
+details.part:first-of-type {
+  border-top: 0;
+}
+summary.part-summary,
+summary.subpart-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border-radius: var(--tab-r-s);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+summary.part-summary::-webkit-details-marker,
+summary.subpart-summary::-webkit-details-marker {
+  display: none;
+}
+summary.part-summary:hover,
+summary.subpart-summary:hover {
+  background: var(--tab-hover);
+}
+summary.part-summary:focus-visible,
+summary.subpart-summary:focus-visible {
+  outline: 2px solid var(--tab-ring);
+  outline-offset: -2px;
+}
+.part-chevron {
+  flex: none;
+  color: var(--tab-text-2);
+  --mdc-icon-size: 20px;
+}
+.part-chevron:dir(rtl) {
+  transform: scaleX(-1);
+}
+details[open] > summary > .part-chevron {
+  transform: rotate(90deg);
+}
+.part-title {
+  flex: none;
+  font-weight: 600;
+}
+.part-sum {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tab-text-2);
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.part-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  padding-block: 4px 16px;
+}
+.part-body > *,
+.look-rows > *,
+.place-rows > * {
+  min-width: 0;
+}
+.look-rows,
+.place-rows,
+.place-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+details.subpart {
+  border-top: 1px solid var(--tab-line);
+}
+summary.subpart-summary .part-title {
+  font-weight: 500;
+}
+/* A device as a row: its icon in a tinted circle, its name over its room. */
+.device-badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--tab-accent-soft);
+  color: var(--tab-accent-text);
+  --mdc-icon-size: 18px;
+}
+.chosen {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 56px;
+  padding-inline: 8px 4px;
+}
+.chosen-words,
+.entity-words {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chosen-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.chosen-words > .small {
+  color: var(--tab-text-2);
+}
+.chosen > button {
+  flex: none;
+}
+div.entity-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding-inline: 8px 12px;
+  cursor: pointer;
+}
+div.entity-option:hover,
+div.entity-option.active {
+  background: var(--tab-hover);
+}
+div.entity-option.active {
+  outline: 2px solid var(--tab-ring);
+  outline-offset: -2px;
+}
+div.entity-option[aria-disabled="true"] {
+  color: var(--tab-disabled);
+  cursor: default;
+}
+/* On a phone the open device list takes the whole edit mode. */
+.root.compact .device-field.choosing .entity-list {
+  max-height: none;
+}
+/* The steppers: the label, minus, the value, plus. */
+.stepper-value {
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.place-value {
+  min-width: 7ch;
+}
+/* The size as cells: 6 by 4, the card's size filled. */
+.size-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 28px);
+  grid-auto-rows: 20px;
+  gap: 4px;
+  justify-self: start;
+}
+.size-cell {
+  border: 1px solid var(--tab-field-line);
+  border-radius: var(--tab-r-xs);
+  cursor: pointer;
+}
+.size-cell.on {
+  border-color: var(--tab-accent-text);
+  background: var(--tab-accent-fill);
+}
+.size-cell.painted {
+  background: var(--tab-accent-soft);
+}
+.size-cell.on.painted {
+  background: var(--tab-accent-fill);
+}
+.size-cell.out {
+  border-style: dashed;
+  opacity: 0.4;
+  cursor: default;
+}
+/* The cells are for a pointer; a phone has the steppers. */
+.root.compact .size-grid {
+  display: none;
+}
+@media (pointer: coarse) {
+  .size-grid {
+    display: none;
+  }
+}
+/* Colour swatches as one radio group: round, the chosen one ticked. */
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+button.swatch-choice,
+.swatch-own {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid var(--tab-field-line);
+  border-radius: 50%;
+  background: transparent;
+}
+.swatch-fill {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+}
+/* "None" is a crossed circle. */
+.swatch-fill.none {
+  background: linear-gradient(135deg, transparent 46%, var(--tab-text-2) 46%, var(--tab-text-2) 54%, transparent 54%);
+}
+button.swatch-choice[aria-checked="true"],
+.swatch-own.chosen {
+  border: 2px solid var(--tab-accent-text);
+}
+button.swatch-choice[aria-checked="true"]::after,
+.swatch-own.chosen::after {
+  content: "✓";
+  position: absolute;
+  top: -4px;
+  inset-inline-end: -4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--tab-accent-fill);
+  color: var(--tab-accent-ink);
+  font-size: var(--tab-fs-small);
+  font-weight: 700;
+  line-height: 1;
+}
+/* Its ring is drawn inside, so the colour field fills the whole circle. */
+.swatch-own,
+.swatch-own.chosen {
+  overflow: hidden;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--tab-field-line);
+  cursor: pointer;
+}
+.swatch-own.chosen {
+  box-shadow: inset 0 0 0 2px var(--tab-accent-text);
+  overflow: visible;
+}
+.swatch-own input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.swatch-own:has(input:focus-visible) {
+  outline: 2px solid var(--tab-ring);
+  outline-offset: 2px;
+}
+.swatch-plus {
+  pointer-events: none;
+  --mdc-icon-size: 20px;
+}
+/* 44 px on a phone and under a finger. */
+.root.compact button.swatch-choice,
+.root.compact .swatch-own {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+}
+@media (pointer: coarse) {
+  button.swatch-choice,
+  .swatch-own {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}
+/* A segmented control as wide as the column; words may wrap. */
+.look-rows .segmented,
+.part-body .option-row .segmented {
+  justify-self: start;
+  max-width: 100%;
+}
+/* A number with minus and plus. */
+.number-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.number-row input {
+  width: 6ch;
+  text-align: center;
+}
+.number-unit {
+  color: var(--tab-text-2);
+}
+.tick-list {
+  display: grid;
+}
+.note-line.with-button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+.size-only {
+  color: var(--tab-text-2);
+}
+/* The card's own theme: tiles, three to a row. */
+.card-themes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.card-themes .theme-tile {
+  min-height: 40px;
+}
 `;
 
 // The editor is only ever made by the panel and sits in the panel's shadow
@@ -2801,7 +3136,7 @@ ${barTokens}
    inside them. The same for "Fit" and "100 %", whose ring would lie over
    the other one. */
 .status-strip :focus-visible,
-.side.sheet > .side-top :focus-visible {
+.inspector-head :focus-visible {
   outline-offset: -3px;
   box-shadow: none;
 }
@@ -2993,12 +3328,79 @@ ${barTokens}
 .idle-page:empty {
   display: none;
 }
-/* "Done" at the end of the form's top row. */
-.side-top {
+/* With something selected the inspector is a header that stays and a
+   body that scrolls under it. */
+.side.inspecting {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.side.inspecting > .edit-form {
+  padding: 16px;
+}
+.root.compact .side.inspecting > .edit-form {
+  padding-block: 16px calc(80px + var(--safe-bottom));
+  padding-inline: 12px;
+}
+/* The header: the card's icon in a circle, its name over its kind, then
+   Copy, Remove and Done. */
+.inspector-head {
+  display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  min-height: 56px;
+  padding-block: 4px;
+  padding-inline: 16px 8px;
+  border-bottom: 1px solid var(--tab-line);
+  background: var(--tab-surface);
+}
+.root.compact .inspector-head {
+  padding-inline: 12px 4px;
+}
+.head-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--tab-accent-soft);
+  color: var(--tab-accent-text);
+  --mdc-icon-size: 18px;
+}
+.head-words {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.head-words > .side-title,
+.head-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.head-words > .side-title {
+  font-size: var(--tab-fs-body);
+  line-height: var(--tab-lh-body);
+  font-weight: 600;
+}
+.head-type {
+  color: var(--tab-text-2);
+}
+.head-buttons {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0;
+}
+.head-buttons > button.head-remove:not(:disabled):hover {
+  color: var(--tab-err-ink);
+}
+.head-buttons > .sheet-close {
+  margin-inline-start: 4px;
 }
 /* While the dashboard opens: grey rows where the list will be. */
 .placeholder-row {
@@ -3086,13 +3488,6 @@ ${barTokens}
 }
 .side.sheet:focus {
   outline: none;
-}
-.side.sheet > .side-top {
-  flex: none;
-  min-height: 48px;
-  /* The same side edges as the form under it. */
-  padding-inline: 12px;
-  border-bottom: 1px solid var(--tab-line);
 }
 /* The strip of the picture above the form, the selected card in its
    middle and the rest dimmed. It has the bezel's colour, so where the page

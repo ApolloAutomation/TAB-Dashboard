@@ -7,6 +7,7 @@ import {
   isAllowed,
   offeredCards,
   paramsComplete,
+  pickerFields,
   pickerGroups,
   pickerVariants,
   presetParams,
@@ -335,7 +336,10 @@ export function openCardPicker({ root, hass, library, config, themeId, compact =
         el("p", "helper", t("pick.skip_hint")),
       );
 
-      for (const field of fields) {
+      // A one-press card asks for its one device only; the rest have
+      // defaults and wait in the card's form.
+      const asked = new Set(pickerFields(component).map((field) => field.name));
+      for (const field of fields.filter((entry) => asked.has(entry.name))) {
         list.append(
           buildParamField({
             hass,

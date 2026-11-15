@@ -155,21 +155,28 @@ test("a row the device cannot use is greyed and off, with the file's reason", ()
   });
 });
 
-test("the card's own rows come right after Size, then name and icon, then tap and hold", () => {
+test("the inspector opens on Device, then shows, controls, look and size and place", () => {
   withDom(() => {
     const card = { type: "custom:apollo-tab-card", component: COMPONENT.id, params: { entity: "light.x" } };
     const form = build(card);
-    const parts = form.children.filter((node) => node.classList.contains("form-block")).map((node) => node.children[0]?.textContent);
-    assert.deepStrictEqual(parts, [
-      strings["form.device"],
-      strings["form.size"],
+    const parts = form.descendants().filter((node) => node.localName === "details" && node.classList.contains("part"));
+    assert.deepStrictEqual(parts.map((node) => node.dataset.test), ["part-device", "part-shows", "part-controls", "part-look", "part-place"]);
+    const title = (node) => node.descendants().find((child) => child.classList.contains("part-title")).textContent;
+    assert.deepStrictEqual(parts.map(title), [
+      strings["form.part_device"],
       strings["form.shows"],
-      strings["form.on_card"],
-      strings["form.name_icon"],
-      strings["form.touch"],
+      strings["form.part_controls"],
       strings["form.look"],
-      strings["form.order"],
+      strings["form.part_place"],
     ]);
+    // Device and Controls start open; Look and Size and place start folded.
+    assert.deepStrictEqual(parts.map((node) => Boolean(node.open)), [true, false, true, false, false]);
+    // Each summary says what is set: the look follows the dashboard's.
+    const summary = (node) => node.descendants().find((child) => child.dataset.test === "part-summary").textContent;
+    assert.equal(summary(parts[3]), strings["form.theme_dashboard"]);
+    // The header names the card and its kind.
+    const head = form.descendants().find((node) => node.dataset.test === "side-head");
+    assert.equal(head.descendants().find((node) => node.dataset.test === "side-type").textContent, COMPONENT.name);
     // The icon is one line with Change; the grid opens on request.
     const icons = form.descendants().find((node) => node.classList.contains("icon-choice"));
     assert.equal(icons.descendants().filter((node) => node.dataset.test === "card-icon").length, 0);
@@ -207,29 +214,28 @@ test("Add a colour is hidden at the most the card can show", () => {
   });
 });
 
-test("Width and Height wait behind Fine-tune while the card is at a named size", () => {
+test("Width and Height show at once, and Back appears only once the size differs", () => {
   withDom(() => {
     const calls = [];
     const card = { type: "custom:apollo-tab-card", component: COMPONENT.id, params: { entity: "light.fine" }, variant: "big", grid_options: { columns: 12, rows: 6 } };
     const form = build(card, calls);
     const find = (test) => form.descendants().find((node) => node.dataset.test === test);
-    assert.equal(find("wider"), undefined);
-    assert.equal(find("size-reset"), undefined);
-    assert.ok(!form.descendants().some((node) => node.classList.contains("size-value")));
-    fire(find("size-fine-tune"), "click");
     assert.ok(find("wider"));
+    assert.equal(find("size-fine-tune"), undefined);
+    assert.equal(find("size-words").textContent, "2 of 6 wide, 2 of 4 high");
     // At the size marked there is nothing to go back to.
     assert.equal(find("size-reset"), undefined);
     fire(find("narrower"), "click");
     assert.deepStrictEqual(calls.at(-1), ["onResize", 1, 2]);
+    assert.equal(find("size-words").textContent, "1 of 6 wide, 2 of 4 high");
     // Now it differs from Small, the size it shows: Back puts it there.
+    assert.match(find("size-reset").textContent, /Small/);
     fire(find("size-reset"), "click");
     assert.deepStrictEqual(calls.at(-1), ["onVariant", "small"]);
-    // The steps stay open when the form is drawn again for the same card,
-    // also after it moved; another card starts with them folded.
-    assert.ok(build(card).descendants().some((node) => node.dataset.test === "wider"));
-    const other = { ...card, params: { entity: "light.y" } };
-    assert.ok(!build(other).descendants().some((node) => node.dataset.test === "wider"));
+    // The grid of cells marks the card's size.
+    const cells = find("size-grid").children;
+    assert.equal(cells.length, 24);
+    assert.equal(cells.filter((cell) => cell.classList.contains("on")).length, 2);
   });
 });
 
@@ -243,13 +249,17 @@ test("a kind of option the panel does not know gives one quiet line", () => {
   });
 });
 
-test("the card's own controls sit under On the card, with the line about larger sizes", () => {
+test("the card's own controls sit under Controls, with the line about larger sizes", () => {
   withDom(() => {
     const card = { type: "custom:apollo-tab-card", component: COMPONENT.id, params: { entity: "light.x" } };
     const form = build(card);
-    const note = form.descendants().find((node) => node.dataset.test === "on-card-note");
+    const controls = form.descendants().find((node) => node.dataset.test === "part-controls");
+    const note = controls.descendants().find((node) => node.dataset.test === "on-card-note");
     assert.equal(note.textContent, strings["form.on_card_some"]);
-    assert.ok(form.descendants().some((node) => node.textContent === strings["form.on_card"]));
+    assert.ok(controls.descendants().some((node) => node.dataset.option === "dim"));
+    // The summary counts the switches that are on.
+    const summary = controls.descendants().find((node) => node.dataset.test === "part-summary").textContent;
+    assert.match(summary, /^\d+ of \d+ on$/);
   });
 });
 

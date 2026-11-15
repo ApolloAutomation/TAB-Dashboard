@@ -1329,12 +1329,30 @@ async function canvasAccessibilityProblems(r) {
 // one save is under way and one waits behind it. Returns the editor's draft.
 async function editWithSlowSaves(r) {
   await r.click('[data-test="list-row"][data-source="0.1.0"]');
+  await openPart(r, "place");
   await r.waitFor(`__j.find('[data-test="wider"]')`, "the card form");
   await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+  await openPart(r, "place");
   await r.click('[data-test="wider"]');
   await r.waitFor(`${SAVES}.length === 1`, "the first save to be sent", 3000);
+  await openPart(r, "place");
   await r.click('[data-test="taller"]');
   return r.draft();
+}
+
+// Opens a part of the card's inspector when it is closed: "device",
+// "shows", "controls", "look" (with its Colours) or "place". Waits for the
+// inspector first.
+async function openPart(r, name) {
+  const part = `[data-test="part-${name}"]`;
+  await r.waitFor(`__j.find('${part}')`, `the ${name} part`);
+  const ids = name === "look" ? ["look", "colours"] : [name];
+  for (const id of ids) {
+    const sel = `[data-test="part-${id}"]`;
+    if (await r.eval(`__j.find('${sel}').open`)) continue;
+    await r.click(`${sel} > summary`);
+    await r.waitFor(`__j.find('${sel}')?.open`, `the ${id} part to open`);
+  }
 }
 
 // Opens the editor on the sample dashboard.
@@ -1373,7 +1391,8 @@ async function expectSelected(r, name, key, when) {
       return {
         selected: selected ? selected.join(".") : null,
         row: row ? row.dataset.source : null,
-        title: __j.text('[data-test="side-title"]').trim(),
+        // The header names the card by its device; its kind is under it.
+        title: __j.text('[data-test="side-type"]').trim(),
       };
     })()`);
     if (last.selected === key && last.row === key && last.title === name) return;
@@ -1427,11 +1446,13 @@ async function leaveAfterOwnSaveLanded(r) {
   await openSample(r);
   await selectRow(r, "0.1.0");
   await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+  await openPart(r, "place");
   await r.click('[data-test="wider"]');
   await r.waitFor(`${SAVES}.length === 1`, "the save to be sent", 3000);
   const theirs = await saveElsewhere(r, `(config) => { config.views[1].title = "Elsewhere"; }`);
   await r.waitFor(`__j.find('[data-test="conflict-theirs"]')`, "the conflict banner");
   await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[1].title === "Climate"`, "the slow save to land");
+  await openPart(r, "place");
   await r.click('[data-test="taller"]');
   const mine = await r.draft();
   const landed = await r.config();
@@ -1464,6 +1485,9 @@ async function shortcut(r, key) {
 // Presses a control with Enter until it stops taking the press, and checks
 // focus moves to `then` rather than falling to the page.
 async function pressToLimit(r, test, then) {
+  if (["wider", "taller", "narrower", "shorter", "move-earlier", "move-later"].includes(test)) {
+    await openPart(r, "place");
+  }
   await r.eval(`__j.find('[data-test="${test}"]').focus(); true`);
   check((await focused(r)) === test, `${test} cannot take focus`);
   for (let press = 0; press < 8; press += 1) {
@@ -1535,6 +1559,7 @@ async function keepChange(r, { offline }) {
   const original = await r.config();
   await selectRow(r, "0.1.0");
   await r.eval(`__apolloMockHass.failSaves(${offline ? 1 : 100}); true`);
+  await openPart(r, "place");
   await r.click('[data-test="wider"]');
   await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
   if (offline) {
@@ -1729,7 +1754,7 @@ function chains(realConfig) {
       await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "one card on the canvas");
       await r.waitFor(`__j.find('[data-test="hit"][aria-pressed="true"]')`, "the card to be selected");
-      const title = await r.text('[data-test="side-title"]');
+      const title = await r.text('[data-test="side-type"]');
       check(title.includes("Light"), `side panel shows ${title}`);
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1")?.views?.[0]?.sections?.[0]?.cards?.length === 1`,
@@ -1743,10 +1768,9 @@ function chains(realConfig) {
       return r.shot("06-card-added");
     }),
     step("07", "card-styled", async (r) => {
-      // The Light card has named sizes, so Width and Height wait behind
-      // Fine-tune. Pressed where they are, so the check below sees what the
-      // person sees.
-      await r.tap('[data-test="size-fine-tune"]');
+      // Width and Height are in Size and place. Pressed where they are, so
+      // the check below sees what the person sees.
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       await r.tap('[data-test="wider"]');
       await r.waitFor(
@@ -1755,7 +1779,9 @@ function chains(realConfig) {
         "the card on the canvas to be twice as wide",
       );
       await checkSelectedCardVisible(r, "after Wider");
-      await r.click('input[data-focus="look-use-color"]');
+      // A background colour: a swatch under Look, Colours.
+      await openPart(r, "look");
+      await r.click('[data-test="look-background"] [data-test="swatch-choice"]:not([data-value=""])');
       await r.waitFor(
         `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
           return card.grid_options?.columns === 12 && /^#[0-9A-Fa-f]{6}$/.test(card.style?.color || ""); })()`,
@@ -1966,9 +1992,7 @@ function chains(realConfig) {
       const before = (await r.config()).views[0].sections[0].cards.find(
         (card) => card.component === "apollo/climate",
       ).grid_options.columns;
-      // The thermostat has named sizes, so Width and Height wait behind
-      // Fine-tune.
-      await r.tap('[data-test="size-fine-tune"]');
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       await r.eval(`__apolloMockHass.failSaves(1)`);
       await r.click('[data-test="wider"]');
@@ -2006,11 +2030,8 @@ function chains(realConfig) {
         (card) => card.component === "apollo/climate",
       );
       await r.click(`[data-test="hit"][data-source="0.0.${index}"]`);
-      await r.waitFor(`__j.find('[data-test="wider"]') || __j.find('[data-test="size-fine-tune"]')`, "the card form");
-      if (!(await r.count('[data-test="wider"]'))) {
-        await r.tap('[data-test="size-fine-tune"]');
-        await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
-      }
+      await openPart(r, "place");
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the card form");
       await r.eval(`__apolloMockHass.failSaves(1)`);
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
@@ -2429,8 +2450,10 @@ function chains(realConfig) {
     await r.open({ seed: "sample", route: "/edit/tab-1" }, editorReady);
     await r.waitFor(`__j.count('[data-test="hit"]') > 3`, "cards on the canvas");
     await r.click('[data-test="list-row"][data-source="0.1.0"]');
+    await openPart(r, "place");
     await r.waitFor(`__j.find('[data-test="wider"]')`, "the card form");
     await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+    await openPart(r, "place");
     await r.click('[data-test="wider"]');
     await r.waitFor(`${SAVES}.length === 1`, "the first save to be sent", 3000);
     await r.eval(`(() => { const config = __apolloMockHass.getConfig("tab-1");
@@ -2471,6 +2494,7 @@ function chains(realConfig) {
     }),
     step("34", "mine-while-saving", async (r) => {
       await startRace(r);
+      await openPart(r, "place");
       await r.click('[data-test="taller"]');
       await r.click('[data-test="conflict-mine"]');
       const draft = await endRace(r, "midnight");
@@ -2640,6 +2664,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await expectSelected(r, "Light tile", "0.1.0", "after choosing the light tile");
+      await openPart(r, "place");
       await r.click('[data-test="move-later"]');
       await expectSelected(r, "Light tile", "0.1.1", "after Move later");
       await r.click('[data-test="undo"]');
@@ -2693,6 +2718,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       await selectRow(r, "0.1.2");
@@ -2888,6 +2914,7 @@ function chains(realConfig) {
       const before = await r.config();
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -2907,6 +2934,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -2933,6 +2961,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -3053,6 +3082,7 @@ function chains(realConfig) {
 
       // The room card's form has the page list and the card's own theme.
       await r.click('[data-test="list-row"][data-source="0.0.0"]');
+      await openPart(r, "look");
       await r.waitFor(`__j.find('[data-param="page"] select') && __j.find('[data-test="card-theme"]')`, "the room card's form");
       const pages = await r.eval(`[...__j.find('[data-param="page"] select').options].map((option) => option.textContent)`);
       check(pages.includes(LONG_PAGE), `the page list holds ${JSON.stringify(pages)}`);
@@ -3173,8 +3203,7 @@ function chains(realConfig) {
     step("55", "narrow-columns-wider", async (r) => {
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
       await r.addCard("add-card", "apollo/light", "light.kitchen");
-      await r.waitFor(`__j.find('[data-test="size-fine-tune"]')`, "the new card's form");
-      await r.click('[data-test="size-fine-tune"]');
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       check((await r.count('[data-test="size-columns"]')) === 0, "the narrow-columns note shows before Wider stops");
       await r.click('[data-test="wider"]');
@@ -3182,16 +3211,19 @@ function chains(realConfig) {
       const note = await r.text('[data-test="size-columns"]');
       check(note.includes("narrow columns") && note.includes("Use the whole screen"), `the note reads "${note}"`);
       const shot = await r.shot("55-narrow-columns-wider");
+      await openPart(r, "place");
       await r.click('[data-test="card-whole-screen"]');
       await r.waitFor(
         `(() => { const sections = __apolloMockHass.getConfig("tab-1").views[0].sections;
           return sections.length === 1 && sections[0].column_span === 3; })()`,
         "the page to use the whole screen",
       );
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="wider"]') && !__j.find('[data-test="wider"]').disabled`, "Wider to work again");
-      check((await r.text('[data-test="side-title"]')).includes("Light"), "the card is no longer selected");
+      check((await r.text('[data-test="side-type"]')).includes("Light"), "the card is no longer selected");
       check((await focused(r)) === "wider", `focus went to ${await focused(r)}, not Wider`);
       check((await r.count('[data-test="size-columns"]')) === 0, "the narrow-columns note stayed");
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/light" && card.grid_options?.columns === 18)`,
@@ -3208,6 +3240,7 @@ function chains(realConfig) {
       await selectRow(r, "0.1.0");
       check((await r.count('[data-test="theme"]')) === 0, "a dashboard theme shows while a card is selected");
       check((await r.count('[data-test="to-settings"]')) === 0, "the card form still has a way to the settings");
+      await openPart(r, "look");
       const helper = await r.eval(`__j.find('[data-test="card-theme"]').closest(".field").querySelector(".helper").textContent`);
       check(helper.includes('"Theme" at the top'), `the card theme's helper reads "${helper}"`);
       const done = await r.text('[data-test="close-panel"]');
@@ -3238,6 +3271,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -3265,6 +3299,7 @@ function chains(realConfig) {
       await openSample(r);
       const theirs = await saveOffline(r, PHONE_CHANGE);
       await selectRow(r, "0.1.0");
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.find('[data-test="conflict-theirs"]')`, "the conflict banner after the next change");
       check((await r.calls("lovelace/config/save")).length === 0, "the next change was saved");
@@ -3290,6 +3325,7 @@ function chains(realConfig) {
       // next change made while offline and asks.
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const second = await saveOffline(r, `(config) => { config.apollo_tab = { ...config.apollo_tab, theme: "warm" }; }`);
@@ -3315,6 +3351,7 @@ function chains(realConfig) {
       const original = await r.config();
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -3355,6 +3392,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`${SAVES}.length === 1`, "the save to be sent", 3000);
       await r.eval(`__apolloMockHass.reconnect(); true`);
@@ -3363,12 +3401,14 @@ function chains(realConfig) {
 
       // The save is stored, but its answer is lost with the connection.
       await r.eval(`__apolloMockHass.slowSaves(0); __apolloMockHass.loseSaveAnswers(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="taller"]');
       await savedWithoutAsking("a save whose answer was lost");
 
       // Stored after the connection dropped, then the connection comes back.
       const sent = (await r.calls("lovelace/config/save")).length;
       await r.eval(`__apolloMockHass.slowSaves(600); true`);
+      await openPart(r, "place");
       await r.click('[data-test="narrower"]');
       await r.waitFor(`${SAVES}.length === ${sent + 1}`, "the next save to be sent", 3000);
       await r.eval(`__apolloMockHass.dropConnection(); true`);
@@ -3378,6 +3418,7 @@ function chains(realConfig) {
 
       // A change made while the connection is down.
       await r.eval(`__apolloMockHass.dropConnection(); true`);
+      await openPart(r, "place");
       await r.click('[data-test="shorter"]');
       await sleep(1000);
       check((await r.eval(BANNER)) === 0, "a change made while the connection is down asks which version to keep");
@@ -3393,6 +3434,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       check(await leavingAsks(r), "closing the browser page would not ask about the unsaved change");
@@ -3698,6 +3740,7 @@ function chains(realConfig) {
         await openSample(r);
         await selectRow(r, "0.1.0");
         await r.eval(`__apolloMockHass.failSaves(1); true`);
+        await openPart(r, "place");
         await r.click('[data-test="wider"]');
         await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
         await saveElsewhere(r, `(config) => { config.views[1].title = "Elsewhere"; }`);
@@ -3779,6 +3822,10 @@ function chains(realConfig) {
       fab: ${edgesOf(`__j.find('.fab[data-test="add-card"]')`)},
       edit: ${edgesOf(`__j.find('[data-test="side"][data-mode="edit"]')`)},
       frame: ${edgesOf(`__j.designer().shadowRoot.querySelector(".device")`)},
+      // What the status strip shows, which a toast on it must keep clear of.
+      stripItems: __j.all(".status-strip > * > *").filter((node) => __j.visible(node))
+        .map((node) => node.getBoundingClientRect()).filter((rect) => rect.width > 1 && rect.height > 1)
+        .map((rect) => ({ left: rect.left, right: rect.right })),
       height: innerHeight,
       width: innerWidth,
     })`);
@@ -3798,11 +3845,22 @@ function chains(realConfig) {
       const bottom = places.strip ? places.strip.top : places.main.bottom;
       const { frame, strip } = places;
       const room = !strip || !frame || bottom - 16 - (toast.bottom - toast.top) >= frame.bottom + 8;
-      ok = near(middle(toast), middle(places.main)) && near(toast.bottom, room ? bottom - 16 : strip.bottom - 4);
+      if (room) {
+        ok = near(middle(toast), middle(places.main)) && near(toast.bottom, bottom - 16);
+      } else {
+        // On the strip it keeps off what the strip shows ("Screen 2 of 2"),
+        // centred in the widest free stretch, or centred when none is free.
+        const clear = places.stripItems.every((item) => toast.right <= item.left || toast.left >= item.right);
+        ok = near(toast.bottom, strip.bottom - 4) && toast.left >= places.main.left && toast.right <= places.main.right
+          && (clear || near(middle(toast), middle(places.main)));
+      }
       check(!frame || toast.top >= frame.bottom || toast.bottom <= frame.top,
         `${when}: the toast lies across the tablet frame's edge: ${JSON.stringify(places)}`);
     } else if (home === "fab") {
-      ok = Boolean(places.fab) && near(middle(toast), middle(places.root)) && near(toast.bottom, places.fab.top - 16);
+      // Beside the floating button when it fits there, else above it.
+      const beside = Boolean(places.fab) && toast.right <= places.fab.left - 8 + 1 && toast.left >= places.root.left + 16 - 1
+        && near((toast.top + toast.bottom) / 2, (places.fab.top + places.fab.bottom) / 2);
+      ok = Boolean(places.fab) && (beside || (near(middle(toast), middle(places.root)) && near(toast.bottom, places.fab.top - 16)));
     } else {
       ok = Boolean(places.edit) && near(toast.bottom, places.edit.bottom - 16) &&
         toast.left >= places.edit.left && toast.right <= places.edit.right && toast.top >= places.edit.top;
@@ -3963,10 +4021,11 @@ function chains(realConfig) {
       check(!sidebar.includes("in a browser") && sidebar.startsWith("Switch this on only if"), `the sidebar helper reads "${sidebar}"`);
       await closePops(r);
       await selectRow(r, "0.1.0");
-      const accent = await r.eval(`(() => { const box = __j.find('input[data-focus="look-use-accent"]');
+      await openPart(r, "look");
+      const accent = await r.eval(`(() => { const group = __j.find('[data-test="look-accent"]');
         const helper = __j.find('[data-test="accent-helper"]');
-        return { text: helper?.textContent, described: box?.getAttribute("aria-describedby") === helper?.id,
-          next: box?.closest(".check").nextElementSibling === helper }; })()`);
+        return { text: helper?.textContent, described: Boolean(helper?.id) && group?.getAttribute("aria-describedby") === helper?.id,
+          next: group?.nextElementSibling === helper }; })()`);
       check(accent.text?.includes("switches, sliders and buttons") && accent.described && accent.next, `the highlight colour's helper: ${JSON.stringify(accent)}`);
       await r.eval(`__j.find('[data-test="accent-helper"]').scrollIntoView({ block: "center" }); true`);
       await checkTextContrast(r, ['[data-test="accent-helper"]']);
@@ -3979,7 +4038,9 @@ function chains(realConfig) {
       const phone = r.setup.device === "phone";
       await openSample(r);
       await selectRow(r, "0.1.0");
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="move-later"]')`, "the card form");
+      await openPart(r, "place");
       await r.tap('[data-test="move-later"]');
       await r.waitFor(`__j.find('[data-test="toast"]')`, "the toast");
       await sleep(300);
@@ -4246,6 +4307,7 @@ function chains(realConfig) {
       await checkToastHome(r, "after Remove in the card's form", r.setup.device === "phone" ? "fab" : "stage");
       await selectRow(r, "0.1.0");
       check((await r.count('[data-test="toast-undo"]')) === 1, "choosing another card took the toast away");
+      await openPart(r, "place");
       await r.click('[data-test="taller"]');
       await r.waitFor(`!__j.find('[data-test="toast-undo"]')`, "the toast to go once another card changed", 2000);
       check((await r.eval(cards)) === all - 1, "the removed card came back");
@@ -4367,10 +4429,12 @@ function chains(realConfig) {
           // allow, so it is pressed there, with the card still selected.
           await selectRow(r, selected);
           for (let press = 0; press < 6 && !(await r.count('[data-test="card-whole-screen"]')); press += 1) {
+            await openPart(r, "place");
             await r.tap('[data-test="wider"]');
             await sleep(200);
           }
           check((await r.count('[data-test="card-whole-screen"]')) === 1, "the card's form offers no Use the whole screen");
+          await openPart(r, "place");
           await r.eval(`__j.find('[data-test="card-whole-screen"]').focus(); true`);
           await r.key("Enter");
           await r.waitFor(`!__j.find('[data-test="card-whole-screen"]') && !__j.find('[data-test="use-whole-screen"]')`, "the advice to go from the card's form");
@@ -4420,6 +4484,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       await r.eval(`__j.find('[data-test="back"]').focus(); true`);
@@ -4464,6 +4529,7 @@ function chains(realConfig) {
       const options = await r.eval(`[...__j.find('[data-test="move-page"]').options].map((option) => option.textContent)`);
       check(stable(options) === stable(["Climate", "New page"]), `Move to page offers ${options.join(", ")}`);
       const shot = await r.shot("86-move-to-page");
+      await openPart(r, "place");
       await r.click('[data-test="move-page-go"]');
       await r.waitFor(`__j.find('[data-test="page-tab"][data-view="1"][aria-selected="true"]')`, "the page the dial moved to");
       await r.waitFor(`__j.text('[data-test="toast"] span') === "Moved to Climate"`, "the toast saying where it went");
@@ -4490,6 +4556,7 @@ function chains(realConfig) {
       await r.waitFor(`__j.active()?.dataset?.test === "move-page"`, "focus on Move to page again");
       await r.eval(`(() => { const field = __j.find('[data-test="move-page"]'); field.value = "new";
         field.dispatchEvent(new Event("change")); return true; })()`);
+      await openPart(r, "place");
       await r.click('[data-test="move-page-go"]');
       await r.waitFor(`__j.find('[data-test="page-tab"][data-view="2"][aria-selected="true"]')`, "the new page");
       await r.waitSaved("after the move to a new page");
@@ -4592,11 +4659,11 @@ function chains(realConfig) {
       const before = stable(await r.draft());
       const themeNow = `(__j.designer()._history.present.views[0].sections[1].cards[0].style?.theme ?? null)`;
       const was = await r.eval(themeNow);
-      await r.eval(`(() => { const field = __j.find('[data-test="card-theme"]'); field.focus();
-        field.value = [...field.options].map((option) => option.value).find((value) => value && value !== field.value);
-        field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+      // The theme is chosen by its tile.
+      await openPart(r, "look");
+      await r.click(`[data-test="card-theme-tile"]:not([data-theme=""]):not([aria-checked="true"])`);
       await r.waitFor(`${themeNow} !== ${JSON.stringify(was)}`, "the card's new theme");
-      check((await focused(r)) === "card-theme", `after choosing a theme focus is on ${await focused(r)}`);
+      check((await focused(r)) === "card-theme-tile", `after choosing a theme focus is on ${await focused(r)}`);
       await shortcut(r, "z");
       await r.waitFor(`${themeNow} === ${JSON.stringify(was)}`, "Ctrl+Z to bring the card's theme back", 3000);
       check(stable(await r.draft()) === before, "Ctrl+Z did not bring the dashboard back as it was");
@@ -6024,6 +6091,7 @@ function chains(realConfig) {
 
       await r.eval(`__apolloMockHass.failSaves(100); true`);
       await selectRow(r, "0.1.0");
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error" && __j.find('[data-test="save-retry"]')`, "the save to fail");
       await filled("the editor after a failed save", ["save-retry"]);
@@ -6156,6 +6224,7 @@ function chains(realConfig) {
       await openSample(r, { tablets: "three" });
       await r.eval(UI);
       await selectRow(r, "0.1.0");
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitSaved("wider");
       await check3(".ed-header", "the editor's bar");
@@ -6480,11 +6549,12 @@ function chains(realConfig) {
           check(clear.card <= clear.drawer - 16 + 0.5, `the card ends at ${clear.card}, the drawer starts at ${clear.drawer}`);
           shot = await r.screen("121-medium-drawer");
           // Made 5 wide, it slides only until its left edge is at the stage's padding.
-          for (let press = 0; press < 6 && !(await r.text('.size-value')).startsWith("5 wide"); press += 1) {
+          for (let press = 0; press < 6 && !(await r.text('.size-value')).startsWith("5 of 6 wide"); press += 1) {
+            await openPart(r, "place");
             await r.click('[data-test="wider"]');
             await sleep(150);
           }
-          check((await r.text('.size-value')).startsWith("5 wide"), `the card is ${await r.text('.size-value')}`);
+          check((await r.text('.size-value')).startsWith("5 of 6 wide"), `the card is ${await r.text('.size-value')}`);
           await r.waitSaved("made 5 wide");
           await sleep(500);
           const wide = await r.eval(`(() => { const area = __j.designer().shadowRoot.querySelector(".stage-area").getBoundingClientRect();
@@ -6640,6 +6710,7 @@ function chains(realConfig) {
         const shot = await r.screen("123-edit-mode");
         const width = async () => (await r.draft()).views[0].sections[1].cards[0].grid_options?.columns;
         const before = await width();
+        await openPart(r, "place");
         await r.tap('[data-test="wider"]');
         await r.waitFor(`__j.designer()._history.past.length > 0`, "Wider to change the card");
         await sleep(300);
@@ -6783,6 +6854,7 @@ function chains(realConfig) {
           await sizeTo(r, 1280, 800);
           await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.wide")`, "the wide layout");
           await r.click('[data-test="hit"]');
+          await openPart(r, "shows");
           await r.waitFor(`__j.find('[data-test="form-name"]')`, "the card's form");
           await r.eval(`__j.find('[data-test="form-name"]').focus(); true`);
           await sizeTo(r, 1280, 500);
@@ -6854,9 +6926,11 @@ function chains(realConfig) {
       await checkToastHome(r, "after a card was removed", phone ? "fab" : "stage");
       const shot = await r.screen("126-toast-home");
       await selectRow(r, "0.1.0");
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="move-page"]')`, "Move to page");
       await r.eval(`(() => { const field = __j.find('[data-test="move-page"]'); field.value = "new";
         field.dispatchEvent(new Event("change")); return true; })()`);
+      await openPart(r, "place");
       await r.tap('[data-test="move-page-go"]');
       await r.waitFor(`__j.text('[data-test="toast"] span').startsWith("Moved to")`, "the toast saying where the card went");
       await sleep(300);
@@ -7025,9 +7099,16 @@ function chains(realConfig) {
       };
     })()`);
   const savedCard = async (r) => (await r.config()).views[0].sections[0].cards[0];
-  const pickChoice = (r, option, value) =>
-    r.eval(`(() => { const field = __j.find('select[data-focus="option:${option}"]');
-      field.value = ${JSON.stringify(value)}; field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+  // A choice of up to four is a segmented control, pressed by its words;
+  // a longer one is a list.
+  const pickChoice = async (r, option, value) => {
+    if (await r.count(`select[data-focus="option:${option}"]`)) {
+      await r.eval(`(() => { const field = __j.find('select[data-focus="option:${option}"]');
+        field.value = ${JSON.stringify(value)}; field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+      return;
+    }
+    await r.click(`label:has(> input[data-focus="option:${option}:${value}"])`);
+  };
   const newLight = async (r, entity) => {
     await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
     await r.click('[data-test="create"]');
@@ -7057,16 +7138,17 @@ function chains(realConfig) {
       check((await r.count('[data-test="card-note"]')) === 0, "a note shows for a colour lamp");
       const effects = rows.find((row) => row.option === "effects_shown");
       check(effects.text.includes("Rainbow") && effects.text.includes("Storm") && effects.text.includes("4 chosen, up to 8."), `the effects read "${effects.text}"`);
-      // The card's own rows straight after the device and Size, so what the
-      // card can do is on the first screen; then name and icon, tap and hold.
-      const parts = await r.eval(`[...__j.find('.card-form-2').querySelectorAll(":scope > .form-block > h3")].map((h) => h.textContent)`);
+      // The inspector's five parts; the card's own rows are in Controls,
+      // open with Device, so what the card can do is on the first screen.
+      const parts = await r.eval(`__j.all('details.part').filter((part) => __j.visible(part)).map((part) => [part.dataset.test, part.open])`);
       check(
-        stable(parts) === stable(["What it controls", "Size", "On the card", "Name and icon", "Tap and hold", "Look", "Position"]),
-        `the form's parts are ${parts}`,
+        stable(parts) === stable([["part-device", true], ["part-shows", false], ["part-controls", true], ["part-look", false], ["part-place", false]]),
+        `the form's parts are ${JSON.stringify(parts)}`,
       );
-      // At a named size the steps wait behind Fine-tune, and the icon is one
-      // line until Change is pressed.
-      check((await r.count('[data-test="wider"]')) === 0 && (await r.count('[data-test="size-fine-tune"]')) === 1, "Width and Height show at a named size");
+      // Size and place starts closed, and the icon is one line until Change
+      // is pressed.
+      check(!(await r.eval(`__j.find('[data-test="part-place"]').open`)), "Size and place is open at first");
+      await openPart(r, "shows");
       check((await r.count('[data-test="card-icon"]')) === 0 && (await r.count('[data-test="icon-change"]')) === 1, "the icon grid shows before Change");
       const chips = await r.eval(`__j.all('[data-test="size-chip"]').map((chip) => [chip.dataset.variant, chip.querySelector("input").checked])`);
       check(stable(chips) === stable([["tile", true], ["wide", false], ["large", false]]), `the sizes read ${JSON.stringify(chips)}`);
@@ -7095,6 +7177,7 @@ function chains(realConfig) {
       // A size: Wide. The card takes its size on the grid, and the picture
       // shows it twice as wide with one brightness bar; colour and white are
       // on the controls page.
+      await openPart(r, "place");
       await r.click('[data-test="size-chip"][data-variant="wide"]');
       await r.waitFor(
         `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
@@ -7110,6 +7193,7 @@ function chains(realConfig) {
       );
       check((await r.eval(`__j.find('[data-test="size-chip"][data-variant="wide"] input').checked`)) === true, "Wide is not marked as the size");
       await r.waitSaved("the size");
+      await openPart(r, "look");
       await r.eval(`__j.find('[data-test="card-lit"]').scrollIntoView({ block: "start" }); true`);
       await r.screen("206-light-form-wide");
       // One Undo takes the size back, and the picture with it.
@@ -7144,11 +7228,12 @@ function chains(realConfig) {
       check(!row("bar_on_tile") && !row("favourites"), `rows that follow a greyed one are drawn: ${rows.map((entry) => entry.option)}`);
       const off = await r.eval(`(() => { const input = __j.find('input[data-focus="option:show_brightness"]'); return [input.disabled, input.checked]; })()`);
       check(stable(off) === stable([true, false]), `Brightness is ${JSON.stringify(off)}, not off and greyed`);
-      // A greyed list shows a dash, not "Off" as if it had been chosen.
-      const colourList = await r.eval(`(() => { const field = __j.find('select[data-focus="option:colour_control"]');
-        return [field.disabled, field.options[field.selectedIndex]?.textContent]; })()`);
-      check(stable(colourList) === stable([true, "\u2013"]), `the greyed colour list is ${JSON.stringify(colourList)}`);
+      // A greyed choice has none marked, not "Off" as if it had been chosen.
+      const colourList = await r.eval(`(() => { const inputs = __j.all('input[data-focus^="option:colour_control:"]').filter((input) => __j.visible(input.closest("label")));
+        return [inputs.length > 0, inputs.every((input) => input.disabled), inputs.filter((input) => input.checked).length]; })()`);
+      check(stable(colourList) === stable([true, true, 0]), `the greyed colour choice is ${JSON.stringify(colourList)}`);
       // The lamp has no colour to show on the card either.
+      await openPart(r, "look");
       const tint = await r.eval(`(() => { const input = __j.find('input[data-test="card-tint"]');
         return [input.disabled, input.checked, input.closest(".option-row").innerText.includes("This device has no colour to show.")]; })()`);
       check(stable(tint) === stable([true, false, true]), `Show the device's colour is ${JSON.stringify(tint)}`);
@@ -7167,6 +7252,7 @@ function chains(realConfig) {
       await r.waitFor(`__j.find('[data-test="newer-card"]')`, "the offer of the newer card");
       const offer = await r.text('[data-test="newer-card"]');
       check(offer.includes("A newer card does this: Light."), `the offer reads "${offer}"`);
+      await openPart(r, "shows");
       await r.click('[data-test="form-name"]');
       await r.type("Desk lamp");
       await r.waitSaved("the name");
@@ -7219,10 +7305,10 @@ function chains(realConfig) {
       await r.waitSaved("the light added");
       const tile = await lightPicture(r);
       const marked = () => r.eval(`__j.all('[data-test="size-chip"]').filter((chip) => chip.querySelector("input").checked).map((chip) => chip.dataset.variant)`);
-      // Fine-tune opens Width and Height, with the focus on Wider.
-      await r.click('[data-test="size-fine-tune"]');
+      // Size and place shows Width and Height at once.
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
-      check((await focused(r)) === "wider", `after Fine-tune the focus is on ${await focused(r)}`);
+      check((await r.text('[data-test="size-words"]')) === "1 of 6 wide, 1 of 4 high", `the size reads "${await r.text('[data-test="size-words"]')}"`);
       check((await r.count('[data-test="size-reset"]')) === 0, "Back is offered at the size marked");
       // Wider: the card shows the largest size that fits, and that size is
       // marked; the picture shows the wide card, with its one brightness bar.
@@ -7241,9 +7327,11 @@ function chains(realConfig) {
       await r.waitSaved("Wider");
       const shot = await r.shot("209-light-wider");
       // Taller, then Narrower: Large, then the tile in a taller box.
+      await openPart(r, "place");
       await r.click('[data-test="taller"]');
       await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].grid_options?.rows === 6`, "Taller to be saved");
       check(stable(await marked()) === stable(["large"]), `after Taller the size marked is ${JSON.stringify(await marked())}`);
+      await openPart(r, "place");
       await r.click('[data-test="narrower"]');
       await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].grid_options?.columns === 6`, "Narrower to be saved");
       check(stable(await marked()) === stable(["tile"]), `after Narrower the size marked is ${JSON.stringify(await marked())}`);
@@ -7275,6 +7363,233 @@ function chains(realConfig) {
       const hit = __j.at(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
       return __j.inside(node, hit) ? "" : "covered by " + __j.describe(hit); })()`;
   const anyDialogOpen = `__j.all("dialog").some((dialog) => dialog.open)`;
+  // The inspector (package 4): a header that stays, five parts that fold,
+  // the device list by keyboard, size and place, the look, a copy, a
+  // card's own options and the newer cards everywhere.
+  const cardAt = (config, key) => {
+    const [v, s, c] = key.split(".").map(Number);
+    return config.views[v].sections[s].cards[c];
+  };
+  const inspecting = [
+    step("139", "inspector-header", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.0");
+      await r.waitFor(`__j.find('[data-test="side-head"]')`, "the inspector's header");
+      const head = await r.eval(`(() => {
+        const box = __j.find('[data-test="side-head"]').getBoundingClientRect();
+        const inView = (test) => { const node = __j.find('[data-test="' + test + '"]'); if (!node) return false;
+          const rect = node.getBoundingClientRect();
+          return rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth
+            && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1; };
+        return { top: box.top, name: inView("side-title"), duplicate: inView("duplicate-card"), remove: inView("remove-card"), done: inView("close-panel") };
+      })()`);
+      check(head.name && head.duplicate && head.remove && head.done, `the header is not all in view: ${JSON.stringify(head)}`);
+      // The parts scroll under the header; the header stays where it is.
+      await r.eval(`(() => { const form = __j.find(".edit-form"); form.scrollTop = form.scrollHeight; return true; })()`);
+      await sleep(150);
+      const after = await r.eval(`__j.find('[data-test="side-head"]').getBoundingClientRect().top`);
+      check(Math.abs(after - head.top) <= 1, `the header moved from ${head.top} to ${after} when the parts scrolled`);
+      if (r.setup.device === "desktop") {
+        await r.eval(`(() => { __j.find(".edit-form").scrollTop = 0; return true; })()`);
+        const tall = await r.eval(`({ form: __j.find(".edit-form").scrollHeight, side: __j.find('[data-test="side"]').clientHeight })`);
+        check(tall.form <= tall.side * 1.2, `the form as it first opens is ${tall.form} px in an inspector of ${tall.side} px`);
+      }
+      return r.shot("139-inspector-header");
+    }),
+    step("140", "parts", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.0");
+      await r.waitFor(`__j.find('[data-test="part-device"]')`, "the parts");
+      const parts = await r.eval(`__j.all('details.part').filter((part) => __j.visible(part)).map((part) => ({
+        id: part.dataset.part, open: part.open, summary: part.querySelector('[data-test="part-summary"]').textContent.trim() }))`);
+      const part = (id) => parts.find((entry) => entry.id === id);
+      const controls = Boolean(part("controls"));
+      check(part("device")?.open, `Device is not open: ${JSON.stringify(parts)}`);
+      check(part("shows") && part("shows").open === !controls, `What it shows is ${JSON.stringify(part("shows"))}`);
+      check(part("look") && !part("look").open && part("place") && !part("place").open, `Look or Size and place is open: ${JSON.stringify(parts)}`);
+      for (const id of ["device", "shows", "look", "place"]) {
+        check(part(id).summary, `${id} has no summary: ${JSON.stringify(parts)}`);
+      }
+      const shot = await r.shot("140-parts");
+      // Size and place stays open for the next card.
+      await openPart(r, "place");
+      await selectRow(r, "0.1.1");
+      await r.waitFor(`__j.find('[data-test="part-place"]')`, "the next card's parts");
+      check(await r.eval(`__j.find('[data-test="part-place"]').open`), "Size and place closed for the next card");
+      // A heading keeps its short form, with the same header.
+      await r.clearSelection();
+      const heading = await r.eval(`__j.all('[data-test="list-row"]').find((row) => __j.visible(row) && row.textContent.includes("Heading"))?.dataset.source`);
+      check(heading, "the sample has no heading in the list");
+      await r.click(`[data-test="list-row"][data-source="${heading}"]`);
+      await r.waitFor(`__j.find('[data-test="heading-text"]')`, "the heading's form");
+      const label = await r.eval(`__j.find('[data-test="heading-text"]').closest("label, .field").textContent`);
+      check(label.includes(await uiString(r, "form.heading_text")), `the heading's field reads "${label}"`);
+      check((await r.count('[data-test="side-head"] [data-test="remove-heading"]')) === 1, "the heading's Remove is not in the header");
+      return shot;
+    }),
+    step(
+      "141",
+      "device-list-keys",
+      async (r) => {
+        await openSample(r);
+        await selectRow(r, "0.1.0");
+        await r.click('[data-test="change-device"]');
+        await r.waitFor(`__j.find('[data-test="entity-search"]')`, "the device list");
+        check((await focused(r)) === "entity-search", `after Change focus is on ${await focused(r)}`);
+        // The search is the list's one Tab stop.
+        await r.key("Tab");
+        const next = await focused(r);
+        check(next && next !== "entity-search" && next !== "entity", `Tab from the search went to ${next}`);
+        await r.eval(`__j.find('[data-test="entity-search"]').focus(); true`);
+        const active = () => r.eval(`(() => { const search = __j.find('[data-test="entity-search"]');
+          const id = search.getAttribute("aria-activedescendant"); const option = id ? search.getRootNode().getElementById(id) : null;
+          return option ? option.dataset.entity : null; })()`);
+        await r.key("ArrowDown");
+        const first = await active();
+        check(first !== null, "Down marks no device");
+        await r.key("ArrowDown");
+        const second = await active();
+        check(second !== null && second !== first, `Down did not move: ${first}, then ${second}`);
+        check((await focused(r)) === "entity-search", "Down moved focus out of the search");
+        // Escape: the search, then the list, then the form.
+        await r.type("kit");
+        await r.key("Escape");
+        check((await r.eval(`__j.find('[data-test="entity-search"]')?.value`)) === "", "the first Escape left the search");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('[data-test="entity-search"]') && __j.find('[data-test="change-device"]')`, "the second Escape to close the list");
+        await r.key("Escape");
+        await r.waitFor(`!__j.designer()._selected`, "the third Escape to close the form");
+        return r.shot("141-device-list-keys");
+      },
+      { desktopOnly: true },
+    ),
+    step("142", "size-and-place", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await openPart(r, "place");
+      const words = () => r.text('[data-test="size-words"]');
+      const size = async () => {
+        const match = /^(\d+) of 6 wide, (\d+) of 4 high$/.exec(await words());
+        check(match, `the size reads "${await words()}"`);
+        return [Number(match[1]), Number(match[2])];
+      };
+      const [w, h] = await size();
+      const resetAtFirst = await r.count('[data-test="size-reset"]');
+      // On a page in narrow columns Wider may stop at once; Narrower then.
+      const widen = !(await r.eval(`__j.find('[data-test="wider"]').disabled`));
+      const w2 = widen ? w + 1 : w - 1;
+      await r.click(widen ? '[data-test="wider"]' : '[data-test="narrower"]');
+      await r.waitFor(`/^${w2} of 6 wide/.test(__j.text('[data-test="size-words"]'))`, "Wider or Narrower to change the words");
+      const h2 = h < 4 ? h + 1 : h - 1;
+      await r.click(h < 4 ? '[data-test="taller"]' : '[data-test="shorter"]');
+      await r.waitFor(`/${h2} of 4 high$/.test(__j.text('[data-test="size-words"]'))`, "Taller or Shorter to change the words");
+      const card = cardAt(await r.draft(), "0.1.1");
+      check(card.grid_options?.columns > 0 && card.grid_options?.rows > 0, `the card's size is ${JSON.stringify(card.grid_options)}`);
+      check((await r.count('[data-test="size-reset"]')) === 1, "Reset size does not show once the size differs");
+      if (!resetAtFirst) {
+        await r.click('[data-test="size-reset"]');
+        await r.waitFor(`__j.text('[data-test="size-words"]') === ${JSON.stringify(`${w} of 6 wide, ${h} of 4 high`)}`, "Reset size to bring the size back");
+        check((await r.count('[data-test="size-reset"]')) === 0, "Reset size shows at the card's own size");
+      }
+      const shot = await r.shot("142-size-and-place");
+      // With a pointer: the third cell of the second row is 3 wide, 2 high.
+      if (r.setup.device === "desktop" && !(await r.eval(`__j.find('[data-test="size-grid"] [data-w="3"][data-h="2"]').classList.contains("out")`))) {
+        await r.click('[data-test="size-grid"] [data-w="3"][data-h="2"]');
+        await r.waitFor(`__j.text('[data-test="size-words"]') === "3 of 6 wide, 2 of 4 high"`, "the size grid to make the card 3 by 2");
+      }
+      // The place: later, then earlier again.
+      const place = await r.text('[data-test="place-words"]');
+      await r.click('[data-test="move-later"]');
+      await r.waitFor(`__j.designer()._selected?.join(".") === "0.1.2"`, "Move later");
+      check((await r.text('[data-test="place-words"]')) !== place, `the place still reads "${place}"`);
+      await r.click('[data-test="move-earlier"]');
+      await r.waitFor(`__j.designer()._selected?.join(".") === "0.1.1"`, "Move earlier");
+      check((await r.text('[data-test="place-words"]')) === place, `the place reads "${await r.text('[data-test="place-words"]')}", not "${place}"`);
+      return shot;
+    }),
+    step("143", "look", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await openPart(r, "look");
+      const style = async () => cardAt(await r.draft(), "0.1.1").style;
+      const swatch = '[data-test="look-background"] [data-test="swatch-choice"]:not([data-value=""])';
+      await r.click(swatch);
+      await r.waitFor(`/^#[0-9A-F]{6}$/i.test(__j.designer()._history.present.views[0].sections[1].cards[1].style?.color || "")`, "the background colour");
+      check((await r.eval(`__j.find('${swatch}').getAttribute("aria-checked")`)) === "true", "the chosen swatch is not marked");
+      await r.click('[data-test="look-background"] [data-test="swatch-choice"][data-value=""]');
+      await r.waitFor(`!__j.designer()._history.present.views[0].sections[1].cards[1].style?.color`, "None to take the colour away");
+      // Fade, with Fade to.
+      await r.click('[data-test="look-gradient"] label[data-value="vertical"]');
+      await r.waitFor(`__j.find('[data-test="look-gradient-to"]')`, "Fade to");
+      await r.click('[data-test="look-gradient-to"] [data-test="swatch-choice"]');
+      await r.waitFor(`JSON.stringify(__j.designer()._history.present.views[0].sections[1].cards[1].style || {}).includes("vertical")`, "the fade");
+      const faded = await style();
+      check(faded.gradient?.direction === "vertical" && /^#[0-9A-F]{6}$/i.test(faded.gradient?.to || ""), `the faded look is ${JSON.stringify(faded)}`);
+      const shot = await r.shot("143-look");
+      // Reset look leaves no style.
+      await r.click('[data-test="look-reset"]');
+      await r.waitFor(`!("style" in __j.designer()._history.present.views[0].sections[1].cards[1])`, "Reset look");
+      check((await r.count('[data-test="look-reset"]')) === 0, "Reset look shows with nothing to reset");
+      await r.waitSaved("the look");
+      return shot;
+    }),
+    step("144", "duplicate", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await r.waitSaved("the editor");
+      const before = await r.draft();
+      await r.click('[data-test="duplicate-card"]');
+      await r.waitFor(`__j.designer()._history.present.views[0].sections[1].cards.length === ${before.views[0].sections[1].cards.length + 1}`, "the copy");
+      const now = await r.draft();
+      check(stable(cardAt(now, "0.1.2")) === stable(cardAt(before, "0.1.1")), `the copy is ${JSON.stringify(cardAt(now, "0.1.2"))}`);
+      check((await r.eval(`__j.designer()._selected.join(".")`)) === "0.1.2", "the copy is not selected");
+      await r.waitSaved("the copy");
+      const shot = await r.shot("144-duplicate");
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__j.designer()._history.present.views[0].sections[1].cards.length === ${before.views[0].sections[1].cards.length}`, "Undo to take the copy away");
+      check(stable(await r.draft()) === stable(before), "one Undo did not bring the dashboard back as it was");
+      return shot;
+    }),
+    step("145", "light-options", async (r) => {
+      await newLight(r, "light.kitchen");
+      const tile = await lightPicture(r);
+      check(tile && tile.sliders === 1, `the new Light has ${JSON.stringify(tile)}`);
+      await r.click('input[data-focus="option:show_brightness"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.show_brightness === false`, "Brightness off to be saved");
+      await r.waitFor(
+        `(() => { const card = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot.querySelector(".at-card");
+          return card && !card.querySelector(".at-slider"); })()`,
+        "the picture without the bar",
+      );
+      await r.waitSaved("Brightness off");
+      const shot = await r.shot("145-light-options");
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.show_brightness === undefined`, "Undo to bring Brightness back");
+      return shot;
+    }),
+    step("146", "newer-cards-everywhere", async (r) => {
+      await openSample(r);
+      const before = await r.draft();
+      check(cardAt(before, "0.1.0").component === "apollo/light-tile", "the sample has no older light card");
+      await openDashMenu(r);
+      await r.waitFor(`__j.find('[data-test="use-newer-everywhere"]')`, "Use the newer cards everywhere");
+      const shot = await r.shot("146-newer-cards-everywhere");
+      await r.click('[data-test="use-newer-everywhere"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light"`, "the newer card to be saved");
+      const swapped = cardAt(await r.config(), "0.1.0");
+      check(stable(swapped.params) === stable(cardAt(before, "0.1.0").params), `the device changed: ${JSON.stringify(swapped)}`);
+      await r.waitSaved("the newer cards");
+      await openDashMenu(r);
+      check((await r.count('[data-test="use-newer-everywhere"]')) === 0, "the menu still offers the newer cards");
+      await closePops(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light-tile"`, "Undo to bring the older card back");
+      return shot;
+    }),
+  ];
+
   const popups = [
     step("127", "top-bar", async (r) => {
       const phone = r.setup.device === "phone";
@@ -8307,6 +8622,7 @@ function chains(realConfig) {
     workspace,
     drawing,
     cardForms,
+    inspecting,
     popups,
     startScreen,
   ];

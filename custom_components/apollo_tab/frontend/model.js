@@ -1630,6 +1630,48 @@ export function removeItem(config, source) {
   return next;
 }
 
+// A copy of the card right after it, in the same group of cards, with the
+// same device, name, look and size. Returns the new config and the copy's
+// place; source null when there is no card there.
+export function duplicateCard(config, source) {
+  const next = structuredClone(config);
+  const parts = sourceParts(source);
+  if (parts === null || parts[2] === null) {
+    return { config: next, source: null };
+  }
+  const [vi, si, ci] = parts;
+  const section = sectionAt(next, vi, si);
+  if (!section || !Array.isArray(section.cards) || !isPlainObject(section.cards[ci])) {
+    return { config: next, source: null };
+  }
+  section.cards.splice(ci + 1, 0, structuredClone(section.cards[ci]));
+  return { config: next, source: [vi, si, ci + 1] };
+}
+
+// Where a card sits among the cards of its page, in the order they fill the
+// screen: { n, count }, n from 1. Null when it is not on the page.
+export function cardPlace(config, source) {
+  const parts = sourceParts(source);
+  const view = parts === null ? null : configViews(config)[parts[0]];
+  if (!isPlainObject(view) || !Array.isArray(view.sections) || parts[2] === null) {
+    return null;
+  }
+  let count = 0;
+  let n = 0;
+  view.sections.forEach((section, si) => {
+    if (!isGridSection(section) || !Array.isArray(section.cards)) {
+      return;
+    }
+    section.cards.forEach((_card, ci) => {
+      count += 1;
+      if (si === parts[1] && ci === parts[2]) {
+        n = count;
+      }
+    });
+  });
+  return n ? { n, count } : null;
+}
+
 export function setHeadingText(config, source, text) {
   const next = structuredClone(config);
   const parts = sourceParts(source);
@@ -1864,8 +1906,23 @@ export function paramFields(component) {
       default: safeSpec.kind === "number"
         ? safeSpec.default
         : undefined,
+      // Devices of this class come first in the list (A13); the others
+      // still follow.
+      device_class: safeSpec.kind === "entity" && typeof safeSpec.device_class === "string"
+        ? safeSpec.device_class
+        : undefined,
     };
   });
+}
+
+// The fields the picker's device step draws: for a card added with one
+// press (singleEntityParam) only that one device field, so changing another
+// field first cannot add the card without a device; for any other card all
+// fields. The fields left out keep their defaults and are in the form.
+export function pickerFields(component) {
+  const fields = paramFields(component);
+  const single = singleEntityParam(component);
+  return single ? fields.filter((field) => field.name === single) : fields;
 }
 
 // The one device field a card needs, when the picker can add the card the
@@ -2021,15 +2078,37 @@ export function entityChoices(hass, spec, query = "") {
     if (!words.every((word) => searchable.includes(word))) {
       continue;
     }
+    // Matches in order: a name that starts with the words, other name
+    // matches, then matches by room (or address).
+    const lower = name.toLowerCase();
+    let rank = 0;
+    if (words.length) {
+      if (lower.startsWith(words.join(" "))) {
+        rank = 0;
+      } else if (words.every((word) => lower.includes(word))) {
+        rank = 1;
+      } else {
+        rank = 2;
+      }
+    }
+    const wanted = isPlainObject(spec) && typeof spec.device_class === "string" ? spec.device_class : "";
 
     choices.push({
       entity_id: entityId,
       name,
       area,
+      rank,
+      other: Boolean(wanted) && attributes.device_class !== wanted,
     });
   }
 
   choices.sort((a, b) => {
+    if (a.other !== b.other) {
+      return a.other ? 1 : -1;
+    }
+    if (a.rank !== b.rank) {
+      return a.rank - b.rank;
+    }
     const nameOrder = a.name.localeCompare(
       b.name,
       undefined,
@@ -2043,7 +2122,7 @@ export function entityChoices(hass, spec, query = "") {
       : a.entity_id.localeCompare(b.entity_id);
   });
 
-  return choices;
+  return choices.map(({ entity_id, name, area }) => ({ entity_id, name, area }));
 }
 
 export function paramsComplete(component, params) {
@@ -2821,6 +2900,62 @@ export function swapCard(config, source, newer) {
   return next;
 }
 
+// The places of the cards on the dashboard that a newer built-in card
+// replaces, in page order.
+export function olderCards(config, library) {
+  const found = [];
+  configViews(config).forEach((view, vi) => {
+    const sections = isPlainObject(view) && Array.isArray(view.sections) ? view.sections : [];
+    sections.forEach((section, si) => {
+      const cards = isPlainObject(section) && Array.isArray(section.cards) ? section.cards : [];
+      cards.forEach((card, ci) => {
+        if (newerCard(library, componentOf(card, library))) {
+          found.push([vi, si, ci]);
+        }
+      });
+    });
+  });
+  return found;
+}
+
+// Swaps every older card on the dashboard for its newer card, as swapCard
+// does for one. One change, so one undo step.
+export function swapAllOlder(config, library) {
+  let next = structuredClone(config);
+  for (const source of olderCards(config, library)) {
+    const newer = newerCard(library, componentOf(getCard(next, source), library));
+    if (newer) {
+      next = swapCard(next, source, newer);
+    }
+  }
+  return next;
+}
+
+// The next size up for "Make the card bigger": the next larger named size
+// ({ variant }), or one unit taller ({ w, h }), else one unit wider; {}
+// when the card is as big as it gets.
+export function biggerSize(card, component) {
+  const sizes = pickerVariants(component);
+  if (sizes.length > 1) {
+    const area = (variant) => variant.grid[0] * variant.grid[1];
+    const now = sizes.find((variant) => variant.id === activeVariant(card, component));
+    const larger = sizes
+      .filter((variant) => now && area(variant) > area(now))
+      .sort((a, b) => area(a) - area(b));
+    if (larger.length) {
+      return { variant: larger[0].id };
+    }
+  }
+  const size = cardSize(card, component);
+  if (size.h < MAX_UNITS_HIGH) {
+    return { w: size.w, h: size.h + 1 };
+  }
+  if (size.w < MAX_UNITS_WIDE) {
+    return { w: size.w + 1, h: size.h };
+  }
+  return {};
+}
+
 // Picks a named size: the card stores it and takes its size on the grid.
 export function setVariant(config, source, component, variantId) {
   const variant = pickerVariants(component).find((entry) => entry.id === variantId);
@@ -3110,6 +3245,8 @@ export function cardForm(component, card, facts = null) {
       grid: [...variant.grid],
       offered,
       reason: offered ? "" : String(variant.needs_text || ""),
+      // The options this size draws, when the card file says (A6).
+      uses: Array.isArray(variant.uses) ? variant.uses.filter((name) => typeof name === "string") : null,
     };
   });
 

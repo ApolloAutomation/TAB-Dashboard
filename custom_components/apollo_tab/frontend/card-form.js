@@ -29,6 +29,8 @@ import {
   styleDefaults,
 } from "./model.js";
 
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
 let nextId = 0;
 
 export function uid(prefix) {
@@ -281,17 +283,6 @@ function select({ label, options, value, focus, test, onChange }) {
   return { field, control };
 }
 
-function colourInput({ label, rgb, focus, onInput }) {
-  const field = el("label", "field");
-  const input = document.createElement("input");
-  input.type = "color";
-  input.value = rgbToHex(rgb);
-  input.dataset.focus = focus;
-  input.addEventListener("input", () => onInput(hexToRgbList(input.value)));
-  field.append(el("span", "field-label", label), input);
-  return field;
-}
-
 // Gives focus to the control named `key` in `container`, which was just
 // drawn again. A control that is now disabled (Wider at the largest size,
 // Move page right on the last page) cannot hold focus, so the control its
@@ -356,9 +347,49 @@ function redraw(container, draw) {
   restoreFocus(container, key);
 }
 
+// The icon of a kind of device, for the device rows and the list.
+const DOMAIN_ICONS = {
+  light: "mdi:lightbulb",
+  switch: "mdi:toggle-switch",
+  scene: "mdi:palette",
+  script: "mdi:script-text",
+  climate: "mdi:thermostat",
+  fan: "mdi:fan",
+  cover: "mdi:blinds",
+  media_player: "mdi:speaker",
+  lock: "mdi:lock",
+  alarm_control_panel: "mdi:shield-home",
+  camera: "mdi:cctv",
+  sensor: "mdi:eye",
+  binary_sensor: "mdi:checkbox-blank-circle-outline",
+  weather: "mdi:weather-partly-cloudy",
+  person: "mdi:account",
+};
+
+function deviceIcon(hass, entityId) {
+  const own = hass?.states?.[entityId]?.attributes?.icon;
+  if (isIcon(own)) {
+    return own;
+  }
+  return DOMAIN_ICONS[String(entityId).split(".", 1)[0]] || "mdi:devices";
+}
+
+// The room a device is in, as the list shows it.
+function deviceRoom(hass, entityId) {
+  return entityChoices(hass, { kind: "entity", domains: [] }, "").find((choice) => choice.entity_id === entityId)?.area || "";
+}
+
+// A device's icon in a tinted circle, as the device rows and the list draw it.
+function deviceBadge(name) {
+  const badge = el("span", "device-badge");
+  badge.append(icon(name));
+  return badge;
+}
+
 // Returns a DOM node. onChange(value) gets the new param value (string,
-// string[], number or undefined). In the card form (collapsed) an entity
-// field shows the chosen device and opens its list on request.
+// string[], number or undefined). In the card form (collapsed) a device
+// field shows the chosen device as one row and opens its list on request;
+// in the picker the list is open from the start.
 export function buildParamField({
   hass,
   field,
@@ -368,9 +399,8 @@ export function buildParamField({
   collapsed = false,
   onChange,
 }) {
-  void compact;
   if (field.kind === "entity") {
-    return entityField({ hass, field, value, collapsed, onChange });
+    return entityField({ hass, field, value, collapsed, compact, onChange });
   }
   if (field.kind === "number") {
     return numberField({ field, value, onChange });
@@ -381,8 +411,12 @@ export function buildParamField({
   return el("div");
 }
 
-function entityField({ hass, field, value, collapsed, onChange }) {
-  const wrap = el("div", "field");
+// A device field. The list is a combobox: the search field is the one Tab
+// stop, Down and Up move the active choice, Enter picks it, and Escape
+// first empties the search, then closes the list (in the card form). The
+// number of matches is read out politely.
+function entityField({ hass, field, value, collapsed, compact, onChange }) {
+  const wrap = el("div", "field device-field");
   wrap.dataset.param = field.name;
   const label = field.label || whichLabel(field.domain);
   let chosen = field.multiple
@@ -390,7 +424,6 @@ function entityField({ hass, field, value, collapsed, onChange }) {
     : typeof value === "string"
       ? value
       : "";
-  let open = !collapsed;
   let query = "";
 
   const chosenNames = () =>
@@ -401,22 +434,30 @@ function entityField({ hass, field, value, collapsed, onChange }) {
         : "";
 
   const drawClosed = () => {
+    wrap.classList.remove("choosing");
     wrap.replaceChildren();
     const row = el("div", "chosen");
     const names = chosenNames();
-    row.append(el("span", null, names || t("form.none_chosen")));
+    const first = field.multiple ? chosen[0] : chosen;
+    if (names) {
+      row.append(deviceBadge(deviceIcon(hass, first)));
+    }
+    const words = el("span", "chosen-words");
+    words.append(el("span", "chosen-name", names || t("form.none_chosen")));
+    const room = names && !field.multiple ? deviceRoom(hass, first) : "";
+    if (room) {
+      words.append(el("span", "small", room));
+    }
+    row.append(words);
     // "Change" would suggest something is chosen already.
     const action = names ? t("form.change_device") : t("form.choose_device");
     row.append(
       makeButton(action, {
-        kind: names ? "text" : undefined,
+        kind: names ? "text" : "tonal",
         test: "change-device",
         focus: `change-device:${field.name}`,
         ariaLabel: `${action}: ${label}`,
-        onClick: () => {
-          open = true;
-          drawOpen(true);
-        },
+        onClick: () => drawOpen(true),
       }),
     );
     wrap.append(el("span", "field-label", label), row);
@@ -424,8 +465,13 @@ function entityField({ hass, field, value, collapsed, onChange }) {
 
   const drawOpen = (focusSearch) => {
     wrap.replaceChildren();
+    // On a phone the open list takes the whole edit mode (see styles).
+    wrap.classList.toggle("choosing", collapsed && compact);
     const listId = uid("entities");
+    const labelId = uid("entities-label");
     const searchField = el("label", "field");
+    const labelNode = el("span", "field-label", label);
+    labelNode.id = labelId;
     const search = document.createElement("input");
     search.type = "search";
     search.value = query;
@@ -433,8 +479,11 @@ function entityField({ hass, field, value, collapsed, onChange }) {
     search.autocomplete = "off";
     search.dataset.test = "entity-search";
     search.dataset.focus = `entity-search:${field.name}`;
+    search.setAttribute("role", "combobox");
+    search.setAttribute("aria-autocomplete", "list");
+    search.setAttribute("aria-expanded", "true");
     search.setAttribute("aria-controls", listId);
-    searchField.append(el("span", "field-label", label), search);
+    searchField.append(labelNode, search);
     wrap.append(searchField);
 
     let counter = null;
@@ -443,6 +492,10 @@ function entityField({ hass, field, value, collapsed, onChange }) {
       counter.setAttribute("aria-live", "polite");
       wrap.append(el("p", "helper", t("pick.many_hint", { max: MAX_ENTITIES })), counter);
     }
+    // How many devices match, for screen readers.
+    const matches = el("p", "sr-only");
+    matches.setAttribute("aria-live", "polite");
+    matches.dataset.test = "entity-matches";
 
     const list = el("div", "entity-list");
     list.id = listId;
@@ -452,73 +505,110 @@ function entityField({ hass, field, value, collapsed, onChange }) {
       list.setAttribute("aria-multiselectable", "true");
     }
     const message = el("div", "field");
-    wrap.append(list, message);
+    wrap.append(list, matches, message);
+
+    let options = [];
+    let active = -1;
+    const setActive = (index) => {
+      options.forEach((option) => option.classList.remove("active"));
+      active = options.length ? Math.max(0, Math.min(options.length - 1, index)) : -1;
+      if (active < 0) {
+        search.removeAttribute("aria-activedescendant");
+        return;
+      }
+      const option = options[active];
+      option.classList.add("active");
+      search.setAttribute("aria-activedescendant", option.id);
+      option.scrollIntoView?.({ block: "nearest" });
+    };
+
+    const pick = (entityId) => {
+      if (field.multiple) {
+        const keep = active;
+        chosen = chosen.includes(entityId) ? chosen.filter((id) => id !== entityId) : [...chosen, entityId];
+        counter.textContent = t("pick.chosen", { count: chosen.length });
+        fill();
+        setActive(keep);
+        onChange(chosen.length ? [...chosen] : undefined);
+        return;
+      }
+      chosen = entityId;
+      if (collapsed) {
+        drawClosed();
+        wrap.querySelector("button")?.focus();
+      } else {
+        fill();
+      }
+      onChange(entityId || undefined);
+    };
 
     const fill = () => {
-      const active = list.getRootNode().activeElement;
-      const focusedEntity = active && list.contains(active) ? active.dataset.entity : null;
       list.replaceChildren();
       message.replaceChildren();
+      options = [];
+      active = -1;
+      search.removeAttribute("aria-activedescendant");
 
       if (!entityChoices(hass, field, "").length) {
         list.hidden = true;
+        matches.textContent = "";
         message.append(el("strong", null, t("pick.none_title")), el("p", "helper", t("pick.none_text")));
         return;
       }
       const choices = entityChoices(hass, field, query);
       list.hidden = !choices.length;
+      matches.textContent = t("pick.matches", { count: choices.length });
       if (!choices.length) {
         message.append(el("p", "helper", t("pick.no_match", { query: query.trim() })));
         return;
       }
-
+      // Two devices with the same name show their address too.
+      const counts = new Map();
       for (const choice of choices) {
-        const selected = field.multiple
-          ? chosen.includes(choice.entity_id)
-          : chosen === choice.entity_id;
-        const option = makeButton(null, { className: "entity-option", test: "entity" });
+        counts.set(choice.name, (counts.get(choice.name) || 0) + 1);
+      }
+      const rows = [...choices];
+      // An optional device can be left out again.
+      if (field.optional && !field.multiple && !query.trim()) {
+        rows.unshift({ entity_id: "", name: t("form.device_none"), area: "" });
+      }
+      for (const choice of rows) {
+        const selected = field.multiple ? chosen.includes(choice.entity_id) : chosen === choice.entity_id;
+        const option = el("div", "entity-option");
+        option.id = uid("entity");
+        option.dataset.test = "entity";
+        option.dataset.entity = choice.entity_id;
         option.setAttribute("role", "option");
         option.setAttribute("aria-selected", String(selected));
-        option.dataset.entity = choice.entity_id;
+        if (choice.entity_id) {
+          option.title = choice.entity_id;
+          option.append(deviceBadge(deviceIcon(hass, choice.entity_id)));
+        }
+        const words = el("span", "entity-words");
         const name = el("span", "entity-name");
         if (selected) {
           name.append(el("span", "entity-check", "✓ "));
         }
         name.append(choice.name);
-        option.append(
-          name,
-          el("small", null, [choice.area, choice.entity_id].filter(Boolean).join(" · ")),
-        );
-        if (field.multiple && !selected && chosen.length >= MAX_ENTITIES) {
-          option.disabled = true;
+        words.append(name);
+        const second = [choice.area, counts.get(choice.name) > 1 ? choice.entity_id : ""].filter(Boolean).join(" · ");
+        if (second) {
+          words.append(el("small", null, second));
         }
+        option.append(words);
+        const full = field.multiple && !selected && chosen.length >= MAX_ENTITIES;
+        if (full) {
+          option.setAttribute("aria-disabled", "true");
+        }
+        // A press on a row keeps focus in the search field.
+        option.addEventListener("mousedown", (event) => event.preventDefault());
         option.addEventListener("click", () => {
-          if (field.multiple) {
-            chosen = selected
-              ? chosen.filter((id) => id !== choice.entity_id)
-              : [...chosen, choice.entity_id];
-            counter.textContent = t("pick.chosen", { count: chosen.length });
-            fill();
-            onChange(chosen.length ? [...chosen] : undefined);
-            return;
+          if (!full) {
+            pick(choice.entity_id);
           }
-          chosen = choice.entity_id;
-          if (collapsed) {
-            open = false;
-            drawClosed();
-            wrap.querySelector("button")?.focus();
-          } else {
-            fill();
-          }
-          onChange(choice.entity_id);
         });
+        options.push(option);
         list.append(option);
-      }
-
-      if (focusedEntity) {
-        [...list.querySelectorAll("[data-entity]")]
-          .find((node) => node.dataset.entity === focusedEntity)
-          ?.focus();
       }
     };
 
@@ -526,16 +616,48 @@ function entityField({ hass, field, value, collapsed, onChange }) {
       query = search.value;
       fill();
     });
+    search.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setActive(active < 0 ? (step > 0 ? 0 : options.length - 1) : active + step);
+      } else if (event.key === "Home" && active >= 0) {
+        event.preventDefault();
+        setActive(0);
+      } else if (event.key === "End" && active >= 0) {
+        event.preventDefault();
+        setActive(options.length - 1);
+      } else if (event.key === "Enter") {
+        if (active >= 0 && options[active].getAttribute("aria-disabled") !== "true") {
+          event.preventDefault();
+          pick(options[active].dataset.entity);
+        }
+      } else if (event.key === "Escape") {
+        // First the search, then the list; then Escape goes on to the form.
+        if (search.value) {
+          event.preventDefault();
+          event.stopPropagation();
+          query = "";
+          search.value = "";
+          fill();
+        } else if (collapsed) {
+          event.preventDefault();
+          event.stopPropagation();
+          drawClosed();
+          wrap.querySelector("button")?.focus();
+        }
+      }
+    });
     fill();
     if (focusSearch) {
       search.focus();
     }
   };
 
-  if (open) {
-    drawOpen(false);
-  } else {
+  if (collapsed) {
     drawClosed();
+  } else {
+    drawOpen(false);
   }
   return wrap;
 }
@@ -568,13 +690,17 @@ function numberField({ field, value, onChange }) {
       onChange(number);
     }
   });
-  wrap.append(el("span", "field-label", labelForName(field.name)), input);
+  wrap.append(el("span", "field-label", field.label || labelForName(field.name)), input);
+  // Empty keeps the card file's own number.
+  if (field.default !== null && field.default !== undefined) {
+    wrap.append(el("span", "helper", t("form.number_default", { value: field.default })));
+  }
   return wrap;
 }
 
 function pageField({ field, value, config, onChange }) {
   const { field: wrap } = select({
-    label: t("pick.page"),
+    label: field.label || t("pick.page"),
     options: [
       ["", t("pick.page_none")],
       ...pageChoices(config).map((page) => [page.path, page.title || page.path]),
@@ -589,7 +715,9 @@ function pageField({ field, value, config, onChange }) {
 
 // The lines under an item's heading: notes for a card the tablet shows, or
 // the reason it is left out. Filled again whenever a new preview arrives.
-export function fillItemNotes(container, row, { onOpenAdvanced } = {}) {
+// onBigger, when given, puts "Make the card bigger" on the line that says
+// part of the card does not fit.
+export function fillItemNotes(container, row, { onOpenAdvanced, onBigger } = {}) {
   if (!container) {
     return;
   }
@@ -598,7 +726,12 @@ export function fillItemNotes(container, row, { onOpenAdvanced } = {}) {
     return;
   }
   for (const code of row.notes || []) {
-    container.append(el("p", "note-line", t(`warn.${code}`, { detail: row.detail || "" })));
+    const line = el("p", "note-line", t(`warn.${code}`, { detail: row.detail || "" }));
+    container.append(line);
+    if (code === "element_clipped" && onBigger) {
+      line.classList.add("with-button");
+      line.append(makeButton(t("form.bigger"), { kind: "text", test: "card-bigger", focus: "card-bigger", onClick: onBigger }));
+    }
   }
   if (row.reason) {
     const line = el("p", "note-line problem", t(`warn.${row.reason}`, { detail: row.detail || "" }));
@@ -615,7 +748,300 @@ function itemHeading(text) {
   const heading = el("h2", "side-title", text);
   heading.tabIndex = -1;
   heading.dataset.test = "side-title";
+  heading.dataset.focus = "side-title";
   return heading;
+}
+
+// ---- the inspector: a header that stays, then parts that fold ----
+
+// Which parts are open, per part and not per card, while the editor is
+// open. Only what the person opened or closed is kept; the rest follow
+// each card's first-time rule.
+const partOpen = new Map();
+
+export function resetParts() {
+  partOpen.clear();
+}
+
+// Opens a part from outside, as "Move to page" in the list does.
+export function showPart(id) {
+  partOpen.set(id, true);
+}
+
+// One part: a details element with a 48 px summary row (chevron, title, a
+// one-line summary) and the rows under it.
+function part(id, title, summary, open, nodes) {
+  const details = el("details", "part");
+  details.dataset.test = `part-${id}`;
+  details.dataset.part = id;
+  details.open = partOpen.has(id) ? partOpen.get(id) : open;
+  const head = el("summary", "part-summary");
+  head.dataset.focus = `part:${id}`;
+  const chevron = icon("mdi:chevron-right");
+  chevron.classList.add("part-chevron");
+  const sum = el("span", "part-sum", summary || "");
+  sum.dataset.test = "part-summary";
+  head.append(chevron, el("span", "part-title", title), sum);
+  // A press on the summary toggles the part after this; Enter and Space
+  // press it too.
+  head.addEventListener("click", () => partOpen.set(id, !details.open));
+  const body = el("div", "part-body");
+  body.append(...nodes);
+  details.append(head, body);
+  return details;
+}
+
+// The header: the card's icon in a circle, its name and its type, and the
+// buttons. ctx.compact gives Done its word.
+function inspectorHead({ iconName, name, type, buttons }) {
+  const head = el("div", "inspector-head");
+  head.dataset.test = "side-head";
+  const badge = el("span", "head-icon");
+  badge.append(icon(iconName || "mdi:card-outline"));
+  const words = el("div", "head-words");
+  words.append(itemHeading(name));
+  if (type) {
+    const line = el("span", "small head-type", type);
+    line.dataset.test = "side-type";
+    words.append(line);
+  }
+  const actions = el("div", "head-buttons");
+  actions.append(...buttons.filter(Boolean));
+  head.append(badge, words, actions);
+  return head;
+}
+
+function headButton(name, words, test, onClick, className = "") {
+  const button = makeButton(null, {
+    kind: "icon",
+    className,
+    test,
+    focus: test,
+    ariaLabel: words,
+    onClick,
+  });
+  button.title = words;
+  button.append(icon(name));
+  return button;
+}
+
+// Done, with its word: it lets the card go (on a phone it closes the edit
+// mode).
+function doneButton(ctx) {
+  if (!ctx.onDone) {
+    return null;
+  }
+  const button = makeButton(null, { className: "sheet-close", test: "close-panel", focus: "close-panel", onClick: ctx.onDone });
+  button.append(icon("mdi:check"), el("span", null, t("editor.close_panel")));
+  return button;
+}
+
+function removeButton(test, words, onClick) {
+  return headButton("mdi:trash-can-outline", words, test, onClick, "head-remove");
+}
+
+// The inspector's two halves: the header that stays in view and the body
+// that scrolls. The editor places them.
+function inspector(head, body) {
+  const node = el("div", "inspector");
+  node.append(head, body);
+  return node;
+}
+
+// The name a card goes by: the name on the card, else its device's name,
+// else the card's own name.
+function cardTitle(ctx) {
+  const { card, component } = ctx;
+  if (typeof card.title === "string" && card.title.trim()) {
+    return card.title.trim();
+  }
+  const names = formFields(component)
+    .filter((field) => field.kind === "entity")
+    .flatMap((field) => {
+      const value = card.params?.[field.name];
+      return (Array.isArray(value) ? value : [value]).filter((id) => typeof id === "string" && id);
+    })
+    .map((id) => entityName(ctx.hass, id));
+  return names.length ? names.slice(0, 2).join(", ") + (names.length > 2 ? ", …" : "") : "";
+}
+
+// The summary of the Device part: the chosen devices, or "Nothing chosen
+// yet".
+function deviceSummary(ctx, fields) {
+  const names = fields
+    .filter((field) => field.kind === "entity")
+    .flatMap((field) => {
+      const value = ctx.card.params?.[field.name];
+      return (Array.isArray(value) ? value : [value]).filter((id) => typeof id === "string" && id);
+    })
+    .map((id) => entityName(ctx.hass, id));
+  if (names.length) {
+    return names.join(", ");
+  }
+  return fields.some((field) => field.kind === "entity") ? t("form.none_chosen") : "";
+}
+
+// Size and place: the named sizes, the steppers with their words, the size
+// grid for a pointer, the place and Move to page. `form` is the card's form
+// data (cardForm) or null for a card of the first schema.
+function placePart(ctx, form) {
+  const block = el("div", "place-rows");
+  let size = cardSize(ctx.card, ctx.component);
+  // The card as the steps leave it, for the named sizes: the steps drop
+  // the picked size (designer.js onResize), so the size follows the grid.
+  let card = ctx.card;
+  const named = Boolean(form) && form.sizes.length > 1;
+
+  const resize = (w, h) => {
+    const width = Math.min(ctx.maxWide, Math.max(1, w));
+    const height = Math.min(MAX_UNITS_HIGH, Math.max(1, h));
+    if (width === size.w && height === size.h && size.exact) {
+      return;
+    }
+    size = { w: width, h: height, exact: true };
+    card = { ...card, variant: undefined, grid_options: { ...card.grid_options, columns: width * UNIT_COLUMNS, rows: height * UNIT_ROWS } };
+    ctx.onResize(width, height);
+    redraw(block, draw);
+  };
+
+  const stepper = (label, value, less, more) => {
+    const row = el("div", "stepper");
+    const words = el("span", "stepper-label", label);
+    const number = el("span", "stepper-value", String(value));
+    number.setAttribute("aria-hidden", "true");
+    const lessButton = makeButton(null, { kind: "icon", ...less });
+    lessButton.append(icon("mdi:minus"));
+    lessButton.title = less.ariaLabel;
+    const moreButton = makeButton(null, { kind: "icon", ...more });
+    moreButton.append(icon("mdi:plus"));
+    moreButton.title = more.ariaLabel;
+    row.append(words, lessButton, number, moreButton);
+    return row;
+  };
+
+  const draw = () => {
+    let shown = null;
+    let tuned = false;
+    if (named) {
+      sizeChips(form, ctx)(block, card);
+      const id = activeVariant(card, ctx.component, form.sizes);
+      shown = form.sizes.find((entry) => entry.id === id) || null;
+      tuned = Boolean(shown)
+        && (!size.exact || size.w * UNIT_COLUMNS !== shown.grid[0] || size.h * UNIT_ROWS !== shown.grid[1]);
+    }
+    const value = el("p", "size-value", t("form.size_value", { w: size.w, h: size.h, wide: MAX_UNITS_WIDE, high: MAX_UNITS_HIGH }));
+    value.dataset.test = "size-words";
+    value.setAttribute("aria-live", "polite");
+    const width = stepper(
+      t("form.width"),
+      size.w,
+      { test: "narrower", focus: "narrower", focusAlt: "wider", ariaLabel: t("form.narrower"), disabled: size.w <= 1, onClick: () => resize(size.w - 1, size.h) },
+      { test: "wider", focus: "wider", focusAlt: "narrower", ariaLabel: t("form.wider"), disabled: size.w >= ctx.maxWide, onClick: () => resize(size.w + 1, size.h) },
+    );
+    // Wider stops early on a page still arranged in narrow columns. Say why
+    // beside it, with the action that lifts the limit.
+    let columns = null;
+    if (ctx.maxWide < MAX_UNITS_WIDE && size.w >= ctx.maxWide && ctx.onWholeScreen) {
+      columns = el("div", "size-note");
+      columns.dataset.test = "size-columns";
+      columns.append(
+        el("p", "helper", t("form.size_columns", { max: ctx.maxWide })),
+        makeButton(t("editor.columns_fix"), {
+          test: "card-whole-screen",
+          focus: "card-whole-screen",
+          onClick: ctx.onWholeScreen,
+        }),
+      );
+    }
+    const height = stepper(
+      t("form.height"),
+      size.h,
+      { test: "shorter", focus: "shorter", focusAlt: "taller", ariaLabel: t("form.shorter"), disabled: size.h <= 1, onClick: () => resize(size.w, size.h - 1) },
+      { test: "taller", focus: "taller", focusAlt: "shorter", ariaLabel: t("form.taller"), disabled: size.h >= MAX_UNITS_HIGH, onClick: () => resize(size.w, size.h + 1) },
+    );
+    block.append(width);
+    if (columns) {
+      block.append(columns);
+    }
+    block.append(height, value);
+    // Back to the card's own size, only while the size differs.
+    if (named && tuned) {
+      block.append(
+        makeButton(t("form.size_back", { size: shown.name }), {
+          kind: "text",
+          test: "size-reset",
+          focus: "size-reset",
+          onClick: () => ctx.onVariant(shown.id),
+        }),
+      );
+    } else if (!named) {
+      const own = ownSize(ctx);
+      if (!size.exact || size.w !== own[0] || size.h !== own[1]) {
+        block.append(
+          makeButton(t("form.size_reset"), {
+            kind: "text",
+            test: "size-reset",
+            focus: "size-reset",
+            focusAlt: "wider narrower",
+            onClick: () => resize(own[0], own[1]),
+          }),
+        );
+      }
+    }
+    block.append(sizeGrid(size, ctx.maxWide, resize));
+    if (!size.exact) {
+      block.append(el("p", "helper", t("form.size_odd")));
+    }
+  };
+
+  draw();
+  const nodes = [block];
+  if (ctx.onMove) {
+    nodes.push(positionBlock(ctx));
+  }
+  return nodes;
+}
+
+// The size a card of the first schema is made with.
+function ownSize(ctx) {
+  const own = Array.isArray(ctx.component.size) ? ctx.component.size : [1, 1];
+  return [Number(own[0]) || 1, Number(own[1]) || 1];
+}
+
+// The quick way to a size with a pointer: 6 x 4 cells; moving over them
+// paints a rectangle from the top left, a press sets that size, and cells
+// the card cannot reach are dimmed. Hidden from assistive technology; the
+// steppers are the accessible way.
+function sizeGrid(size, maxWide, resize) {
+  const grid = el("div", "size-grid");
+  grid.dataset.test = "size-grid";
+  grid.setAttribute("aria-hidden", "true");
+  const cells = [];
+  const paint = (w, h) => {
+    for (const cell of cells) {
+      cell.classList.toggle("painted", cell.__w <= w && cell.__h <= h);
+    }
+  };
+  for (let h = 1; h <= MAX_UNITS_HIGH; h += 1) {
+    for (let w = 1; w <= MAX_UNITS_WIDE; w += 1) {
+      const cell = el("div", "size-cell");
+      cell.__w = w;
+      cell.__h = h;
+      cell.dataset.w = String(w);
+      cell.dataset.h = String(h);
+      const reach = w <= maxWide;
+      cell.classList.toggle("out", !reach);
+      cell.classList.toggle("on", w <= size.w && h <= size.h);
+      if (reach) {
+        cell.addEventListener("pointerenter", () => paint(w, h));
+        cell.addEventListener("click", () => resize(w, h));
+      }
+      cells.push(cell);
+      grid.append(cell);
+    }
+  }
+  grid.addEventListener("pointerleave", () => paint(0, 0));
+  return grid;
 }
 
 // Moves the card to another page, or to a new one. The page is chosen first
@@ -644,246 +1070,284 @@ function moveToPageBlock({ pages, onMoveToPage }) {
   return block;
 }
 
-function positionBlock({ canEarlier, canLater, onMove, pages, onMoveToPage }) {
-  const block = el("div", "form-block");
-  const buttons = el("div", "row-buttons");
-  buttons.append(
-    makeButton(t("form.move_earlier"), {
-      test: "move-earlier",
-      focus: "move-earlier",
-      focusAlt: "move-later",
-      disabled: !canEarlier,
-      onClick: () => onMove(-1),
-    }),
-    makeButton(t("form.move_later"), {
-      test: "move-later",
-      focus: "move-later",
-      focusAlt: "move-earlier",
-      disabled: !canLater,
-      onClick: () => onMove(1),
-    }),
-  );
-  block.append(el("h3", null, t("form.order")), buttons, el("p", "helper", t("form.order_helper")));
+// The place: [<] 3 of 10 [>], the line about how cards fill the screen,
+// and Move to page.
+function positionBlock({ canEarlier, canLater, onMove, place, pages, onMoveToPage }) {
+  const block = el("div", "place-block");
+  const row = el("div", "stepper place-stepper");
+  const earlier = makeButton(null, {
+    kind: "icon",
+    test: "move-earlier",
+    focus: "move-earlier",
+    focusAlt: "move-later",
+    ariaLabel: t("form.move_earlier"),
+    disabled: !canEarlier,
+    onClick: () => onMove(-1),
+  });
+  earlier.title = t("form.move_earlier");
+  earlier.append(icon("mdi:chevron-left"));
+  const later = makeButton(null, {
+    kind: "icon",
+    test: "move-later",
+    focus: "move-later",
+    focusAlt: "move-earlier",
+    ariaLabel: t("form.move_later"),
+    disabled: !canLater,
+    onClick: () => onMove(1),
+  });
+  later.title = t("form.move_later");
+  later.append(icon("mdi:chevron-right"));
+  const where = el("span", "stepper-value place-value", place ? t("form.place_of", { n: place.n, count: place.count }) : "");
+  where.dataset.test = "place-words";
+  row.append(el("span", "stepper-label", t("form.order")), earlier, where, later);
+  block.append(row, el("p", "helper", t("form.order_helper")));
   if (onMoveToPage) {
     block.append(moveToPageBlock({ pages, onMoveToPage }));
   }
   return block;
 }
 
-// The form for a TAB-1 card. The callbacks receive plain values; the editor
-// turns them into config changes. continuous is true for typing and
-// dragging, which are saved as one undo step.
-export function buildCardForm(ctx) {
-  const { card, component, readOnly } = ctx;
-  if (component.schema === 2) {
-    return buildCardForm2(ctx);
-  }
-  const form = el("div", "form-block");
-  form.append(itemHeading(component.name));
-  if (component.description) {
-    form.append(el("p", "helper", component.description));
-  }
-  form.append(el("div", "item-notes"));
-  if (readOnly) {
-    return form;
-  }
-  if (ctx.newer) {
-    form.append(newerCardNotice(ctx));
-  }
-
-  const fields = formFields(component);
-  if (fields.length) {
-    const device = el("div", "form-block");
-    device.append(el("h3", null, t("form.device")));
-    for (const field of fields) {
-      device.append(
-        buildParamField({
-          hass: ctx.hass,
-          field,
-          value: card.params?.[field.name],
-          config: ctx.config,
-          compact: ctx.compact,
-          collapsed: true,
-          onChange: (value) => ctx.onParam(field.name, value, field.kind === "number"),
-        }),
-      );
+// The words for the Size and place summary: "Wide, 3 of 10".
+function placeSummary(ctx, form) {
+  const size = cardSize(ctx.card, ctx.component);
+  let name = t("form.size_short", { w: size.w, h: size.h });
+  if (form && form.sizes.length > 1) {
+    const id = activeVariant(ctx.card, ctx.component, form.sizes);
+    const shown = form.sizes.find((entry) => entry.id === id);
+    const exact = shown && size.exact && size.w * UNIT_COLUMNS === shown.grid[0] && size.h * UNIT_ROWS === shown.grid[1];
+    if (exact) {
+      name = shown.name;
     }
-    form.append(device);
   }
+  return ctx.place ? t("form.place_summary", { size: name, n: ctx.place.n, count: ctx.place.count }) : name;
+}
 
-  const { field: nameField } = textInput({
-    label: t("form.name"),
-    value: typeof card.title === "string" ? card.title : "",
-    maxLength: 60,
-    test: "form-name",
-    helper: t("form.name_helper"),
-    onInput: (text) => ctx.onTitle(text),
+// ---- Look: swatches, samples and the card's own look rows ----
+
+// A row of swatches as one radio group: each has its colour's name as its
+// label and the chosen one a tick. `own` adds the colour field itself,
+// drawn as one more swatch, for a colour of one's own.
+function swatchGroup({ label, test, entries, value, own, focus, onPick, onOwn }) {
+  const field = el("div", "field");
+  const labelNode = el("span", "field-label", label);
+  labelNode.id = uid("swatch-label");
+  const group = el("div", "swatch-row");
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-labelledby", labelNode.id);
+  if (test) {
+    group.dataset.test = test;
+  }
+  const buttons = [];
+  const hex = (text) => (typeof text === "string" ? text.toUpperCase() : "");
+  const chosen = entries.findIndex((entry) => hex(entry.value) === hex(value) || (entry.value === null && !value));
+  entries.forEach((entry, index) => {
+    const button = makeButton(null, {
+      className: "swatch-choice",
+      test: "swatch-choice",
+      focus: `${focus}:${index}`,
+      ariaLabel: entry.name,
+      onClick: () => onPick(entry.value),
+    });
+    button.title = entry.name;
+    button.dataset.value = entry.value === null ? "" : entry.value;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(index === chosen));
+    button.tabIndex = index === (chosen >= 0 ? chosen : 0) ? 0 : -1;
+    const fill = el("span", entry.value === null ? "swatch-fill none" : "swatch-fill");
+    fill.setAttribute("aria-hidden", "true");
+    if (entry.value !== null) {
+      fill.style.backgroundColor = entry.fill || entry.value;
+    }
+    button.append(fill);
+    button.addEventListener("keydown", (event) =>
+      radioKeys(event, buttons, index, buttons.length, (next) => onPick(entries[next].value)),
+    );
+    buttons.push(button);
+    group.append(button);
   });
-  form.append(nameField);
-
-  form.append(sizeBlock(ctx), lookBlock(ctx));
-  form.append(positionBlock(ctx));
-  form.append(
-    makeButton(t("form.remove"), {
-      kind: "danger",
-      test: "remove-card",
-      focus: "remove-card",
-      onClick: ctx.onRemove,
-    }),
-  );
-  return form;
+  if (own) {
+    const mine = el("label", "swatch-own");
+    const custom = chosen < 0 && isHex(value);
+    mine.classList.toggle("chosen", custom);
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = isHex(value) ? value.toLowerCase() : "#ffffff";
+    input.dataset.focus = `${focus}:own`;
+    input.dataset.test = `${test || focus}-own`;
+    input.setAttribute("aria-label", t("form.role_own"));
+    input.title = t("form.role_own");
+    input.addEventListener("input", () => onOwn(input.value.toUpperCase(), true));
+    input.addEventListener("change", () => onOwn(input.value.toUpperCase(), false));
+    const plus = icon("mdi:plus");
+    plus.classList.add("swatch-plus");
+    mine.append(input, plus);
+    group.append(mine);
+  }
+  field.append(labelNode, group);
+  return field;
 }
 
-// The cards whose Width and Height steps were opened, so they stay open
-// while the form is drawn again or the card moves.
-const fineTuneOpen = new Set();
-
-// Size. A card with named sizes (cards spec C.7) shows them as the main
-// control; Width and Height wait behind "Fine-tune the size" until the
-// card's size differs from the size marked. `form` is the schema 2 form.
-function sizeBlock(ctx, form = null) {
-  const block = el("div", "form-block");
-  let size = cardSize(ctx.card, ctx.component);
-  // The card as the steps leave it, for the named sizes: the steps drop
-  // the picked size (designer.js onResize), so the size follows the grid.
-  let card = ctx.card;
-  const named = form && form.sizes.length > 1;
-  // The card by its kind and devices, which stay the same when it moves.
-  const openKey = `${ctx.component.id}|${JSON.stringify(ctx.card.params ?? {})}`;
-
-  const resize = (w, h) => {
-    const width = Math.min(ctx.maxWide, Math.max(1, w));
-    const height = Math.min(MAX_UNITS_HIGH, Math.max(1, h));
-    size = { w: width, h: height, exact: true };
-    card = { ...card, variant: undefined, grid_options: { ...card.grid_options, columns: width * UNIT_COLUMNS, rows: height * UNIT_ROWS } };
-    ctx.onResize(width, height);
-    redraw(block, draw);
-  };
-
-  const draw = () => {
-    block.append(el("h3", null, t("form.size")));
-    let shown = null;
-    let tuned = false;
-    if (named) {
-      sizeChips(form, ctx)(block, card);
-      const id = activeVariant(card, ctx.component, form.sizes);
-      shown = form.sizes.find((entry) => entry.id === id) || null;
-      tuned = Boolean(shown)
-        && (!size.exact || size.w * UNIT_COLUMNS !== shown.grid[0] || size.h * UNIT_ROWS !== shown.grid[1]);
-      if (!tuned && !fineTuneOpen.has(openKey)) {
-        block.append(
-          makeButton(t("form.size_fine"), {
-            kind: "text",
-            test: "size-fine-tune",
-            focus: "size-fine-tune",
-            onClick: () => {
-              fineTuneOpen.add(openKey);
-              redraw(block, draw);
-              restoreFocus(block, "wider");
-            },
-          }),
-        );
-        return;
-      }
-    }
-    // Once shown, the steps stay while this card is edited.
-    if (named) {
-      fineTuneOpen.add(openKey);
-    }
-    const value = el("p", "size-value", t("form.size_value", { w: size.w, h: size.h }));
-    value.setAttribute("aria-live", "polite");
-    const width = el("div", "stepper");
-    width.append(
-      el("span", "stepper-label", t("form.width")),
-      makeButton(t("form.narrower"), {
-        test: "narrower",
-        focus: "narrower",
-        focusAlt: "wider",
-        disabled: size.w <= 1,
-        onClick: () => resize(size.w - 1, size.h),
-      }),
-      makeButton(t("form.wider"), {
-        test: "wider",
-        focus: "wider",
-        focusAlt: "narrower",
-        disabled: size.w >= ctx.maxWide,
-        onClick: () => resize(size.w + 1, size.h),
-      }),
-    );
-    // Wider stops early on a page still arranged in narrow columns. Say why
-    // beside it, with the action that lifts the limit.
-    let columns = null;
-    if (ctx.maxWide < MAX_UNITS_WIDE && size.w >= ctx.maxWide && ctx.onWholeScreen) {
-      columns = el("div", "size-note");
-      columns.dataset.test = "size-columns";
-      columns.append(
-        el("p", "helper", t("form.size_columns", { max: ctx.maxWide })),
-        makeButton(t("editor.columns_fix"), {
-          test: "card-whole-screen",
-          focus: "card-whole-screen",
-          onClick: ctx.onWholeScreen,
-        }),
-      );
-    }
-    const height = el("div", "stepper");
-    height.append(
-      el("span", "stepper-label", t("form.height")),
-      makeButton(t("form.shorter"), {
-        test: "shorter",
-        focus: "shorter",
-        focusAlt: "taller",
-        disabled: size.h <= 1,
-        onClick: () => resize(size.w, size.h - 1),
-      }),
-      makeButton(t("form.taller"), {
-        test: "taller",
-        focus: "taller",
-        focusAlt: "shorter",
-        disabled: size.h >= MAX_UNITS_HIGH,
-        onClick: () => resize(size.w, size.h + 1),
-      }),
-    );
-    block.append(value, width);
-    if (columns) {
-      block.append(columns);
-    }
-    block.append(height);
-    if (named) {
-      // Back to the size marked, shown only while the card differs from it.
-      if (tuned) {
-        block.append(
-          makeButton(t("form.size_back", { size: shown.name }), {
-            kind: "text",
-            test: "size-reset",
-            focus: "size-reset",
-            onClick: () => ctx.onVariant(shown.id),
-          }),
-        );
-      }
-      block.append(el("p", "helper", t("form.size_fits")));
-    } else {
-      const own = Array.isArray(ctx.component.size) ? ctx.component.size : [1, 1];
-      block.append(
-        makeButton(t("form.size_reset"), {
-          kind: "text",
-          test: "size-reset",
-          focus: "size-reset",
-          onClick: () => resize(Number(own[0]) || 1, Number(own[1]) || 1),
-        }),
-      );
-    }
-    if (!size.exact) {
-      block.append(el("p", "helper", t("form.size_odd")));
-    }
-  };
-
-  draw();
-  return block;
+// A segmented control for a few choices: [value, words] pairs.
+function segmented({ label, choices, value, focus, test, disabled = false, onChange }) {
+  const field = el("div", "field");
+  const labelNode = el("span", "field-label", label);
+  labelNode.id = uid("seg-label");
+  const group = el("div", "segmented");
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-labelledby", labelNode.id);
+  if (test) {
+    group.dataset.test = test;
+  }
+  group.dataset.value = value ?? "";
+  const name = uid("seg");
+  for (const [choice, words] of choices) {
+    const option = el("label");
+    option.dataset.value = String(choice);
+    const input = el("input");
+    input.type = "radio";
+    input.name = name;
+    input.value = String(choice);
+    input.checked = !disabled && String(value) === String(choice);
+    input.disabled = disabled;
+    input.dataset.focus = `${focus}:${choice}`;
+    input.addEventListener("change", () => onChange(String(choice)));
+    option.append(input, el("span", null, words));
+    group.append(option);
+  }
+  field.append(labelNode, group);
+  return field;
 }
 
-function lookBlock(ctx) {
-  const block = el("div", "form-block");
-  let data = styleToForm(ctx.card.style || {});
+// The colours a card background may take: the active theme's own, a few
+// neutrals; "none" first.
+function backgroundSwatches(theme) {
+  const list = [{ value: null, name: t("form.swatch_none") }];
+  const add = (value, key) => {
+    if (isHex(value) && !list.some((entry) => entry.value && entry.value.toUpperCase() === value.toUpperCase())) {
+      list.push({ value: value.toUpperCase(), name: t(key) });
+    }
+  };
+  add(theme.card2, "form.swatch_raised");
+  add(theme.acc, "form.role_accent");
+  add(theme.acc2, "form.role_accent2");
+  add(theme.onbg, "form.swatch_on");
+  add("#FFFFFF", "form.swatch_white");
+  add("#9AA0A8", "form.swatch_grey");
+  add("#000000", "form.swatch_black");
+  return list;
+}
+
+// The highlight colours: the theme's own first, then a few others.
+function accentSwatches(theme) {
+  const list = [{ value: null, name: t("form.accent_theme") }];
+  for (const [value, key] of [
+    [theme.acc2, "form.role_accent2"],
+    ["#F5B547", "form.swatch_amber"],
+    ["#32D74B", "form.role_good"],
+    ["#0A84FF", "form.swatch_blue"],
+    ["#BF5AF2", "form.swatch_purple"],
+    ["#FF453A", "form.swatch_red"],
+  ]) {
+    if (isHex(value) && !list.some((entry) => entry.value && entry.value.toUpperCase() === value.toUpperCase())) {
+      list.push({ value: value.toUpperCase(), name: t(key) });
+    }
+  }
+  return list;
+}
+
+const SURFACES = [
+  ["card", "form.surface_card"],
+  ["outline", "form.surface_outline"],
+  ["plain", "form.surface_plain"],
+];
+const CORNERS = [
+  ["theme", "form.look_theme"],
+  ["square", "form.corners_square"],
+  ["round", "form.corners_round"],
+  ["soft", "form.corners_soft"],
+];
+const BORDERS = [
+  ["theme", "form.look_theme"],
+  ["none", "form.border_none"],
+  ["thin", "form.border_thin"],
+  ["bold", "form.border_bold"],
+];
+
+// The theme for this card as swatch tiles, "Same as the dashboard" first.
+function themeTiles(ctx, value, onPick) {
+  const themes = Array.isArray(ctx.themes) ? ctx.themes : [];
+  const field = el("div", "field");
+  const labelNode = el("span", "field-label", t("form.theme"));
+  labelNode.id = uid("card-theme");
+  const group = el("div", "theme-grid card-themes");
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-labelledby", labelNode.id);
+  group.dataset.test = "card-theme";
+  group.dataset.value = value || "";
+  const dashboard = themes.find((theme) => theme.id === ctx.dashboardTheme) || themes[0] || {};
+  const entries = [{ id: "", name: t("form.theme_dashboard"), theme: dashboard }, ...themes.map((theme) => ({ id: theme.id, name: theme.name || theme.id, theme }))];
+  const tiles = [];
+  const chosen = Math.max(0, entries.findIndex((entry) => entry.id === (value || "")));
+  entries.forEach((entry, index) => {
+    const tile = makeButton(null, {
+      className: "theme-tile",
+      test: "card-theme-tile",
+      focus: `card-theme:${entry.id || "dashboard"}`,
+      onClick: () => onPick(entry.id),
+    });
+    tile.dataset.theme = entry.id;
+    tile.setAttribute("role", "radio");
+    tile.setAttribute("aria-checked", String(index === chosen));
+    tile.tabIndex = index === chosen ? 0 : -1;
+    tile.append(themeSwatch(entry.theme), el("span", "theme-label", entry.name));
+    tile.addEventListener("keydown", (event) => radioKeys(event, tiles, index, 3, (next) => onPick(entries[next].id)));
+    tiles.push(tile);
+    group.append(tile);
+  });
+  field.append(labelNode, group, el("span", "helper", t("form.theme_helper")));
+  return field;
+}
+
+// A theme painted small: its wall, a card, the accent and the text.
+function themeSwatch(theme = {}) {
+  const swatch = el("span", "theme-swatch");
+  swatch.setAttribute("aria-hidden", "true");
+  const colour = (value, fallback) => (isHex(value) ? value : fallback);
+  swatch.style.backgroundColor = colour(theme.wall, "#101418");
+  const card = el("span", "swatch-card");
+  card.style.backgroundColor = colour(theme.card, "#181c23");
+  const dot = el("span", "swatch-dot");
+  dot.style.backgroundColor = colour(theme.acc, "#f5b547");
+  const bar = el("span", "swatch-bar");
+  bar.style.backgroundColor = colour(theme.tx, "#e8eaed");
+  card.append(dot, bar);
+  swatch.append(card);
+  return swatch;
+}
+
+// What a sub-part of Look keeps: open or closed while the editor is open.
+function subPart(id, title, open, nodes) {
+  const details = el("details", "subpart");
+  details.dataset.test = `part-${id}`;
+  details.open = partOpen.has(id) ? partOpen.get(id) : open;
+  const head = el("summary", "subpart-summary");
+  head.dataset.focus = `part:${id}`;
+  const chevron = icon("mdi:chevron-right");
+  chevron.classList.add("part-chevron");
+  head.append(chevron, el("span", "part-title", title));
+  head.addEventListener("click", () => partOpen.set(id, !details.open));
+  const body = el("div", "part-body");
+  body.append(...nodes);
+  details.append(head, body);
+  return details;
+}
+
+// Look (spec 6.4): the card's look rows, its own options with section
+// look, then Colours (today's five settings) and Reset look.
+function lookPart(ctx, form, extraRows = []) {
+  const block = el("div", "look-rows");
+  const style = isObject(ctx.card.style) ? ctx.card.style : {};
+  let data = styleToForm(style);
   const themes = Array.isArray(ctx.themes) ? ctx.themes : [];
   const themeFor = () =>
     themes.find((theme) => theme.id === (data.theme || ctx.dashboardTheme)) || themes[0] || {};
@@ -891,131 +1355,397 @@ function lookBlock(ctx) {
   const change = (patch, field, continuous = false) => {
     data = styleDefaults({ ...data, ...patch }, themeFor());
     ctx.onStyle(formToStyle(data), field, continuous);
-    if (!continuous) {
-      redraw(block, draw);
-    }
   };
+  const hexOf = (rgb) => (Array.isArray(rgb) && rgb.length === 3 ? rgbToHex(rgb).toUpperCase() : null);
 
-  const draw = () => {
-    block.append(el("h3", null, t("form.look")));
-    // A schema 2 card's own look rows come first (C.7).
-    ctx.lookRows?.(block);
-    const { field: themeField } = select({
-      label: t("form.theme"),
-      options: [["", t("form.theme_dashboard")], ...themes.map((theme) => [theme.id, theme.name])],
-      value: data.theme || "",
-      focus: "look-theme",
-      test: "card-theme",
-      onChange: (value) => change({ theme: value }, "theme"),
+  const nodes = [];
+  // While it is on and the device's colour: only for a card that has them.
+  if (form && form.lit !== null) {
+    const lit = segmented({
+      label: t("form.lit"),
+      choices: Object.entries(LIT_LOOKS).map(([look, key]) => [look, t(key)]),
+      value: form.lit,
+      focus: "card-lit",
+      test: "card-lit",
+      onChange: (value) => ctx.onLook("lit", value === ctx.component.standard?.lit ? undefined : value),
     });
-    // Every new card is selected, so this is often the only theme in view.
-    themeField.append(el("span", "helper", t("form.theme_helper")));
-    block.append(themeField);
-
-    block.append(
-      switchRow({
-        label: t("form.use_color"),
-        checked: data.use_color,
-        focus: "look-use-color",
-        onChange: (checked) => change({ use_color: checked }, "use_color"),
-      }).field,
-    );
-    if (data.use_color) {
-      block.append(
-        colourInput({
-          label: t("form.color"),
-          rgb: data.color,
-          focus: "look-color",
-          onInput: (rgb) => change({ color: rgb }, "color", true),
-        }),
-      );
+    lit.append(el("span", "helper", t("form.lit_helper")));
+    nodes.push(lit);
+  }
+  if (form && form.tint !== null) {
+    // Greyed and off for a device with no colour; what is stored stays.
+    const { field, helper } = switchRow({
+      label: t("form.tint"),
+      help: form.tintUsable ? "" : t("form.tint_no_colour"),
+      checked: form.tintUsable && form.tint,
+      disabled: !form.tintUsable,
+      focus: "card-tint",
+      test: "card-tint",
+      onChange: (checked) => ctx.onLook("tint", checked ? undefined : false),
+    });
+    const row = el("div", "option-switch option-row");
+    row.classList.toggle("unusable", !form.tintUsable);
+    row.append(field);
+    if (helper) {
+      row.append(helper);
     }
-
-    block.append(
-      select({
-        label: t("form.gradient"),
-        options: [
-          ["none", t("form.gradient_none")],
-          ["vertical", t("form.gradient_vertical")],
-          ["horizontal", t("form.gradient_horizontal")],
-        ],
-        value: data.gradient || "none",
-        focus: "look-gradient",
-        onChange: (value) => change({ gradient: value }, "gradient"),
-      }).field,
+    nodes.push(row);
+  }
+  // Surface, corners and border, for every card (A19).
+  if (ctx.onLook) {
+    nodes.push(
+      segmented({
+        label: t("form.surface"),
+        choices: SURFACES.map(([value, key]) => [value, t(key)]),
+        value: typeof style.surface === "string" ? style.surface : "card",
+        focus: "look-surface",
+        test: "look-surface",
+        onChange: (value) => ctx.onLook("surface", value === "card" ? undefined : value),
+      }),
+      segmented({
+        label: t("form.corners"),
+        choices: CORNERS.map(([value, key]) => [value, t(key)]),
+        value: typeof style.corners === "string" ? style.corners : "theme",
+        focus: "look-corners",
+        test: "look-corners",
+        onChange: (value) => ctx.onLook("corners", value === "theme" ? undefined : value),
+      }),
+      segmented({
+        label: t("form.border"),
+        choices: BORDERS.map(([value, key]) => [value, t(key)]),
+        value: typeof style.border === "string" ? style.border : "theme",
+        focus: "look-border",
+        test: "look-border",
+        onChange: (value) => ctx.onLook("border", value === "theme" ? undefined : value),
+      }),
     );
-    if (data.gradient && data.gradient !== "none") {
-      block.append(
-        colourInput({
-          label: t("form.gradient_to"),
-          rgb: data.gradient_to,
-          focus: "look-gradient-to",
-          onInput: (rgb) => change({ gradient_to: rgb }, "gradient_to", true),
-        }),
-      );
-    }
+  }
+  nodes.push(...extraRows);
 
-    const transparency = el("label", "field");
-    const row = el("div", "range-row");
-    const range = document.createElement("input");
-    range.type = "range";
-    range.min = "0";
-    range.max = "100";
-    range.step = "5";
-    range.value = String(data.transparency || 0);
-    range.dataset.focus = "look-transparency";
-    const output = el("output", null, range.value);
-    // The track is filled up to the knob (see input[type="range"] in styles.js).
-    const fill = () => range.style.setProperty("--tab-range-fill", String(Number(range.value) / 100));
+  // Colours: today's five settings, closed at first.
+  const colours = [];
+  colours.push(themeTiles(ctx, data.theme, (id) => change({ theme: id }, "theme")));
+  const theme = themeFor();
+  colours.push(
+    swatchGroup({
+      label: t("form.color"),
+      test: "look-background",
+      entries: backgroundSwatches(theme),
+      value: data.use_color ? hexOf(data.color) : null,
+      own: true,
+      focus: "look-color",
+      onPick: (value) => change(value ? { use_color: true, color: hexToRgbList(value) } : { use_color: false }, "color"),
+      onOwn: (value, continuous) => change({ use_color: true, color: hexToRgbList(value) }, "color", continuous),
+    }),
+  );
+  const fade = segmented({
+    label: t("form.gradient"),
+    choices: [
+      ["none", t("form.gradient_none")],
+      ["vertical", t("form.gradient_vertical")],
+      ["horizontal", t("form.gradient_horizontal")],
+    ],
+    value: data.gradient || "none",
+    focus: "look-gradient",
+    test: "look-gradient",
+    onChange: (value) => change({ gradient: value }, "gradient"),
+  });
+  // A card that lights up shows its fade while it is off.
+  if (form && form.lit !== null) {
+    fade.append(el("span", "helper", t("form.gradient_helper")));
+  }
+  colours.push(fade);
+  if (data.gradient && data.gradient !== "none") {
+    colours.push(
+      swatchGroup({
+        label: t("form.gradient_to"),
+        test: "look-gradient-to",
+        entries: backgroundSwatches(theme).filter((entry) => entry.value !== null),
+        value: hexOf(data.gradient_to),
+        own: true,
+        focus: "look-gradient-to",
+        onPick: (value) => change({ gradient_to: hexToRgbList(value) }, "gradient_to"),
+        onOwn: (value, continuous) => change({ gradient_to: hexToRgbList(value) }, "gradient_to", continuous),
+      }),
+    );
+  }
+
+  const transparency = el("label", "field");
+  const row = el("div", "range-row");
+  const range = document.createElement("input");
+  range.type = "range";
+  range.min = "0";
+  range.max = "100";
+  range.step = "5";
+  range.value = String(data.transparency || 0);
+  range.dataset.focus = "look-transparency";
+  range.dataset.test = "look-transparency";
+  const output = el("output", null, `${range.value} %`);
+  // The track is filled up to the knob (see input[type="range"] in styles.js).
+  const fill = () => range.style.setProperty("--tab-range-fill", String(Number(range.value) / 100));
+  fill();
+  range.addEventListener("input", () => {
+    output.textContent = `${range.value} %`;
     fill();
-    range.addEventListener("input", () => {
-      output.textContent = range.value;
-      fill();
-      change({ transparency: Number(range.value) }, "transparency", true);
-    });
-    row.append(range, output);
-    transparency.append(
-      el("span", "field-label", t("form.transparency")),
-      row,
-      el("span", "helper", t("form.transparency_helper")),
+    change({ transparency: Number(range.value) }, "transparency", true);
+  });
+  row.append(range, output);
+  transparency.append(
+    el("span", "field-label", t("form.transparency")),
+    row,
+    el("span", "helper", t("form.transparency_helper")),
+  );
+  colours.push(transparency);
+
+  // What the highlight colour changes on the tablet (see resolve_style in
+  // maker/style.py and the "is-on" rules of the card styles).
+  const accent = swatchGroup({
+    label: t("form.accent"),
+    test: "look-accent",
+    entries: accentSwatches(theme),
+    value: data.use_accent ? hexOf(data.accent) : null,
+    own: true,
+    focus: "look-accent",
+    onPick: (value) => change(value ? { use_accent: true, accent: hexToRgbList(value) } : { use_accent: false }, "accent"),
+    onOwn: (value, continuous) => change({ use_accent: true, accent: hexToRgbList(value) }, "accent", continuous),
+  });
+  const accentHelper = el("p", "helper", t("form.accent_helper"));
+  accentHelper.dataset.test = "accent-helper";
+  accentHelper.id = uid("accent-helper");
+  accent.children[1].setAttribute("aria-describedby", accentHelper.id);
+  accent.append(accentHelper);
+  colours.push(accent);
+  nodes.push(subPart("colours", t("form.colours"), false, colours));
+
+  // Reset look, while anything is set.
+  if (Object.keys(style).length) {
+    nodes.push(
+      makeButton(t("form.look_reset"), {
+        kind: "text",
+        test: "look-reset",
+        focus: "look-reset",
+        onClick: () => ctx.onStyleReset?.(),
+      }),
     );
-    block.append(transparency);
-
-    // What the highlight colour changes on the tablet (see resolve_style in
-    // maker/style.py and the "is-on" rules of the card styles).
-    const { field: accentField, helper: accentHelper } = switchRow({
-      label: t("form.use_accent"),
-      help: t("form.accent_helper"),
-      checked: data.use_accent,
-      focus: "look-use-accent",
-      onChange: (checked) => change({ use_accent: checked }, "use_accent"),
-    });
-    accentHelper.dataset.test = "accent-helper";
-    block.append(accentField, accentHelper);
-    if (data.use_accent) {
-      block.append(
-        colourInput({
-          label: t("form.accent"),
-          rgb: data.accent,
-          focus: "look-accent",
-          onInput: (rgb) => change({ accent: rgb }, "accent", true),
-        }),
-      );
-    }
-  };
-
-  draw();
+  }
+  block.append(...nodes);
   return block;
+}
+
+// The form for a TAB-1 card: the header, the notices, then the parts
+// Device, What it shows, Controls, Look, and Size and place (spec 6.2).
+// The callbacks receive plain values; the editor turns them into config
+// changes. continuous is true for typing and dragging, which are saved as
+// one undo step. A card of the first schema has no options and one size.
+export function buildCardForm(ctx) {
+  const { card, component, readOnly } = ctx;
+  const schema2 = component.schema === 2;
+  const form = schema2 ? cardForm(component, card, ctx.facts) : null;
+  if (form) {
+    // The value the form shows when nothing is stored, for "store only what
+    // differs" (model.js::setOption).
+    for (const row of form.rows) {
+      row.fallback = row.usable ? optionDefault(row.option, row.listed) : row.value;
+    }
+  }
+  const title = cardTitle(ctx);
+  const head = inspectorHead({
+    iconName: form && isIcon(form.icon) ? form.icon : component.icon,
+    name: title || component.name,
+    type: title ? component.name : t("list.no_device"),
+    buttons: readOnly
+      ? [doneButton(ctx)]
+      : [
+          ctx.onDuplicate ? headButton("mdi:content-copy", t("form.duplicate"), "duplicate-card", ctx.onDuplicate) : null,
+          removeButton("remove-card", t("form.remove"), ctx.onRemove),
+          doneButton(ctx),
+        ],
+  });
+  const body = el("div", "inspector-body");
+  body.append(el("div", "item-notes"));
+  if (readOnly) {
+    if (component.description) {
+      body.append(el("p", "helper", component.description));
+    }
+    return inspector(head, body);
+  }
+  // Notices under the header: an older card, the card file's own notes,
+  // older tablet software.
+  if (ctx.newer) {
+    body.append(newerCardNotice(ctx));
+  }
+  for (const text of form ? form.notes : []) {
+    const note = el("p", "note-line", text);
+    note.dataset.test = "card-note";
+    body.append(note);
+  }
+  if (form && ctx.olderTablets?.length) {
+    const note = el("p", "note-line", t("form.older_tablet", { tablet: ctx.olderTablets.join(", ") }));
+    note.dataset.test = "older-tablet";
+    body.append(note);
+  }
+
+  // Device: one row per device field, then the number and page fields.
+  const fields = formFields(component);
+  const deviceNodes = fields.map((field) =>
+    buildParamField({
+      hass: ctx.hass,
+      field,
+      value: card.params?.[field.name],
+      config: ctx.config,
+      compact: ctx.compact,
+      collapsed: true,
+      // A list of several devices stays open while devices are ticked.
+      onChange: (value) => ctx.onParam(field.name, value, field.kind === "number" || Boolean(field.multiple)),
+    }),
+  );
+  const optionNames = form ? form.rows.map((entry) => entry.name) : [];
+
+  // What it shows: the name on the card, the icon, the card's own rows.
+  const showsNodes = [];
+  if (!form || form.title) {
+    const { field } = textInput({
+      label: t("form.name"),
+      value: typeof card.title === "string" ? card.title : "",
+      maxLength: 60,
+      test: "form-name",
+      helper: t("form.name_helper"),
+      onInput: (text) => ctx.onTitle(text),
+    });
+    showsNodes.push(field);
+  }
+  if (form && form.icon !== undefined) {
+    showsNodes.push(
+      iconChoice({
+        label: t("form.icon"),
+        value: form.icon,
+        own: isIcon(form.names["can.icon"]) ? form.names["can.icon"] : component.icon,
+        focus: "card-icon",
+        onChange: (name) => ctx.onStandard("icon", name),
+      }),
+    );
+  }
+  if (form) {
+    showsNodes.push(...optionRows(form, "shows", ctx, optionNames));
+  }
+
+  // Controls: a tap, a hold, then the card's own rows.
+  const controlNodes = [];
+  if (form?.tap) {
+    const { field } = select({
+      label: t("form.tap"),
+      options: form.tap.choices.map((choice) => [choice.value, choice.label]),
+      value: form.tap.value,
+      focus: "card-tap",
+      test: "card-tap",
+      onChange: (value) => ctx.onStandard("tap", value),
+    });
+    if (form.tap.dropped) {
+      field.append(el("span", "helper", t("form.tap_not_offered")));
+    }
+    controlNodes.push(field);
+    if (form.tap.value === "page") {
+      const pages = pageChoices(ctx.config);
+      const { field: pageField } = select({
+        label: t("form.tap_page"),
+        options: [["", t("pick.page_none")], ...pages.map((page) => [page.path, page.title || page.path])],
+        value: form.tap.page,
+        focus: "card-tap-page",
+        test: "card-tap-page",
+        onChange: (value) => ctx.onStandard("tap_page", value || undefined),
+      });
+      controlNodes.push(pageField);
+    }
+  }
+  if (form && form.hold !== null) {
+    const { field } = switchRow({
+      label: t("form.hold"),
+      checked: form.hold,
+      focus: "card-hold",
+      test: "card-hold",
+      onChange: (checked) => ctx.onStandard("hold", checked ? undefined : false),
+    });
+    const row = el("div", "option-switch");
+    row.append(field);
+    controlNodes.push(row);
+  }
+  const ownControls = form ? optionRows(form, "controls", ctx, optionNames) : [];
+  if (ownControls.length) {
+    // Some rows are drawn only on the larger sizes or on the controls page.
+    const larger = form.sizes.length > 1;
+    const detail = component.has_detail === true;
+    let note = "";
+    if (larger && detail) {
+      note = t("form.on_card_some");
+    } else if (larger) {
+      note = t("form.on_card_larger");
+    } else if (detail) {
+      note = t("form.on_card_detail");
+    }
+    if (note) {
+      const line = el("p", "helper", note);
+      line.dataset.test = "on-card-note";
+      controlNodes.push(line);
+    }
+    controlNodes.push(...ownControls);
+  }
+
+  const parts = [];
+  if (deviceNodes.length) {
+    parts.push(part("device", t("form.part_device"), deviceSummary(ctx, fields), true, deviceNodes));
+  }
+  if (showsNodes.length) {
+    const named = typeof card.title === "string" && card.title.trim();
+    parts.push(
+      part("shows", t("form.shows"), named ? card.title.trim() : t("form.sum_device_name"), !controlNodes.length, showsNodes),
+    );
+  }
+  if (controlNodes.length) {
+    parts.push(part("controls", t("form.part_controls"), controlsSummary(form), true, controlNodes));
+  }
+  const lookExtra = form ? optionRows(form, "look", ctx, optionNames) : [];
+  const ownLook = isObject(card.style) && Object.keys(card.style).length > 0;
+  parts.push(
+    part("look", t("form.look"), ownLook ? t("form.sum_own_look") : t("form.theme_dashboard"), false, [lookPart(ctx, form, lookExtra)]),
+  );
+  parts.push(part("place", t("form.part_place"), placeSummary(ctx, form), false, placePart(ctx, form)));
+  body.append(...parts);
+  return inspector(head, body);
+}
+
+// A schema 2 card has the same form (cards spec C.7).
+export const buildCardForm2 = buildCardForm;
+
+// "3 of 4 on": the switches of Controls that the device can use, and how
+// many of them are on.
+function controlsSummary(form) {
+  if (!form) {
+    return "";
+  }
+  const switches = form.rows.filter((row) => row.option.section === "controls" && row.shown && row.usable && row.option.type === "toggle");
+  let on = switches.filter((row) => row.value === true).length;
+  let count = switches.length;
+  if (form.hold !== null) {
+    count += 1;
+    on += form.hold ? 1 : 0;
+  }
+  return count ? t("form.sum_on", { on, count }) : "";
 }
 
 // A heading card or a section title. Section titles have no position of
 // their own: they always sit at the top of their section.
 export function buildHeadingForm(ctx) {
-  const form = el("div", "form-block");
-  form.append(itemHeading(t("form.heading_title")), el("div", "item-notes"));
+  const head = inspectorHead({
+    iconName: "mdi:format-header-1",
+    name: t("form.heading_title"),
+    type: ctx.text || "",
+    buttons: ctx.readOnly ? [doneButton(ctx)] : [removeButton("remove-heading", t("form.remove_heading"), ctx.onRemove), doneButton(ctx)],
+  });
+  const body = el("div", "inspector-body");
+  body.append(el("div", "item-notes"));
   if (ctx.readOnly) {
-    form.append(el("p", null, ctx.text));
-    return form;
+    body.append(el("p", null, ctx.text));
+    return inspector(head, body);
   }
   const { field } = textInput({
     label: t("form.heading_text"),
@@ -1024,39 +1754,31 @@ export function buildHeadingForm(ctx) {
     test: "heading-text",
     onInput: (text) => ctx.onText(text),
   });
-  form.append(field);
+  body.append(field);
   if (ctx.isCard) {
-    form.append(positionBlock(ctx));
+    body.append(positionBlock(ctx));
   }
-  form.append(
-    makeButton(t("form.remove_heading"), {
-      kind: "danger",
-      test: "remove-heading",
-      focus: "remove-heading",
-      onClick: ctx.onRemove,
-    }),
-  );
-  return form;
+  return inspector(head, body);
 }
 
-// Anything the tablet cannot draw: the reason, and a way to remove it.
+// Anything the tablet cannot draw: what it is, why it is left out, and a
+// way to remove it.
 export function buildOtherForm(ctx) {
-  const form = el("div", "form-block");
-  form.append(itemHeading(t("form.other_title")));
-  if (ctx.name) {
-    form.append(el("p", null, ctx.name));
-  }
+  const head = inspectorHead({
+    iconName: "mdi:card-off-outline",
+    name: t("form.other_title"),
+    type: ctx.name || "",
+    buttons: ctx.readOnly ? [doneButton(ctx)] : [removeButton("remove-item", t("list.remove"), ctx.onRemove), doneButton(ctx)],
+  });
+  const body = el("div", "inspector-body");
   // The device it was set up for, which a TAB-1 card can take over.
   if (ctx.device) {
     const line = el("p", null, t("form.other_device", { device: ctx.device }));
     line.dataset.test = "other-device";
-    form.append(line);
+    body.append(line);
   }
-  form.append(el("div", "item-notes"));
-  if (!ctx.readOnly) {
-    form.append(makeButton(t("list.remove"), { kind: "danger", test: "remove-item", onClick: ctx.onRemove }));
-  }
-  return form;
+  body.append(el("div", "item-notes"));
+  return inspector(head, body);
 }
 
 // The title of a pop-up. It takes focus when the pop-up opens on a touch
@@ -1373,7 +2095,7 @@ export function buildDashboardSettings(ctx) {
   return block;
 }
 
-// ---- the form of a schema 2 card (cards spec C.7) ----
+// ---- the card's own rows (cards spec C.7) ----
 
 // "A newer card does this: Light." on an older card, with the button that
 // swaps it.
@@ -1390,12 +2112,6 @@ function newerCardNotice(ctx) {
     }),
   );
   return notice;
-}
-
-// The heading of one part of the form: Device, Size, What it shows,
-// Controls, Look.
-function partHeading(text) {
-  return el("h3", null, text);
 }
 
 // The line under a row the device cannot use: the file's reason, else the
@@ -1491,7 +2207,7 @@ function optionRow(row, ctx, names = []) {
       node = numberOption(row, help, focus, disabled, change);
       break;
     case "colour":
-      node = colourOption(row, help, focus, disabled, change);
+      node = colourOption(row, ctx, help, focus, disabled, change);
       break;
     case "icon":
       node = iconChoice({
@@ -1506,6 +2222,12 @@ function optionRow(row, ctx, names = []) {
     default:
       return null;
   }
+  // A row the card's present size does not draw says so (A6).
+  if (Array.isArray(row.onlyOn) && row.onlyOn.length && !disabled) {
+    const line = el("p", "helper size-only", t("form.shows_on", { sizes: row.onlyOn.join(", ") }));
+    line.dataset.test = "option-size-only";
+    node.append(line);
+  }
   if (disabled) {
     reasonLine(node, reasonText(row));
   }
@@ -1518,13 +2240,28 @@ function optionRow(row, ctx, names = []) {
   return node;
 }
 
+// One choice: up to four as a segmented control, more as a list field. A
+// greyed choice marks none, not the value it counts as ("Off"), which
+// would read like a choice the person made.
 function choiceList(row, help, focus, disabled, change) {
   const { option } = row;
   const choices = Array.isArray(option.choices) ? option.choices : row.listed.map((value) => ({ value, label: value }));
-  // A greyed list shows a dash, not the value it counts as ("Off"), which
-  // would read like a choice the person made.
+  if (choices.length <= 4 && choices.length > 0) {
+    const field = segmented({
+      label: option.label,
+      choices: choices.map((choice) => [String(choice.value), String(choice.label)]),
+      value: disabled || row.value === null || row.value === undefined ? "" : String(row.value),
+      focus,
+      disabled,
+      onChange: (value) => change(value),
+    });
+    if (help) {
+      field.append(el("span", "helper", help));
+    }
+    return field;
+  }
   const options = disabled
-    ? [["", "\u2013"]]
+    ? [["", "–"]]
     : choices.map((choice) => [String(choice.value), String(choice.label)]);
   const { field, control } = select({
     label: option.label,
@@ -1665,11 +2402,17 @@ function swatchRow(row, help, focus, disabled, change) {
   return wrap;
 }
 
+// A number: the field with its unit beside it, and small minus and plus
+// buttons that step by the file's step and stop at its limits.
 function numberOption(row, help, focus, disabled, change) {
   const { option } = row;
-  const wrap = el("label", "field");
+  const wrap = el("div", "field");
+  const labelNode = el("label", "field-label", option.label);
+  const line = el("div", "number-row");
   const input = document.createElement("input");
   input.type = "number";
+  input.id = uid("number");
+  labelNode.htmlFor = input.id;
   input.step = option.step ? String(option.step) : "any";
   if (Number.isFinite(option.min)) {
     input.min = String(option.min);
@@ -1680,67 +2423,92 @@ function numberOption(row, help, focus, disabled, change) {
   input.value = Number.isFinite(row.value) ? String(row.value) : "";
   input.disabled = disabled;
   input.dataset.focus = focus;
+  const fits = (number) =>
+    Number.isFinite(number)
+    && !(Number.isFinite(option.min) && number < option.min)
+    && !(Number.isFinite(option.max) && number > option.max);
   input.addEventListener("input", () => {
     const raw = input.value.trim();
     const number = Number(raw);
     if (!raw) {
       change(undefined, true);
-    } else if (
-      Number.isFinite(number)
-      && !(Number.isFinite(option.min) && number < option.min)
-      && !(Number.isFinite(option.max) && number > option.max)
-    ) {
+    } else if (fits(number)) {
       change(number, true);
     }
   });
-  const words = option.unit ? `${option.label} (${option.unit})` : option.label;
-  wrap.append(el("span", "field-label", words), input);
+  const step = Number(option.step) || 1;
+  const current = () => (Number.isFinite(Number(input.value)) && input.value !== "" ? Number(input.value) : Number(row.value) || 0);
+  const nudge = (sign) => {
+    let next = Math.round((current() + sign * step) * 1000) / 1000;
+    if (Number.isFinite(option.min)) {
+      next = Math.max(option.min, next);
+    }
+    if (Number.isFinite(option.max)) {
+      next = Math.min(option.max, next);
+    }
+    input.value = String(next);
+    change(next);
+  };
+  const less = makeButton(null, { kind: "icon", focus: `${focus}:less`, ariaLabel: t("form.less", { name: option.label }), disabled, onClick: () => nudge(-1) });
+  less.append(icon("mdi:minus"));
+  const more = makeButton(null, { kind: "icon", focus: `${focus}:more`, ariaLabel: t("form.more", { name: option.label }), disabled, onClick: () => nudge(1) });
+  more.append(icon("mdi:plus"));
+  line.append(less, input);
+  if (option.unit) {
+    line.append(el("span", "number-unit", String(option.unit)));
+  }
+  line.append(more);
+  wrap.append(labelNode, line);
   if (help) {
     wrap.append(el("span", "helper", help));
   }
   return wrap;
 }
 
-// The colour roles of a theme, by their plain names (C.2.3).
-const COLOUR_ROLES = {
-  accent: "form.role_accent",
-  accent2: "form.role_accent2",
-  good: "form.role_good",
-  warn: "form.role_warn",
-  bad: "form.role_bad",
-  info: "form.role_info",
-  text: "form.role_text",
-  muted: "form.role_muted",
-};
+// The colour roles of a theme, by their plain names (C.2.3), with the
+// theme's key for each and a colour where the theme has none.
+const COLOUR_ROLES = [
+  ["accent", "form.role_accent", "acc", "#F5B547"],
+  ["accent2", "form.role_accent2", "acc2", "#6CB4FF"],
+  ["good", "form.role_good", "good", "#32D74B"],
+  ["warn", "form.role_warn", "warn", "#FFD60A"],
+  ["bad", "form.role_bad", "bad", "#FF453A"],
+  ["info", "form.role_info", "info", "#64D2FF"],
+  ["text", "form.role_text", "tx", "#E8EAED"],
+  ["muted", "form.role_muted", "tx2", "#9AA0A8"],
+];
 
-// One colour: a role of the theme by name, or a colour of one's own.
-function colourOption(row, help, focus, disabled, change) {
+// One colour: a swatch row of the theme's roles by name, then a colour of
+// one's own.
+function colourOption(row, ctx, help, focus, disabled, change) {
   const { option } = row;
-  const own = typeof row.value === "string" && row.value.startsWith("#");
-  const wrap = el("div", "field");
-  const { field, control } = select({
+  const themes = Array.isArray(ctx.themes) ? ctx.themes : [];
+  const theme = themes.find((entry) => entry.id === (ctx.card?.style?.theme || ctx.dashboardTheme)) || themes[0] || {};
+  const entries = COLOUR_ROLES.map(([role, key, themeKey, fallback]) => ({
+    value: role,
+    name: t(key),
+    fill: isHex(theme[themeKey]) ? theme[themeKey] : fallback,
+  }));
+  const field = swatchGroup({
     label: option.label,
-    options: [...Object.entries(COLOUR_ROLES).map(([role, key]) => [role, t(key)]), ["own", t("form.role_own")]],
-    value: own ? "own" : String(row.value || ""),
+    entries,
+    value: typeof row.value === "string" ? row.value : null,
+    own: true,
     focus,
-    onChange: (value) => change(value === "own" ? "#FFFFFF" : value),
+    onPick: (value) => change(value),
+    onOwn: (value, continuous) => change(value, continuous),
   });
-  control.disabled = disabled;
-  wrap.append(field);
-  if (own) {
-    const input = document.createElement("input");
-    input.type = "color";
-    input.value = row.value.toLowerCase();
-    input.disabled = disabled;
-    input.dataset.focus = `${focus}:own`;
-    input.setAttribute("aria-label", t("form.role_own"));
-    input.addEventListener("input", () => change(input.value.toUpperCase(), true));
-    wrap.append(input);
+  if (disabled) {
+    for (const node of field.descendants ? field.descendants() : field.querySelectorAll("button, input")) {
+      if (["button", "input"].includes(node.localName)) {
+        node.disabled = true;
+      }
+    }
   }
   if (help) {
-    wrap.append(el("span", "helper", help));
+    field.append(el("span", "helper", help));
   }
-  return wrap;
+  return field;
 }
 
 // The icon as one line, "Icon: The device's own", with Change, which opens
@@ -1817,11 +2585,13 @@ function iconChoice({ label, value, own = null, focus, disabled = false, help = 
 }
 
 // The rows of one part from the card's options; a kind of option this
-// panel does not know is left out with one quiet line (A12).
-function optionRows(rows, section, ctx, names = []) {
+// panel does not know is left out with one quiet line (A12). A row the
+// card's present size does not draw names the sizes that do (A6).
+function optionRows(form, section, ctx, names = []) {
   const nodes = [];
   let unknown = false;
-  for (const row of rows) {
+  const shownSize = form.sizes.find((size) => size.id === form.variant);
+  for (const row of form.rows) {
     if (row.option.section !== section || !row.shown) {
       continue;
     }
@@ -1829,13 +2599,19 @@ function optionRows(rows, section, ctx, names = []) {
       unknown = true;
       continue;
     }
+    const drawnOn = form.sizes.filter((size) => size.offered && Array.isArray(size.uses) && size.uses.includes(row.name));
+    row.onlyOn = shownSize && Array.isArray(shownSize.uses) && !shownSize.uses.includes(row.name) && drawnOn.length
+      ? drawnOn.map((size) => size.name)
+      : null;
     const node = optionRow(row, ctx, names);
     if (node) {
       nodes.push(node);
     }
   }
   if (unknown) {
-    nodes.push(el("p", "helper", t("form.option_unknown")));
+    const line = el("p", "helper", t("form.option_unknown"));
+    line.dataset.test = "option-unknown";
+    nodes.push(line);
   }
   return nodes;
 }
@@ -1851,9 +2627,12 @@ function sizeChips(form, ctx) {
       return;
     }
     const shown = activeVariant(card, ctx.component, form.sizes);
+    const field = el("div", "field");
+    const labelNode = el("span", "field-label", t("form.size"));
+    labelNode.id = uid("size-label");
     const group = el("div", "segmented size-chips");
     group.setAttribute("role", "radiogroup");
-    group.setAttribute("aria-label", t("form.size"));
+    group.setAttribute("aria-labelledby", labelNode.id);
     const name = uid("size");
     for (const size of form.sizes) {
       if (!size.offered) {
@@ -1879,7 +2658,8 @@ function sizeChips(form, ctx) {
       label.append(input, el("span", null, size.name));
       group.append(label);
     }
-    block.append(group);
+    field.append(labelNode, group);
+    block.append(field);
     for (const size of form.sizes.filter((entry) => !entry.offered)) {
       const line = el("p", "helper", t("form.size_not_offered", { size: size.name, reason: size.reason || t("form.needs_general") }));
       line.dataset.test = "size-not-offered";
@@ -1895,213 +2675,3 @@ const LIT_LOOKS = {
   outline: "form.lit_outline",
   none: "form.lit_none",
 };
-
-export function buildCardForm2(ctx) {
-  const { card, component, readOnly } = ctx;
-  const form = el("div", "form-block card-form-2");
-  form.append(itemHeading(component.name));
-  if (component.description) {
-    form.append(el("p", "helper", component.description));
-  }
-  form.append(el("div", "item-notes"));
-  if (readOnly) {
-    return form;
-  }
-  const state = cardForm(component, card, ctx.facts);
-  // The value the form shows when nothing is stored, for "store only what
-  // differs" (model.js::setOption).
-  for (const row of state.rows) {
-    row.fallback = row.usable ? optionDefault(row.option, row.listed) : row.value;
-  }
-
-  // The card file's notes whose `when` holds, at the top.
-  for (const text of state.notes) {
-    const note = el("p", "note-line", text);
-    note.dataset.test = "card-note";
-    form.append(note);
-  }
-
-  // Device
-  const fields = formFields(component);
-  if (fields.length) {
-    const device = el("div", "form-block");
-    device.append(partHeading(t("form.device")));
-    for (const field of fields) {
-      device.append(
-        buildParamField({
-          hass: ctx.hass,
-          field,
-          value: card.params?.[field.name],
-          config: ctx.config,
-          compact: ctx.compact,
-          collapsed: true,
-          onChange: (value) => ctx.onParam(field.name, value, field.kind === "number"),
-        }),
-      );
-    }
-    form.append(device);
-  }
-
-  // Size: the named sizes, then the finer steps.
-  form.append(sizeBlock(ctx, state));
-
-  // The card's own rows come next, so what the card can do is in view
-  // first: what it shows, then the controls on it.
-  const optionNames = state.rows.map((entry) => entry.name);
-  const shown = optionRows(state.rows, "shows", ctx, optionNames);
-  if (shown.length) {
-    const shows = el("div", "form-block");
-    shows.dataset.part = "shows";
-    shows.append(partHeading(t("form.shows")), ...shown);
-    form.append(shows);
-  }
-  const own = optionRows(state.rows, "controls", ctx, optionNames);
-  if (own.length) {
-    const controls = el("div", "form-block");
-    controls.dataset.part = "controls";
-    controls.append(partHeading(t("form.on_card")));
-    // Some rows are drawn only on the larger sizes or on the controls page.
-    const larger = state.sizes.length > 1;
-    const detail = component.has_detail === true;
-    let note = "";
-    if (larger && detail) {
-      note = t("form.on_card_some");
-    } else if (larger) {
-      note = t("form.on_card_larger");
-    } else if (detail) {
-      note = t("form.on_card_detail");
-    }
-    if (note) {
-      const line = el("p", "helper", note);
-      line.dataset.test = "on-card-note";
-      controls.append(line);
-    }
-    controls.append(...own);
-    form.append(controls);
-  }
-
-  // Name and icon
-  const naming = el("div", "form-block");
-  naming.dataset.part = "name";
-  naming.append(partHeading(t("form.name_icon")));
-  if (state.title) {
-    const { field } = textInput({
-      label: t("form.name"),
-      value: typeof card.title === "string" ? card.title : "",
-      maxLength: 60,
-      test: "form-name",
-      helper: t("form.name_helper"),
-      onInput: (text) => ctx.onTitle(text),
-    });
-    naming.append(field);
-  }
-  if (state.icon !== undefined) {
-    naming.append(
-      iconChoice({
-        label: t("form.icon"),
-        value: state.icon,
-        own: isIcon(state.names["can.icon"]) ? state.names["can.icon"] : component.icon,
-        focus: "card-icon",
-        onChange: (name) => ctx.onStandard("icon", name),
-      }),
-    );
-  }
-  if (naming.children.length > 1) {
-    form.append(naming);
-  }
-
-  // A tap and a hold
-  const touch = el("div", "form-block");
-  touch.dataset.part = "touch";
-  touch.append(partHeading(t("form.touch")));
-  if (state.tap) {
-    const { field } = select({
-      label: t("form.tap"),
-      options: state.tap.choices.map((choice) => [choice.value, choice.label]),
-      value: state.tap.value,
-      focus: "card-tap",
-      test: "card-tap",
-      onChange: (value) => ctx.onStandard("tap", value),
-    });
-    if (state.tap.dropped) {
-      field.append(el("span", "helper", t("form.tap_not_offered")));
-    }
-    touch.append(field);
-    if (state.tap.value === "page") {
-      const pages = pageChoices(ctx.config);
-      const { field: pageField } = select({
-        label: t("form.tap_page"),
-        options: [["", t("pick.page_none")], ...pages.map((page) => [page.path, page.title || page.path])],
-        value: state.tap.page,
-        focus: "card-tap-page",
-        test: "card-tap-page",
-        onChange: (value) => ctx.onStandard("tap_page", value || undefined),
-      });
-      touch.append(pageField);
-    }
-  }
-  if (state.hold !== null) {
-    touch.append(
-      switchRow({
-        label: t("form.hold"),
-        checked: state.hold,
-        focus: "card-hold",
-        test: "card-hold",
-        onChange: (checked) => ctx.onStandard("hold", checked ? undefined : false),
-      }).field,
-    );
-  }
-  if (touch.children.length > 1) {
-    form.append(touch);
-  }
-
-  // Look: the card's own rows, then the shared ones.
-  const lookCtx = {
-    ...ctx,
-    lookRows: (block) => {
-      if (state.lit !== null) {
-        const { field } = select({
-          label: t("form.lit"),
-          options: Object.entries(LIT_LOOKS).map(([look, key]) => [look, t(key)]),
-          value: state.lit,
-          focus: "card-lit",
-          test: "card-lit",
-          onChange: (value) => ctx.onLook("lit", value === component.standard?.lit ? undefined : value),
-        });
-        field.append(el("span", "helper", t("form.lit_helper")));
-        block.append(field);
-      }
-      if (state.tint !== null) {
-        // Greyed and off for a device with no colour; what is stored stays.
-        const { field, helper } = switchRow({
-          label: t("form.tint"),
-          help: state.tintUsable ? "" : t("form.tint_no_colour"),
-          checked: state.tintUsable && state.tint,
-          disabled: !state.tintUsable,
-          focus: "card-tint",
-          test: "card-tint",
-          onChange: (checked) => ctx.onLook("tint", checked ? undefined : false),
-        });
-        const row = el("div", "option-switch option-row");
-        row.classList.toggle("unusable", !state.tintUsable);
-        row.append(field);
-        if (helper) {
-          row.append(helper);
-        }
-        block.append(row);
-      }
-      block.append(...optionRows(state.rows, "look", ctx, optionNames));
-    },
-  };
-  form.append(lookBlock(lookCtx));
-  form.append(positionBlock(ctx));
-  form.append(
-    makeButton(t("form.remove"), {
-      kind: "danger",
-      test: "remove-card",
-      focus: "remove-card",
-      onClick: ctx.onRemove,
-    }),
-  );
-  return form;
-}
