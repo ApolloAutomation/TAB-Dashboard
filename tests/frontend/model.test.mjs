@@ -1557,12 +1557,13 @@ test("pageItems gives a card that is not installed the devices in its params", (
 test("notShownCounts counts what the editor marks as not shown", () => {
   // The old dashboard: the bubble card is not drawn, and the old
   // "Tablet preview" view is not a page the tablet shows.
-  assert.deepStrictEqual(
-    model.notShownCounts(realDashboard, library, realDashboardPreview),
-    { cards: 1, pages: 1 },
-  );
+  const counts = ({ cards, pages }) => ({ cards, pages });
+  assert.deepStrictEqual(counts(model.notShownCounts(realDashboard, library, realDashboardPreview)), {
+    cards: 1,
+    pages: 1,
+  });
   // Without a preview, only cards that can never be drawn are counted.
-  assert.deepStrictEqual(model.notShownCounts(realDashboard, library, null), { cards: 1, pages: 1 });
+  assert.deepStrictEqual(counts(model.notShownCounts(realDashboard, library, null)), { cards: 1, pages: 1 });
 
   const config = model.newDashboardConfig();
   config.views[0].sections[0].cards = [
@@ -1575,11 +1576,42 @@ test("notShownCounts counts what the editor marks as not shown", () => {
     sources: { 1: [0, 0, 0] },
     warnings: [],
   };
-  assert.deepStrictEqual(model.notShownCounts(config, library, preview), { cards: 1, pages: 0 });
-  assert.deepStrictEqual(model.notShownCounts(config, library, null), { cards: 0, pages: 0 });
+  assert.deepStrictEqual(counts(model.notShownCounts(config, library, preview)), { cards: 1, pages: 0 });
+  assert.deepStrictEqual(model.notShownCounts(config, library, null), { cards: 0, pages: 0, first: null });
   // An empty dashboard has nothing that is left out.
-  assert.deepStrictEqual(model.notShownCounts(model.newDashboardConfig(), library, null), { cards: 0, pages: 0 });
-  assert.deepStrictEqual(model.notShownCounts(null, library, null), { cards: 0, pages: 0 });
+  assert.deepStrictEqual(model.notShownCounts(model.newDashboardConfig(), library, null), {
+    cards: 0,
+    pages: 0,
+    first: null,
+  });
+  assert.deepStrictEqual(model.notShownCounts(null, library, null), { cards: 0, pages: 0, first: null });
+});
+
+// The start screen's link opens the editor at the first thing the tablet
+// leaves out: that card's page, with the card selected.
+test("notShownCounts names the first card that is left out", () => {
+  const config = model.newDashboardConfig();
+  config.views[0].sections[0].cards = [
+    { type: model.CARD_TYPE, component: "apollo/light-tile", params: { entity: "light.kitchen" } },
+    { type: model.CARD_TYPE, component: "apollo/light-tile", params: { entity: "light.bedroom" } },
+  ];
+  const preview = {
+    layout: { pages: [{ id: "home", view: 0, w: [{ id: 1, t: "card", r: [0, 0, 10, 10] }] }] },
+    sources: { 1: [0, 0, 0] },
+    warnings: [],
+  };
+  const { first } = model.notShownCounts(config, library, preview);
+  assert.equal(first.view, 0);
+  assert.deepStrictEqual(first.source, [0, 0, 1]);
+  assert.equal(typeof first.key, "string");
+  // The old dashboard: its first page holds the card that is not drawn,
+  // before the view that is not a page.
+  const real = model.notShownCounts(realDashboard, library, realDashboardPreview);
+  assert.equal(real.first.view, 0);
+  assert.ok(Array.isArray(real.first.source) && real.first.source[0] === 0);
+  // Also the cards on each page, for the tile's line.
+  assert.equal(model.cardCount(config), 2);
+  assert.equal(model.cardCount(null), 0);
 });
 
 test("pageItems links shown cards to their drawn items and collects notes", () => {
@@ -2371,6 +2403,53 @@ test("historyUndo and historyRedo walk both ways and stop at the ends", () => {
   const atEnd = model.historyRedo(history);
   assert.deepStrictEqual(atEnd, history);
   assert.equal(model.canRedo(history), false);
+});
+
+test("a history group joins changes five seconds apart", () => {
+  const group = {};
+  let history = model.createHistory({ theme: "midnight" });
+  history = model.historyPush(history, { theme: "warm" }, { now: 1000, group });
+  history = model.historyPush(history, { theme: "soft" }, { now: 6000, group });
+  history = model.historyPush(history, { theme: "mono" }, { now: 11000, group });
+  assert.deepStrictEqual(history.past, [{ theme: "midnight" }]);
+  assert.deepStrictEqual(history.present, { theme: "mono" });
+  // A change with another group, or with none, is a step of its own.
+  history = model.historyPush(history, { theme: "glass" }, { now: 11500, group: {} });
+  assert.equal(history.past.length, 2);
+  history = model.historyPush(history, { theme: "daylight" }, { now: 11600 });
+  assert.equal(history.past.length, 3);
+  assert.equal(history.group, null);
+  // One undo takes back everything the group joined.
+  let grouped = model.createHistory({ theme: "midnight" });
+  for (const [index, theme] of ["warm", "soft", "mono"].entries()) {
+    grouped = model.historyPush(grouped, { theme }, { now: index * 1200, group });
+  }
+  assert.deepStrictEqual(model.historyUndo(grouped).present, { theme: "midnight" });
+});
+
+test("undo, redo and closing end a history group", () => {
+  const group = {};
+  let history = model.createHistory({ value: 0 });
+  history = model.historyPush(history, { value: 1 }, { group });
+  history = model.historyCloseGroup(history);
+  assert.equal(history.group, null);
+  history = model.historyPush(history, { value: 2 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }]);
+  // Undo ends it: the next change with the same group is a new step.
+  history = model.historyUndo(history);
+  assert.equal(history.group, null);
+  history = model.historyPush(history, { value: 3 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }]);
+  history = model.historyPush(history, { value: 4 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }]);
+  history = model.historyUndo(history);
+  history = model.historyRedo(history);
+  assert.equal(history.group, null);
+  history = model.historyPush(history, { value: 5 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }, { value: 4 }]);
+  // Closing a history without a group changes nothing.
+  const plain = model.createHistory({ value: 0 });
+  assert.equal(model.historyCloseGroup(plain), plain);
 });
 
 test("SaveQueue saves once after the delay and reports saved", async () => {

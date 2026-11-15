@@ -3,6 +3,7 @@
 // canvasStyles, cardStyles, previewStyles) is checked in render.test.mjs.
 import test from "node:test";
 import assert from "node:assert";
+import fs from "node:fs";
 import * as styles from "../../custom_components/apollo_tab/frontend/styles.js";
 import { accentGrounds } from "../../custom_components/apollo_tab/frontend/logic.js";
 
@@ -334,6 +335,10 @@ test("a chosen thing and a focused field are marked in the readable accent", () 
     assert.ok(ring, `${sheet}: no focus ring`);
     assert.doesNotMatch(ring.selector, /(^|, )(select|textarea|input):focus-visible/, sheet);
   }
+  // A fold-out's link ("How to add a tablet", "What to do") takes the same
+  // ring as links, not the browser's own.
+  const panelRing = rules(styles.panelStyles).find((rule) => !rule.at.length && rule.selector.startsWith("button:focus-visible"));
+  assert.match(panelRing.selector, /(^|, )summary:focus-visible(,|$)/);
   for (const rule of panelRules()) {
     const marks = /aria-selected="true"|aria-current="true"|aria-pressed="true"|input:checked|:focus\b/;
     if (!marks.test(rule.selector) || /^\.hit|forced-colors/.test(rule.selector + rule.at.join(" "))) continue;
@@ -343,4 +348,23 @@ test("a chosen thing and a focused field are marked in the readable accent", () 
       }
     }
   }
+});
+
+// The start screen's small pictures (tiles, the guide's sample) once took
+// the panel's button rules: its smallest height and padding blew up the
+// tablet's page buttons at a quarter of the size.
+test("the start screen draws each tablet picture in a shadow root of its own", () => {
+  const source = fs.readFileSync(new URL("../../custom_components/apollo_tab/frontend/panel.js", import.meta.url), "utf8");
+  // The panel's own style sheet holds none of the tablet's styles ...
+  assert.match(source, /this\._style\.textContent = panelStyles;/);
+  // ... and every page it draws goes through pictureHost.
+  const draws = source.match(/renderPage\([^,]+,/g) || [];
+  assert.equal(draws.length, 2);
+  for (const call of draws) {
+    assert.match(call, /^renderPage\(pictureHost\(/);
+  }
+  assert.match(source, /const pictureHost = \(holder\) => \{[\s\S]*?attachShadow\(\{ mode: "open" \}\)[\s\S]*?rendererStyles \+ canvasStyles/);
+  // The tablet's buttons take no padding from the browser either.
+  const buttons = rules(styles.rendererStyles).find((rule) => rule.selector === ".at-button, .at-switch, .at-thermostat button, .at-nav-button");
+  assert.ok(buttons.declarations.some(([property, value]) => property === "padding" && value === "0"));
 });

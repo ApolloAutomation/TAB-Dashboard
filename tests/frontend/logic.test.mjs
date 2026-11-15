@@ -593,3 +593,55 @@ test("kelvinRgb gives Home Assistant's whites", () => {
   assert.deepEqual(logic.kelvinRgb(6500), [255, 254, 250]);
   assert.deepEqual(logic.kelvinRgb(1500), [255, 108, 0]);
 });
+
+test("placeBeside keeps a pop-up inside its bounds", () => {
+  const bounds = { left: 0, top: 0, right: 1000, bottom: 700 };
+  const anchor = { left: 600, top: 10, right: 700, bottom: 50 };
+  // Under its opener, lined up with the opener's start edge.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 200 }, bounds), { left: 600, top: 54 });
+  // Too wide to start there: moved left until its end is inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 500, height: 200 }, bounds), { left: 500, top: 54 });
+  // Right to left: its end lines up with the opener's end.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 200 }, bounds, { rtl: true }), { left: 400, top: 54 });
+  // No room under an opener near the bottom: above it.
+  const low = { left: 20, top: 600, right: 120, bottom: 640 };
+  assert.deepEqual(logic.placeBeside(low, { width: 200, height: 300 }, bounds), { left: 20, top: 296 });
+  // Taller than the bounds: its top stays inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 900 }, bounds), { left: 600, top: 0 });
+  // Wider than the bounds: its start edge stays inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 1200, height: 100 }, bounds), { left: 0, top: 54 });
+  // Every result is inside whenever it fits.
+  for (const x of [-50, 0, 400, 990, 1100]) {
+    for (const y of [-20, 0, 300, 690, 800]) {
+      const box = { left: x, top: y, right: x + 40, bottom: y + 40 };
+      const place = logic.placeBeside(box, { width: 344, height: 240 }, bounds);
+      assert.ok(place.left >= 0 && place.left + 344 <= 1000, `left ${place.left} for ${x},${y}`);
+      assert.ok(place.top >= 0 && place.top + 240 <= 700, `top ${place.top} for ${x},${y}`);
+    }
+  }
+});
+
+test("fillWords puts the approve words into every sentence and leaves other braces alone", () => {
+  const strings = {
+    "tablets.word.approve": "turn on",
+    "tablets.word.approve_cap": "Turn on",
+    "tablets.word.approve_it": "turn it on",
+    "tablets.turn_on": "{approve_cap} with this dashboard",
+    "tablets.note": "Do not {approve_it} unless {name} is yours.",
+    "tablets.status": "Ready to {approve}",
+    "home.plain": "{count} cards",
+    "home.unknown": "{approve_later}",
+  };
+  const filled = logic.fillWords(strings);
+  assert.equal(filled["tablets.turn_on"], "Turn on with this dashboard");
+  assert.equal(filled["tablets.note"], "Do not turn it on unless {name} is yours.");
+  assert.equal(filled["tablets.status"], "Ready to turn on");
+  assert.equal(filled["home.plain"], "{count} cards");
+  assert.equal(filled["home.unknown"], "{approve_later}");
+  // The words themselves stay, and the file it was given is not changed.
+  assert.equal(filled["tablets.word.approve"], "turn on");
+  assert.equal(strings["tablets.turn_on"], "{approve_cap} with this dashboard");
+  // Nothing to fill from: the same sentences.
+  assert.deepEqual(logic.fillWords({ a: "{approve}" }), { a: "{approve}" });
+  assert.deepEqual(logic.fillWords(null), {});
+});

@@ -512,6 +512,7 @@ input[type="range"]:disabled::-moz-range-thumb {
 button:focus-visible,
 input:is([type="checkbox"], [type="radio"], [type="color"]):focus-visible,
 a:focus-visible,
+summary:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--tab-text);
   outline-offset: 2px;
@@ -520,7 +521,8 @@ a:focus-visible,
 /* Links, as buttons or in a sentence, have one ring: a rounded rectangle
    round their words. A link button's words are in a span of their own,
    which takes the ring; its box stays a 40 px press area. */
-a:not(.button-link):focus-visible {
+a:not(.button-link):focus-visible,
+summary:focus-visible {
   border-radius: var(--tab-r-xs);
   box-shadow: none;
 }
@@ -761,7 +763,8 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 .tab[aria-selected="true"],
 .list-row[aria-current="true"],
 .entity-option[aria-selected="true"],
-.icon-grid button[aria-pressed="true"] {
+.icon-grid button[aria-pressed="true"],
+.icon-grid button[aria-checked="true"] {
   background-color: var(--tab-accent-soft);
   box-shadow: inset 0 0 0 2px var(--tab-accent-text);
 }
@@ -769,7 +772,8 @@ input[type="range"]:focus-visible::-moz-range-thumb {
    takes the mark's colour and 1 px more is drawn inside it, so the mark is
    one 2 px line at the control's own edge. */
 .tab[aria-selected="true"],
-.icon-grid button[aria-pressed="true"] {
+.icon-grid button[aria-pressed="true"],
+.icon-grid button[aria-checked="true"] {
   border-color: var(--tab-accent-text);
   box-shadow: inset 0 0 0 1px var(--tab-accent-text);
 }
@@ -777,7 +781,9 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   .tab[aria-selected="true"],
   .list-row[aria-current="true"],
   .entity-option[aria-selected="true"],
-  .icon-grid button[aria-pressed="true"] {
+  .icon-grid button[aria-pressed="true"],
+  .icon-grid button[aria-checked="true"],
+  .theme-tile[aria-checked="true"] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
@@ -935,8 +941,297 @@ ${barTokens}
 .box > a {
   justify-self: start;
 }
+/* Words for screen readers only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* The guide: three numbered steps, a done step with a tick. */
+.guide-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* The steps on the left, the sample picture on the right. */
+.guide-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.guide-body > .guide-steps {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.guide-sample {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.guide-sample-frame {
+  padding: 10px;
+  border-radius: var(--tab-r-m);
+  background: var(--tab-bezel);
+}
+.guide-sample-screen {
+  overflow: hidden;
+  /* A tablet picture: the panel's line height must not reach it. */
+  line-height: normal;
+  border-radius: var(--tab-r-xs);
+}
+.guide-sample figcaption {
+  color: var(--tab-text-2);
+}
+:host(.compact) .guide-sample {
+  display: none;
+}
+.guide-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.guide-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.guide-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--tab-line);
+  border-radius: 50%;
+  font-weight: 500;
+  --mdc-icon-size: 18px;
+}
+.guide-step[data-done="true"] .guide-mark {
+  border-color: transparent;
+  background: var(--tab-accent-fill);
+  color: var(--tab-accent-ink);
+}
+.guide-words {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  min-width: 0;
+}
+.guide-words > * {
+  margin: 0;
+}
+.guide-words h3 {
+  font-size: var(--tab-fs-body);
+  line-height: var(--tab-lh-body);
+  font-weight: 500;
+}
+/* Dashboards as tiles: a picture of the first page, the name as a link
+   over the whole tile, then what it holds and where it is shown. */
+.dashboard-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: 16px;
+}
+.dashboard-tile {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  background: var(--tab-surface);
+}
+.dashboard-tile:hover {
+  background: color-mix(in srgb, var(--tab-text) 4%, var(--tab-surface));
+}
+.dashboard-tile:has(.tile-link:focus-visible) {
+  outline: 2px solid var(--tab-ring);
+  outline-offset: 2px;
+}
+/* The picture sits in a thin dark bezel, like the tablet's own frame, with
+   a line round it, so a dark page keeps its edge on a dark tile. Shadows
+   draw both, so the picture keeps its size. */
+.tablet-pic {
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  margin: 4px;
+  border-radius: var(--tab-r-xs);
+  background: var(--tab-stage);
+  box-shadow: 0 0 0 4px var(--tab-bezel), 0 0 0 5px var(--tab-line);
+  pointer-events: none;
+}
+.dashboard-row > .row-text {
+  align-content: start;
+}
+/* A tile: picture, words, then its action label at the foot. */
+.dashboard-row {
+  grid-template-rows: auto 1fr auto;
+}
+.tile-action {
+  justify-self: start;
+  padding: 4px 12px;
+  border-radius: var(--tab-r-pill);
+  background: var(--tab-tonal);
+  color: var(--tab-text);
+  font-weight: 500;
+}
+.dashboard-tile:hover .tile-action {
+  background: color-mix(in srgb, var(--tab-text) 14%, var(--tab-surface));
+}
+/* A link button's words line up with the text above it. It is moved,
+   not narrowed, so its words keep their room. */
+.dashboard-tile .over-link,
+.guide-words > button.link {
+  position: relative;
+  inset-inline-start: -4px;
+}
+.tile-name {
+  margin: 0;
+  font-size: var(--tab-fs-head);
+  line-height: var(--tab-lh-head);
+  font-weight: 500;
+}
+.dashboard-tile .tile-link {
+  color: var(--tab-text);
+  text-decoration: none;
+}
+.tile-link:focus-visible {
+  outline: none;
+}
+/* The whole tile opens the dashboard. */
+.tile-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+/* What sits above the stretched link takes its own clicks. */
+.dashboard-tile .over-link,
+.dashboard-tile .row-tags,
+.dashboard-tile .kept-change {
+  position: relative;
+  z-index: 1;
+}
+.dashboard-tile .over-link {
+  justify-self: start;
+  text-align: start;
+}
+/* One line, however many tablets: the rest is cut with "…" and the whole
+   list is in the title. */
+.dashboard-tile .shown-on {
+  display: block;
+  justify-self: start;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dashboard-tile .shown-on::before {
+  display: inline-block;
+  margin-inline-end: 6px;
+}
+.dashboard-tile .shown-on[hidden] {
+  display: none;
+}
+.create-tile {
+  place-content: center;
+  justify-items: center;
+  min-height: 160px;
+  border-style: dashed;
+  background: transparent;
+  --mdc-icon-size: 28px;
+}
+/* Grey boxes where the parts of the screen come while it loads. */
+.loading-boxes {
+  display: grid;
+  gap: 16px;
+}
+.loading-box {
+  height: 96px;
+  border-radius: var(--tab-r-m);
+  background: var(--tab-tonal);
+}
+.loading-box.tall {
+  height: 200px;
+}
+/* Advanced as one settings row, 56 px high, the whole row a button: cog,
+   name and reason, chevron. */
+.box.advanced-link {
+  padding: 0;
+}
+.box.advanced-link > button.settings-row {
+  justify-self: stretch;
+}
+button.settings-row {
+  justify-content: flex-start;
+  gap: 16px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 16px;
+  border-radius: inherit;
+  background-color: transparent;
+  text-align: start;
+  --mdc-icon-size: 24px;
+}
+button.settings-row .row-text {
+  flex: 1 1 auto;
+  gap: 2px;
+}
+button.settings-row .settings-title {
+  font-size: var(--tab-fs-body);
+  line-height: var(--tab-lh-body);
+  font-weight: 500;
+}
+button.settings-row .small {
+  color: var(--tab-text-2);
+  font-weight: 400;
+}
+/* On a phone the create tile is as short as its button allows. */
+@media (max-width: 700px) {
+  .create-tile {
+    grid-auto-flow: column;
+    align-items: center;
+    min-height: 72px;
+  }
+}
+.path-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.path-field {
+  display: grid;
+  flex: 1 1 260px;
+  gap: 4px;
+  min-width: 0;
+}
+.path-field .field-label {
+  font-weight: 500;
+}
+.path-field input {
+  width: 100%;
+  min-height: var(--tab-control);
+  border: 1px solid var(--tab-line);
+  color: var(--tab-text);
+}
+.count-chips .chip {
+  white-space: normal;
+}
 /* Rows inside a box have no box of their own: a line divides them. */
-.dashboard-row,
 .component-row {
   display: flex;
   flex-wrap: wrap;
@@ -965,6 +1260,10 @@ ${barTokens}
   flex-wrap: wrap;
   gap: 6px;
 }
+/* A card's id in the Advanced lists. */
+.card-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .code-line {
   padding: 8px 12px;
   border-radius: var(--tab-r-s);
@@ -972,15 +1271,6 @@ ${barTokens}
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--tab-fs-small);
   line-height: var(--tab-lh-small);
-}
-.advanced-link {
-  display: grid;
-  justify-items: start;
-  gap: 2px;
-}
-/* The link's words line up with the hint under it. */
-.advanced-link > button.link {
-  margin-inline-start: -4px;
 }
 .panel-header > .back {
   flex: 0 0 auto;
@@ -999,14 +1289,35 @@ ${barTokens}
 }
 .tablet-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
-    "name shows status"
-    ". notes notes";
+    "name shows"
+    "status shows"
+    "notes notes";
   align-items: center;
-  gap: 4px 16px;
+  gap: 8px 16px;
   padding-top: 12px;
   border-top: 1px solid var(--tab-line);
+}
+/* A new tablet stands out as a tinted block. Its status sits at the top
+   right; "Shows" comes right above the button it fills, in one column. */
+.tablet-row[data-new="true"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name status"
+    "shows shows"
+    "notes notes";
+  align-items: start;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--tab-r-m);
+  background: var(--tab-accent-soft);
+}
+.tablet-row[data-new="true"] .tablet-status {
+  justify-self: end;
+}
+.tablet-row[data-new="true"] .tablet-shows {
+  justify-self: start;
 }
 .tablet-title {
   grid-area: name;
@@ -1046,12 +1357,15 @@ ${barTokens}
     margin: 6px 0;
   }
 }
+/* "Shows" and its list, at most 260 px wide, at the right of the row. */
 .tablet-shows {
   grid-area: shows;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  max-width: 100%;
   margin: 0;
 }
 .tablet-shows .field-label {
@@ -1059,17 +1373,29 @@ ${barTokens}
   font-weight: 500;
 }
 .tablet-shows select {
-  flex: 1 1 auto;
-  width: 100%;
+  flex: 0 1 260px;
+  width: 260px;
   min-width: 0;
 }
+/* The status as a chip under the name. */
 .tablet-status {
   grid-area: status;
-  display: flex;
+  justify-self: start;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
   margin: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-pill);
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
   font-weight: 500;
+}
+.tablet-status:empty {
+  display: none;
 }
 /* A dot beside the words: green on the tablet, amber while sending, red
    for a problem, the accent for a new tablet, grey otherwise. The words
@@ -1154,14 +1480,206 @@ ${barTokens}
     margin: 6px 0;
   }
 }
+/* And for the link to the guide to writing a card, on Advanced. */
+@media (max-width: 700px), (pointer: coarse) {
+  .card-guide {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 44px;
+  }
+}
+/* The same for the link to Devices & services in how to add a tablet. */
+@media (max-width: 700px), (pointer: coarse) {
+  .screen-devices {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 44px;
+    margin: 6px 0;
+  }
+}
+/* Narrow: name, status, "Shows", then the rest, one under the other. The
+   button's full width is set after its own rule, further down. */
 @container (max-width: 620px) {
-  .tablet-row {
+  .tablet-row,
+  .tablet-row[data-new="true"] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "name"
-      "shows"
       "status"
+      "shows"
       "notes";
+  }
+  .tablet-row[data-new="true"] .tablet-status {
+    justify-self: start;
+  }
+  .tablet-shows,
+  .tablet-row[data-new="true"] .tablet-shows {
+    justify-self: stretch;
+  }
+  .tablet-shows select {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+/* The tablet's icon in a 40 px tile before its name. */
+.tablet-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--tab-r-s);
+  background: var(--tab-tonal);
+  --mdc-icon-size: 22px;
+}
+/* The six characters to find on the tablet's screen. */
+.tablet-mac {
+  padding: 0 4px;
+  border-radius: var(--tab-r-xs);
+  background: var(--tab-tonal);
+  color: var(--tab-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.tablet-name-warning,
+.tablet-check-warning {
+  flex: 1 0 100%;
+}
+/* "Turn on with this dashboard" over the dashboard it sends: one size
+   whatever it names, so a pick does not move it. */
+.turn-on-wrap {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.tablet-notes .tablet-turn-on {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 0;
+  width: 280px;
+  max-width: 100%;
+  min-height: 56px;
+  padding-block: 6px;
+  text-align: start;
+  /* It takes presses the moment it looks filled. */
+  transition: none;
+}
+/* Its words stay readable while it waits on the new tablet's tint. */
+.tablet-row[data-new="true"] .tablet-turn-on:disabled {
+  background: color-mix(in srgb, var(--tab-text) 8%, var(--tab-surface));
+  color: var(--tab-text-2);
+}
+@container (max-width: 620px) {
+  .turn-on-wrap,
+  .tablet-notes .tablet-turn-on {
+    width: 100%;
+  }
+}
+.turn-on-name {
+  display: block;
+  width: 100%;
+  min-height: 1.33em;
+  overflow: hidden;
+  font-size: var(--tab-fs-small);
+  font-weight: 400;
+  line-height: var(--tab-lh-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* With no dashboard to name, the one line sits in the middle; the button
+   keeps its 56 px, so a pick moves nothing. */
+.turn-on-name:empty {
+  display: none;
+}
+.tablet-pick-first[data-shown="false"] {
+  visibility: hidden;
+}
+/* Fold-outs: an offline tablet's "What to do", and how to add a tablet. */
+.what-to-do > summary,
+.screen-says > summary {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  gap: 6px;
+  min-height: var(--tab-control-s);
+  color: var(--tab-accent-text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.what-to-do > summary:hover,
+.screen-says > summary:hover {
+  text-decoration-thickness: 2px;
+}
+/* A chevron that points down when shut and up when open. Turned, it
+   reaches 2 px past its box, so it keeps 2 px from the end of the link. */
+.what-to-do > summary::after,
+.screen-says > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-block-start: -3px;
+  margin-inline-end: 2px;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+.what-to-do[open] > summary::after,
+.screen-says[open] > summary::after {
+  margin-block-start: 3px;
+  transform: rotate(-135deg);
+}
+/* On a phone each fold-out's link is a 44 px high touch target. */
+@media (max-width: 700px), (pointer: coarse) {
+  .what-to-do > summary,
+  .screen-says > summary {
+    min-height: 44px;
+  }
+}
+.what-to-do > p {
+  margin: 4px 0 0;
+}
+.screen-says-body {
+  display: grid;
+  gap: 8px;
+  padding-block: 4px 8px;
+}
+.screen-says-body > * {
+  margin: 0;
+}
+.screen-says-body h3 {
+  font-size: var(--tab-fs-body);
+  font-weight: 500;
+}
+.screen-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.screen-row {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+  gap: 4px 16px;
+  padding-block: 8px;
+  border-top: 1px solid var(--tab-line);
+}
+.screen-row dt {
+  font-weight: 500;
+}
+.screen-row dd {
+  margin: 0;
+  color: var(--tab-text-2);
+}
+@container (max-width: 620px) {
+  .screen-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 :host(.compact) .panel-header {
@@ -1298,7 +1816,8 @@ export const formStyles = `
 }
 /* The chosen icon also has a small tick, so it is not told by colour
    alone. */
-.icon-grid button[aria-pressed="true"]::after {
+.icon-grid button[aria-pressed="true"]::after,
+.icon-grid button[aria-checked="true"]::after {
   content: "✓";
   position: absolute;
   top: -6px;
@@ -1673,7 +2192,10 @@ ${barTokens}
   grid-template-areas: "bar" "block" "strip" "main";
 }
 .ed-header {
+  position: relative;
+  z-index: 5;
   grid-area: bar;
+  container: bar / inline-size;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -1688,7 +2210,7 @@ ${barTokens}
   block-size: 48px;
 }
 .root.compact .ed-header {
-  padding-inline: 4px 8px;
+  padding-inline: 4px;
   gap: 4px;
 }
 /* As in the panel header: no gap after a menu button that draws nothing. */
@@ -1698,14 +2220,18 @@ ${barTokens}
 .root.compact .ed-header > ha-menu-button {
   margin-inline-end: -4px;
 }
-/* The title, then the tablets that show the dashboard on one line, cut
-   when it does not fit. */
+/* The dashboard's name takes the free space and is cut first, but never
+   to nothing: a few letters of it always show. */
 .title-block {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
-  align-items: baseline;
-  gap: 16px;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
+}
+.root:not(.compact) .title-block {
+  min-width: 8em;
 }
 .ed-header h1 {
   flex: 0 1 auto;
@@ -1732,32 +2258,6 @@ ${barTokens}
   gap: 6px;
   min-width: 0;
   margin: 0;
-}
-/* In the bar the lines run on as words in one line, and the cut ends in
-   "…" with 16 px before the save state. */
-.ed-header .tablet-lines {
-  display: block;
-  flex: 1 1 0;
-  /* A long title is cut first: the lines keep at least their first words. */
-  min-width: min(12em, 40%);
-  padding-inline-end: 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ed-header .tablet-lines:empty {
-  min-width: 0;
-}
-.ed-header .tablet-line {
-  display: inline;
-}
-.ed-header .tablet-line + .tablet-line {
-  margin-inline-start: 16px;
-}
-.ed-header .tablet-line[data-tone]::before {
-  display: inline-block;
-  margin-inline-end: 6px;
-  vertical-align: 0.1em;
 }
 /* A dot in the tablet's tone, worked out from the tokens where it is shown
    (the bar's own inside the bar). */
@@ -1811,6 +2311,11 @@ ${barTokens}
   align-items: center;
   gap: 4px;
   margin-inline-start: auto;
+}
+/* A phone's bar: the icon buttons stand side by side, so the dashboard's
+   name keeps the room. Each is still 44 px wide. */
+.root.compact .header-actions {
+  gap: 0;
 }
 .sr-only {
   position: absolute;
@@ -2479,34 +2984,19 @@ ${barTokens}
 }
 /* What the inspector shows with nothing selected. */
 .idle,
-.idle-page,
-.idle-settings {
+.idle-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .idle-intro:empty,
-.idle-page:empty,
-.idle-settings:empty {
+.idle-page:empty {
   display: none;
 }
-/* Both buttons stay on one line; the settings link wraps its own words
-   when the panel is narrow, so the form starts as high as it can. */
+/* "Done" at the end of the form's top row. */
 .side-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-/* The arrow lines up with the form's words under it. */
-.side-back {
-  justify-self: start;
-  margin-inline-start: -4px;
-  padding-inline: 4px;
-  text-align: start;
-}
-.side-back > span {
-  display: inline-flex;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
 }
@@ -2739,6 +3229,596 @@ ${barTokens}
   gap: 6px;
   font-size: var(--tab-fs-small);
   line-height: var(--tab-lh-small);
+}
+
+/* ---- The top bar's controls ---- */
+/* The name is a button that turns into a field; the pencil shows on hover
+   and focus. It looks like the heading it is, not like a button. */
+.title-button {
+  justify-content: flex-start;
+  max-width: 100%;
+  padding-inline: 8px;
+  border-radius: var(--tab-r-s);
+  background-color: transparent;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+}
+.title-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.title-button > ha-icon {
+  flex: none;
+  color: var(--tab-text-2);
+  visibility: hidden;
+}
+.title-button:hover > ha-icon,
+.title-button:focus-visible > ha-icon {
+  visibility: visible;
+}
+/* A phone's bar: the name keeps the room (and has no pencil there). */
+.root.compact .title-button {
+  padding-inline: 2px 4px;
+}
+.ed-header h1:has(.title-button),
+.ed-header h1:has(.title-field) {
+  overflow: visible;
+}
+.title-field {
+  box-sizing: border-box;
+  width: min(100%, 28em);
+  min-height: var(--tab-control);
+  padding-inline: 8px;
+  border: 1px solid var(--tab-field-line);
+  border-radius: var(--tab-r-s);
+  background: transparent;
+  color: var(--tab-text);
+  font: inherit;
+}
+/* A refused rename: a small pop-up under the name, so nothing in the bar
+   moves. In compact and short it spans the bar under it. */
+.rename-alert {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-start: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(28em, calc(100vw - 24px));
+  margin: 0;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: var(--tab-shadow-dialog);
+}
+.root.compact .title-block,
+.root.short .title-block {
+  position: static;
+}
+/* A phone's rename field takes the free space, 8 px from the save state. */
+.root.compact .title-block:has(.title-field) {
+  flex: 1 1 0;
+  margin-inline-end: 8px;
+}
+.root.compact .title-field {
+  width: 100%;
+}
+.root.compact .rename-alert,
+.root.short .rename-alert {
+  top: calc(100% + 2px);
+  inset-inline: 8px;
+  width: auto;
+  max-width: none;
+}
+/* The Tablets chip: a dot in its tone and one short line, cut with "…"
+   should the words still be too long. */
+/* The name gives way first: the chip keeps its words. */
+.tablet-chip {
+  flex: none;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  max-width: 34ch;
+  padding-inline: 12px 8px;
+  border: 1px solid var(--tab-line);
+  background-color: transparent;
+  font-weight: 500;
+}
+.chip-words {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chip-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tab-text-2);
+}
+.tablet-chip[data-tone="ok"] .chip-dot {
+  background: var(--tab-ok-ink);
+}
+.tablet-chip[data-tone="busy"] .chip-dot {
+  background: var(--tab-info-ink);
+}
+.tablet-chip[data-tone="problem"] .chip-dot {
+  background: var(--tab-err-ink);
+}
+.tablet-chip > ha-icon {
+  flex: none;
+  color: var(--tab-text-2);
+}
+/* On a phone the chip is a row of its own under the picture. */
+.chip-row {
+  display: flex;
+}
+.chip-row .tablet-chip {
+  max-width: 100%;
+}
+/* The Theme button: a small swatch and the word, the swatch alone in a
+   narrower bar. */
+.theme-button {
+  flex: none;
+  gap: 8px;
+  padding-inline: 8px 12px;
+  border: 1px solid var(--tab-line);
+  background-color: transparent;
+}
+/* In a narrow bar (a short window, or a laptop at 200 %) the chip's words
+   give way too, cut with "…", and the save state is its icon. */
+@container bar (max-width: 899px) {
+  .tablet-chip {
+    flex: 0 1 auto;
+  }
+  .save-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@container bar (max-width: 1023px) {
+  .theme-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .theme-button {
+    padding-inline: 8px;
+  }
+}
+.theme-swatch.small-swatch {
+  width: 28px;
+  height: 20px;
+  padding: 3px;
+  border-radius: var(--tab-r-xs);
+}
+.theme-swatch.small-swatch .swatch-card {
+  width: 14px;
+  height: 14px;
+  padding: 2px;
+}
+.theme-swatch.small-swatch .swatch-dot {
+  width: 5px;
+  height: 5px;
+}
+/* The settings button of the selected page, after its tab. */
+.tab-owner {
+  display: contents;
+}
+.page-settings {
+  flex: none;
+  --mdc-icon-size: 20px;
+}
+
+/* ---- Pop-ups ---- */
+/* A box under the control that opened it; the page behind stays as it is.
+   The script places it (popover.js). */
+dialog.popover {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 16px));
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  background: var(--tab-surface);
+  color: var(--tab-text);
+  box-shadow: var(--tab-shadow-dialog);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+dialog.popover::backdrop {
+  background: transparent;
+}
+dialog.popover:focus {
+  outline: none;
+}
+/* In compact and short: a sheet from the bottom of the editor. */
+dialog.popover.sheet {
+  border-radius: var(--tab-r-dialog) var(--tab-r-dialog) 0 0;
+  border-bottom: 0;
+}
+dialog.popover.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+/* Over one part of the editor (the script gives its box): the rest stays
+   in view and is not dimmed. */
+dialog.popover.cover,
+dialog.popover.cover[data-test] {
+  border-width: 0;
+  border-inline-start-width: 1px;
+  border-radius: 0;
+  box-shadow: none;
+}
+.pop-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+dialog.popover.sheet .pop-body {
+  box-sizing: border-box;
+  max-width: 520px;
+  margin-inline: auto;
+  padding-bottom: calc(16px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+.pop-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.pop-form > button,
+.pop-body .shown-on > button {
+  justify-self: start;
+}
+/* A text link and a menu row take their side padding back, so their words
+   start on the content's edge; their ring is drawn inside them. */
+.pop-body .shown-on > button.text,
+.pop-body .menu-item {
+  margin-inline-start: -12px;
+  padding-inline: 12px;
+}
+.pop-body .shown-on > button.text:focus-visible,
+.pop-body .menu-item:focus-visible {
+  outline-offset: -3px;
+  box-shadow: none;
+}
+.pop-title {
+  margin: 0;
+  font-size: var(--tab-fs-head);
+  line-height: var(--tab-lh-head);
+  font-weight: 500;
+}
+.pop-title:focus:not(:focus-visible) {
+  outline: none;
+}
+.row-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The page pop-up's icons: 7 to a row. */
+.pop-form .icon-grid {
+  grid-template-columns: repeat(7, minmax(40px, 1fr));
+  gap: 4px;
+}
+.pop-form .icon-grid button {
+  min-width: 40px;
+}
+.pop-form .icon-grid button:not([aria-checked="true"]),
+.pop-form .icon-grid button:not([aria-checked="true"]):not(:disabled):hover {
+  border-color: transparent;
+}
+.icon-line {
+  margin: 4px 0 0;
+  color: var(--tab-text-2);
+}
+/* The theme gallery: tiles of three to a row, each a swatch painted from
+   the theme's own colours, its name under it. */
+dialog.popover[data-test="theme-gallery"] {
+  width: min(400px, calc(100vw - 16px));
+}
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.theme-heading {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  color: var(--tab-text-2);
+  font-size: var(--tab-fs-small);
+  font-weight: 600;
+}
+.theme-tile {
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 0;
+  padding: 6px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-s);
+  background-color: transparent;
+  font-weight: 400;
+}
+.theme-tile[aria-checked="true"] {
+  border-color: var(--tab-accent-text);
+  box-shadow: inset 0 0 0 1px var(--tab-accent-text);
+  background-color: var(--tab-accent-soft);
+}
+/* The chosen tile also has a tick, so it is not told by colour alone. */
+.theme-tile[aria-checked="true"]::after {
+  content: "✓";
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--tab-accent-fill);
+  color: var(--tab-accent-ink);
+  font-size: var(--tab-fs-small);
+  line-height: 1;
+}
+.theme-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 8px;
+  border-radius: var(--tab-r-xs);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+}
+.swatch-card {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  width: 60%;
+  height: 100%;
+  padding: 5px;
+  border-radius: var(--tab-r-xs);
+}
+.swatch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.swatch-bar {
+  width: 70%;
+  height: 4px;
+  border-radius: var(--tab-r-xs);
+}
+.theme-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The name's line is as high in every tile, with "Preview" or without,
+   so every swatch is in the same place. */
+.theme-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 20px;
+}
+.theme-preview {
+  flex: none;
+  padding-block: 0;
+  padding-inline: 6px;
+}
+.theme-description {
+  margin: 0;
+  color: var(--tab-text-2);
+}
+/* The Tablets pop-up: one grouped list. */
+.pop-body .shown-on .tablet-lines {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pop-body .shown-on-row {
+  min-height: 56px;
+}
+/* The status line of a tablet that shows this dashboard, under its name. */
+.pop-body .shown-on-row > .tablet-line {
+  flex: 1 0 100%;
+}
+.tablet-line.nowhere {
+  padding-block: 8px;
+  color: var(--tab-text-2);
+}
+/* A new tablet: a row like the others, its button at the end, with a
+   bar at its start that marks it as new. */
+.shown-on-new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  min-height: 56px;
+  padding-block: 4px;
+  padding-inline-start: 12px;
+  border-inline-start: 3px solid var(--tab-info-ink);
+}
+.shown-on-new p {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin: 0;
+}
+.shown-on-new > button {
+  flex: none;
+}
+/* The menu: its first items one under the other, as wide as the menu. */
+.menu-items {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--tab-line);
+}
+.menu-item {
+  justify-content: flex-start;
+  border-radius: var(--tab-r-s);
+  background-color: transparent;
+  font-weight: 400;
+}
+.automation-name > button {
+  min-height: var(--tab-control-s);
+}
+
+/* ---- The first-card notice ---- */
+/* It floats over the top of the stage and takes no height, so the
+   picture does not move when it comes. */
+.first-card {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  min-height: 44px;
+  padding-block: 2px;
+  padding-inline: 12px 4px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  background: var(--tab-surface);
+  box-shadow: var(--tab-shadow);
+  transform: translateX(-50%);
+}
+.first-card > ha-icon {
+  flex: none;
+  color: var(--tab-info-ink);
+}
+/* Its sentence is never cut: it wraps. */
+.first-card .notice-words {
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+.first-card > button:not(.icon) {
+  flex: none;
+}
+/* In medium the picture fills the stage and the open drawer covers its
+   end, so the notice is a row over the picture, ending at the drawer. A
+   low wide window has the same row (class row). */
+.root.medium .first-card,
+.first-card.row {
+  position: static;
+  flex: none;
+  flex-wrap: wrap;
+  width: auto;
+  max-width: none;
+  margin-block: 8px 0;
+  margin-inline: 16px;
+  box-shadow: none;
+  transform: none;
+}
+/* The button comes right after the sentence; only the close button is at
+   the end of the row. The row is wide, so it is one line and a long
+   sentence wraps inside it. */
+.root.medium .first-card,
+.root.wide .first-card.row {
+  flex-wrap: nowrap;
+}
+.root.medium .first-card .notice-words,
+.root.wide .first-card.row .notice-words {
+  flex: 0 1 auto;
+}
+.root.medium .first-card > button.icon,
+.root.wide .first-card.row > button.icon {
+  margin-inline-start: auto;
+}
+.first-card.row .notice-words {
+  flex: 1 1 12em;
+}
+.root.medium.drawer-open .first-card {
+  margin-inline-end: 336px;
+}
+/* Compact (under the picture): in the flow, the button under the words
+   and the close button at the top end. */
+.root.compact .first-card {
+  position: static;
+  display: grid;
+  flex: none;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0 8px;
+  width: auto;
+  max-width: none;
+  margin-top: 0;
+  padding-block: 4px 8px;
+  transform: none;
+}
+.root.compact .first-card > button:not(.icon) {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+}
+.root.compact .first-card > button.icon {
+  grid-column: 3;
+  grid-row: 1;
+}
+/* A wide one-column window has room for the button on the sentence's
+   line. */
+@media (min-width: 600px) {
+  .root.compact .first-card {
+    grid-template-columns: auto minmax(0, auto) auto minmax(0, 1fr);
+    align-items: center;
+    padding-block: 2px;
+  }
+  .root.compact .first-card > button:not(.icon) {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .root.compact .first-card > button.icon {
+    grid-column: 4;
+    justify-self: end;
+  }
+}
+/* Short: one row over the picture, the button on the words' line while
+   it fits, so the low stage keeps its height for the picture. */
+.root.short .first-card {
+  position: static;
+  flex: none;
+  flex-wrap: wrap;
+  width: auto;
+  max-width: none;
+  margin-block: 4px 0;
+  margin-inline: 12px;
+  padding-block: 2px;
+  box-shadow: none;
+  transform: none;
+}
+.root.short .first-card .notice-words {
+  flex: 1 1 12em;
 }
 `;
 
@@ -3246,6 +4326,9 @@ export const rendererStyles = `
   position: absolute;
   box-sizing: border-box;
   margin: 0;
+  /* No padding of the browser's own: it would widen a button in a small
+     picture. */
+  padding: 0;
   border: 0;
   color: var(--at-tx);
   font-family: inherit;

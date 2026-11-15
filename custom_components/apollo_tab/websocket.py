@@ -34,8 +34,8 @@ MAX_CARD_SUBSCRIPTIONS = 100
 # panel's "Turn on with this dashboard", and to pairing such a tablet. It
 # quotes the button and ends in a full stop, as the panel's own texts do.
 NOT_APPROVED = (
-    "This tablet is new. Pick a dashboard for it on the Home screen, "
-    'then press "Turn on with this dashboard".'
+    "This tablet is new. Pick a dashboard for it under Tablets, then "
+    'press "Turn on with this dashboard".'
 )
 
 

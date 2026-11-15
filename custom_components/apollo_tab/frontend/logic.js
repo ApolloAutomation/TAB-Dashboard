@@ -34,6 +34,29 @@ export function format(text, vars = {}) {
   );
 }
 
+// Words that live in one string each, under this prefix. Every other
+// sentence names one by the rest of its key in braces: the word for turning
+// a new tablet on (tablets.word.*) is written once and put in everywhere.
+const WORD_PREFIX = "tablets.word.";
+
+// The strings with those words put in. Other braces, such as {tablet},
+// stay for format(). A new object; `strings` stays as it was.
+export function fillWords(strings) {
+  const source = strings && typeof strings === "object" ? strings : {};
+  const words = new Map();
+  for (const [key, value] of Object.entries(source)) {
+    if (key.startsWith(WORD_PREFIX) && typeof value === "string") {
+      words.set(key.slice(WORD_PREFIX.length), value);
+    }
+  }
+  const filled = {};
+  for (const [key, value] of Object.entries(source)) {
+    filled[key] =
+      typeof value === "string" ? value.replace(/\{([a-z_]+)\}/g, (match, name) => words.get(name) ?? match) : value;
+  }
+  return filled;
+}
+
 export function resolveBound(bound, values = {}) {
   if (
     bound &&
@@ -1372,4 +1395,29 @@ export function kelvinRgb(kelvin) {
     blue = clamp(138.5177312231 * Math.log(temp - 10) - 305.0447927307);
   }
   return [red, green, blue].map((part) => Math.floor(part + 0.5));
+}
+
+// Where a pop-up of `size` ({ width, height }) goes beside its opener
+// (`anchor`, a box with left, top, right and bottom), inside `bounds` (the
+// same kind of box): under the opener, lined up with its start edge, or
+// above it when only there is room. Moved to stay inside the bounds; when
+// it is larger than they are, its start edge and top stay inside. Returns
+// { left, top } in px. rtl: lined up with the opener's right edge.
+export function placeBeside(anchor, size, bounds, { rtl = false, gap = 4 } = {}) {
+  const width = Math.max(0, size.width);
+  const height = Math.max(0, size.height);
+  let top = anchor.bottom + gap;
+  const roomBelow = bounds.bottom - anchor.bottom - gap;
+  const roomAbove = anchor.top - gap - bounds.top;
+  if (height > roomBelow && roomAbove > roomBelow) {
+    top = anchor.top - gap - height;
+  }
+  top = Math.max(bounds.top, Math.min(top, bounds.bottom - height));
+  let left = rtl ? anchor.right - width : anchor.left;
+  left = Math.min(left, bounds.right - width);
+  left = Math.max(bounds.left, left);
+  if (rtl && width > bounds.right - bounds.left) {
+    left = bounds.right - width;
+  }
+  return { left: Math.round(left), top: Math.round(top) };
 }

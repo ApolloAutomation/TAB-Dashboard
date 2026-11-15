@@ -82,6 +82,7 @@
   <main id="app"></main>
   <script type="module">
     import { createMockHass } from "./mock-hass.js";
+    import { fillWords } from "../../custom_components/apollo_tab/frontend/logic.js";
 
     const query = new URLSearchParams(location.search);
     const view = query.get("view") || "cards";
@@ -103,7 +104,8 @@
       getJson("../../custom_components/apollo_tab/library/strings.json"),
       seed === "real" ? getJson("./real-dashboard.json") : Promise.resolve(null),
     ]);
-    fixtures.strings = strings;
+    // With the word for turning a tablet on put in, as the panel loads them.
+    fixtures.strings = fillWords(strings);
 
     const mock = createMockHass(fixtures, {
       seed,

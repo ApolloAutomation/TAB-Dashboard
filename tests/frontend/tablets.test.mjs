@@ -4,12 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { format } from "../../custom_components/apollo_tab/frontend/logic.js";
+import { fillWords, format } from "../../custom_components/apollo_tab/frontend/logic.js";
 import * as tablets from "../../custom_components/apollo_tab/frontend/tablets.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const strings = JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8"));
+const rawStrings = JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8"));
+// As the panel loads them: with the word for turning a tablet on put in.
+const strings = fillWords(rawStrings);
 // The tablet's own words, from the shared contract (CONTRACT.md section 11;
 // TAB-1 checks engine/tab_state.h against the same file).
 const SCREENS = JSON.parse(fs.readFileSync(path.join(root, "tests/contract/screens.json"), "utf8"));
@@ -67,13 +69,13 @@ const ROWS = [
 
 // Design 6.1: the words on Home for every status and reason.
 const HOME_TABLE = [
-  [{ status: "new", approved: false, dashboard: null }, 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".'],
+  [{ status: "new", approved: false, dashboard: null }, "Ready to turn on"],
   [{ status: "on_tablet" }, "On the tablet"],
   [{ status: "sending" }, "Sending…"],
   [{ status: "offline" }, "Offline"],
   [{ status: "offline", reauth: "erased", reauth_name: "Apollo TAB-1 ddee01" }, "Waiting for you in Repairs"],
   [{ status: "offline", reauth: "key", reauth_name: "Apollo TAB-1 ddee01" }, "Waiting for you in Repairs"],
-  [{ status: "no_engine" }, "Waiting for tablet software"],
+  [{ status: "no_engine" }, "Needs a software update"],
   [{ status: "unsupported", reason: "tablet_old" }, "Needs newer tablet software"],
   [{ status: "unsupported", reason: "tablet_new" }, "Update Apollo TAB Dashboard in Home Assistant"],
   [{ status: "unsupported", reason: "ha_version" }, "Update Apollo TAB Dashboard in Home Assistant"],
@@ -99,7 +101,7 @@ const LINE_TABLE = [
   [{ status: "sending" }, "Sending to Kitchen tablet…"],
   [{ status: "offline" }, "Kitchen tablet is offline"],
   [{ status: "offline", reauth: "erased", reauth_name: "Apollo TAB-1 ddee01" }, "Kitchen tablet is waiting for you in Repairs"],
-  [{ status: "no_engine" }, "Waiting for tablet software (Kitchen tablet)"],
+  [{ status: "no_engine" }, "Kitchen tablet needs a software update"],
   [{ status: "unsupported", reason: "tablet_old" }, "Kitchen tablet needs newer tablet software"],
   [{ status: "unsupported", reason: "tablet_new" }, "Update Apollo TAB Dashboard in Home Assistant to use Kitchen tablet"],
   [{ status: "unsupported", reason: "ha_version" }, "Update Apollo TAB Dashboard in Home Assistant to use Kitchen tablet"],
@@ -210,12 +212,12 @@ test("an offline row says what to check", () => {
   assert.equal(tablets.offlineHelpKey(HALLWAY), "tablets.offline_help");
   assert.equal(
     t("tablets.offline_help"),
-    'Check that the tablet has power and Wi-Fi. If your Wi-Fi changed, turn the tablet off and on, then within 15 minutes join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi.',
+    'Check that the tablet has power and Wi-Fi. If your Wi-Fi changed, restart the tablet, then within 15 minutes join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi.',
   );
   const help = strings["tablets.offline_help"];
   // The way back, in the order the tablet needs it, and the hotspot's name
   // as the other lines (and the tablet) give it.
-  const at = ["power and Wi-Fi", "turn the tablet off and on", "within 15 minutes", 'join "Apollo TAB1 Hotspot" from a phone', "pick your Wi-Fi"].map(
+  const at = ["power and Wi-Fi", "restart the tablet", "within 15 minutes", 'join "Apollo TAB1 Hotspot" from a phone', "pick your Wi-Fi"].map(
     (words) => help.indexOf(words),
   );
   assert.ok(at.every((index, i) => index >= 0 && (i === 0 || index > at[i - 1])), JSON.stringify(at));
@@ -227,7 +229,13 @@ test("an offline row says what to check", () => {
   }
   const panel = fs.readFileSync(path.join(root, "custom_components/apollo_tab/frontend/panel.js"), "utf8");
   const fill = panel.slice(panel.indexOf("  _fillTabletRow(refs, tablet) {"), panel.indexOf("  _turnOnButton("));
-  assert.match(fill, /const offlineKey = offlineHelpKey\(tablet\);\n    if \(offlineKey\) \{\n      lines\.push\(\["small", t\(offlineKey\), "tablet-offline-help"\]\);/);
+  // The help goes into the row's "What to do" fold-out.
+  assert.match(fill, /const offlineKey = offlineHelpKey\(tablet\);\n    if \(offlineKey\) \{\n      lines\.push\(\["help", t\(offlineKey\), "tablet-offline-help"\]\);/);
+  assert.match(fill, /if \(className === "help"\) \{\n\s*return this\._whatToDo\(tablet\.mac, text, test\);/);
+  const fold = panel.slice(panel.indexOf("  _whatToDo("), panel.indexOf("  _turnOnButton("));
+  assert.match(fold, /el\("details", "what-to-do"\)/);
+  assert.match(fold, /fold\.dataset\.test = "tablet-what-to-do";/);
+  assert.doesNotMatch(fold, /screen-says/);
 });
 
 test("the note about taps shows only for a tablet that has the dashboard", () => {
@@ -238,7 +246,7 @@ test("the note about taps shows only for a tablet that has the dashboard", () =>
   // Waiting for the tablet software already says more.
   assert.equal(tablets.inputNoteKey(BEDROOM), null);
   assert.equal(tablets.inputNoteKey({ ...HALLWAY, input: "needs_encryption" }), null);
-  assert.match(t("tablets.needs_encryption"), /not protected\. Turn on encryption for it in ESPHome\.$/);
+  assert.match(t("tablets.needs_encryption"), /not protected\. Switch on encryption for it in ESPHome\.$/);
   assert.match(t("tablets.not_paired"), /cannot control anything yet\. It is still being set up\.$/);
 });
 
@@ -265,7 +273,7 @@ test("Set up again is offered only after set-up has not worked for a while", () 
   }
   assert.equal(tablets.pairAgainIn(loft, undefined, after), null);
   assert.equal(t("tablets.pair_again"), "Set up again");
-  const notApproved = 'This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard".';
+  const notApproved = 'This tablet is new. Pick a dashboard for it under Tablets, then press "Turn on with this dashboard".';
   assert.equal(t("tablets.pair_failed", { message: notApproved }), `It could not be set up again: ${notApproved}`);
   assert.ok(t("tablets.pair_asked"));
 });
@@ -282,11 +290,11 @@ test("tablets are listed by name, then by MAC", () => {
 
 test("Shown on names the tablets by their short name", () => {
   const list = [KITCHEN, HALLWAY, BEDROOM];
-  assert.equal(tablets.shownOnText(list, "home", t), "Shown on: Bedroom, Kitchen");
-  assert.equal(tablets.shownOnText(list, "night", t), "Shown on: Hallway");
+  assert.equal(tablets.shownOnText(list, "home", t), "On Bedroom, Kitchen");
+  assert.equal(tablets.shownOnText(list, "night", t), "On Hallway");
   assert.equal(tablets.shownOnText(list, "other", t), "");
   // A tablet without a short name falls back to its name.
-  assert.equal(tablets.shownOnText([{ ...KITCHEN, short_name: "" }], "home", t), "Shown on: Kitchen tablet");
+  assert.equal(tablets.shownOnText([{ ...KITCHEN, short_name: "" }], "home", t), "On Kitchen tablet");
 });
 
 test("names are joined with commas and a last and", () => {
@@ -343,10 +351,11 @@ test("the Tablets words: left out on tablets, and the kept choice on its own lin
   assert.match(panel, /rows\.some\(\(row\) => row\?\.url_path === tablet\.dashboard\)/);
 });
 
-test("on a narrow screen a tablet row reads name, Shows, status", async () => {
+test("on a narrow screen a tablet row reads name, status, Shows", async () => {
   const { panelStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
   const narrow = panelStyles.slice(panelStyles.indexOf("@container (max-width: 620px)"));
-  assert.match(narrow, /grid-template-areas:\s*"name"\s*"shows"\s*"status"\s*"notes";/);
+  // Spec 4.2: the status chip sits under the name.
+  assert.match(narrow, /grid-template-areas:\s*"name"\s*"status"\s*"shows"\s*"notes";/);
 });
 
 test("on a phone the device page link is a 44 px high touch target", async () => {
@@ -404,12 +413,12 @@ test("the delete question names the tablets and where they go", () => {
 test("the editor's caption has one line per tablet, at most three", () => {
   assert.deepEqual(
     tablets.captionLines([KITCHEN, HALLWAY, BEDROOM], "home", t).map((line) => line.text),
-    ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"],
+    ["Bedroom tablet needs a software update", "On Kitchen tablet"],
   );
   assert.deepEqual(tablets.captionLines([KITCHEN], "night", t), [
-    { kind: "nowhere", text: "Not shown on a tablet yet" },
+    { kind: "nowhere", text: "Not on a tablet yet" },
   ]);
-  assert.deepEqual(tablets.captionLines([], "home", t), [{ kind: "nowhere", text: "Not shown on a tablet yet" }]);
+  assert.deepEqual(tablets.captionLines([], "home", t), [{ kind: "nowhere", text: "Not on a tablet yet" }]);
   const five = ["A", "B", "C", "D", "E"].map((letter, index) => tablet(`m${index}`, `${letter} tablet`));
   const lines = tablets.captionLines(five, "home", t);
   assert.deepEqual(
@@ -418,6 +427,72 @@ test("the editor's caption has one line per tablet, at most three", () => {
   );
   assert.equal(lines[0].mac, "m0");
   assert.equal(lines[0].tone, "ok");
+  // The editor's Tablets pop-up names every one.
+  assert.equal(tablets.captionLines(five, "home", t, Infinity).length, 5);
+});
+
+test("chipWords gives one short line for every situation", () => {
+  const words = (list, urlPath = "home") => tablets.chipWords(list, urlPath, t);
+  const named = (name, changes = {}) => tablet(`mac-${name}`, name, changes);
+  // Each row of the design's table.
+  assert.deepEqual(words([]), { text: "No tablets yet", tone: "quiet", more: 0, full: "No tablets yet" });
+  assert.deepEqual(words([PORCH]), { text: "Not on a tablet yet", tone: "quiet", more: 0, full: "Not on a tablet yet" });
+  assert.deepEqual(words([KITCHEN], "night"), { text: "Not on a tablet yet", tone: "quiet", more: 0, full: "Not on a tablet yet" });
+  assert.deepEqual(words([KITCHEN]), { text: "On Kitchen tablet", tone: "ok", more: 0, full: "On Kitchen tablet" });
+  const three = [named("A tablet"), named("B tablet"), named("C tablet")];
+  assert.deepEqual(words(three), { text: "On 3 tablets", tone: "ok", more: 0, full: "On 3 tablets" });
+  const sending = { ...KITCHEN, status: "sending" };
+  assert.deepEqual(words([sending]), { text: "Sending to Kitchen tablet…", tone: "busy", more: 0, full: "Sending to Kitchen tablet…" });
+  assert.equal(words([sending, { ...named("B tablet"), status: "sending" }]).text, "Sending to 2 tablets…");
+  const offline = { ...KITCHEN, status: "offline" };
+  assert.deepEqual(words([offline]), { text: "Kitchen tablet is offline", tone: "quiet", more: 0, full: "Kitchen tablet is offline" });
+  const broken = { ...KITCHEN, status: "failed", reason: "auth", retry: true };
+  assert.deepEqual(words([broken]), { text: "Kitchen tablet needs attention", tone: "problem", more: 0, full: "Kitchen tablet needs attention" });
+  // More that need a look: "+2"; a problem is named before an offline one.
+  const more = words([offline, broken, { ...named("Attic tablet"), status: "no_engine" }]);
+  assert.equal(more.text, "Attic tablet needs attention +2");
+  assert.equal(more.tone, "problem");
+  assert.equal(more.more, 2);
+  assert.equal(more.full, "Attic tablet needs attention 2 more need a look.");
+  const one = words([{ ...named("Hall tablet"), status: "offline" }, offline, named("Zed tablet")]);
+  assert.equal(one.text, "Hall tablet is offline +1");
+  assert.equal(one.full, "Hall tablet is offline 1 more needs a look.");
+  // The longest row of the design is 33 characters.
+  const longest = words([broken, { ...offline, mac: "x1", name: "Lounge tablet" }, { ...offline, mac: "x2", name: "Study tablet" }]);
+  assert.equal(longest.text, "Kitchen tablet needs attention +2");
+  assert.equal(longest.text.length, 33);
+  // A 14-letter name: no line is over 34 characters.
+  const fourteen = "Livingroom tab";
+  assert.equal(fourteen.length, 14);
+  for (const changes of [{}, { status: "sending" }, { status: "offline" }, { status: "failed", reason: "size" }, { status: "no_engine" }]) {
+    for (const extra of [[], [{ ...offline, mac: "o1" }, { ...broken, mac: "o2" }]]) {
+      const line = words([named(fourteen, changes), ...extra]);
+      assert.ok(line.text.length <= 34, `${line.text} is ${line.text.length} long`);
+      assert.ok(!line.text.includes("…") || changes.status === "sending", `${line.text} is cut`);
+    }
+  }
+  // A 40-letter name is cut with "…"; the words around it stay whole and
+  // the whole name is in `full`.
+  const forty = "The tablet on the wall by the back door!";
+  assert.equal(forty.length, 40);
+  for (const [changes, before, after] of [
+    [{}, "On ", ""],
+    [{ status: "sending" }, "Sending to ", "…"],
+    [{ status: "offline" }, "", " is offline"],
+    [{ status: "failed", reason: "size" }, "", " needs attention"],
+  ]) {
+    const line = words([named(forty, changes)]);
+    assert.ok(line.text.length <= 34, `${line.text} is ${line.text.length} long`);
+    assert.ok(line.text.startsWith(before) && line.text.endsWith(`…${after.replace(/^…/, "")}`), line.text);
+    // A sentence that ends in "…" after the name gets no second one.
+    assert.ok(!line.text.includes("……"), line.text);
+    assert.ok(line.full.includes(forty), line.full);
+  }
+  const cutMore = words([named(forty, { status: "offline" }), { ...offline, mac: "o3", name: "Zed tablet" }]);
+  assert.ok(cutMore.text.length <= 34 && cutMore.text.endsWith("… is offline +1"), cutMore.text);
+  assert.ok(cutMore.full.includes(forty));
+  // A shorter limit is kept as well.
+  assert.ok(tablets.chipWords([named(forty)], "home", t, 20).text.length <= 20);
 });
 
 test("the editor's Shown on block says what each tablet shows", () => {
@@ -440,14 +515,11 @@ test("a new tablet reads new whatever else it says", () => {
   ]) {
     const item = tablet("m", "Porch tablet", changes);
     assert.equal(tablets.statusKind(item), "new", JSON.stringify(changes));
-    assert.equal(t(tablets.homeWordsKey(item)), 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".');
-    assert.equal(t(tablets.homeWordsKey(item, true)), 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".');
-    // With no dashboard yet there is nothing to pick: the status says
-    // what comes first, beside "Make a dashboard first."
-    assert.equal(
-      t(tablets.homeWordsKey(item, false)),
-      'New tablet. Make a dashboard, then pick it and press "Turn on with this dashboard".',
-    );
+    assert.equal(t(tablets.homeWordsKey(item)), "Ready to turn on");
+    assert.equal(t(tablets.homeWordsKey(item, true)), "Ready to turn on");
+    // With no dashboard yet the chip reads the same; "Make a dashboard
+    // first." beside it says what comes first.
+    assert.equal(t(tablets.homeWordsKey(item, false)), "Ready to turn on");
     assert.equal(tablets.lineWordsKey(item), null);
     assert.equal(tablets.statusTone(item), "new");
     assert.equal(tablets.inputNoteKey({ ...item, input: "not_paired" }), null);
@@ -480,7 +552,7 @@ test("new tablets are left out of what tablets show", () => {
     tablets.tabletsShowing(list, "home").map((entry) => entry.mac),
     [KITCHEN.mac],
   );
-  assert.equal(tablets.shownOnText(list, "home", t), "Shown on: Kitchen");
+  assert.equal(tablets.shownOnText(list, "home", t), "On Kitchen");
   assert.equal(tablets.shownOnText([PORCH, named], "home", t), "");
   assert.equal(
     tablets.deleteNote(list, "home", ROWS, t),
@@ -491,7 +563,7 @@ test("new tablets are left out of what tablets show", () => {
     tablets.captionLines(list, "home", t).map((line) => line.text),
     ["On Kitchen tablet"],
   );
-  assert.deepEqual(tablets.captionLines([named], "home", t), [{ kind: "nowhere", text: "Not shown on a tablet yet" }]);
+  assert.deepEqual(tablets.captionLines([named], "home", t), [{ kind: "nowhere", text: "Not on a tablet yet" }]);
   assert.deepEqual(
     tablets.shownOnRows(list, "home", ROWS, t).map((row) => row.mac),
     [HALLWAY.mac, KITCHEN.mac],
@@ -510,7 +582,7 @@ test("a new tablet's Shows list starts empty and marks what it showed before", (
   // The tablet's own dashboard is never marked.
   assert.deepEqual(tablets.showsOptions(ROWS, "night", t, [], "night"), tablets.showsOptions(ROWS, "night", t));
   // Picking alone turns nothing on, so the warning is about turning on.
-  assert.equal(t("tablets.approve_note"), "Only turn on tablets you own.");
+  assert.equal(t("tablets.approve_note"), "If it shows another name, or this is not your tablet, do not turn it on.");
   assert.equal(t("tablets.new_mark"), "New");
 });
 
@@ -537,12 +609,12 @@ test("a new tablet's row says which device it is: the end of the name on its scr
   // names the same 6, whatever the tablet is called in Home Assistant.
   assert.equal(tablets.SCREEN_NAME_MAC_CHARS, 6);
   // It asks the admin to check them on the tablet, in plain words.
-  const line = "Before you turn it on, check that the name on the tablet's screen ends in 000004.";
+  const line = "Look at the tablet. The name on its screen ends in 000004.";
   assert.equal(tablets.deviceLine(porch, t), line);
   assert.equal(tablets.deviceLine({ ...porch, name: "Garden tablet", short_name: "Garden" }, t), line);
   assert.equal(
     tablets.deviceLine({ ...porch, mac: "30:ED:A0:12:EE:0E" }, t),
-    "Before you turn it on, check that the name on the tablet's screen ends in 12ee0e.",
+    "Look at the tablet. The name on its screen ends in 12ee0e.",
   );
   assert.doesNotMatch(line, /\bMAC\b/);
   // The model is always TAB-1 (only TAB-1 devices are tablets): not shown.
@@ -588,14 +660,14 @@ test("a changed tablet replaces the one with its MAC", () => {
   assert.equal(tablets.withTablet(null, KITCHEN), null);
 });
 
-// Design 10.9: every message about turning on a new tablet says the same
-// two steps, in the same words as the button.
+// Design 10.9: every message from Home Assistant about turning on a new
+// tablet says the same two steps, in the same words as the button. The
+// panel's own chip is short ("Ready to turn on"); its row holds the steps.
 test("every message about a new tablet says: pick a dashboard, then press the button", () => {
   const button = strings["tablets.turn_on"];
-  const steps = new RegExp(`[Pp]ick (a dashboard|it)[^.]*, then press "${button}"|[Pp]ick it and press "${button}"`);
-  for (const key of ["tablets.status.new", "tablets.status.new_no_dashboard", "editor.on_tablet_new"]) {
-    assert.match(strings[key], steps, key);
-  }
+  // The editor no longer tells the steps: its Tablets pop-up names the new
+  // tablet and "Set it up" goes to the start screen, where they are.
+  assert.equal(strings["editor.on_tablet_new"], "{tablet} is new and ready to turn on.");
   const en = JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/translations/en.json"), "utf8"));
   for (const [where, text] of [
     ["approval_needed", en.exceptions.approval_needed.message],
@@ -607,7 +679,6 @@ test("every message about a new tablet says: pick a dashboard, then press the bu
   // Round 8: the answers to a change that needs the button quote it and
   // end in a full stop, as the panel's own line does.
   const ending = `press "${button}".`;
-  assert.ok(strings["editor.on_tablet_new"].endsWith(ending));
   const shapes = JSON.parse(fs.readFileSync(path.join(root, "tests/harness/tablet-shapes.json"), "utf8"));
   for (const [where, text] of [
     ["approval_needed", en.exceptions.approval_needed.message],
@@ -660,8 +731,9 @@ test("Home keeps each tablet's place while the panel is open", () => {
 
 test("a press of Turn on right after the rows moved is ignored", () => {
   assert.equal(tablets.TURN_ON_SETTLE_MS, 700);
-  assert.equal(tablets.turnOnSettled(null, 5), true);
-  assert.equal(tablets.turnOnSettled(undefined, 5), true);
+  // No time means not settled (rule 4): a button nobody looked at waits.
+  assert.equal(tablets.turnOnSettled(null, 5), false);
+  assert.equal(tablets.turnOnSettled(undefined, 5), false);
   assert.equal(tablets.turnOnSettled(1000, 1000), false);
   assert.equal(tablets.turnOnSettled(1000, 1699), false);
   assert.equal(tablets.turnOnSettled(1000, 1700), true);
@@ -689,8 +761,8 @@ test("only the Turn on buttons that moved or came count as moved", () => {
   // A button that came (a tablet became new again) counts; one wider too.
   const came = new Map([...before, ["aa:04", [24, 660, 220, 40]], ["aa:01", [24, 300, 260, 40]]]);
   assert.deepEqual(tablets.movedTurnOns(before, came).sort(), ["aa:01", "aa:04"]);
-  // The first look: nothing moved.
-  assert.deepEqual(tablets.movedTurnOns(null, after), []);
+  // The first look: every button came (rule 4).
+  assert.deepEqual(tablets.movedTurnOns(null, after), ["aa:02", "aa:03"]);
   assert.deepEqual(tablets.movedTurnOns(before, null), []);
 });
 
@@ -720,9 +792,38 @@ test("a row that moves one Turn on button does not hold the others", () => {
   // Nothing moved: nothing changes, also for a button with no time yet.
   assert.deepEqual([...tablets.markMoved(movedAt, before, new Map(before), 900)], [["aa:01", 100]]);
   assert.deepEqual([...tablets.markMoved(new Map(), before, new Map(before), 900)], []);
-  // The first look marks nothing; a button that came is marked.
-  assert.deepEqual([...tablets.markMoved(null, null, after, 900)], []);
+  // The first look marks every button (rule 4); a button that came is marked.
+  assert.deepEqual([...tablets.markMoved(null, null, after, 900)], [
+    ["aa:01", 900],
+    ["aa:02", 900],
+  ]);
   assert.deepEqual([...tablets.markMoved(null, new Map([["aa:01", [24, 300, 220, 40]]]), after, 900)], [["aa:02", 900]]);
+});
+
+test("after a scroll the panel made, every turn-on button waits again", () => {
+  const movedAt = new Map([
+    ["aa:01", 100],
+    ["aa:03", 50],
+  ]);
+  const marked = tablets.markAll(movedAt, ["aa:01", "aa:02"], 5000);
+  assert.deepEqual([...marked], [
+    ["aa:01", 5000],
+    ["aa:03", 50],
+    ["aa:02", 5000],
+  ]);
+  // The map it was given stays as it was.
+  assert.deepEqual([...movedAt], [
+    ["aa:01", 100],
+    ["aa:03", 50],
+  ]);
+  for (const mac of ["aa:01", "aa:02"]) {
+    assert.equal(tablets.turnOnSettled(marked.get(mac), 5000), false);
+    assert.equal(tablets.turnOnSettled(marked.get(mac), 5699), false);
+    assert.equal(tablets.turnOnSettled(marked.get(mac), 5700), true);
+  }
+  // Nothing named, or no map yet: nothing breaks.
+  assert.deepEqual([...tablets.markAll(null, ["aa:01"], 7)], [["aa:01", 7]]);
+  assert.deepEqual([...tablets.markAll(movedAt, undefined, 7)], [...movedAt]);
 });
 
 test("the panel guards each Turn on button by its own place, and shows the wait", async () => {
@@ -734,11 +835,15 @@ test("the panel guards each Turn on button by its own place, and shows the wait"
   assert.match(note, /this\._turnOnMovedAt = markMoved\(this\._turnOnMovedAt, this\._turnOnPlaces, places, performance\.now\(\)\);\n {4}this\._turnOnPlaces = places;/);
   assert.doesNotMatch(note, /textContent|notesKey|ui\.shape/);
   // Round 11: the times change only through markMoved (tested on its own
-  // below), or all at once when the panel forgets the places.
+  // below), markPicks (a pick the person did not make), markAll (a scroll
+  // the panel made: arrival, the guide's button, a new screen), or all at
+  // once when the panel forgets the places.
   const writes = [...panel.matchAll(/this\._turnOnMovedAt(?:\s*=[^;]*;|\.(?:set|delete|clear)\()/g)].map((match) => match[0]);
   assert.deepEqual(writes, [
     "this._turnOnMovedAt = new Map();",
+    "this._turnOnMovedAt = markAll(this._turnOnMovedAt, [...places.keys()], performance.now());",
     "this._turnOnMovedAt = markMoved(this._turnOnMovedAt, this._turnOnPlaces, places, performance.now());",
+    "this._turnOnMovedAt = markPicks(this._turnOnMovedAt, this._turnOnSends, sends, this._ownPick, performance.now());",
     "this._turnOnMovedAt = new Map();",
   ]);
   const { panelStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
@@ -907,7 +1012,7 @@ test("on a phone the links leave room for their focus ring", async () => {
   const focus = panelStyles.slice(panelStyles.indexOf("a:focus-visible,"), panelStyles.indexOf("}", panelStyles.indexOf("a:focus-visible,")));
   const reach = Number(/outline: (\d+)px solid/.exec(focus)[1]) + Number(/outline-offset: (\d+)px;/.exec(focus)[1]);
   assert.equal(reach, 4);
-  for (const name of ["tablet-repairs", "tablet-device-page"]) {
+  for (const name of ["tablet-repairs", "tablet-device-page", "screen-devices"]) {
     const start = panelStyles.indexOf(`@media (max-width: 700px), (pointer: coarse) {\n  .${name} {`);
     assert.ok(start >= 0, name);
     const rule = panelStyles.slice(start, panelStyles.indexOf("}", start));
@@ -918,42 +1023,264 @@ test("on a phone the links leave room for their focus ring", async () => {
 
 // Round 8: once a tablet is there, a short line under the tablets still
 // says how to add another, in the same words as the line without tablets.
-// Round 9: "power it on" (in this panel "turn on" is the button), the
-// hotspot only if the tablet asks for Wi-Fi, then where it shows up, in the
-// words the tablet's own screen uses for that step (the contract's
-// waiting.add: "Add this tablet in Home Assistant" / "It shows up by itself
-// in Settings > Devices & services"), and last the button here.
+// Round 9: the hotspot only if the tablet asks for Wi-Fi, then where it
+// shows up, in the words the tablet's own screen uses for that step (the
+// contract's waiting.add: "Add this tablet in Home Assistant" / "It shows
+// up by itself in Settings > Devices & services"), and last the button
+// here. Spec 4.8: "Plug the tablet in" (in this panel "turn on" is the
+// button).
 const TABLET_ADD_STEP = SCREENS.waiting.add.step;
 test("the line about adding another tablet", () => {
   const text = strings["tablets.add_another"];
   assert.equal(
     text,
-    'To add another tablet, power it on. If it asks for Wi-Fi, join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here.',
+    'Plug the tablet in. If it asks for Wi-Fi, join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here.',
   );
-  for (const line of [text, strings["tablets.none"]]) {
-    assert.doesNotMatch(line, /turn (it|the tablet) on and|Turn the tablet on|when it shows up\./, line);
-    assert.match(line, /ower (it|the tablet) on\. If it asks for Wi-Fi, join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi\./);
-    assert.match(line, /Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here\./);
-    // The same place and words as the tablet's screen.
-    const [, place] = /^It shows up by itself in (.+)$/.exec(TABLET_ADD_STEP);
-    assert.ok(line.includes(`add it in ${place}, where it shows up by itself`), line);
-  }
-  // The line without tablets says the same, then that dashboards can be
-  // built meanwhile.
-  assert.equal(
-    strings["tablets.none"],
-    `No TAB-1 tablet found in Home Assistant yet. Power the tablet on. ${text.slice("To add another tablet, power it on. ".length)} You can still build dashboards.`,
-  );
+  assert.doesNotMatch(text, /turn (it|the tablet) on and|Turn the tablet on|when it shows up\./, text);
+  assert.match(text, /^Plug the tablet in\. If it asks for Wi-Fi, join "Apollo TAB1 Hotspot" from a phone and pick your Wi-Fi\./);
+  assert.match(text, /Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here\./);
+  // The same place and words as the tablet's screen.
+  const [, place] = /^It shows up by itself in (.+)$/.exec(TABLET_ADD_STEP);
+  assert.ok(text.includes(`add it in ${place}, where it shows up by itself`), text);
+  // The box without tablets says so in a few words; the way to add one is
+  // the same link under it as under the rows.
+  assert.equal(strings["tablets.none"], "No tablet found yet.");
   const panel = fs.readFileSync(path.join(root, "custom_components/apollo_tab/frontend/panel.js"), "utf8");
-  const box = panel.slice(panel.indexOf("  _tabletsBox() {"), panel.indexOf("  _tabletRow(tablet, rows) {"));
-  // After the rows, outside the branch for no tablets.
-  assert.ok(box.indexOf('t("tablets.add_another")') > box.indexOf("box.append(refs.row);"), "the line is not under the rows");
-  // Round 11: and it is put in the box, last, after the loop over the rows
-  // (a box without it passed every suite but the journey).
-  const loopEnd = box.indexOf("\n    }\n", box.indexOf("    for (const tablet of tablets) {"));
+  const box = panel.slice(panel.indexOf("  _tabletsBox() {"), panel.indexOf("  _screenSays() {"));
+  // Round 11: it is put in the box, last, after the loop over the rows and
+  // outside the branch for no tablets (a box without it passed every suite
+  // but the journey).
+  const loopEnd = box.indexOf("\n      }\n", box.indexOf("      for (const tablet of tablets) {"));
   assert.ok(loopEnd > 0, "no loop over the rows");
   assert.match(
     box.slice(loopEnd),
-    /^\n {4}\}\n {4}\/\/ [^\n]*\n {4}const add = el\("p", "small tablets-add", t\("tablets\.add_another"\)\);\n {4}add\.dataset\.test = "tablets-add";\n {4}box\.append\(add\);\n {4}return box;\n {2}\}\n+$/,
+    /^\n {6}\}\n {4}\}\n {4}\/\/ [^\n]*\n {4}box\.append\(this\._screenSays\(\)\);\n {4}return box;\n {2}\}\n+(?: {2}\/\/[^\n]*\n)*$/,
   );
+  // The link opens the fold-out, which starts with the line.
+  const says = panel.slice(panel.indexOf("  _screenSays() {"), panel.indexOf("  _addLink("));
+  assert.match(says, /const fold = el\("details", "screen-says"\);\n {4}fold\.dataset\.test = "screen-says";/);
+  assert.match(says, /const link = el\("summary", "tablets-add", t\("tablets\.add_link"\)\);\n {4}link\.dataset\.test = "tablets-add";/);
+  assert.ok(says.indexOf('t("tablets.add_another")') > says.indexOf("fold.append(link);"));
+});
+
+// Security review, rule 2 (and rule 1, the gate): the only dashboard is
+// picked for a new tablet only when every one of these holds.
+test("the only dashboard is picked only for a tablet that was already waiting", () => {
+  const fresh = tablet("aa:bb:cc:00:00:07", "Apollo TAB-1 000007", {
+    status: "new",
+    approved: false,
+    dashboard: null,
+    suggested: null,
+  });
+  const one = [{ url_path: "home", title: "Home" }];
+  const base = { tablet: fresh, rows: one, unreadable: [], fresh: true, waiting: new Set([fresh.mac]), enabled: true };
+  assert.equal(tablets.prepicked(base), "home");
+  assert.equal(tablets.prepicked({ ...base, rows: ROWS }), null, "two rows");
+  assert.equal(tablets.prepicked({ ...base, unreadable: ["night"] }), null, "something unreadable");
+  assert.equal(tablets.prepicked({ ...base, fresh: false }), null, "the list was not read in this visit");
+  assert.equal(tablets.prepicked({ ...base, waiting: new Set() }), null, "came during the visit");
+  assert.equal(tablets.prepicked({ ...base, waiting: null }), null, "no first list yet");
+  assert.equal(tablets.prepicked({ ...base, tablet: { ...fresh, suggested: "home" } }), null, "showed one before");
+  assert.equal(tablets.prepicked({ ...base, tablet: KITCHEN, waiting: new Set([KITCHEN.mac]) }), null, "not new");
+  assert.equal(tablets.prepicked({ ...base, rows: [] }), null, "no dashboard");
+  // The gate off: never, whatever else holds.
+  for (const changes of [{}, { rows: ROWS }, { fresh: false }]) {
+    assert.equal(tablets.prepicked({ ...base, ...changes, enabled: false }), null, JSON.stringify(changes));
+  }
+  // Without enabled it follows the gate.
+  const { enabled, ...rest } = base;
+  assert.equal(enabled, true);
+  assert.equal(tablets.prepicked(rest), tablets.PREPICK_ONLY_DASHBOARD ? "home" : null);
+  assert.equal(typeof tablets.PREPICK_ONLY_DASHBOARD, "boolean");
+  // Off in this change (variant B): docs/tablets.md says the panel never
+  // picks a dashboard for you. Turning it on changes this line and the doc.
+  assert.equal(tablets.PREPICK_ONLY_DASHBOARD, false);
+});
+
+// Rule 4: a button the panel has only just drawn waits like one that moved.
+test("the first look marks every turn-on button, and a button without a time is not settled", () => {
+  const places = new Map([
+    ["aa:01", [24, 300, 280, 56]],
+    ["aa:02", [24, 420, 280, 56]],
+  ]);
+  assert.deepEqual(tablets.movedTurnOns(null, places), ["aa:01", "aa:02"]);
+  assert.deepEqual(tablets.movedTurnOns(undefined, places), ["aa:01", "aa:02"]);
+  assert.deepEqual(tablets.movedTurnOns(places, null), []);
+  const marked = tablets.markMoved(new Map(), null, places, 4000);
+  assert.deepEqual([...marked], [
+    ["aa:01", 4000],
+    ["aa:02", 4000],
+  ]);
+  assert.equal(tablets.turnOnSettled(marked.get("aa:01"), 4699), false);
+  assert.equal(tablets.turnOnSettled(marked.get("aa:01"), 4700), true);
+  for (const movedAt of [null, undefined, Number.NaN, "5", Infinity]) {
+    assert.equal(tablets.turnOnSettled(movedAt, 99999), false, String(movedAt));
+  }
+  assert.equal(tablets.turnOnSettled(0, Number.NaN), false);
+});
+
+// Rule 6: a press counts only when it began on a settled button and is
+// still about the dashboard the button named then.
+test("a press counts only when it began on a settled button", () => {
+  const mac = "aa:01";
+  const movedAt = 1000; // settled from 1700
+  const ok = (press, click, runStart = null) => tablets.pressCounts({ press, click, movedAt, runStart, mac });
+  const click = (at, detail = 1, sends = "home") => ({ at, detail, sends });
+  const press = (kind, at, extra = {}) => ({ kind, at, repeat: false, foreign: false, sends: "home", ...extra });
+  // A pointer down during the wait, the click after it.
+  assert.equal(ok(press("pointer", 1500), click(1800)), false);
+  // A repeated key.
+  assert.equal(ok(press("key", 1800, { repeat: true }), click(1800, 0)), false);
+  // Space down during the wait, up after it.
+  assert.equal(ok(press("key", 1600), click(1900, 0)), false);
+  // A key-up with no key-down on the button.
+  assert.equal(ok(press("key", 1900, { foreign: true }), click(1900, 0)), false);
+  // The second click of a run that started on another button, soon or late.
+  assert.equal(ok(press("pointer", 1850), click(1850, 2), "aa:02"), false);
+  assert.equal(ok(press("pointer", 2600), click(2600, 2), "aa:02"), false);
+  assert.equal(ok(press("pointer", 1850), click(1850, 2), null), false);
+  // The run started on this button.
+  assert.equal(ok(press("pointer", 1850), click(1850, 2), mac), true);
+  // A bare click (a screen reader, voice control): settled yes, not no.
+  assert.equal(ok(null, click(1800, 0)), true);
+  assert.equal(ok(null, click(1600, 0)), false);
+  // A pointer press settled at both ends.
+  assert.equal(ok(press("pointer", 1750), click(1800)), true);
+  // The dashboard changed between press and click (rule 5).
+  assert.equal(ok(press("pointer", 1750, { sends: "night" }), click(1800)), false);
+  // Nothing to send.
+  assert.equal(ok(null, click(1800, 0, null)), false);
+  assert.equal(ok(null, null), false);
+  // A button with no time at all is not settled.
+  assert.equal(tablets.pressCounts({ press: null, click: click(9999, 0), movedAt: undefined, runStart: null, mac }), false);
+});
+
+// Rule 5: a dashboard the panel put on a button (the pre-pick, the editor's
+// handover, a delete) makes it wait again; the person's own pick does not.
+test("a pick the panel made restarts the wait; the person's own pick does not", () => {
+  const start = new Map([
+    ["aa:01", 100],
+    ["aa:02", 100],
+  ]);
+  // The pre-pick arrives with the dashboards.
+  const arrived = tablets.markPicks(start, new Map([["aa:01", null]]), new Map([["aa:01", "home"]]), null, 5000);
+  assert.equal(arrived.get("aa:01"), 5000);
+  assert.equal(arrived.get("aa:02"), 100);
+  // A delete changed what it sends.
+  const changed = tablets.markPicks(start, new Map([["aa:01", "night"]]), new Map([["aa:01", "home"]]), null, 6000);
+  assert.equal(changed.get("aa:01"), 6000);
+  // A button that becomes pressable (it had no time before).
+  const came = tablets.markPicks(new Map(), null, new Map([["aa:03", "home"]]), null, 7000);
+  assert.equal(came.get("aa:03"), 7000);
+  // The person's own pick in that row: no new wait.
+  const own = tablets.markPicks(start, new Map([["aa:01", null]]), new Map([["aa:01", "home"]]), "aa:01", 8000);
+  assert.equal(own.get("aa:01"), 100);
+  // The same as before, or nothing to send: nothing changes.
+  const same = tablets.markPicks(start, new Map([["aa:01", "home"]]), new Map([["aa:01", "home"], ["aa:02", null]]), null, 9000);
+  assert.deepEqual([...same], [...start]);
+  // The map it was given stays as it was.
+  assert.deepEqual([...start], [
+    ["aa:01", 100],
+    ["aa:02", 100],
+  ]);
+});
+
+// Rule 11: the row asks the person to look at the tablet, with the six
+// characters in a face of their own, and never offers the name as proof.
+test("the check line is an instruction with the six characters", async () => {
+  const line = rawStrings["tablets.device_line"];
+  assert.match(line, /\{mac\}/);
+  assert.match(line, /^Look at the tablet\./);
+  assert.doesNotMatch(line, /^Its screen shows/);
+  assert.doesNotMatch(line, /\{name\}/);
+  const note = rawStrings["tablets.approve_note"];
+  assert.match(note, /\{approve_it\}/);
+  assert.doesNotMatch(note, /\{name\}/);
+  const porch = { ...PORCH, mac: "30:ED:A0:12:EE:0E" };
+  const [before, ending, after] = tablets.deviceLineParts(porch, t);
+  assert.equal(ending, "12ee0e");
+  assert.equal(before + ending + after, tablets.deviceLine(porch, t));
+  assert.equal(after, ".");
+  assert.deepEqual(tablets.deviceLineParts(null, t), ["", "", ""]);
+  // The panel draws the ending in its own element, and the button names
+  // both lines as its description.
+  const panel = fs.readFileSync(path.join(root, "custom_components/apollo_tab/frontend/panel.js"), "utf8");
+  assert.match(panel, /const code = el\("span", "tablet-mac", ending\);\n {4}code\.dataset\.test = "tablet-mac";/);
+  assert.match(panel, /aria-describedby", `tablet-check-\$\{mac\} tablet-approve-note-\$\{mac\}`/);
+  const { panelStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
+  assert.match(panelStyles, /\.tablet-mac \{[^}]*font-family: ui-monospace/);
+});
+
+// Recommended by the reviewer: a device that names itself after another
+// tablet's address is warned about, and nothing is picked for it.
+test("a new tablet whose name ends in another address is warned about and gets no pre-pick", () => {
+  const liar = tablet("aa:bb:cc:00:00:07", "Apollo TAB-1 a1b2c3", { status: "new", approved: false, dashboard: null, suggested: null });
+  const honest = { ...liar, name: "Apollo TAB-1 000007" };
+  assert.equal(tablets.nameClaimsOtherEnding(liar), true);
+  assert.equal(tablets.nameClaimsOtherEnding(honest), false);
+  assert.equal(tablets.nameClaimsOtherEnding({ ...liar, name: "Porch tablet" }), false);
+  assert.equal(tablets.nameClaimsOtherEnding({ ...liar, name: "Apollo TAB-1 A1B2C3" }), true);
+  // Only new tablets are checked.
+  assert.equal(tablets.nameClaimsOtherEnding({ ...liar, approved: true, status: "on_tablet" }), false);
+  assert.equal(tablets.claimedEnding(liar), "a1b2c3");
+  const base = { rows: [{ url_path: "home", title: "Home" }], unreadable: [], fresh: true, enabled: true };
+  assert.equal(tablets.prepicked({ ...base, tablet: liar, waiting: new Set([liar.mac]) }), null);
+  assert.equal(tablets.prepicked({ ...base, tablet: honest, waiting: new Set([honest.mac]) }), "home");
+  assert.equal(t("tablets.name_warning", { ending: "a1b2c3" }).includes("a1b2c3"), true);
+});
+
+// Security review round 4: the warning line is narrower than the rule that
+// stops a pre-pick. It needs a digit among the six characters, so plain
+// words are not warned about, and it looks past trailing punctuation and
+// invisible characters, which hid a real clash.
+test("the name warning needs a digit and looks past punctuation and invisible characters", () => {
+  const liar = tablet("aa:bb:cc:00:00:07", "Apollo TAB-1 a1b2c3", { status: "new", approved: false, dashboard: null, suggested: null });
+  const named = (name) => ({ ...liar, name });
+  assert.equal(tablets.nameWarns(liar), true);
+  assert.equal(tablets.nameWarns(named("Apollo TAB-1 A1B2C3")), true);
+  // Its own ending is no warning, also with a full stop after it.
+  assert.equal(tablets.nameWarns(named("Apollo TAB-1 000007")), false);
+  assert.equal(tablets.nameWarns(named("Apollo TAB-1 000007.")), false);
+  // Six hex letters without a digit: a plain word.
+  assert.equal(tablets.nameWarns(named("Front facade")), false);
+  assert.equal(tablets.nameWarns(named("Bedded")), false);
+  assert.equal(tablets.nameClaimsOtherEnding(named("Front facade")), true);
+  // Trailing punctuation, spaces and invisible characters hide nothing.
+  for (const tail of [".", "!", ")", " .", "​", "‌", "‍", "⁠", "﻿", "‎", ". ​"]) {
+    const name = `Apollo TAB-1 a1b2c3${tail}`;
+    assert.equal(tablets.nameWarns(named(name)), true, JSON.stringify(name));
+    assert.equal(tablets.claimedEnding(named(name)), "a1b2c3", JSON.stringify(name));
+  }
+  // Seven hex characters in a row are no six-character ending.
+  assert.equal(tablets.nameWarns(named("Apollo TAB-1 9a1b2c3")), false);
+  assert.equal(tablets.nameWarns(named("Porch tablet")), false);
+  assert.equal(tablets.claimedEnding(named("Porch tablet")), "");
+  // Only new tablets are checked.
+  assert.equal(tablets.nameWarns({ ...liar, approved: true, status: "on_tablet" }), false);
+  assert.equal(tablets.nameWarns(null), false);
+  // The pre-pick keeps the broad rule and also refuses every name the
+  // warning line is shown for.
+  const base = { rows: [{ url_path: "home", title: "Home" }], unreadable: [], fresh: true, enabled: true };
+  const pick = (name) => tablets.prepicked({ ...base, tablet: named(name), waiting: new Set([liar.mac]) });
+  assert.equal(pick("Front facade"), null);
+  assert.equal(pick("Apollo TAB-1 a1b2c3."), null);
+  assert.equal(pick("Apollo TAB-1 a1b2c3​"), null);
+  assert.equal(pick("Apollo TAB-1 000007"), "home");
+  // The panel draws the warning by the narrow rule.
+  const panel = fs.readFileSync(path.join(root, "custom_components/apollo_tab/frontend/panel.js"), "utf8");
+  assert.match(panel, /if \(nameWarns\(tablet\)\) \{\n {6}const warning = el\("p", "notice tablet-name-warning"/);
+  assert.doesNotMatch(panel, /nameClaimsOtherEnding/);
+});
+
+// Security review round 4: a pick does not outlive the visit, also when the
+// same panel element is taken out of the page and put back.
+test("taking the panel out of the page drops every pick", () => {
+  const panel = fs.readFileSync(path.join(root, "custom_components/apollo_tab/frontend/panel.js"), "utf8");
+  const start = panel.indexOf("  disconnectedCallback() {");
+  assert.ok(start > 0, "no disconnectedCallback");
+  const body = panel.slice(start, panel.indexOf("\n  }\n", start));
+  assert.match(body, /\n {4}this\._chosen\.clear\(\);\n/);
+  // _setPath clears it too, for every move to another screen.
+  const setPath = panel.slice(panel.indexOf("  _setPath(path) {"), panel.indexOf("\n  }\n", panel.indexOf("  _setPath(path) {")));
+  assert.match(setPath, /\n {4}this\._chosen\.clear\(\);\n/);
 });

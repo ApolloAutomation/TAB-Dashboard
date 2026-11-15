@@ -42,6 +42,7 @@ const expected = [
   "shellHeight",
   "fitStage",
   "drawerShift",
+  "placeBeside",
 ];
 
 test("logic module exports the complete public surface", async () => {
@@ -78,6 +79,7 @@ const modelExpected = [
   "MAX_ENTITIES",
   "HISTORY_LIMIT",
   "DEFAULT_THEME",
+  "PREVIEW_THEMES",
   "GROUP_IDS",
   "PAGE_ICONS",
   "stableStringify",
@@ -139,6 +141,7 @@ const modelExpected = [
   "historyPush",
   "historyUndo",
   "historyRedo",
+  "historyCloseGroup",
   "canUndo",
   "canRedo",
   "SaveQueue",
