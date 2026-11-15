@@ -789,7 +789,8 @@ def test_an_unknown_view_theme_is_ignored() -> None:
 
 def test_a_page_has_at_most_six_sliders_with_a_track() -> None:
     """The seventh slider with a track loses it, with a warning (C.3)."""
-    card = _card(variant="wide", grid_options={"columns": 12})
+    # Four rows: two bars of 48 (LOOK-NOTES decision 10) under the header.
+    card = _card(variant="wide", grid_options={"columns": 12, "rows": 4})
     config = _dashboard(*([card] * 4))
     config["views"][0]["sections"].append({"type": "grid", "cards": [card] * 3})
     result = _convert(config, 2)

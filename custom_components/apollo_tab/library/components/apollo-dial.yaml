@@ -52,14 +52,18 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
-    header: title
+    # The badge and the name (LOOK-NOTES decision 14); the dial says the
+    # number, so no state line says it again.
+    header: tile
+    state: none
     v1: community/energy-gauge
     # The dial alone takes the tile: its number is the reading.
     layout: [{use: gauge}, {use: text, when: ["!tablet.v2"]}]
   large:
     name: Large
     grid: [12, 6]
-    header: title
+    header: tile
+    state: none
     v1: community/energy-gauge
     layout: [{use: gauge}, {use: range}, {use: text, size: ml, when: ["!tablet.v2"]}]
 

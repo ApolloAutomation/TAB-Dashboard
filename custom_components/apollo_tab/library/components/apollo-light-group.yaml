@@ -21,8 +21,10 @@ inputs:
   # The mean brightness of the lights that are on.
   pct: >-
     {% set b = lights | select('is_state', 'on') | map('state_attr', 'brightness') | reject('none') | list %}{{ ((b | sum / b | count) / 2.55) | round | int if b else 0 }}
-  gone:     "{{ lights | select('is_state', 'unavailable') | list | count == total }}"
-  line:     "{{ 'Unavailable' if gone else on_count ~ ' of ' ~ total ~ ' on' }}"
+  # Every light gone, or missing from Home Assistant: the card fades.
+  gone:     "{{ lights | reject('has_value') | list | count == total }}"
+  # "unavailable" in lower case, as every card's state says it.
+  line:     "{{ 'unavailable' if gone else on_count ~ ' of ' ~ total ~ ' on' }}"
   # The chip's value column: a dash while every light is gone (the card fades).
   short:    "{{ '—' if gone else on_count ~ ' of ' ~ total ~ ' on' }}"
   big:      "{{ '—' if gone else on_count }}"

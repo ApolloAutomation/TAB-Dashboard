@@ -290,7 +290,8 @@ async def test_the_graph_shows_its_reading_and_the_range_of_its_hours(
     for variant in ("wide", "large"):
         result = _graph({"hours": "6"}, variant)
         labels = [w for w in result["widgets"] if w["t"] == "label"]
-        reading, shown = labels[0], labels[-1]
+        # LOOK-NOTES decision 14: the tile header's name comes first.
+        reading, shown = labels[1], labels[-1]
         assert await _value(hass, result, reading["text"]) == "47.5 W"
         slot = _slot(result, shown["text"])
         assert slot["inputs"] == {
@@ -344,7 +345,8 @@ def test_the_range_can_be_switched_off() -> None:
     """Without show_range the card has the reading and the chart."""
     for variant in ("wide", "large"):
         result = _graph({"show_range": False}, variant)
-        assert _kinds(result) == ["label", "chart"], variant
+        # LOOK-NOTES decision 14: under the tile header's badge and name.
+        assert _kinds(result) == ["image", "label", "label", "chart"], variant
 
 
 def test_only_the_inputs_the_graph_shows_are_slots() -> None:

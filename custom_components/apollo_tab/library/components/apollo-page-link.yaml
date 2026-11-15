@@ -14,7 +14,10 @@ inputs:
   reading: >-
     {{ '—' if states(entity) in ['unavailable', 'unknown'] else (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim }}
   line:    "{{ state_attr(entity, 'friendly_name') or '' }}"
-  gone:    "{{ false }}"
+  # The reading's device gone, or missing from Home Assistant: the card
+  # fades; a tap still goes to the page (contract 4.7). Without a device
+  # it never fades.
+  gone:    "{{ (entity or '') != '' and states(entity) in ['unavailable', 'unknown'] }}"
 
 outputs:
   go: {local: go_to_page, page: "{{ page }}"}
@@ -28,13 +31,17 @@ tap:
     none: {label: Does nothing}
 
 parts:
-  # The reading, and an arrow that says a tap goes somewhere.
+  # The reading, and an arrow that says a tap goes somewhere. They take
+  # the room under the name, up to the tile's 92 (under a name of two
+  # lines): in a taller card the reading stays right under the name
+  # (LOOK-NOTES decision 12).
   reading:
     type: row
     when: [tablet.v2]
+    most: 92
     items:
-      - {type: label, text: "{{ reading }}", size: l, when: [has.entity]}
-      - {type: label, text: "", size: s, when: ["!has.entity"]}
+      - {type: label, text: "{{ reading }}", size: l, grow: true, when: [has.entity]}
+      - {type: label, text: "", size: s, grow: true, when: ["!has.entity"]}
       - {type: image, value: "{{ 'mdi:chevron-right' }}", look: bare, width: 28, height: 28}
   # The same in the small card's one line.
   small_reading:
@@ -53,22 +60,25 @@ variants:
   small:
     name: Small
     grid: [6, 2]
+    # The name alone, on two lines when it needs them: a badge would cut
+    # it to a few letters (L4).
     header: tile
+    badge: false
     layout: [{use: small_reading}, {use: old_go}]
   tile:
     name: Tile
     grid: [6, 3]
     header: tile
-    # The reading right under the name, as on Status.
-    align: top
+    badge: false
+    # The reading and the arrow take the room under the name (LOOK-NOTES
+    # decision 14): no empty foot.
     layout: [{use: reading}, {use: old_reading}, {use: old_go}]
   wide:
     name: Wide
     grid: [12, 3]
     header: tile
-    align: top
     layout: [{use: reading}, {use: old_reading}, {use: old_go}]
 
 preview:
   params: {page: home}
-  inputs: {reading: "21.4 °C", line: Living room}
+  inputs: {reading: "21.4 °C", line: Living room, gone: false}

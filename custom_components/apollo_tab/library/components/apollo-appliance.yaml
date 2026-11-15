@@ -23,10 +23,13 @@ options:
 inputs:
   words:   "{{ state_translated(state) }}"
   running: "{{ states(state) in ['on', 'run', 'running', 'wash', 'washing', 'rinse', 'spin', 'dry', 'drying'] }}"
+  # A dash while the time left is unavailable: the header says why, and
+  # the row is not an empty band (LOOK-NOTES decision 17).
   left: >-
-    {% set m = states(remaining) | float(-1) if remaining else -1 %}{{ (m | round | int ~ ' min') if m >= 0 else '' }}
+    {% set m = states(remaining) | float(-1) if remaining else -1 %}{{ (m | round | int ~ ' min') if m >= 0 else '—' if remaining and not has_value(remaining) else '' }}
   pct:     "{{ states(progress) | float(0) if progress else 0 }}"
-  programme_line: "{{ states(programme) if programme else '' }}"
+  # Unavailable it would repeat the header's state: it says nothing.
+  programme_line: "{{ states(programme) if programme and has_value(programme) else '' }}"
 
 outputs:
   start:  {action: {button: button.press, script: script.turn_on},
@@ -57,9 +60,10 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
-    # The name across the whole tile, the time left under it. The bar needs
-    # more height than is left: it is on Large.
-    header: tile_v
+    # The state beside the badge, the name under them, as on the other
+    # tiles (LOOK-NOTES decision 14); the time left under the name. The bar
+    # needs more height than is left: it is on Large.
+    header: tile
     # A tablet with older software keeps the time left at its old size.
     layout: [{use: left, size: ml, when: [tablet.v2]}, {use: left, when: ["!tablet.v2"]}, {use: old_bar}]
   large:

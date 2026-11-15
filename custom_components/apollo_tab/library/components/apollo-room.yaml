@@ -23,7 +23,7 @@ options:
 
 inputs:
   temp: >-
-    {{ (states(temperature_sensor) ~ (state_attr(temperature_sensor, 'unit_of_measurement') or '')) if temperature_sensor else '' }}
+    {{ (states(temperature_sensor) ~ ' ' ~ (state_attr(temperature_sensor, 'unit_of_measurement') or '')) | trim if temperature_sensor else '' }}
   # The large temperature: a dash while the sensor has no number.
   big_temp: >-
     {{ temp if states(temperature_sensor) | float(none) is number else '—' }}
@@ -33,11 +33,16 @@ inputs:
   on_count:   "{{ lights | select('is_state', 'on') | list | count }}"
   any_on:     "{{ on_count > 0 }}"
   # Every light gone: no count and no button, not "0 of 3 on".
-  lights_gone: "{{ lights | select('is_state', 'unavailable') | list | count == lights | count }}"
+  lights_gone: "{{ lights | reject('has_value') | list | count == lights | count }}"
   count:      "{{ on_count }} of {{ lights | count }} lights on"
   # A dash while the extra device is gone: never "unavailable W".
   extra_line: >-
     {{ ((state_attr(extra, 'friendly_name') or extra) ~ ': ' ~ ('—' if states(extra) in ['unavailable', 'unknown'] else (states(extra) ~ ' ' ~ (state_attr(extra, 'unit_of_measurement') or '')) | trim)) if extra else '' }}
+  # The row is there only with an extra device: its name is cut in the
+  # middle, as every device's name (L4).
+  extra_name: "{{ state_attr(extra, 'friendly_name') or extra }}"
+  extra_value: >-
+    {{ ('—' if states(extra) in ['unavailable', 'unknown'] else (states(extra) ~ ' ' ~ (state_attr(extra, 'unit_of_measurement') or '')) | trim) if extra else '' }}
   line:       "{{ [temp, humid] | select | join(' · ') }}"
   # The header's line: what the large temperature does not say already.
   others: >-
@@ -64,7 +69,14 @@ tap:
 parts:
   temp:   {type: label, text: "{{ big_temp }}", size: l, when: [has.temperature_sensor, show_temperature]}
   count:  {type: label, text: "{{ count }}", size: s, when: [has.lights, show_count]}
-  extra:  {type: label, text: "{{ extra_line }}", size: s, when: [has.extra, show_extra]}
+  # The extra reading as its name, which is cut when it is long, and its
+  # value at the right, which is never cut (LOOK-NOTES decision 14).
+  extra:
+    type: row
+    when: [has.extra, show_extra]
+    items:
+      - {type: label, text: "{{ extra_name }}", size: s}
+      - {type: label, text: "{{ extra_value }}", size: s, align: right, width: 112}
   lights:
     type: swap
     when: [has.lights, tablet.v2]
@@ -102,5 +114,5 @@ variants:
 
 preview:
   params: {page: home}
-  inputs: {temp: "21.5°C", big_temp: "21.5°C", lights_gone: false, humid: "46%", on_count: 2, any_on: true, count: "2 of 4 lights on",
-           extra_line: "", line: "21.5°C · 46%", others: "46% · 2 of 4 on", room_name: Living room}
+  inputs: {temp: "21.5 °C", big_temp: "21.5 °C", lights_gone: false, humid: "46%", on_count: 2, any_on: true, count: "2 of 4 lights on",
+           extra_line: "", extra_name: "", extra_value: "", line: "21.5 °C · 46%", others: "46% · 2 of 4 on", room_name: Living room}

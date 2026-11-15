@@ -16,6 +16,9 @@ options:
 inputs:
   current: "{{ states(entity) }}"
   index:   "{{ shown.index(current) if current in shown else none }}"
+  # The choice now when it is not among those shown: no cell is lit, so
+  # Wide says it at its title's right ("Programme 12"); else nothing.
+  aside:   "{{ current if shown and current not in shown else '' }}"
 
 outputs:
   pick:     {action: {select: select.select_option, input_select: input_select.select_option},
@@ -30,6 +33,13 @@ lit: none
 
 parts:
   choices: {type: choice, options: shown, value: index, on_change: pick, when: [shown]}
+  # With no choices to show (a list missing from Home Assistant) the card
+  # shows a dash, faded, instead of an empty box. The header line already
+  # says the state, so it is said once.
+  no_choices: {type: label, text: "—", size: ml, when: ["!shown", tablet.v2]}
+  # Wide's title header has no state line: there the line says the state,
+  # once (LOOK-NOTES decision 17).
+  no_choices_state: {type: label, text: "{{ current }}", size: ml, when: ["!shown", tablet.v2]}
   # What a tablet with older software shows: the choice now, previous and next.
   old_now: {type: label, text: "{{ current }}", size: l, when: ["!tablet.v2"]}
   old_previous: {type: button, icon: "mdi:chevron-left", text: Previous, on_tap: previous,
@@ -41,17 +51,21 @@ variants:
     name: Wide
     grid: [12, 3]
     header: title
+    state: aside
     # The choices take the card's height: no empty band under the title.
     # Two rows, so each choice is wide enough for its whole name.
-    layout: [{use: choices, grow: true, rows: 2}, {use: old_now}, {use: old_previous}, {use: old_next}]
+    layout: [{use: choices, grow: true, rows: 2}, {use: no_choices_state}, {use: old_now},
+             {use: old_previous}, {use: old_next}]
   large:
     name: Large
     grid: [12, 6]
-    header: title
-    # As on Wide: the choices take the card's height.
-    layout: [{use: choices, grow: true}, {use: old_now}, {use: old_previous}, {use: old_next}]
+    # The badge, the name and the choice now, as on the other single
+    # device cards (LOOK-NOTES decision 14); the choices take the height.
+    header: tile
+    layout: [{use: choices, grow: true}, {use: no_choices}, {use: old_now}, {use: old_previous},
+             {use: old_next}]
 
 preview:
   params: {entity: select.example}
   can: {options: [Eco, Comfort, Away, Boost]}
-  inputs: {current: Comfort, index: 1}
+  inputs: {current: Comfort, index: 1, aside: ""}

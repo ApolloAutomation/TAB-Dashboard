@@ -62,13 +62,13 @@ def test_row_heights_per_kind() -> None:
         (w("label", size="xxl"), 120),
         (w("label", size="huge"), 240),
         (w("button", control=True), 48),
-        (w("slider", look="knob", control=True), 40),
-        (w("slider", look="bar", control=True), 40),
+        (w("slider", look="knob", control=True), 48),
+        (w("slider", look="bar", control=True), 48),
         (w("slider", look="bar"), 8),
-        (w("slider"), 40),
+        (w("slider"), 48),
         (w("switch", control=True), 40),
         (w("choice", rows=1, options=2, control=True), 48),
-        (w("choice", rows=1, options=2, look="dots", control=True), 44),
+        (w("choice", rows=1, options=2, look="dots", control=True), 48),
         (w("choice", rows=2, options=4, control=True), 48 + 8 + 48),
         (w("chart"), 48),
         (w("thermostat"), 48),
@@ -123,10 +123,10 @@ def test_padding_and_gaps() -> None:
     assert rect(laid, 0)[0] == 16 and rect(laid, 0)[2] == 376 - 32
 
 
-def test_leftover_height_sits_above_the_first_row() -> None:
-    """Without anything that grows, the rows sit at the bottom."""
+def test_leftover_height_sits_under_the_last_row() -> None:
+    """Without anything that grows, the rows stack from the top (decision 12)."""
     laid = layout_card2([row(w("button", control=True))], 376, 200)
-    assert rect(laid, 0) == [16, 200 - 16 - 48, 344, 48]
+    assert rect(laid, 0) == [16, 16, 344, 48]
 
 
 def test_align_top_puts_the_leftover_below() -> None:

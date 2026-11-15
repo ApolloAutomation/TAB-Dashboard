@@ -51,15 +51,15 @@ parts:
       - type: row
         visible: disarmed
         items:
-          - {type: button, text: Home, on_tap: arm_home, confirm: "Arm the alarm for home?",
+          - {type: button, text: Home, on_tap: arm_home, grow: true, confirm: "Arm the alarm for home?",
              when: [can.home, modes=home]}
-          - {type: button, text: Away, on_tap: arm_away, confirm: "Arm the alarm for away?",
+          - {type: button, text: Away, on_tap: arm_away, grow: true, confirm: "Arm the alarm for away?",
              when: [can.away, modes=away]}
-          - {type: button, text: Night, on_tap: arm_night, confirm: "Arm the alarm for the night?",
+          - {type: button, text: Night, on_tap: arm_night, grow: true, confirm: "Arm the alarm for the night?",
              when: [can.night, modes=night]}
-          - {type: button, text: Holiday, on_tap: arm_vacation,
+          - {type: button, text: Holiday, on_tap: arm_vacation, grow: true,
              confirm: "Arm the alarm for a holiday?", when: [can.vacation, modes=vacation]}
-      - {type: button, text: Disarm, icon: "mdi:shield-off", on_tap: disarm,
+      - {type: button, text: Disarm, icon: "mdi:shield-off", on_tap: disarm, grow: true,
          confirm: "Disarm the alarm?", visible: can_disarm}
   code_line: {type: label, text: This alarm needs a code. Use Home Assistant., size: s,
               when: [can.needs_code]}
@@ -80,7 +80,8 @@ variants:
     grid: [12, 3]
     header: tile
     layout:
-      - {use: arm_or_disarm, when: [tablet.v2]}
+      # The buttons take the card's height, up to 96 (LOOK-NOTES decision 12).
+      - {use: arm_or_disarm, when: [tablet.v2], most: 96}
       - {use: code_line}
       - {use: old_buttons}
   large:

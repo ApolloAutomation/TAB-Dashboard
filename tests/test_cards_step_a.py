@@ -27,6 +27,7 @@ from custom_components.apollo_tab.maker import device
 from custom_components.apollo_tab.maker.compile2 import (
     compile_card2,
     cut_middle,
+    cut_to_fit,
     kelvin_track,
     name_chars,
     validate_card_config2,
@@ -300,6 +301,8 @@ def test_the_shipped_light_is_the_light_of_d1() -> None:
     assert wide.pop(2) == {"use": "dots", "when": ["can.colour", "colour_control=dots"]}
     _first_look_changes(d1)
     _second_look_changes(d1)
+    _third_look_changes(d1)
+    _fourth_look_changes(d1)
     assert shipped == d1
 
 
@@ -367,6 +370,83 @@ def _second_look_changes(d1: dict) -> None:
     d1["preview"]["inputs"]["readout"] = "On · 68%"
 
 
+def _third_look_changes(d1: dict) -> None:
+    """Apply what the second round of looks changed (LOOK-NOTES 10 and 11, L3)."""
+    inputs, variants = d1["inputs"], d1["variants"]
+    inputs["tile_line"] = (
+        "{{ [state_translated(entity), level] | select | join(' · ') }}"
+    )
+    # L3 round 3: a lamp that only dims says its state on the second line.
+    inputs["large_line"] = (
+        "{{ readout if can.colour or can.temperature else state_translated(entity) }}"
+    )
+    inputs["big"] = (
+        "{{ level if level else '—' if states(entity) in ['unavailable', 'unknown']"
+        " else state_translated(entity) }}"
+    )
+    # Decision 10: the tile takes the Lights together tile: the tile header
+    # with the level on the state line, the bar grows; without a bar, the
+    # power button.
+    tile = variants["tile"]
+    del tile["trailing"]
+    tile["header"] = "tile"
+    tile["state"] = "tile_line"
+    tile["layout"][0]["grow"] = True
+    tile["layout"].append({"use": "power"})
+    # Decision 11: rows of 48 at least; the dots go first, then saturation.
+    # A lamp that only dims shows its brightness large over a bar of 96.
+    only_dims = ["!can.colour", "!can.temperature"]
+    large = variants["large"]
+    large["state"] = "large_line"
+    large["layout"] = [
+        {"type": "label", "text": "{{ big }}", "size": "xxl", "align": "centre",
+         "grow": True, "most": 184, "when": only_dims},
+        {"use": "dim", "height": 96, "when": only_dims},
+        {"use": "dim", "grow": True, "most": 192, "when": ["can.colour"]},
+        {"use": "dim", "grow": True, "most": 192,
+         "when": ["!can.colour", "can.temperature"]},
+        {"use": "hue", "most": 72},
+        {"use": "sat", "grow": True, "most": 72, "drop": 2},
+        {"use": "white", "most": 72},
+        {"use": "dots", "drop": 1},
+    ]  # fmt: skip
+    # Decision 12 (L3 round 2): colour, strength and white stop at 72, the
+    # rest of the height goes to brightness; the power button stops at 120.
+    d1["parts"]["power"]["most"] = 120
+    d1["preview"]["inputs"].update(
+        {"tile_line": "On · 68%", "large_line": "On · 68%", "big": "68%"}
+    )
+
+
+def _fourth_look_changes(d1: dict) -> None:
+    """Apply what L4 changed: the coordinator's "says 'Off' once"."""
+    # A lamp that only dims, off: the header line says "Off", the large
+    # value is a dash, not a second "Off".
+    d1["inputs"]["big"] = "{{ level if level else '—' }}"
+    # L4 round 2 (critic major on item g): grown past its grid, the main
+    # row goes further: brightness to 280, the number to 240, the power
+    # button to 160.
+    large = d1["variants"]["large"]["layout"]
+    large[0]["most_grown"] = 240
+    large[2]["most_grown"] = 280
+    large[3]["most_grown"] = 280
+    d1["parts"]["power"]["most_grown"] = 160
+    # L4 round 3 (critic major: a band under the header of a grown lamp):
+    # every bar grows further, brightness to 320, colour, strength and
+    # white to 144, so the owner's lamp fills a card of twelve rows.
+    large[2]["most_grown"] = 320
+    large[3]["most_grown"] = 320
+    for row in large[4:7]:
+        row["most_grown"] = 144
+    # L4 round 4 (critic major: bands of 95 px around the number of a grown
+    # lamp that only dims): the number stops at 152 at every size, and the
+    # bar under it grows, to 128 and in a grown card to 320.
+    large[0]["most"] = 152
+    del large[0]["most_grown"]
+    del large[1]["height"]
+    large[1].update({"grow": True, "most": 128, "most_grown": 320})
+
+
 @pytest.mark.parametrize("component_id", list(STEP_A))
 def test_every_icon_a_card_names_is_in_the_contracts_set(component_id: str) -> None:
     """The file's icon is of level 1; every constant icon of an item is in the set.
@@ -428,7 +508,20 @@ def test_a_dropdown_takes_eight_choices_wide_and_sixteen_large() -> None:
     large = _compile(component, "large", params, {"shown": options[:16]}, facts)
     _assert_inside(large, "large")
     [choice] = [w for w in large["widgets"] if w["t"] == "choice"]
-    assert choice["texts"] == options[:16]
+    # LOOK-NOTES decision 17: texts too wide for their cells are cut in the
+    # middle, so "Mode 10" and "Mode 11" stay apart (was each whole, for
+    # the tablet to cut at the end); the values picked stay whole. L5
+    # round 2: the choice takes more rows where that shows its texts
+    # whole (four rows of four here, where three rows of six cut them).
+    per_row = -(-16 // choice["rows"])
+    assert per_row == 4
+    cells = (choice["r"][2] - 8 * (per_row - 1)) // per_row
+    assert choice["texts"] == [
+        cut_to_fit(text, name_chars(cells - 12, 15), cells - 12, 15)
+        for text in options[:16]
+    ]
+    [change] = [v for k, v in large["actions"].items() if k.endswith(":change")]
+    assert change["options"] == options[:16]
     assert choice["r"][3] >= 3 * 48
 
 
@@ -679,10 +772,13 @@ def test_the_owners_lamp_reports_15_k_and_gets_2000_to_6500() -> None:
 
 
 def test_the_owners_lamp_tile() -> None:
-    """Badge with the lamp's colour, name, state, "68%" at the top right, the bar.
+    """Badge with the lamp's colour, name over "On · 68%", the bar under them.
 
     The card is lit with the fill look and tinted; a tap toggles at once; a
-    hold opens the controls.
+    hold opens the controls. LOOK-NOTES decision 10: the tile header of
+    Lights together, the bar takes the tile's height (it was a tile_v
+    header with "68%" at the top right and a 40 px bar). On six columns the
+    header stacks, so the name has the tile's width: the bar is 72 high.
     """
     result = _light_card(OWNER_LAMP_RAW, "tile", 6, 3)
     [card, detail] = _cards(result["layout"])
@@ -691,17 +787,16 @@ def test_the_owners_lamp_tile() -> None:
         ("badge",),
         ("label", "m", 0),
         ("label", "s", 0),
-        ("label", "s", 2),
         ("slider", "bar"),
     ]
-    badge, _name, _state, level, bar = card["w"]
+    badge, _name, _state, bar = card["w"]
     assert card["tint"] == badge["c"] == bar["c"]
     assert card["lit"] == 0
     assert card["tap"] == {"policy": "optimistic"}
     assert card["hold"] == {"local": "go_to_page", "page": "home~1"}
     assert (bar["min"], bar["max"], bar["icon"]) == (1, 100, "mdi:brightness-6")
     assert bar["change"] == {"policy": "optimistic"}
-    assert level["r"][0] + level["r"][2] == card["r"][0] + card["r"][2] - 16
+    assert bar["r"][2:] == [152, 72]
     actions = result["bindings"]["actions"]
     assert actions[str(card["id"]) + ":tap"]["output"] == "toggle"
     assert actions[str(bar["id"]) + ":change"]["output"] == "set_brightness"
@@ -716,9 +811,11 @@ CUT_NAMES = [
     ("Kitchen Ceiling Light", 14, "Kitchen…Light"),
     ("Bedroom Lamp 2", 14, "Bedroom Lamp 2"),
     ("Hallway", 14, "Hallway"),
-    ("Superlongnamewithoutspaces", 14, "Superlongnamewithoutspaces"),
-    ("Living Room Chandelier", 14, "Living Room Chandelier"),
-    ("Living Room Lamp Two", 14, "Living Room Lamp Two"),
+    # L4: a name is never cut at its end. A long end keeps three letters of
+    # the start; one word is cut in the middle by characters.
+    ("Superlongnamewithoutspaces", 14, "Superlo…spaces"),
+    ("Living Room Chandelier", 14, "Liv…Chandelier"),
+    ("Living Room Lamp Two", 14, "Livin…Lamp Two"),
     ("A B", 2, "A B"),
     ("Sofa lamp · Colour", 14, "Sofa la…Colour"),
     ("", 14, ""),
@@ -735,7 +832,11 @@ def test_a_long_header_name_is_cut_in_the_middle(
 
 
 async def test_the_name_template_cuts_as_cut_middle(hass: HomeAssistant) -> None:
-    """The tile's live name gives what cut_middle gives, for every case."""
+    """The tile's live name gives what cut_to_fit gives, for every case.
+
+    L4: cut_to_fit, not cut_middle: a name of 14 letters too wide for the
+    152 px is cut in the middle too, not left for the tablet to cut.
+    """
     from custom_components.apollo_tab.live import async_evaluate_slot
 
     result = _light_card(OWNER_LAMP_RAW, "tile", 6, 3)
@@ -748,10 +849,11 @@ async def test_the_name_template_cuts_as_cut_middle(hass: HomeAssistant) -> None
         if not full:
             continue
         hass.states.async_set("light.h1401", "on", {"friendly_name": full})
-        assert await async_evaluate_slot(hass, slot) == cut_middle(full, 14), full
-    # A lamp with no name shows the card's own name.
+        assert await async_evaluate_slot(hass, slot) == cut_to_fit(full, 14, 152), full
+    # A lamp with no name shows its object id in words (L4 round 2, critic
+    # minor: a missing person read "per…id"; before it was the card's name).
     hass.states.async_set("light.h1401", "on", {})
-    assert await async_evaluate_slot(hass, slot) == "Light"
+    assert await async_evaluate_slot(hass, slot) == "H1401"
 
 
 def test_the_owners_two_lamps_differ_on_their_tiles() -> None:
@@ -859,10 +961,14 @@ def test_the_owners_lamp_with_every_colour_control() -> None:
         ("slider", "bar"),
         ("slider", "kelvin"),
         ("slider", "bar"),
-        ("choice",),
     ]
     assert large["w"][7]["icon"] == "mdi:palette-outline"
-    dots = large["w"][10]
+    # LOOK-NOTES decision 11: rows of 48 leave no room for two rows of eight
+    # dots; they go first and stay on the controls page (index 10 before).
+    assert not [w for w in large["w"] if w["t"] == "choice"]
+    assert min(w["r"][3] for w in large["w"][4:]) >= 48
+    detail = _cards(result["layout"])[1]
+    dots = next(w for w in detail["w"] if w["t"] == "choice")
     assert dots["look"] == 1
     assert len(dots["cols"]) == 8
 
@@ -877,13 +983,17 @@ def test_a_lamp_that_only_dims() -> None:
 
 
 def test_a_lamp_that_only_turns_on_and_off() -> None:
-    """Tile: badge, name, state. Wide: header and power button. No bar anywhere."""
+    """Tile and Wide: header and power button. No bar anywhere.
+
+    LOOK-NOTES decision 10: the tile is Lights together's, which shows its
+    button where it has no bar (it had an empty foot and a level column).
+    """
     tile = _cards(_light_card(ONOFF_LAMP_RAW, "tile", 6, 3)["layout"])[0]
     assert [_shape(w) for w in tile["w"]] == [
         ("badge",),
         ("label", "m", 0),
         ("label", "s", 0),
-        ("label", "s", 2),
+        ("button",),
     ]
     assert tile["tap"] == {"policy": "optimistic"}
     wide_result = _light_card(ONOFF_LAMP_RAW, "wide", 12, 3)
@@ -953,7 +1063,9 @@ def test_a_narrow_light_shows_its_name_and_no_header_switch() -> None:
         [card] = _cards(result["layout"])
         assert [w["t"] for w in card["w"]] == ["image", "label", "label"]
         badge, name, _state = card["w"]
-        assert badge["r"][0] + badge["r"][2] <= name["r"][0]
+        # Beside the badge or, in a stacked tile header, under it.
+        bx, by, bw, bh = badge["r"]
+        assert bx + bw <= name["r"][0] or by + bh <= name["r"][1]
         assert name["r"][0] + name["r"][2] == card["r"][0] + card["r"][2] - 16
         assert card["tap"] == {"policy": "optimistic"}
     narrow = {"variant": "wide", "grid_options": {"columns": 6, "rows": 3}}
@@ -972,7 +1084,10 @@ def test_a_switch_card_keeps_its_header_switch() -> None:
     component = COMPONENTS["apollo/switch"]
     facts = {"switch.a": facts_of({"domain": "switch"})}
     result = _compile(component, "tile", {"entity": "switch.a"}, {}, facts)
-    assert [w["t"] for w in result["widgets"]].count("switch") == 1
+    # LOOK-NOTES decision 14: on Tile the power button in the foot is the
+    # one control, in place of the header switch.
+    kinds = [w["t"] for w in result["widgets"]]
+    assert kinds.count("switch") + kinds.count("button") == 1
 
 
 def test_the_power_button_is_only_for_a_lamp_without_brightness() -> None:
@@ -1599,7 +1714,12 @@ def test_no_empty_band_on_a_large_card(
     component = COMPONENTS[component_id]
     result = _compile(component, "large", params, options, facts)
     _assert_inside(result, component_id)
-    assert max(_bands(result)) <= 56, (component_id, options, _bands(result))
+    bands = _bands(result)
+    if component_id == "apollo/scenes":
+        # L4, the coordinator: the rows of scenes stop at 56 like List
+        # rows, so a few scenes leave a foot (decision 12), no band.
+        bands = bands[:-1]
+    assert max(bands) <= 56, (component_id, options, _bands(result))
 
 
 def test_the_scenes_card_has_a_title() -> None:
@@ -1622,8 +1742,10 @@ def test_a_large_dropdown_has_no_pillars() -> None:
     component = COMPONENTS["apollo/select"]
     large = _compile(component, "large", {"entity": "select.mode"}, {}, facts)
     _assert_inside(large, "large")
-    assert _choice_cells(large) == (168, 148)
-    # A Wide made as tall as Large: the same.
+    # L4: Large has the tile header (decision 14), 16 px higher than Wide's
+    # title, so its cells are 16 px lower: 140 = (344 - 48 - 8 - 8) / 2.
+    assert _choice_cells(large) == (168, 140)
+    # A Wide made as tall as Large: two rows of two as well.
     raw = {
         "params": {"entity": "select.mode"},
         "variant": "wide",
@@ -1716,23 +1838,28 @@ def _label(result: dict, size: str, align: int = 0) -> dict:
 
 
 async def test_the_lights_level_and_state(hass: HomeAssistant) -> None:
-    """68 % for a dimmed lamp; nothing while off or for a lamp without brightness."""
+    """68 % for a dimmed lamp; nothing while off or for a lamp without brightness.
+
+    The level is on the tile's state line (LOOK-NOTES decision 10; it was a
+    label of its own at the top right).
+    """
     component = COMPONENTS["apollo/light"]
     lamp = "light.h1401"
     result = _compile(
         component, "tile", {"entity": lamp}, {}, {lamp: facts_of(OWNER_LAMP_RAW)}
     )
-    level = _label(result, "s", 2)["text"]
+    line = _label(result, "s")["text"]
     hass.states.async_set(lamp, "on", {"brightness": 173, "friendly_name": "Sofa lamp"})
-    assert await _value(hass, result, level) == "68%"
+    # Without translations loaded the state reads "on".
+    assert await _value(hass, result, line) == "on · 68%"
     assert await _value(hass, result, result["on"]) is True
     hass.states.async_set(lamp, "off", {"friendly_name": "Sofa lamp"})
-    assert await _value(hass, result, level) == ""
+    assert await _value(hass, result, line) == "off"
     onoff = _compile(
         component, "tile", {"entity": lamp}, {}, {lamp: facts_of(ONOFF_LAMP_RAW)}
     )
     hass.states.async_set(lamp, "on", {"friendly_name": "Sofa lamp"})
-    assert await _value(hass, onoff, _label(onoff, "s", 2)["text"]) == ""
+    assert await _value(hass, onoff, _label(onoff, "s")["text"]) == "on"
 
 
 async def test_the_switch_says_its_words(hass: HomeAssistant) -> None:

@@ -148,6 +148,10 @@ READ_ACTIONS = frozenset({"weather.get_forecasts"})
 
 # Service data keys that would widen a call beyond the picked entity.
 TARGET_KEYS = frozenset({"area_id", "device_id", "floor_id", "label_id", "target"})
+# A lock's or an alarm's code: no card carries one until it has its own
+# design (cards spec D.4). It would sit in the stored dashboard and in the
+# card's slots.
+CODE_KEYS = frozenset({"code"})
 
 RESERVED_NAMES = frozenset({"value", "response", "component_name"})
 RESERVED_NAMESPACES = frozenset({"apollo"})

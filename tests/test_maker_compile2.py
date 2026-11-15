@@ -425,10 +425,11 @@ def test_a_part_that_is_left_out_leaves_no_hole() -> None:
     full_sliders = [w for w in full["widgets"] if w["t"] == "slider"]
     less_sliders = [w for w in less["widgets"] if w["t"] == "slider"]
     assert len(less_sliders) == len(full_sliders) - 1
-    # Rows sit at the bottom: the remaining rows moved down, no gap between them.
-    bottoms = [w["r"][1] + w["r"][3] for w in less_sliders]
-    assert bottoms[-1] == less["h"] - 16
-    assert less_sliders[1]["r"][1] == less_sliders[0]["r"][1] + 40 + 8
+    # Rows stack from the header (LOOK-NOTES decision 12): the remaining
+    # rows moved up, no gap between them.
+    tops = [w["r"][1] for w in less_sliders]
+    assert tops == [w["r"][1] for w in full_sliders][: len(tops)]
+    assert less_sliders[1]["r"][1] == less_sliders[0]["r"][1] + 48 + 8
 
 
 def test_tablet_v2_is_true_for_version_2_only() -> None:
@@ -1207,6 +1208,19 @@ def _evil_result(**keys) -> dict:
     return compiled(component, raw, facts, **keys)
 
 
+def _cut_from(shown: list, texts: list) -> bool:
+    """Return whether each shown text is its text, whole or cut in the middle."""
+    if len(shown) != len(texts):
+        return False
+    for cut, text in zip(shown, texts, strict=True):
+        if cut == text:
+            continue
+        head, _, tail = cut.partition("…")
+        if not (_ and text.startswith(head) and text.endswith(tail)):
+            return False
+    return True
+
+
 def test_data_is_never_template_source() -> None:
     """Options, effects, sources and select options that hold Jinja stay text.
 
@@ -1220,9 +1234,11 @@ def test_data_is_never_template_source() -> None:
     assert said_slot["template"] == "Say {{ greeting }}"
     assert said_slot["variables"]["greeting"] == EVIL[0]
     choices = [w for w in widgets if w["t"] == "choice"]
-    assert choices[0]["texts"] == EVIL
-    assert choices[1]["texts"] == [*EVIL, "Night"]
-    assert choices[2]["texts"] == EVIL
+    # LOOK-NOTES decision 17: a choice's texts are cut in the middle to its
+    # cells (was each text whole); cut or not they stay the data's text.
+    assert _cut_from(choices[0]["texts"], EVIL)
+    assert _cut_from(choices[1]["texts"], [*EVIL, "Night"])
+    assert _cut_from(choices[2]["texts"], EVIL)
     for choice in choices:
         options = result["actions"][f"{choice['i']}:change"]["options"]
         assert options[:2] == EVIL

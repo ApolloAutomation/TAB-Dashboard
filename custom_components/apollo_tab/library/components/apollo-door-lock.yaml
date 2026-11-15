@@ -46,10 +46,9 @@ variants:
   tile:
     name: Tile
     grid: [6, 3]
-    # The name on its own line across the tile, the state beside the icon.
-    header: tile_v
-    trailing: state
-    state: none
+    # As every tile: the state beside the badge, the name on its own line
+    # across the tile (LOOK-NOTES decision 14).
+    header: tile
     layout: [{use: lock_or_unlock}]
   wide:
     name: Wide
@@ -63,15 +62,11 @@ variants:
   tall:
     name: Tall
     grid: [6, 6]
-    header: none
-    # Badge, name and state as one block in the middle, the button at the
-    # foot. The badge is large, so no band opens above or below the block.
+    # The tile header names it and says its state (LOOK-NOTES decision 14);
+    # the large badge takes the room under it, the button the foot.
+    header: tile
     layout:
-      - {type: space}
-      - {type: image, value: icon, look: badge, colour: tone, height: 136}
-      - {type: label, text: "{{ state_attr(entity, 'friendly_name') or entity }}", size: m, align: centre}
-      - {type: label, text: "{{ state }}", size: s, align: centre}
-      - {type: space}
+      - {type: image, value: icon, look: badge, colour: tone, grow: true}
       - {use: lock_or_unlock, height: 56}
 
 preview:
