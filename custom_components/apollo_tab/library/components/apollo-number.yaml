@@ -49,7 +49,8 @@ variants:
     name: Wide
     grid: [12, 3]
     header: tile
-    layout: [{use: bar}, {use: buttons}, {use: old_text}]
+    # The control takes the card's height: no empty band under the header.
+    layout: [{use: bar, grow: true}, {use: buttons}, {use: old_text}]
 
 preview:
   params: {entity: number.example}

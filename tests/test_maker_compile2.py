@@ -563,6 +563,49 @@ def test_tile_header_with_a_trailing_switch_runs_the_tap_output() -> None:
     assert result["actions"][f"{switch['i']}:tap"]["output"] == "toggle"
 
 
+def _wide_with(part: dict, rows: int = 3) -> dict:
+    """Compile the light's Wide with one part as its whole body."""
+    doc = copy.deepcopy(LIGHT)
+    doc["outputs"]["blink"] = {
+        "action": "light.turn_on",
+        "data": {"entity_id": "{{ entity }}", "flash": "short"},
+        "feedback": "pulse",
+    }
+    doc["parts"]["extra"] = part
+    doc["variants"]["wide"]["layout"] = [{"use": "extra"}]
+    raw = {
+        "params": {"entity": "light.a"},
+        "variant": "wide",
+        "grid_options": {"columns": 12, "rows": rows},
+    }
+    return compiled(validate_component(doc), raw, {"light.a": LAMP})
+
+
+def test_a_button_that_toggles_takes_the_place_of_the_trailing_switch() -> None:
+    """One control for one thing: the header shows no switch next to it."""
+    power = {"type": "button", "icon": "mdi:power", "on_tap": "toggle"}
+    result = _wide_with(power)
+    assert kinds(result) == ["image", "label", "label", "button"]
+    button = result["widgets"][3]
+    assert result["actions"][f"{button['i']}:tap"]["output"] == "toggle"
+    # Without room for the button the switch is back.
+    assert kinds(_wide_with(power, rows=2)) == ["image", "label", "label", "switch"]
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        {"type": "button", "icon": "mdi:flash", "on_tap": "blink"},
+        {"type": "switch", "value": "is_on", "on_tap": "toggle"},
+    ],
+)
+def test_the_trailing_switch_stays_beside_other_controls(part: dict) -> None:
+    """A button for another output, or a switch, leaves the header switch."""
+    result = _wide_with(part)
+    assert kinds(result)[:4] == ["image", "label", "label", "switch"]
+    assert kinds(result)[4] == part["type"]
+
+
 def test_the_trailing_switch_still_toggles_when_the_card_tap_opens_the_page() -> None:
     """The switch runs the first tap choice that acts."""
     result = lamp_card(

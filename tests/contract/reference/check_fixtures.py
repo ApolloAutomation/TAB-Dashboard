@@ -102,6 +102,25 @@ def main() -> None:
         assert compiled["slots"] == meta["slots"], name
         assert tp.canonical(json.loads(data)) == data, name
 
+    # The cards fixture of the first release, for engine 0.2.0 and 0.1.0.
+    source = load("layout_v2_cards.source.json")
+    for name, layout in (("layout_v2_cards", source["layout"]), ("layout_v2_cards.v1", source["v1"]["layout"])):
+        meta = load(f"{name}.meta.json")
+        data = (FIX / f"{name}.dl.json").read_bytes()
+        compiled = tp.compile_layout(layout, ICONS, meta["caps"])
+        assert compiled["bytes"] == data, name
+        assert tp.content_hash(data) == meta["hash"] and compiled["slots"] == meta["slots"], name
+        assert tp.tablet_commit(data, meta["caps"]) == "", name
+    v1 = json.loads((FIX / "layout_v2_cards.v1.dl.json").read_bytes())
+    levels = {code: level for code, level in ICONS["icons"].values()}
+    found = [e["icon"] for e in v1["nav"] if "icon" in e] + [
+        item["icon"] for page in v1["pages"] for card in page["w"]
+        for item in (card, *card.get("w", [])) if isinstance(item.get("icon"), int)
+    ]
+    assert v1["v"] == 1 and "i" not in v1["slots"]
+    assert all(levels.get(code) == 1 for code in found)
+    assert ICONS["icons"][ICONS["fallback"]][0] not in found
+
     chunks = load("chunks.json")
     good = chunks["cases"][0]
     joined = "".join(call["data"] for call in good["calls"]).encode("utf-8")

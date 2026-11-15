@@ -295,6 +295,58 @@ def test_a_choice_gets_more_rows_until_cells_are_44_wide() -> None:
     assert rect(laid, 0)[3] == 3 * 48 + 2 * 8
 
 
+def test_a_choice_never_gets_more_rows_than_options() -> None:
+    """Rows no option fills are left out; a fixed height keeps each row's height."""
+    laid = layout_card2(
+        [row(w("choice", rows=2, options=1, control=True, height=120))],
+        376,
+        400,
+        align_top=True,
+    )
+    assert laid["rows"][0][0][0] == 1
+    assert rect(laid, 0)[3] == 56
+    laid = layout_card2(
+        [row(w("choice", rows=3, options=2, control=True))], 376, 400, align_top=True
+    )
+    assert laid["rows"][0][0][0] == 2
+    assert rect(laid, 0)[3] == 48 + 8 + 48
+
+
+def test_a_grown_choice_is_no_row_of_pillars() -> None:
+    """L1 round 2: four choices that take a Large card's height are 2 by 2.
+
+    One row gave four cells of 80 by 304. A cell may be at most twice as tall
+    as it is wide; rows keep at least their own height.
+    """
+    choice = w("choice", rows=1, options=4, control=True, grow=True)
+    laid = layout_card2([row(choice)], 376, 336, align_top=True)
+    assert rect(laid, 0) == [16, 16, 344, 304]
+    assert laid["rows"][0][0][0] == 2  # cells of 168 by 148
+    # Not as tall: one row of 80 by 112 stays.
+    laid = layout_card2([row(choice)], 376, 144, align_top=True)
+    assert laid["rows"][0][0][0] == 1
+    # Eight already in 2 rows of 80 by 148 stay so.
+    laid = layout_card2([row({**choice, "options": 8})], 376, 336, align_top=True)
+    assert laid["rows"][0][0][0] == 2
+    # A choice that does not grow keeps its rows, whatever its height.
+    laid = layout_card2(
+        [row({**choice, "grow": False, "height": 304})], 376, 336, align_top=True
+    )
+    assert laid["rows"][0][0][0] == 1
+    # Never a row lower than a choice's row: cells of 44 by 100 stay one row.
+    laid = layout_card2([row(choice)], 232, 132, align_top=True)
+    assert rect(laid, 0)[2:] == [200, 100]
+    assert laid["rows"][0][0][0] == 1
+
+
+def test_a_narrow_button_shows_its_text_alone() -> None:
+    """L1 round 2: side by side, an 80 px button left its text 3 letters."""
+    assert geometry.button_text_alone(80, 52)
+    assert not geometry.button_text_alone(80, 64)  # stacked: the text has 68
+    assert not geometry.button_text_alone(90, 52)  # 48 for the text
+    assert geometry.button_text_alone(89, 52)
+
+
 def test_a_choice_that_4_rows_cannot_hold_is_dropped() -> None:
     """When 4 rows are not enough the item is left out."""
     laid = layout_card2([row(w("choice", rows=1, options=16, control=True))], 184, 400)
@@ -325,6 +377,27 @@ def test_tile_header_parts() -> None:
     assert parts["trailing"][2:] == [64, 36]
     assert parts["trailing"][0] + 64 == 376 - 16
     assert parts["name"][0] + parts["name"][2] + 8 == parts["trailing"][0]
+
+
+def test_a_narrow_tile_header_shows_the_name_not_the_switch() -> None:
+    """L1 round 3: a switch never lies over the badge or cuts the name away.
+
+    Under 48 px of name beside it the header shows no switch. Six columns
+    (184 px) is too narrow; a card of 204 px is the first with the switch.
+    """
+    for width in (120, 184):
+        parts = layout_card2([], width, 120, "tile", "switch")["header"]
+        assert "trailing" not in parts
+        assert parts["name"][0] == 16 + 44 + 8
+        assert parts["name"][0] + parts["name"][2] == width - 16
+    assert "trailing" not in layout_card2([], 203, 120, "tile", "switch")["header"]
+    parts = layout_card2([], 204, 120, "tile", "switch")["header"]
+    assert parts["trailing"][0] + 64 == 204 - 16
+    assert parts["name"][2] == 48
+    assert parts["badge"][0] + parts["badge"][2] <= parts["name"][0]
+    assert parts["name"][0] + parts["name"][2] <= parts["trailing"][0]
+    # Another trailing part is not a switch: it stays.
+    assert "trailing" in layout_card2([], 184, 120, "tile", "more")["header"]
 
 
 def test_tile_v_header_parts() -> None:

@@ -71,18 +71,37 @@ parts:
   dim:     {type: slider, look: bar, value: pct, min: 1, max: 100, icon: mdi:brightness-6, colour: colour,
             on_change: set_brightness, when: [can.brightness, show_brightness]}
   level:   {type: slider, look: bar, height: 8, value: pct, min: 0, max: 100, colour: colour, when: [can.brightness]}
-  hue:     {type: slider, look: bar, track: hue, value: hue, min: 0, max: 360, keep_active: true,
-            on_change: set_hue, when: [can.colour, colour_control=bar|both]}
-  sat:     {type: slider, look: bar, value: sat, min: 0, max: 100, colour: hue_tone,
+  # The colour and white bars stay active without a value while the lamp is
+  # on (`kelvin` has none while it shows a colour). While it is off or
+  # unavailable the second copy shows: no value, so it is faded, with an
+  # icon instead of a track, so it costs none of the page's tracks.
+  hue:
+    type: swap
+    when: [can.colour, colour_control=bar|both]
+    items:
+      - {type: slider, look: bar, track: hue, value: hue, min: 0, max: 360, keep_active: true,
+         on_change: set_hue, visible: is_on, grow: true}
+      - {type: slider, look: bar, value: hue, min: 0, max: 360, icon: mdi:palette,
+         on_change: set_hue, visible: "{{ not is_on }}", grow: true}
+  sat:     {type: slider, look: bar, value: sat, min: 0, max: 100, colour: hue_tone, icon: mdi:palette-outline,
             on_change: set_sat, when: [can.colour, show_saturation]}
-  white:   {type: slider, look: bar, track: {kelvin: ["{{ can.min_kelvin }}", "{{ can.max_kelvin }}"]},
-            value: kelvin, min: "{{ can.min_kelvin }}", max: "{{ can.max_kelvin }}", step: 50, keep_active: true,
-            on_change: set_white, when: [can.temperature, show_white]}
+  white:
+    type: swap
+    when: [can.temperature, show_white]
+    items:
+      - {type: slider, look: bar, track: {kelvin: ["{{ can.min_kelvin }}", "{{ can.max_kelvin }}"]},
+         value: kelvin, min: "{{ can.min_kelvin }}", max: "{{ can.max_kelvin }}", step: 50, keep_active: true,
+         on_change: set_white, visible: is_on, grow: true}
+      - {type: slider, look: bar, value: kelvin, min: "{{ can.min_kelvin }}", max: "{{ can.max_kelvin }}",
+         step: 50, icon: mdi:white-balance-sunny, on_change: set_white, visible: "{{ not is_on }}", grow: true}
   dots:    {type: choice, look: dots, options: favourites, on_change: set_favourite,
             when: [colour_control=dots|both]}
   effects: {type: choice, options: effects_shown, value: effect_at, on_change: set_effect,
             when: [can.effects, effects_shown]}
   switch:  {type: switch, value: is_on, on_tap: toggle}
+  # A lamp that only turns on and off: one large button fills the wide card.
+  power:   {type: button, icon: mdi:power, on_tap: toggle, selected: is_on, big_icon: true, grow: true,
+            when: ["!can.brightness"]}
 
 variants:
   tile:
@@ -100,12 +119,14 @@ variants:
     header: tile
     trailing: switch
     v1: apollo/light-slider
+    # The bars take the card's height: no empty band under the header.
     layout:
-      - {use: dim}
+      - {use: dim, grow: true}
       - {use: hue}
       # Eight favourites need two rows of dots, more than a wide card holds:
       # they are on Large and on the controls page.
       - {use: white, when: [can.temperature, show_white, "!can.colour"]}
+      - {use: power}
   large:
     name: Large
     grid: [12, 6]
@@ -115,24 +136,26 @@ variants:
     header: tile
     trailing: switch
     v1: apollo/light-slider
-    layout: [{use: dim}, {use: hue}, {use: sat}, {use: white}, {use: dots}]
+    layout: [{use: dim, grow: true}, {use: hue}, {use: sat, grow: true}, {use: white}, {use: dots}]
   full:
     name: Controls
     grid: [18, 11]
-    # D.1 offers no controls page for a lamp that only turns on and off.
-    # `needs: can.brightness` here would say so, but the cards fixture of
-    # the first release holds such a lamp with its controls page, and its
-    # bytes may not change. Left for a decision.
+    # D.1: no controls page, and so no hold, for a lamp that only turns on
+    # and off.
+    needs: can.brightness
+    needs_text: This light only turns on and off
     header: tile
     trailing: switch
     picker: false
+    # One order on every lamp; each row at least 56 high, brightness the
+    # tallest, swatches 56 across. The page cuts the card under its rows.
     layout:
-      - {use: dim, height: 56}
-      - {use: hue, height: 48}
-      - {use: sat, height: 48}
-      - {use: white, height: 48}
+      - {use: dim, height: 72}
+      - {use: hue, height: 56}
+      - {use: sat, height: 56}
+      - {use: white, height: 56}
       - {use: dots, height: 56}
-      - {use: effects, rows: 2}
+      - {use: effects, rows: 2, height: 120}
 detail: full
 
 preview:

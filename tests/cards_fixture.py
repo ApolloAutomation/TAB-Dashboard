@@ -1,7 +1,8 @@
 """The cards fixture of the first release: layout_v2_cards.* and its .v1 pair.
 
 A dashboard with the nine cards of step A (package I9) on 2 normal pages,
-with the detail pages of its lights. Home Assistant converts it for a tablet
+with the detail pages of its lights. The porch lamp only turns on and off:
+it has no hold and no detail page. Home Assistant converts it for a tablet
 with engine 0.2.0 (layout v2, the caps of contract.json "engine_caps") and
 for one with engine 0.1.0 (layout v1, the caps of hello.json case 0), as the
 manager and the sender do. The bytes come from the reference code
@@ -191,7 +192,7 @@ DASHBOARD = {
                 },
                 {
                     "type": "grid",
-                    "title": "Sofa lamp · Farbe",
+                    "title": "Sofa lamp · Colour",
                     "cards": [
                         _card(
                             "apollo/light",
@@ -421,7 +422,8 @@ def build(contract: Path = CONTRACT) -> dict[str, bytes]:
     source = {
         "note": (
             "The nine cards of the first version 2 library (package I9) on 2 "
-            "normal pages, with the detail pages of the lights. Made by "
+            "normal pages, with the detail pages of the lights that do more "
+            "than turn on and off (the porch lamp has none). Made by "
             "tests/cards_fixture.py in apollo_tab: 'dashboard' and 'facts' "
             "are what Home Assistant converts; 'layout' is the layout v2 for "
             "a tablet with the caps of contract.json 'engine_caps', 'v1' the "

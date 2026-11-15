@@ -34,7 +34,13 @@ from .const import (
 )
 from .errors import MakerError
 from .features import card_facts, facts_of
-from .geometry import card_size_px, layout_card2
+from .geometry import (
+    PAD,
+    button_text_alone,
+    card_size_px,
+    layout_card2,
+    switch_fits_tile_header,
+)
 from .schema import (
     _as_mapping,
     _card_title,
@@ -80,6 +86,45 @@ DEFAULT_ROLES = {
 # Theme keys behind the roles that a theme entry holds.
 THEME_ROLES = {"accent": "acc", "accent2": "acc2", "text": "tx", "muted": "tx2"}
 STANDARD_DEFAULTS = {"icon": None, "tap": None, "tap_page": "", "hold": True}
+# A character of a header name (label m) is about 10.5 px wide on average.
+NAME_CHAR_W_X2 = 21
+ELLIPSIS = "…"
+# cut_middle as a template, for a name the tablet learns from Home Assistant.
+# `n` is the name and `k` the characters that fit.
+CUT_MIDDLE_TEMPLATE = (
+    "{%- set w = n.split(' ') -%}"
+    "{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4"
+    " else w[-1] -%}"
+    "{%- set h = n[:k - 1 - t | length].rstrip() -%}"
+    "{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h"
+    " else h ~ '…' ~ t -}}"
+)
+
+
+def name_chars(width: int) -> int:
+    """Return how many characters of a header name fit in a width."""
+    return width * 2 // NAME_CHAR_W_X2
+
+
+def cut_middle(name: str, chars: int) -> str:
+    """Cut a long name in the middle, so its end stays.
+
+    "Living Room Lamp 1" becomes "Living…Lamp 1", not "Living Room L…": names
+    of lamps in one room often differ only at the end. The end kept is the
+    last word, with the word before it when the last is shorter than 4. A
+    name of one word, or an end longer than half the room, is left whole:
+    the tablet cuts it at its end.
+    """
+    if len(name) <= chars:
+        return name
+    words = name.split(" ")
+    tail = words[-1]
+    if len(words) > 2 and len(tail) < 4:
+        tail = words[-2] + " " + tail
+    head = name[: chars - 1 - len(tail)].rstrip()
+    if len(words) < 2 or len(tail) > chars // 2 or not head:
+        return name
+    return head + ELLIPSIS + tail
 
 
 def role_table(
@@ -351,6 +396,20 @@ def compile_card2(
     return _Compiler2(component, card, facts or {}, dl, roles, detail).run()
 
 
+def _switch_stands_in(row: dict, trailing: tuple | None, toggle: str | None) -> bool:
+    """Return whether a row left out only held buttons the header switch does.
+
+    A Wide on/off lamp too low for its power button shows the header switch
+    instead: nothing is lost, so it is not a clipped element.
+    """
+    if trailing is None or trailing[0] != "switch" or row["kind"] != "row":
+        return False
+    return toggle is not None and all(
+        item["type"] == "button" and item.get("on_tap") == toggle
+        for item, _names in row["cells"]
+    )
+
+
 class _Compiler2:
     """Hold the state for compiling one schema 2 card."""
 
@@ -522,11 +581,30 @@ class _Compiler2:
             height,
             header_form,
             trailing[0] if trailing else None,
-            variant["align"] == "top",
+            # On a detail page the rows stack down from the header; the
+            # converter then ends the card under them.
+            self.detail_copy or variant["align"] == "top",
         )
         card_tap, toggle = self._card_tap()
+        if (
+            trailing is not None
+            and trailing[0] == "switch"
+            and self._button_runs(body, laid, toggle)
+        ):
+            # A button in the body already turns the device on and off: the
+            # header shows no second switch for the same thing.
+            trailing = None
+            laid = layout_card2(
+                geo_body,
+                width,
+                height,
+                header_form,
+                None,
+                self.detail_copy or variant["align"] == "top",
+            )
         self.on = self._bind(self.component["on"], {}, "bool")
-        title = self._title()
+        name_rect = laid["header"].get("name")
+        title = self._title(None if name_rect is None else name_chars(name_rect[2]))
         icon = self._header_icon()
         ic = self._live_icon()
         tint = None
@@ -574,7 +652,21 @@ class _Compiler2:
         hold = self._card_hold()
         if hold is not None:
             out["hold"] = hold
-        clipped = bool(laid["clipped"]) or laid["dropped"] > 0 or self.cut
+        left_out = [
+            i
+            for i in laid["clipped"]
+            if not _switch_stands_in(body[i], trailing, toggle)
+        ]
+        # A card too narrow for its header switch: nothing is lost while a
+        # tap on the card does the same.
+        switch_lost = (
+            trailing is not None
+            and trailing[0] == "switch"
+            and header_form == "tile"
+            and not switch_fits_tile_header(width - 2 * PAD)
+            and self.actions.get("card:tap", {}).get("output") != toggle
+        )
+        clipped = bool(left_out) or laid["dropped"] > 0 or self.cut or switch_lost
         warnings = ["element_clipped"] if clipped else []
         if self.tap_left_out:
             warnings.append("tap_left_out")
@@ -590,6 +682,25 @@ class _Compiler2:
             }
         )
         return out
+
+    def _button_runs(self, body: list, laid: dict, output: str | None) -> bool:
+        """Return whether a button with a place in the body taps this output."""
+        if output is None:
+            return False
+        for row, rects in zip(body, laid["rects"], strict=True):
+            if rects is None or row["kind"] == "space":
+                continue
+            members = row["cells"] if row["kind"] == "swap" else [row["cells"]]
+            for member, member_rects in zip(members, rects, strict=True):
+                for (item, names), rect in zip(member, member_rects, strict=True):
+                    if (
+                        rect is not None
+                        and item["type"] == "button"
+                        and item.get("on_tap") == output
+                        and self._output_reaches(output, names)
+                    ):
+                        return True
+        return False
 
     def _holds(self, name: str) -> bool:
         """Return whether the card's device can do what a variant needs."""
@@ -659,19 +770,32 @@ class _Compiler2:
                 return name
         return None
 
-    def _title(self) -> Any:
-        """Choose the title: the person's, the device's name, or the card's name."""
+    def _title(self, chars: int | None = None) -> Any:
+        """Choose the title: the person's, the device's name, or the card's name.
+
+        chars: the characters that fit, for the name of a tile or chip
+        header; a longer name is cut in the middle (cut_middle).
+        """
         if self.card["title"] is not None:
             # Plain text from the browser: never a template.
-            return self.card["title"]
+            title = self.card["title"]
+            return title if chars is None else cut_middle(title, chars)
         param = self._first_entity()
         spec = self.component["params"].get(param) if param else None
         if not self.demo and spec is not None and not spec["multiple"]:
-            src = "{{ state_attr(" + param + ", 'friendly_name') or component_name }}"
+            name = "state_attr(" + param + ", 'friendly_name') or component_name"
+            if chars is None:
+                src = "{{ " + name + " }}"
+            else:
+                src = (
+                    "{%- set n = (" + name + ") | string -%}"
+                    "{%- set k = " + str(chars) + " -%}" + CUT_MIDDLE_TEMPLATE
+                )
             slot = self._template_slot(src, {})
             slot["variables"]["component_name"] = self.component["name"]
             return {"s": self._add_slot(slot)}
-        return self.component["name"]
+        name = self.component["name"]
+        return name if chars is None else cut_middle(name, chars)
 
     def _header_icon(self) -> str | None:
         """Return the header icon: the person's, the device's, else the file's."""
@@ -1242,6 +1366,11 @@ class _Compiler2:
             return False
         if "icon_live" in item:
             widget["ic"] = self._bind(item["icon_live"], names, "icon")
+        rect = widget["r"]
+        if widget.get("text") is not None and button_text_alone(rect[2], rect[3]):
+            # Beside the icon the text would be cut to a few letters.
+            widget.pop("icon", None)
+            widget.pop("ic", None)
         if "selected" in item:
             widget["value"] = self._bind(item["selected"], names, "bool")
         if item.get("shape") is not None:

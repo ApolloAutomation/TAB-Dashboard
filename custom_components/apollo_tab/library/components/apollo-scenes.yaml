@@ -36,19 +36,21 @@ variants:
   wide:
     name: Wide
     grid: [12, 3]
-    header: none
+    # The title names the card; the buttons take the rest of its height.
+    header: title
     layout:
-      - {use: named, per_row: 4, when: ["per_row=4"]}
-      - {use: named, per_row: 2, when: ["per_row=2"]}
-      - {use: bare, per_row: 4, when: ["per_row=4"]}
-      - {use: bare, per_row: 2, when: ["per_row=2"]}
+      - {use: named, per_row: 4, grow: true, when: ["per_row=4"]}
+      - {use: named, per_row: 2, grow: true, when: ["per_row=2"]}
+      - {use: bare, per_row: 4, grow: true, when: ["per_row=4"]}
+      - {use: bare, per_row: 2, grow: true, when: ["per_row=2"]}
   large:
     name: Large
     grid: [12, 6]
     header: title
+    # The buttons share the card's height, as on Wide.
     layout:
-      - {use: named, per_row: 2, big_icon: true, height: 64}
-      - {use: bare, per_row: 2, big_icon: true, height: 64}
+      - {use: named, per_row: 2, big_icon: true, grow: true}
+      - {use: bare, per_row: 2, big_icon: true, grow: true}
 
 preview:
   params: {scenes: [scene.movie, scene.dinner, scene.relax, scene.all_off]}

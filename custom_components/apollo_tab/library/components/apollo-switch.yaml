@@ -15,7 +15,8 @@ options:
 
 inputs:
   is_on: "{{ is_state(entity, 'on') }}"
-  state: "{{ word_on if is_on else word_off }}"
+  # While the device is gone the card fades; its word says why, not "Off".
+  state: "{{ state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off) }}"
 
 outputs:
   toggle: {action: {switch: switch.toggle, input_boolean: input_boolean.toggle, siren: siren.toggle,

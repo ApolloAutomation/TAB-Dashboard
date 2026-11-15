@@ -2560,6 +2560,9 @@ def commit_v2(built: dict) -> None:
 
 def main() -> None:
     components, themes = load_library()
+    # The 16 cards of version 1. The schema 2 cards make layout_v2_cards.*
+    # (apollo_tab's tests/cards_fixture.py, which writes those five files).
+    components = {k: c for k, c in components.items() if c.get("schema", 1) == 1}
     assert len(components) == 16, len(components)
     small = build("layout_small", SMALL, components, themes)
     big = build("layout_all_cards", ALL_CARDS, components, themes)

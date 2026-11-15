@@ -30,6 +30,7 @@ from custom_components.apollo_tab.maker.compile2_v1 import variant_of
 from custom_components.apollo_tab.maker.convert import convert_dashboard
 from custom_components.apollo_tab.maker.errors import MakerError
 from custom_components.apollo_tab.maker.features import FACT_NAMES, FACTS, facts_of
+from custom_components.apollo_tab.maker.geometry import card_size_px
 from custom_components.apollo_tab.maker.schema import validate_component
 
 HERE = Path(__file__).resolve().parent
@@ -417,6 +418,17 @@ def test_no_detail_page_where_the_detail_variant_does_not_hold() -> None:
     assert without["warnings"] == []
 
 
+def test_a_controls_page_gives_its_card_the_whole_page() -> None:
+    """With no heading a detail variant may be 12 rows high (LOOK-NOTES decision 1)."""
+    doc = _needs_doc()
+    doc["variants"]["full"]["grid"] = [18, 12]
+    doc["variants"]["full"]["layout"][0]["grow"] = True
+    component = validate_component(doc)
+    grid = {"grid_options": {"columns": 6, "rows": 3}}
+    [card] = _convert(component, COLOUR_LAMP, **grid)["layout"]["pages"][1]["w"]
+    assert card["r"][1:] == [20, 568, card_size_px(18, 12)[1]]
+
+
 # ---------------------------------------------------------------- the light
 
 
@@ -471,13 +483,35 @@ def test_the_version_1_form_reads_the_facts_for_the_variant() -> None:
     assert onoff_card["component"] == "apollo/light-tile"
 
 
-def test_the_light_file_is_unchanged_but_for_larges_needs() -> None:
-    """The light's other variants carry no needs; its controls page stays."""
+def test_the_light_needs_brightness_for_large_and_its_controls() -> None:
+    """Tile and Wide carry no needs; Large and the controls page need brightness.
+
+    The controls page's needs is LOOK-NOTES decision 2 (it was "" before).
+    """
     assert {name: v["needs"] for name, v in LIGHT["variants"].items()} == {
         "tile": "",
         "wide": "",
         "large": "can.brightness",
-        "full": "",
+        "full": "can.brightness",
     }
     doc = copy.deepcopy(LIGHT)
     assert doc["detail"] == "full"
+
+
+@pytest.mark.parametrize(
+    ("variant", "columns", "rows"), [("tile", 6, 3), ("wide", 12, 3)]
+)
+def test_the_light_opens_its_controls_only_for_a_lamp_that_dims(
+    variant: str, columns: int, rows: int
+) -> None:
+    """An on/off lamp: no hold, no controls page (LOOK-NOTES decision 2)."""
+    grid = {"variant": variant, "grid_options": {"columns": columns, "rows": rows}}
+    for facts in (COLOUR_LAMP, DIM_LAMP):
+        assert _compile(LIGHT, facts, **grid)["hold"] == {"local": "detail"}
+        pages = _convert(LIGHT, facts, **grid)["layout"]["pages"]
+        assert [p["id"] for p in pages] == ["home", "home~1"]
+    result = _compile(LIGHT, ONOFF_LAMP, **grid)
+    assert "hold" not in result and result["opener"] is False
+    without = _convert(LIGHT, ONOFF_LAMP, **grid)
+    assert [p["id"] for p in without["layout"]["pages"]] == ["home"]
+    assert without["warnings"] == []

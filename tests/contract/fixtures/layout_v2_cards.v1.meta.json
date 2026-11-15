@@ -27,8 +27,8 @@
   "widgets": 69
  },
  "dropped": [],
- "hash": "2340a74ba26f45b3",
- "size": 6473,
+ "hash": "c23a4545fd7e9b1d",
+ "size": 6474,
  "slots": [
   {
    "d": 1,
@@ -231,5 +231,5 @@
    "type": "b"
   }
  ],
- "source_hash": "c85d32a6e2dd2ce4"
+ "source_hash": "9e39c8fba2591d1a"
 }

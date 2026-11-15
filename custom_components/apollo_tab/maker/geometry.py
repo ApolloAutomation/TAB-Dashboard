@@ -226,7 +226,14 @@ CHOICE_ROW_H = 48
 CHOICE_DOTS_ROW_H = 44
 CHOICE_GAP = 8  # between cells and between rows, as contract 4.7 draws them
 CHOICE_MAX_ROWS = 4
+CHOICE_TALL = 2  # a grown choice's cell is at most this many times as tall as wide
 TOUCH_MIN = 44  # no control narrower or lower than this
+# A button draws its icon and text side by side when lower than this (contract
+# 4.7), with padding 6, icon 24 and gap 6: BUTTON_SIDE_W of its width is not
+# for the text. Below BUTTON_TEXT_MIN of text it shows the text alone.
+BUTTON_STACK_H = 64
+BUTTON_SIDE_W = 6 + 24 + 6 + 6
+BUTTON_TEXT_MIN = 48
 ROW_ITEM_GAP = 8  # between the widgets of a row
 SIDE_GAP = 12
 
@@ -241,6 +248,8 @@ HEADER_H_2 = {
 BADGE = 44
 CHIP_ICON = 24
 TRAILING_SWITCH = (64, 36)
+# A tile header's switch needs this much left for the name beside it.
+HEADER_NAME_MIN = 48
 TRAILING_MORE = 44
 TRAILING_TEXT_W = 88
 
@@ -315,6 +324,54 @@ def _choice_rows(geo: dict, width: int) -> int | None:
     return None
 
 
+def _fewer_rows(geo: dict) -> dict:
+    """Give a choice no more rows than it has options.
+
+    A row that no option fills would be a hole. A fixed height loses the
+    share of the rows that go, so each row keeps its height.
+    """
+    n = max(geo.get("options", 1), 1)
+    rows = geo["rows"]
+    if rows <= n:
+        return geo
+    out = {**geo, "rows": n}
+    if geo.get("height") is not None:
+        each = (geo["height"] - CHOICE_GAP * (rows - 1)) // rows
+        out["height"] = n * each + CHOICE_GAP * (n - 1)
+    return out
+
+
+def _taller_rows(geo: dict, width: int, height: int) -> int:
+    """Return the rows of a grown choice, so no cell is a tall pillar.
+
+    While a cell would be more than CHOICE_TALL times as tall as it is wide,
+    one cell fewer goes in each row, as long as every row keeps its
+    height and the rows stay within CHOICE_MAX_ROWS.
+    """
+    n = max(geo.get("options", 1), 1)
+    rows = geo.get("rows", 1)
+    line = CHOICE_DOTS_ROW_H if geo.get("look") == "dots" else CHOICE_ROW_H
+    while rows < n:
+        k = -(-n // rows)
+        cell_w = (width - CHOICE_GAP * (k - 1)) // k
+        cell_h = (height - CHOICE_GAP * (rows - 1)) // rows
+        if cell_h <= CHOICE_TALL * cell_w:
+            break
+        more = -(-n // (k - 1))
+        if more > CHOICE_MAX_ROWS or (height - CHOICE_GAP * (more - 1)) // more < line:
+            break
+        rows = more
+    return rows
+
+
+def button_text_alone(width: int, height: int) -> bool:
+    """Return whether a button with an icon and a text shows only the text.
+
+    Side by side, an icon in a narrow button leaves its text a few letters.
+    """
+    return height < BUTTON_STACK_H and width - BUTTON_SIDE_W < BUTTON_TEXT_MIN
+
+
 def _fit_cells(cells: list[dict], width: int) -> list[dict]:
     """Work out each widget's width; a control too narrow to touch is dropped.
 
@@ -327,7 +384,7 @@ def _fit_cells(cells: list[dict], width: int) -> list[dict]:
         geo: dict | None = cell
         if cell["type"] == "choice":
             rows = _choice_rows(cell, cell_w)
-            geo = None if rows is None else {**cell, "rows": rows}
+            geo = None if rows is None else _fewer_rows({**cell, "rows": rows})
         elif cell.get("control") and cell_w < TOUCH_MIN:
             geo = None
         if (
@@ -338,6 +395,12 @@ def _fit_cells(cells: list[dict], width: int) -> list[dict]:
             geo = None
         out.append({"w": cell_w, "geo": geo})
     return out
+
+
+def switch_fits_tile_header(width: int) -> bool:
+    """Return whether a tile header this wide has room for a trailing switch."""
+    name_w = width - BADGE - GAP - TRAILING_SWITCH[0] - GAP
+    return name_w >= HEADER_NAME_MIN
 
 
 def _header_parts(
@@ -366,6 +429,11 @@ def _header_parts(
     if form == "tile":
         parts["badge"] = [x0, y0 + 2, BADGE, BADGE]
         tx = x0 + BADGE + GAP
+        if trailing == "switch" and not switch_fits_tile_header(width):
+            # A narrow card: the switch would cut the name to a letter, or
+            # lie over the badge. The name gets the room.
+            trailing = None
+            trail_w = 0
         tw = x1 - tx - (trail_w + GAP if trail_w else 0)
         parts["name"] = [tx, y0, tw, 26]
         parts["state"] = [tx, y0 + 26, tw, 22]
@@ -550,6 +618,8 @@ def layout_card2(
                     member_rows.append(None)
                 else:
                     member_rects.append([x, y, cell["w"], height])
+                    if geo["type"] == "choice" and _grows(geo):
+                        geo = {**geo, "rows": _taller_rows(geo, cell["w"], height)}
                     member_rows.append(
                         geo.get("rows") if geo["type"] == "choice" else None
                     )

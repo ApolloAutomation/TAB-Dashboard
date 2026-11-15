@@ -35,9 +35,8 @@ from .geometry import (
     CELL_INSET,
     COL_W,
     CONTENT_X,
+    PAD,
     PAGE_ROWS,
-    PAGE_TOP,
-    ROW_H,
     SCREEN_H,
     SCREEN_W,
     card_rect,
@@ -55,9 +54,9 @@ _CARD_TAG = "custom:apollo-tab-card"
 _BOUND_FIELDS = ("value", "min", "max", "step", "text", "confirm")
 _TAP_KEYS = ("policy", "local", "page")
 _VIEW_EXTRAS = ("header", "sidebar", "footer")
-# The grid a detail page has for its card, under the heading row.
+# The most grid a detail page gives its card: the whole page, no heading.
 _DETAIL_COLUMNS = 36
-_DETAIL_ROWS = PAGE_ROWS - 1
+_DETAIL_ROWS = PAGE_ROWS
 # Card-level keys of a schema 2 card that the layout v2 carries.
 _CARD_KEYS2 = ("on", "tint", "un", "ic", "confirm", "lit")
 
@@ -964,10 +963,32 @@ def _detail_pages(pages: list[dict], env: dict, limit: int) -> list[dict]:
     return details
 
 
+def _content_height(compiled: dict, height: int) -> int:
+    """Return how tall a card must be for what it shows: its lowest part and PAD.
+
+    The rows of a detail copy stack down from its header, so the space
+    under the lowest widget (or the title) is empty and can go.
+    """
+    bottom = 0
+    header = compiled.get("header")
+    if isinstance(header, dict) and isinstance(header.get("r"), list):
+        bottom = header["r"][1] + header["r"][3]
+    for widget in compiled.get("widgets") or []:
+        rect = widget.get("r") if isinstance(widget, dict) else None
+        if isinstance(rect, list) and len(rect) == 4:
+            bottom = max(bottom, rect[1] + rect[3])
+    return min(bottom + PAD, height) if bottom else height
+
+
 def _detail_page(
     page: dict, item: dict, source: dict, name: str, counters: dict[str, int]
 ) -> dict | None:
-    """Build one detail page: a heading with the card's name, the card under it."""
+    """Build one detail page: the card alone, as tall as its content, centred.
+
+    No heading: the card's own header names the device. The rows of the
+    detail copy stack down from its header (compile2), the card ends under
+    the lowest of them and sits in the middle of the page.
+    """
     component = source["component"]
     variant = component["variants"][component["detail"]]
     columns = min(variant["grid"][0], _DETAIL_COLUMNS)
@@ -981,20 +1002,13 @@ def _detail_page(
         return None
     counters[page["id"]] = counters.get(page["id"], 0) + 1
     width, height = card_size_px(columns, rows)
+    height = _content_height(compiled, height)
     left = CONTENT_X + (SCREEN_W - CONTENT_X - columns * COL_W) // 2 + CELL_INSET
-    heading_h = ROW_H - 2 * CELL_INSET
-    top = PAGE_TOP + CELL_INSET
-    where = {"vi": item["vi"], "si": item["si"], "ci": item["ci"]}
-    heading = {
-        "kind": "heading",
-        "text": name[:80],
-        "rect": [left, top, width, heading_h],
-        **where,
-    }
+    top = (SCREEN_H - height) // 2
     copy = {
         **item,
         "compiled": compiled,
-        "rect": [left, top + ROW_H, width, height],
+        "rect": [left, top, width, height],
         "cols": columns,
         "rows": rows,
     }
@@ -1005,7 +1019,7 @@ def _detail_page(
         "view": page["view"],
         "sub": 1,
         "ttl": DETAIL_TTL_S,
-        "items": [heading, copy],
+        "items": [copy],
     }
 
 

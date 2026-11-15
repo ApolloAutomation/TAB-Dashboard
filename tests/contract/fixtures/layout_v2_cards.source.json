@@ -1,7 +1,32 @@
 {
  "bindings": {
   "actions": {
-   "104:change": {
+   "102:tap": {
+    "component": "apollo/button",
+    "demo": false,
+    "entities": [
+     "script.night"
+    ],
+    "output": "press",
+    "params": {
+     "entity": "script.night"
+    },
+    "values": {
+     "can": {
+      "entity": {
+       "icon": "mdi:script-text-outline",
+       "kind": null,
+       "toggle": true
+      },
+      "icon": "mdi:script-text-outline",
+      "kind": null,
+      "toggle": true
+     },
+     "options": {}
+    },
+    "vars": {}
+   },
+   "107:change": {
     "component": "apollo/select",
     "demo": false,
     "entities": [
@@ -51,7 +76,7 @@
     },
     "vars": {}
    },
-   "109:change": {
+   "112:change": {
     "component": "apollo/number",
     "demo": false,
     "entities": [
@@ -86,7 +111,7 @@
     },
     "vars": {}
    },
-   "114:change": {
+   "117:change": {
     "component": "apollo/screen",
     "demo": false,
     "entities": [
@@ -125,7 +150,7 @@
     },
     "vars": {}
    },
-   "120:tap": {
+   "122:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -181,7 +206,7 @@
     },
     "vars": {}
    },
-   "121:change": {
+   "123:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -237,7 +262,7 @@
     },
     "vars": {}
    },
-   "122:change": {
+   "124:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -348,7 +373,118 @@
     },
     "vars": {}
    },
-   "123:change": {
+   "125:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.sofa"
+    ],
+    "output": "set_hue",
+    "params": {
+     "entity": "light.sofa"
+    },
+    "uses": {
+     "sat": {
+      "slot": {
+       "kind": "template",
+       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "variables": {
+        "bar_on_tile": true,
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "effect_list": [],
+         "effects": false,
+         "entity": {
+          "brightness": true,
+          "colour": true,
+          "effect_list": [],
+          "effects": false,
+          "icon": "mdi:lightbulb",
+          "kind": null,
+          "max_kelvin": 6500,
+          "min_kelvin": 2000,
+          "temperature": true,
+          "toggle": true
+         },
+         "icon": "mdi:lightbulb",
+         "kind": null,
+         "max_kelvin": 6500,
+         "min_kelvin": 2000,
+         "temperature": true,
+         "toggle": true
+        },
+        "colour_control": "bar",
+        "effects_shown": [],
+        "entity": "light.sofa",
+        "favourites": [
+         "#FF453A",
+         "#FF9F0A",
+         "#FFD60A",
+         "#32D74B",
+         "#64D2FF",
+         "#0A84FF",
+         "#BF5AF2",
+         "2700K"
+        ],
+        "has": {
+         "entity": true
+        },
+        "show_brightness": true,
+        "show_saturation": false,
+        "show_white": true
+       }
+      },
+      "type": "number"
+     }
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "bar",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "126:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -404,44 +540,44 @@
     },
     "vars": {}
    },
-   "129:tap": {
+   "127:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
-     "light.ceiling"
+     "light.sofa"
     ],
-    "output": "toggle",
+    "output": "set_white",
     "params": {
-     "entity": "light.ceiling"
+     "entity": "light.sofa"
     },
     "values": {
      "can": {
       "brightness": true,
-      "colour": false,
+      "colour": true,
       "effect_list": [],
       "effects": false,
       "entity": {
        "brightness": true,
-       "colour": false,
+       "colour": true,
        "effect_list": [],
        "effects": false,
        "icon": "mdi:lightbulb",
        "kind": null,
        "max_kelvin": 6500,
        "min_kelvin": 2000,
-       "temperature": false,
+       "temperature": true,
        "toggle": true
       },
       "icon": "mdi:lightbulb",
       "kind": null,
       "max_kelvin": 6500,
       "min_kelvin": 2000,
-      "temperature": false,
+      "temperature": true,
       "toggle": true
      },
      "options": {
       "bar_on_tile": true,
-      "colour_control": "none",
+      "colour_control": "bar",
       "effects_shown": [],
       "favourites": [
        "#FF453A",
@@ -455,7 +591,7 @@
       ],
       "show_brightness": true,
       "show_saturation": false,
-      "show_white": false
+      "show_white": true
      }
     },
     "vars": {}
@@ -488,7 +624,63 @@
     },
     "vars": {}
    },
-   "130:change": {
+   "132:tap": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.ceiling"
+    ],
+    "output": "toggle",
+    "params": {
+     "entity": "light.ceiling"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "none",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": false
+     }
+    },
+    "vars": {}
+   },
+   "133:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -544,7 +736,7 @@
     },
     "vars": {}
    },
-   "136:tap": {
+   "138:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -600,7 +792,7 @@
     },
     "vars": {}
    },
-   "137:change": {
+   "139:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -656,7 +848,63 @@
     },
     "vars": {}
    },
-   "138:change": {
+   "13:tap": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.ceiling"
+    ],
+    "output": "toggle",
+    "params": {
+     "entity": "light.ceiling"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "none",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": false
+     }
+    },
+    "vars": {}
+   },
+   "140:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -767,7 +1015,118 @@
     },
     "vars": {}
    },
-   "139:change": {
+   "141:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.sofa"
+    ],
+    "output": "set_hue",
+    "params": {
+     "entity": "light.sofa"
+    },
+    "uses": {
+     "sat": {
+      "slot": {
+       "kind": "template",
+       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "variables": {
+        "bar_on_tile": true,
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "effect_list": [],
+         "effects": false,
+         "entity": {
+          "brightness": true,
+          "colour": true,
+          "effect_list": [],
+          "effects": false,
+          "icon": "mdi:lightbulb",
+          "kind": null,
+          "max_kelvin": 6500,
+          "min_kelvin": 2000,
+          "temperature": true,
+          "toggle": true
+         },
+         "icon": "mdi:lightbulb",
+         "kind": null,
+         "max_kelvin": 6500,
+         "min_kelvin": 2000,
+         "temperature": true,
+         "toggle": true
+        },
+        "colour_control": "both",
+        "effects_shown": [],
+        "entity": "light.sofa",
+        "favourites": [
+         "#FF453A",
+         "#FF9F0A",
+         "#FFD60A",
+         "#32D74B",
+         "#64D2FF",
+         "#0A84FF",
+         "#BF5AF2",
+         "2700K"
+        ],
+        "has": {
+         "entity": true
+        },
+        "show_brightness": true,
+        "show_saturation": true,
+        "show_white": true
+       }
+      },
+      "type": "number"
+     }
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "both",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": true,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "142:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -878,63 +1237,7 @@
     },
     "vars": {}
    },
-   "13:tap": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.ceiling"
-    ],
-    "output": "toggle",
-    "params": {
-     "entity": "light.ceiling"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": false,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": true,
-       "colour": false,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": false,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": false,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "none",
-      "effects_shown": [],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": false
-     }
-    },
-    "vars": {}
-   },
-   "140:change": {
+   "143:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -990,7 +1293,63 @@
     },
     "vars": {}
    },
-   "141:change": {
+   "144:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.sofa"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.sofa"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "both",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": true,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "145:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1108,7 +1467,7 @@
     },
     "vars": {}
    },
-   "147:tap": {
+   "150:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1179,7 +1538,7 @@
     },
     "vars": {}
    },
-   "148:change": {
+   "151:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1250,7 +1609,7 @@
     },
     "vars": {}
    },
-   "149:change": {
+   "152:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1321,7 +1680,78 @@
     },
     "vars": {}
    },
-   "150:change": {
+   "153:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.desk"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.desk"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "dots",
+      "effects_shown": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "154:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1454,7 +1884,7 @@
     },
     "vars": {}
    },
-   "151:change": {
+   "155:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -1527,62 +1957,6 @@
       "show_brightness": true,
       "show_saturation": false,
       "show_white": true
-     }
-    },
-    "vars": {}
-   },
-   "157:tap": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.porch"
-    ],
-    "output": "toggle",
-    "params": {
-     "entity": "light.porch"
-    },
-    "values": {
-     "can": {
-      "brightness": false,
-      "colour": false,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": false,
-       "colour": false,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": false,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": false,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": false,
-      "colour_control": "none",
-      "effects_shown": [],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": false,
-      "show_saturation": false,
-      "show_white": false
      }
     },
     "vars": {}
@@ -2199,6 +2573,117 @@
     "entities": [
      "light.sofa"
     ],
+    "output": "set_hue",
+    "params": {
+     "entity": "light.sofa"
+    },
+    "uses": {
+     "sat": {
+      "slot": {
+       "kind": "template",
+       "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
+       "variables": {
+        "bar_on_tile": true,
+        "can": {
+         "brightness": true,
+         "colour": true,
+         "effect_list": [],
+         "effects": false,
+         "entity": {
+          "brightness": true,
+          "colour": true,
+          "effect_list": [],
+          "effects": false,
+          "icon": "mdi:lightbulb",
+          "kind": null,
+          "max_kelvin": 6500,
+          "min_kelvin": 2000,
+          "temperature": true,
+          "toggle": true
+         },
+         "icon": "mdi:lightbulb",
+         "kind": null,
+         "max_kelvin": 6500,
+         "min_kelvin": 2000,
+         "temperature": true,
+         "toggle": true
+        },
+        "colour_control": "both",
+        "effects_shown": [],
+        "entity": "light.sofa",
+        "favourites": [
+         "#FF453A",
+         "#FF9F0A",
+         "#FFD60A",
+         "#32D74B",
+         "#64D2FF",
+         "#0A84FF",
+         "#BF5AF2",
+         "2700K"
+        ],
+        "has": {
+         "entity": true
+        },
+        "show_brightness": true,
+        "show_saturation": true,
+        "show_white": true
+       }
+      },
+      "type": "number"
+     }
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "both",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": true,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "32:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.sofa"
+    ],
     "output": "set_sat",
     "params": {
      "entity": "light.sofa"
@@ -2304,7 +2789,7 @@
     },
     "vars": {}
    },
-   "32:change": {
+   "33:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -2360,7 +2845,63 @@
     },
     "vars": {}
    },
-   "33:change": {
+   "34:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.sofa"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.sofa"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "both",
+      "effects_shown": [],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": true,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "35:change": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -2478,7 +3019,7 @@
     },
     "vars": {}
    },
-   "49:change": {
+   "51:change": {
     "component": "apollo/number",
     "demo": false,
     "entities": [
@@ -2513,7 +3054,7 @@
     },
     "vars": {}
    },
-   "51:change": {
+   "53:change": {
     "component": "apollo/select",
     "demo": false,
     "entities": [
@@ -2563,7 +3104,7 @@
     },
     "vars": {}
    },
-   "56:change": {
+   "58:change": {
     "component": "apollo/screen",
     "demo": false,
     "entities": [
@@ -2602,7 +3143,7 @@
     },
     "vars": {}
    },
-   "57:tap": {
+   "59:tap": {
     "component": "apollo/button",
     "demo": false,
     "entities": [
@@ -2627,7 +3168,7 @@
     },
     "vars": {}
    },
-   "64:tap": {
+   "66:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -2698,155 +3239,13 @@
     },
     "vars": {}
    },
-   "68:tap": {
+   "70:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
      "light.desk"
     ],
     "output": "toggle",
-    "params": {
-     "entity": "light.desk"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "effects": true,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [
-        "Candle",
-        "Rainbow",
-        "Party",
-        "Night"
-       ],
-       "effects": true,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2200,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2200,
-      "temperature": true,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "dots",
-      "effects_shown": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": true
-     }
-    },
-    "vars": {}
-   },
-   "69:change": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.desk"
-    ],
-    "output": "set_brightness",
-    "params": {
-     "entity": "light.desk"
-    },
-    "values": {
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "effects": true,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [
-        "Candle",
-        "Rainbow",
-        "Party",
-        "Night"
-       ],
-       "effects": true,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2200,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2200,
-      "temperature": true,
-      "toggle": true
-     },
-     "options": {
-      "bar_on_tile": true,
-      "colour_control": "dots",
-      "effects_shown": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "favourites": [
-       "#FF453A",
-       "#FF9F0A",
-       "#FFD60A",
-       "#32D74B",
-       "#64D2FF",
-       "#0A84FF",
-       "#BF5AF2",
-       "2700K"
-      ],
-      "show_brightness": true,
-      "show_saturation": false,
-      "show_white": true
-     }
-    },
-    "vars": {}
-   },
-   "70:change": {
-    "component": "apollo/light",
-    "demo": false,
-    "entities": [
-     "light.desk"
-    ],
-    "output": "set_white",
     "params": {
      "entity": "light.desk"
     },
@@ -2917,6 +3316,219 @@
     "entities": [
      "light.desk"
     ],
+    "output": "set_brightness",
+    "params": {
+     "entity": "light.desk"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "dots",
+      "effects_shown": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "72:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.desk"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.desk"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "dots",
+      "effects_shown": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "73:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.desk"
+    ],
+    "output": "set_white",
+    "params": {
+     "entity": "light.desk"
+    },
+    "values": {
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "options": {
+      "bar_on_tile": true,
+      "colour_control": "dots",
+      "effects_shown": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "favourites": [
+       "#FF453A",
+       "#FF9F0A",
+       "#FFD60A",
+       "#32D74B",
+       "#64D2FF",
+       "#0A84FF",
+       "#BF5AF2",
+       "2700K"
+      ],
+      "show_brightness": true,
+      "show_saturation": false,
+      "show_white": true
+     }
+    },
+    "vars": {}
+   },
+   "74:change": {
+    "component": "apollo/light",
+    "demo": false,
+    "entities": [
+     "light.desk"
+    ],
     "options": [
      {
       "kelvin": null,
@@ -3044,7 +3656,7 @@
     },
     "vars": {}
    },
-   "72:tap": {
+   "75:tap": {
     "component": "apollo/light",
     "demo": false,
     "entities": [
@@ -3097,31 +3709,6 @@
       "show_saturation": false,
       "show_white": false
      }
-    },
-    "vars": {}
-   },
-   "77:tap": {
-    "component": "apollo/button",
-    "demo": false,
-    "entities": [
-     "button.doorbell"
-    ],
-    "output": "press",
-    "params": {
-     "entity": "button.doorbell"
-    },
-    "values": {
-     "can": {
-      "entity": {
-       "icon": "mdi:gesture-tap-button",
-       "kind": null,
-       "toggle": false
-      },
-      "icon": "mdi:gesture-tap-button",
-      "kind": null,
-      "toggle": false
-     },
-     "options": {}
     },
     "vars": {}
    },
@@ -3181,6 +3768,31 @@
     },
     "vars": {}
    },
+   "80:tap": {
+    "component": "apollo/button",
+    "demo": false,
+    "entities": [
+     "button.doorbell"
+    ],
+    "output": "press",
+    "params": {
+     "entity": "button.doorbell"
+    },
+    "values": {
+     "can": {
+      "entity": {
+       "icon": "mdi:gesture-tap-button",
+       "kind": null,
+       "toggle": false
+      },
+      "icon": "mdi:gesture-tap-button",
+      "kind": null,
+      "toggle": false
+     },
+     "options": {}
+    },
+    "vars": {}
+   },
    "8:tap": {
     "component": "apollo/switch",
     "demo": false,
@@ -3209,7 +3821,7 @@
     },
     "vars": {}
    },
-   "91:tap": {
+   "94:tap": {
     "component": "apollo/switch",
     "demo": false,
     "entities": [
@@ -3237,7 +3849,7 @@
     },
     "vars": {}
    },
-   "95:tap": {
+   "98:tap": {
     "component": "apollo/switch",
     "demo": false,
     "entities": [
@@ -3262,31 +3874,6 @@
       "word_off": "Off",
       "word_on": "On"
      }
-    },
-    "vars": {}
-   },
-   "99:tap": {
-    "component": "apollo/button",
-    "demo": false,
-    "entities": [
-     "script.night"
-    ],
-    "output": "press",
-    "params": {
-     "entity": "script.night"
-    },
-    "values": {
-     "can": {
-      "entity": {
-       "icon": "mdi:script-text-outline",
-       "kind": null,
-       "toggle": true
-      },
-      "icon": "mdi:script-text-outline",
-      "kind": null,
-      "toggle": true
-     },
-     "options": {}
     },
     "vars": {}
    }
@@ -3602,7 +4189,7 @@
    {
     "kind": "template",
     "n": 9,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -3626,7 +4213,7 @@
    {
     "kind": "template",
     "n": 10,
-    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (word_on if is_on else word_off) %}{{ state }}",
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off)) %}{{ state }}",
     "variables": {
      "can": {
       "entity": {
@@ -3757,7 +4344,7 @@
    {
     "kind": "template",
     "n": 14,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 20 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -4340,6 +4927,57 @@
    {
     "kind": "template",
     "n": 26,
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{{ not is_on }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "both",
+     "effects_shown": [],
+     "entity": "light.sofa",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": true,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 27,
     "template": "{% set sat = ((state_attr(entity, 'hs_color') or [none, none])[1]) %}{{ sat }}",
     "variables": {
      "bar_on_tile": true,
@@ -4391,12 +5029,12 @@
    {
     "entity": "light.sofa",
     "kind": "colour",
-    "n": 27,
+    "n": 28,
     "of": "hue"
    },
    {
     "kind": "template",
-    "n": 28,
+    "n": 29,
     "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
     "variables": {
      "bar_on_tile": true,
@@ -4447,7 +5085,7 @@
    },
    {
     "kind": "template",
-    "n": 29,
+    "n": 30,
     "template": "{% set number = (states(entity) | float(none)) %}{% set active = ((highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])\n   or (highlight == 'above' and number is number and number > high)\n   or (highlight == 'below' and number is number and number < low)) %}{{ active }}",
     "variables": {
      "can": {
@@ -4477,7 +5115,7 @@
    },
    {
     "kind": "template",
-    "n": 30,
+    "n": 31,
     "template": "{% set number = (states(entity) | float(none)) %}{% set active = ((highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])\n   or (highlight == 'above' and number is number and number > high)\n   or (highlight == 'below' and number is number and number < low)) %}{% set tone = ((high_colour if highlight == 'above' else low_colour if highlight == 'below' else none) if active else none) %}{{ tone }}",
     "variables": {
      "can": {
@@ -4507,7 +5145,7 @@
    },
    {
     "kind": "template",
-    "n": 31,
+    "n": 32,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "can": {
@@ -4538,11 +5176,11 @@
    {
     "entity": "sensor.temperature",
     "kind": "state_icon",
-    "n": 32
+    "n": 33
    },
    {
     "kind": "template",
-    "n": 33,
+    "n": 34,
     "template": "{% set number = (states(entity) | float(none)) %}{% set reading %}{% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}{% endset %}{% set reading = reading | trim %}{% set unit_text = (unit or state_attr(entity, 'unit_of_measurement') or '') %}{% set line = ((reading ~ ' ' ~ unit_text) | trim if number is number else reading) %}{{ line }}",
     "variables": {
      "can": {
@@ -4572,7 +5210,7 @@
    },
    {
     "kind": "template",
-    "n": 34,
+    "n": 35,
     "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ is_number }}",
     "variables": {
      "can": {
@@ -4602,7 +5240,7 @@
    },
    {
     "kind": "template",
-    "n": 35,
+    "n": 36,
     "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ not is_number }}",
     "variables": {
      "can": {
@@ -4632,7 +5270,7 @@
    },
    {
     "kind": "template",
-    "n": 36,
+    "n": 37,
     "template": "{{ state_attr(entity, 'friendly_name') or entity }}",
     "variables": {
      "can": {
@@ -4662,7 +5300,7 @@
    },
    {
     "kind": "template",
-    "n": 37,
+    "n": 38,
     "template": "{% set gone = (false) %}{{ gone }}",
     "variables": {
      "can": {
@@ -4685,8 +5323,8 @@
    },
    {
     "kind": "template",
-    "n": 38,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 39,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 9 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -4709,7 +5347,7 @@
    },
    {
     "kind": "template",
-    "n": 39,
+    "n": 40,
     "template": "{% set reading = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ reading }}",
     "variables": {
      "can": {
@@ -4732,7 +5370,7 @@
    },
    {
     "kind": "template",
-    "n": 40,
+    "n": 41,
     "template": "{% set line = (state_attr(entity, 'friendly_name') or '') %}{{ line }}",
     "variables": {
      "can": {
@@ -4755,7 +5393,7 @@
    },
    {
     "kind": "template",
-    "n": 41,
+    "n": 42,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "can": {
@@ -4785,8 +5423,8 @@
    },
    {
     "kind": "template",
-    "n": 42,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 43,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 27 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -4816,7 +5454,7 @@
    },
    {
     "kind": "template",
-    "n": 43,
+    "n": 44,
     "template": "{% set text = ((states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim) %}{{ text }}",
     "variables": {
      "can": {
@@ -4846,7 +5484,7 @@
    },
    {
     "kind": "template",
-    "n": 44,
+    "n": 45,
     "template": "{% set now = (states(entity) | float(none)) %}{{ now }}",
     "variables": {
      "can": {
@@ -4876,7 +5514,7 @@
    },
    {
     "kind": "template",
-    "n": 45,
+    "n": 46,
     "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
     "variables": {
      "can": {
@@ -4916,47 +5554,8 @@
    },
    {
     "kind": "template",
-    "n": 46,
-    "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
-    "variables": {
-     "can": {
-      "entity": {
-       "icon": "mdi:dots-horizontal",
-       "kind": null,
-       "options": [
-        "Eco",
-        "Comfort",
-        "Away",
-        "Boost"
-       ],
-       "toggle": false
-      },
-      "icon": "mdi:dots-horizontal",
-      "kind": null,
-      "options": [
-       "Eco",
-       "Comfort",
-       "Away",
-       "Boost"
-      ],
-      "toggle": false
-     },
-     "entity": "select.mode",
-     "has": {
-      "entity": true
-     },
-     "shown": [
-      "Eco",
-      "Comfort",
-      "Away",
-      "Boost"
-     ]
-    }
-   },
-   {
-    "kind": "template",
     "n": 47,
-    "template": "{% set current = (states(entity)) %}{% set index = (shown.index(current) if current in shown else none) %}{{ index }}",
+    "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "can": {
       "entity": {
@@ -4995,6 +5594,45 @@
    {
     "kind": "template",
     "n": 48,
+    "template": "{% set current = (states(entity)) %}{% set index = (shown.index(current) if current in shown else none) %}{{ index }}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:dots-horizontal",
+       "kind": null,
+       "options": [
+        "Eco",
+        "Comfort",
+        "Away",
+        "Boost"
+       ],
+       "toggle": false
+      },
+      "icon": "mdi:dots-horizontal",
+      "kind": null,
+      "options": [
+       "Eco",
+       "Comfort",
+       "Away",
+       "Boost"
+      ],
+      "toggle": false
+     },
+     "entity": "select.mode",
+     "has": {
+      "entity": true
+     },
+     "shown": [
+      "Eco",
+      "Comfort",
+      "Away",
+      "Boost"
+     ]
+    }
+   },
+   {
+    "kind": "template",
+    "n": 49,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "can": {
@@ -5029,8 +5667,8 @@
    },
    {
     "kind": "template",
-    "n": 49,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 50,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "brightness": true,
@@ -5065,43 +5703,8 @@
    },
    {
     "kind": "template",
-    "n": 50,
-    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set text = (pct ~ '%') %}{{ text }}",
-    "variables": {
-     "can": {
-      "brightness": true,
-      "colour": false,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": true,
-       "colour": false,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": false,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": false,
-      "toggle": true
-     },
-     "entity": "light.backlight",
-     "has": {
-      "entity": true
-     }
-    }
-   },
-   {
-    "kind": "template",
     "n": 51,
-    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{{ pct }}",
+    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set text = (state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else pct ~ '%') %}{{ text }}",
     "variables": {
      "can": {
       "brightness": true,
@@ -5136,6 +5739,41 @@
    {
     "kind": "template",
     "n": 52,
+    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{{ pct }}",
+    "variables": {
+     "can": {
+      "brightness": true,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "entity": "light.backlight",
+     "has": {
+      "entity": true
+     }
+    }
+   },
+   {
+    "kind": "template",
+    "n": 53,
     "template": "{% set gone = (is_state(entity, 'unavailable')) %}{{ gone }}",
     "variables": {
      "can": {
@@ -5156,8 +5794,8 @@
    },
    {
     "kind": "template",
-    "n": 53,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 54,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 9 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -5178,7 +5816,7 @@
    },
    {
     "kind": "template",
-    "n": 54,
+    "n": 55,
     "template": "{% set gone = (false) %}{{ gone }}",
     "variables": {
      "can": {},
@@ -5191,7 +5829,7 @@
    },
    {
     "kind": "template",
-    "n": 55,
+    "n": 56,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{{ is_on }}",
     "variables": {
      "bar_on_tile": true,
@@ -5258,12 +5896,12 @@
    {
     "entity": "light.desk",
     "kind": "colour",
-    "n": 56,
+    "n": 57,
     "of": "rgb"
    },
    {
     "kind": "template",
-    "n": 57,
+    "n": 58,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "bar_on_tile": true,
@@ -5329,8 +5967,8 @@
    },
    {
     "kind": "template",
-    "n": 58,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 59,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 20 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -5396,74 +6034,8 @@
    },
    {
     "kind": "template",
-    "n": 59,
-    "template": "{% set state = (state_translated(entity)) %}{{ state }}",
-    "variables": {
-     "bar_on_tile": true,
-     "can": {
-      "brightness": true,
-      "colour": true,
-      "effect_list": [
-       "Candle",
-       "Rainbow",
-       "Party",
-       "Night"
-      ],
-      "effects": true,
-      "entity": {
-       "brightness": true,
-       "colour": true,
-       "effect_list": [
-        "Candle",
-        "Rainbow",
-        "Party",
-        "Night"
-       ],
-       "effects": true,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2200,
-       "temperature": true,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2200,
-      "temperature": true,
-      "toggle": true
-     },
-     "colour_control": "dots",
-     "effects_shown": [
-      "Candle",
-      "Rainbow",
-      "Party",
-      "Night"
-     ],
-     "entity": "light.desk",
-     "favourites": [
-      "#FF453A",
-      "#FF9F0A",
-      "#FFD60A",
-      "#32D74B",
-      "#64D2FF",
-      "#0A84FF",
-      "#BF5AF2",
-      "2700K"
-     ],
-     "has": {
-      "entity": true
-     },
-     "show_brightness": true,
-     "show_saturation": false,
-     "show_white": true
-    }
-   },
-   {
-    "kind": "template",
     "n": 60,
-    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{{ pct }}",
+    "template": "{% set state = (state_translated(entity)) %}{{ state }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -5529,7 +6101,7 @@
    {
     "kind": "template",
     "n": 61,
-    "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
+    "template": "{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{{ pct }}",
     "variables": {
      "bar_on_tile": true,
      "can": {
@@ -5595,6 +6167,138 @@
    {
     "kind": "template",
     "n": 62,
+    "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "dots",
+     "effects_shown": [
+      "Candle",
+      "Rainbow",
+      "Party",
+      "Night"
+     ],
+     "entity": "light.desk",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 63,
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{{ not is_on }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "dots",
+     "effects_shown": [
+      "Candle",
+      "Rainbow",
+      "Party",
+      "Night"
+     ],
+     "entity": "light.desk",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 64,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{{ is_on }}",
     "variables": {
      "bar_on_tile": false,
@@ -5646,116 +6350,13 @@
    {
     "entity": "light.porch",
     "kind": "colour",
-    "n": 63,
+    "n": 65,
     "of": "rgb"
    },
    {
     "kind": "template",
-    "n": 64,
-    "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
-    "variables": {
-     "bar_on_tile": false,
-     "can": {
-      "brightness": false,
-      "colour": false,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": false,
-       "colour": false,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": false,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": false,
-      "toggle": true
-     },
-     "colour_control": "none",
-     "effects_shown": [],
-     "entity": "light.porch",
-     "favourites": [
-      "#FF453A",
-      "#FF9F0A",
-      "#FFD60A",
-      "#32D74B",
-      "#64D2FF",
-      "#0A84FF",
-      "#BF5AF2",
-      "2700K"
-     ],
-     "has": {
-      "entity": true
-     },
-     "show_brightness": false,
-     "show_saturation": false,
-     "show_white": false
-    }
-   },
-   {
-    "kind": "template",
-    "n": 65,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
-    "variables": {
-     "bar_on_tile": false,
-     "can": {
-      "brightness": false,
-      "colour": false,
-      "effect_list": [],
-      "effects": false,
-      "entity": {
-       "brightness": false,
-       "colour": false,
-       "effect_list": [],
-       "effects": false,
-       "icon": "mdi:lightbulb",
-       "kind": null,
-       "max_kelvin": 6500,
-       "min_kelvin": 2000,
-       "temperature": false,
-       "toggle": true
-      },
-      "icon": "mdi:lightbulb",
-      "kind": null,
-      "max_kelvin": 6500,
-      "min_kelvin": 2000,
-      "temperature": false,
-      "toggle": true
-     },
-     "colour_control": "none",
-     "component_name": "Light",
-     "effects_shown": [],
-     "entity": "light.porch",
-     "favourites": [
-      "#FF453A",
-      "#FF9F0A",
-      "#FFD60A",
-      "#32D74B",
-      "#64D2FF",
-      "#0A84FF",
-      "#BF5AF2",
-      "2700K"
-     ],
-     "has": {
-      "entity": true
-     },
-     "show_brightness": false,
-     "show_saturation": false,
-     "show_white": false
-    }
-   },
-   {
-    "kind": "template",
     "n": 66,
-    "template": "{% set state = (state_translated(entity)) %}{{ state }}",
+    "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "bar_on_tile": false,
      "can": {
@@ -5806,6 +6407,109 @@
    {
     "kind": "template",
     "n": 67,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "variables": {
+     "bar_on_tile": false,
+     "can": {
+      "brightness": false,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": false,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "colour_control": "none",
+     "component_name": "Light",
+     "effects_shown": [],
+     "entity": "light.porch",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": false,
+     "show_saturation": false,
+     "show_white": false
+    }
+   },
+   {
+    "kind": "template",
+    "n": 68,
+    "template": "{% set state = (state_translated(entity)) %}{{ state }}",
+    "variables": {
+     "bar_on_tile": false,
+     "can": {
+      "brightness": false,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": false,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "colour_control": "none",
+     "effects_shown": [],
+     "entity": "light.porch",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": false,
+     "show_saturation": false,
+     "show_white": false
+    }
+   },
+   {
+    "kind": "template",
+    "n": 69,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{% set pct = (((state_attr(entity, 'brightness') or 0) / 2.55) | round | int) %}{% set level = ((pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '') %}{{ level }}",
     "variables": {
      "bar_on_tile": false,
@@ -5856,7 +6560,7 @@
    },
    {
     "kind": "template",
-    "n": 68,
+    "n": 70,
     "template": "{% set gone = (is_state(entity, 'unavailable')) %}{{ gone }}",
     "variables": {
      "can": {
@@ -5877,8 +6581,8 @@
    },
    {
     "kind": "template",
-    "n": 69,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 71,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -5899,7 +6603,7 @@
    },
    {
     "kind": "template",
-    "n": 70,
+    "n": 72,
     "template": "{% set number = (states(entity) | float(none)) %}{% set active = ((highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])\n   or (highlight == 'above' and number is number and number > high)\n   or (highlight == 'below' and number is number and number < low)) %}{{ active }}",
     "variables": {
      "can": {
@@ -5929,7 +6633,7 @@
    },
    {
     "kind": "template",
-    "n": 71,
+    "n": 73,
     "template": "{% set number = (states(entity) | float(none)) %}{% set active = ((highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])\n   or (highlight == 'above' and number is number and number > high)\n   or (highlight == 'below' and number is number and number < low)) %}{% set tone = ((high_colour if highlight == 'above' else low_colour if highlight == 'below' else none) if active else none) %}{{ tone }}",
     "variables": {
      "can": {
@@ -5959,7 +6663,7 @@
    },
    {
     "kind": "template",
-    "n": 72,
+    "n": 74,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "can": {
@@ -5990,12 +6694,12 @@
    {
     "entity": "binary_sensor.door",
     "kind": "state_icon",
-    "n": 73
+    "n": 75
    },
    {
     "kind": "template",
-    "n": 74,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 76,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 27 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6025,7 +6729,7 @@
    },
    {
     "kind": "template",
-    "n": 75,
+    "n": 77,
     "template": "{% set number = (states(entity) | float(none)) %}{% set reading %}{% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}{% endset %}{% set reading = reading | trim %}{% set unit_text = (unit or state_attr(entity, 'unit_of_measurement') or '') %}{% set line = ((reading ~ ' ' ~ unit_text) | trim if number is number else reading) %}{{ line }}",
     "variables": {
      "can": {
@@ -6055,7 +6759,7 @@
    },
    {
     "kind": "template",
-    "n": 76,
+    "n": 78,
     "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ is_number }}",
     "variables": {
      "can": {
@@ -6085,7 +6789,7 @@
    },
    {
     "kind": "template",
-    "n": 77,
+    "n": 79,
     "template": "{% set number = (states(entity) | float(none)) %}{% set is_number = (number is number) %}{{ not is_number }}",
     "variables": {
      "can": {
@@ -6115,8 +6819,8 @@
    },
    {
     "kind": "template",
-    "n": 78,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 80,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6146,7 +6850,7 @@
    },
    {
     "kind": "template",
-    "n": 79,
+    "n": 81,
     "template": "{% set is_on = (is_state(entity, 'on')) %}{{ is_on }}",
     "variables": {
      "can": {
@@ -6169,7 +6873,7 @@
    },
    {
     "kind": "template",
-    "n": 80,
+    "n": 82,
     "template": "{{ states(entity) in ['unavailable', 'unknown'] }}",
     "variables": {
      "can": {
@@ -6192,8 +6896,8 @@
    },
    {
     "kind": "template",
-    "n": 81,
-    "template": "{{ state_attr(entity, 'friendly_name') or component_name }}",
+    "n": 83,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
     "variables": {
      "can": {
       "entity": {
@@ -6216,8 +6920,8 @@
    },
    {
     "kind": "template",
-    "n": 82,
-    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (word_on if is_on else word_off) %}{{ state }}",
+    "n": 84,
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off)) %}{{ state }}",
     "variables": {
      "can": {
       "entity": {
@@ -6239,7 +6943,120 @@
    },
    {
     "kind": "template",
-    "n": 83,
+    "n": 85,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 9 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:toggle-switch",
+       "kind": null,
+       "toggle": true
+      },
+      "icon": "mdi:toggle-switch",
+      "kind": null,
+      "toggle": true
+     },
+     "component_name": "Switch",
+     "entity": "switch.kettle",
+     "has": {
+      "entity": true
+     },
+     "word_off": "Off",
+     "word_on": "On"
+    }
+   },
+   {
+    "kind": "template",
+    "n": 86,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:script-text-outline",
+       "kind": null,
+       "toggle": true
+      },
+      "icon": "mdi:script-text-outline",
+      "kind": null,
+      "toggle": true
+     },
+     "component_name": "Button",
+     "entity": "script.night",
+     "has": {
+      "entity": true
+     }
+    }
+   },
+   {
+    "kind": "template",
+    "n": 87,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 14 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "variables": {
+     "can": {
+      "entity": {
+       "icon": "mdi:numeric",
+       "kind": null,
+       "max": 26,
+       "min": 16,
+       "step": 0.5,
+       "toggle": false,
+       "unit": ""
+      },
+      "icon": "mdi:numeric",
+      "kind": null,
+      "max": 26,
+      "min": 16,
+      "step": 0.5,
+      "toggle": false,
+      "unit": ""
+     },
+     "component_name": "Number",
+     "control": "bar",
+     "entity": "input_number.target",
+     "has": {
+      "entity": true
+     }
+    }
+   },
+   {
+    "kind": "template",
+    "n": 88,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 27 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "variables": {
+     "can": {
+      "brightness": true,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "component_name": "Screen brightness",
+     "entity": "light.backlight",
+     "has": {
+      "entity": true
+     }
+    }
+   },
+   {
+    "kind": "template",
+    "n": 89,
     "template": "{% set hue = ((state_attr(entity, 'hs_color') or [none, none])[0]) %}{{ hue }}",
     "variables": {
      "bar_on_tile": true,
@@ -6290,7 +7107,58 @@
    },
    {
     "kind": "template",
-    "n": 84,
+    "n": 90,
+    "template": "{% set is_on = (is_state(entity, 'on')) %}{{ not is_on }}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "bar",
+     "effects_shown": [],
+     "entity": "light.sofa",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 91,
     "template": "{% set kelvin = (state_attr(entity, 'color_temp_kelvin')) %}{{ kelvin }}",
     "variables": {
      "bar_on_tile": true,
@@ -6341,7 +7209,126 @@
    },
    {
     "kind": "template",
-    "n": 85,
+    "n": 92,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 39 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": false,
+      "effect_list": [],
+      "effects": false,
+      "entity": {
+       "brightness": true,
+       "colour": false,
+       "effect_list": [],
+       "effects": false,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2000,
+       "temperature": false,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2000,
+      "temperature": false,
+      "toggle": true
+     },
+     "colour_control": "none",
+     "component_name": "Light",
+     "effects_shown": [],
+     "entity": "light.ceiling",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": false
+    }
+   },
+   {
+    "kind": "template",
+    "n": 93,
+    "template": "{%- set n = (state_attr(entity, 'friendly_name') or component_name) | string -%}{%- set k = 39 -%}{%- set w = n.split(' ') -%}{%- set t = (w[-2] ~ ' ' ~ w[-1]) if w | length > 2 and w[-1] | length < 4 else w[-1] -%}{%- set h = n[:k - 1 - t | length].rstrip() -%}{{- n if n | length <= k or w | length < 2 or t | length > k // 2 or not h else h ~ '…' ~ t -}}",
+    "variables": {
+     "bar_on_tile": true,
+     "can": {
+      "brightness": true,
+      "colour": true,
+      "effect_list": [
+       "Candle",
+       "Rainbow",
+       "Party",
+       "Night"
+      ],
+      "effects": true,
+      "entity": {
+       "brightness": true,
+       "colour": true,
+       "effect_list": [
+        "Candle",
+        "Rainbow",
+        "Party",
+        "Night"
+       ],
+       "effects": true,
+       "icon": "mdi:lightbulb",
+       "kind": null,
+       "max_kelvin": 6500,
+       "min_kelvin": 2200,
+       "temperature": true,
+       "toggle": true
+      },
+      "icon": "mdi:lightbulb",
+      "kind": null,
+      "max_kelvin": 6500,
+      "min_kelvin": 2200,
+      "temperature": true,
+      "toggle": true
+     },
+     "colour_control": "dots",
+     "component_name": "Light",
+     "effects_shown": [
+      "Candle",
+      "Rainbow",
+      "Party",
+      "Night"
+     ],
+     "entity": "light.desk",
+     "favourites": [
+      "#FF453A",
+      "#FF9F0A",
+      "#FFD60A",
+      "#32D74B",
+      "#64D2FF",
+      "#0A84FF",
+      "#BF5AF2",
+      "2700K"
+     ],
+     "has": {
+      "entity": true
+     },
+     "show_brightness": true,
+     "show_saturation": false,
+     "show_white": true
+    }
+   },
+   {
+    "kind": "template",
+    "n": 94,
     "template": "{% set effect_at = (effects_shown.index(state_attr(entity, 'effect')) if state_attr(entity, 'effect') in effects_shown else none) %}{{ effect_at }}",
     "variables": {
      "bar_on_tile": true,
@@ -6522,7 +7509,7 @@
         "variant": "tile"
        }
       ],
-      "title": "Sofa lamp · Farbe",
+      "title": "Sofa lamp · Colour",
       "type": "grid"
      },
      {
@@ -7016,7 +8003,7 @@
   }
  },
  "layout": {
-  "hash": "220535c18bbdf2fc",
+  "hash": "14ce4bf329abeb09",
   "nav": [
    {
     "icon": "mdi:home",
@@ -7337,9 +8324,9 @@
         "min": 1,
         "r": [
          116,
-         404,
+         348,
          344,
-         40
+         96
         ],
         "step": 1,
         "t": "slider",
@@ -7351,6 +8338,16 @@
      },
      {
       "component": "apollo/scenes",
+      "header": {
+       "icon": "mdi:palette",
+       "r": [
+        116,
+        484,
+        344,
+        32
+       ],
+       "title": "Scenes"
+      },
       "id": 19,
       "lit": 3,
       "r": [
@@ -7369,9 +8366,9 @@
         "id": 20,
         "r": [
          116,
-         588,
+         524,
          109,
-         48
+         112
         ],
         "t": "button",
         "tap": {
@@ -7386,9 +8383,9 @@
         "id": 21,
         "r": [
          233,
-         588,
+         524,
          109,
-         48
+         112
         ],
         "t": "button",
         "tap": {
@@ -7403,9 +8400,9 @@
         "id": 22,
         "r": [
          350,
-         588,
+         524,
          110,
-         48
+         112
         ],
         "t": "button",
         "tap": {
@@ -7426,7 +8423,7 @@
        56
       ],
       "t": "heading",
-      "text": "Sofa lamp · Farbe"
+      "text": "Sofa lamp · Colour"
      },
      {
       "component": "apollo/light",
@@ -7565,16 +8562,44 @@
         ],
         "value": {
          "s": 25
+        },
+        "vis": {
+         "s": 21
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:palette",
+        "id": 31,
+        "look": 1,
+        "max": 360,
+        "min": 0,
+        "r": [
+         500,
+         204,
+         344,
+         40
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 25
+        },
+        "vis": {
+         "s": 26
         }
        },
        {
         "c": {
-         "s": 27
+         "s": 28
         },
         "change": {
          "policy": "optimistic"
         },
-        "id": 31,
+        "icon": "mdi:palette-outline",
+        "id": 32,
         "look": 1,
         "max": 100,
         "min": 0,
@@ -7587,14 +8612,14 @@
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 26
+         "s": 27
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 32,
+        "id": 33,
         "look": 1,
         "max": 6500,
         "min": 2000,
@@ -7615,7 +8640,34 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 28
+         "s": 29
+        },
+        "vis": {
+         "s": 21
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:white-balance-sunny",
+        "id": 34,
+        "look": 1,
+        "max": 6500,
+        "min": 2000,
+        "r": [
+         500,
+         300,
+         344,
+         40
+        ],
+        "step": 50,
+        "t": "slider",
+        "value": {
+         "s": 29
+        },
+        "vis": {
+         "s": 26
         }
        },
        {
@@ -7632,7 +8684,7 @@
          "#BF5AF2",
          "#FFA757"
         ],
-        "id": 33,
+        "id": 35,
         "look": 1,
         "r": [
          500,
@@ -7647,10 +8699,10 @@
      },
      {
       "component": "apollo/reading",
-      "id": 34,
+      "id": 36,
       "lit": 1,
       "on": {
-       "s": 29
+       "s": 30
       },
       "r": [
        484,
@@ -7670,10 +8722,10 @@
         "text": "#E8EAED",
         "warn": "#F5B547"
        },
-       "s": 30
+       "s": 31
       },
       "un": {
-       "s": 31
+       "s": 32
       },
       "w": [
        {
@@ -7688,9 +8740,9 @@
           "text": "#E8EAED",
           "warn": "#F5B547"
          },
-         "s": 30
+         "s": 31
         },
-        "id": 35,
+        "id": 37,
         "look": 1,
         "r": [
          500,
@@ -7700,11 +8752,11 @@
         ],
         "t": "image",
         "value": {
-         "s": 32
+         "s": 33
         }
        },
        {
-        "id": 36,
+        "id": 38,
         "px": 48,
         "r": [
          500,
@@ -7714,14 +8766,14 @@
         ],
         "t": "label",
         "text": {
-         "s": 33
+         "s": 34
         },
         "vis": {
-         "s": 34
+         "s": 35
         }
        },
        {
-        "id": 37,
+        "id": 39,
         "px": 28,
         "r": [
          500,
@@ -7731,14 +8783,14 @@
         ],
         "t": "label",
         "text": {
-         "s": 33
+         "s": 34
         },
         "vis": {
-         "s": 35
+         "s": 36
         }
        },
        {
-        "id": 38,
+        "id": 40,
         "r": [
          500,
          608,
@@ -7748,14 +8800,14 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 36
+         "s": 37
         }
        }
       ]
      },
      {
       "component": "apollo/page-link",
-      "id": 39,
+      "id": 41,
       "lit": 3,
       "r": [
        676,
@@ -7769,11 +8821,11 @@
        "page": "more"
       },
       "un": {
-       "s": 37
+       "s": 38
       },
       "w": [
        {
-        "id": 40,
+        "id": 42,
         "look": 1,
         "r": [
          692,
@@ -7785,7 +8837,7 @@
         "value": "mdi:thermometer"
        },
        {
-        "id": 41,
+        "id": 43,
         "r": [
          744,
          484,
@@ -7795,11 +8847,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 38
+         "s": 39
         }
        },
        {
-        "id": 42,
+        "id": 44,
         "r": [
          692,
          568,
@@ -7809,11 +8861,11 @@
         "size": "l",
         "t": "label",
         "text": {
-         "s": 39
+         "s": 40
         }
        },
        {
-        "id": 43,
+        "id": 45,
         "r": [
          692,
          614,
@@ -7823,13 +8875,13 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 40
+         "s": 41
         }
        }
       ]
      },
      {
-      "id": 44,
+      "id": 46,
       "r": [
        868,
        20,
@@ -7841,7 +8893,7 @@
      },
      {
       "component": "apollo/number",
-      "id": 45,
+      "id": 47,
       "lit": 3,
       "r": [
        868,
@@ -7851,11 +8903,11 @@
       ],
       "t": "card",
       "un": {
-       "s": 41
+       "s": 42
       },
       "w": [
        {
-        "id": 46,
+        "id": 48,
         "look": 1,
         "r": [
          884,
@@ -7867,7 +8919,7 @@
         "value": "mdi:numeric"
        },
        {
-        "id": 47,
+        "id": 49,
         "r": [
          936,
          100,
@@ -7877,11 +8929,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 42
+         "s": 43
         }
        },
        {
-        "id": 48,
+        "id": 50,
         "r": [
          936,
          126,
@@ -7891,27 +8943,27 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 43
+         "s": 44
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 49,
+        "id": 51,
         "look": 1,
         "max": 26,
         "min": 16,
         "r": [
          884,
-         212,
+         156,
          344,
-         40
+         96
         ],
         "step": 0.5,
         "t": "slider",
         "value": {
-         "s": 44
+         "s": 45
         }
        }
       ]
@@ -7927,10 +8979,10 @@
         32
        ],
        "title": {
-        "s": 45
+        "s": 46
        }
       },
-      "id": 50,
+      "id": 52,
       "lit": 3,
       "r": [
        868,
@@ -7940,19 +8992,19 @@
       ],
       "t": "card",
       "un": {
-       "s": 46
+       "s": 47
       },
       "w": [
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 51,
+        "id": 53,
         "r": [
          884,
-         396,
+         332,
          344,
-         48
+         112
         ],
         "rows": 1,
         "t": "choice",
@@ -7963,14 +9015,14 @@
          "Boost"
         ],
         "value": {
-         "s": 47
+         "s": 48
         }
        }
       ]
      },
      {
       "component": "apollo/screen",
-      "id": 52,
+      "id": 54,
       "lit": 3,
       "r": [
        868,
@@ -7980,11 +9032,11 @@
       ],
       "t": "card",
       "un": {
-       "s": 48
+       "s": 49
       },
       "w": [
        {
-        "id": 53,
+        "id": 55,
         "look": 2,
         "r": [
          884,
@@ -7996,7 +9048,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 54,
+        "id": 56,
         "r": [
          916,
          484,
@@ -8006,12 +9058,12 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 49
+         "s": 50
         }
        },
        {
         "al": 2,
-        "id": 55,
+        "id": 57,
         "r": [
          1072,
          485,
@@ -8021,7 +9073,7 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 50
+         "s": 51
         }
        },
        {
@@ -8029,7 +9081,7 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 56,
+        "id": 58,
         "look": 1,
         "max": 100,
         "min": 10,
@@ -8042,14 +9094,14 @@
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 51
+         "s": 52
         }
        }
       ]
      },
      {
       "component": "apollo/button",
-      "id": 57,
+      "id": 59,
       "lit": 3,
       "r": [
        868,
@@ -8062,11 +9114,11 @@
        "policy": "pulse"
       },
       "un": {
-       "s": 52
+       "s": 53
       },
       "w": [
        {
-        "id": 58,
+        "id": 60,
         "look": 1,
         "r": [
          884,
@@ -8078,7 +9130,7 @@
         "value": "mdi:script-text-outline"
        },
        {
-        "id": 59,
+        "id": 61,
         "r": [
          936,
          612,
@@ -8088,14 +9140,14 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 53
+         "s": 54
         }
        }
       ]
      },
      {
       "component": "apollo/page-link",
-      "id": 60,
+      "id": 62,
       "lit": 3,
       "r": [
        1060,
@@ -8109,11 +9161,11 @@
        "page": "more"
       },
       "un": {
-       "s": 54
+       "s": 55
       },
       "w": [
        {
-        "id": 61,
+        "id": 63,
         "look": 1,
         "r": [
          1076,
@@ -8125,7 +9177,7 @@
         "value": "mdi:view-dashboard"
        },
        {
-        "id": 62,
+        "id": 64,
         "r": [
          1128,
          612,
@@ -8147,7 +9199,7 @@
     "view": 1,
     "w": [
      {
-      "id": 63,
+      "id": 65,
       "r": [
        100,
        20,
@@ -8163,10 +9215,10 @@
        "local": "go_to_page",
        "page": "more~1"
       },
-      "id": 64,
+      "id": 66,
       "lit": 0,
       "on": {
-       "s": 55
+       "s": 56
       },
       "r": [
        100,
@@ -8179,17 +9231,17 @@
        "policy": "optimistic"
       },
       "tint": {
-       "s": 56
+       "s": 57
       },
       "un": {
-       "s": 57
+       "s": 58
       },
       "w": [
        {
         "c": {
-         "s": 56
+         "s": 57
         },
-        "id": 65,
+        "id": 67,
         "look": 1,
         "r": [
          116,
@@ -8201,7 +9253,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 66,
+        "id": 68,
         "r": [
          168,
          100,
@@ -8211,11 +9263,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 58
+         "s": 59
         }
        },
        {
-        "id": 67,
+        "id": 69,
         "r": [
          168,
          126,
@@ -8225,11 +9277,11 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 59
+         "s": 60
         }
        },
        {
-        "id": 68,
+        "id": 70,
         "r": [
          396,
          106,
@@ -8241,47 +9293,47 @@
          "policy": "optimistic"
         },
         "value": {
-         "s": 55
+         "s": 56
         }
        },
        {
         "c": {
-         "s": 56
+         "s": 57
         },
         "change": {
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 69,
+        "id": 71,
         "look": 1,
         "max": 100,
         "min": 1,
         "r": [
          116,
-         252,
+         156,
          344,
-         40
+         88
         ],
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 60
+         "s": 61
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 70,
+        "id": 72,
         "look": 1,
         "max": 6500,
         "min": 2200,
         "nv": 1,
         "r": [
          116,
-         300,
+         252,
          344,
-         40
+         88
         ],
         "step": 50,
         "t": "slider",
@@ -8293,7 +9345,34 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 61
+         "s": 62
+        },
+        "vis": {
+         "s": 56
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:white-balance-sunny",
+        "id": 73,
+        "look": 1,
+        "max": 6500,
+        "min": 2200,
+        "r": [
+         116,
+         252,
+         344,
+         88
+        ],
+        "step": 50,
+        "t": "slider",
+        "value": {
+         "s": 62
+        },
+        "vis": {
+         "s": 63
         }
        },
        {
@@ -8310,7 +9389,7 @@
          "#BF5AF2",
          "#FFA757"
         ],
-        "id": 71,
+        "id": 74,
         "look": 1,
         "r": [
          116,
@@ -8325,14 +9404,10 @@
      },
      {
       "component": "apollo/light",
-      "hold": {
-       "local": "go_to_page",
-       "page": "more~2"
-      },
-      "id": 72,
+      "id": 75,
       "lit": 0,
       "on": {
-       "s": 62
+       "s": 64
       },
       "r": [
        100,
@@ -8345,17 +9420,17 @@
        "policy": "optimistic"
       },
       "tint": {
-       "s": 63
+       "s": 65
       },
       "un": {
-       "s": 64
+       "s": 66
       },
       "w": [
        {
         "c": {
-         "s": 63
+         "s": 65
         },
-        "id": 73,
+        "id": 76,
         "look": 1,
         "r": [
          116,
@@ -8367,7 +9442,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 74,
+        "id": 77,
         "r": [
          116,
          536,
@@ -8377,11 +9452,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 65
+         "s": 67
         }
        },
        {
-        "id": 75,
+        "id": 78,
         "r": [
          116,
          566,
@@ -8391,12 +9466,12 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 66
+         "s": 68
         }
        },
        {
         "al": 2,
-        "id": 76,
+        "id": 79,
         "r": [
          168,
          495,
@@ -8406,14 +9481,14 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 67
+         "s": 69
         }
        }
       ]
      },
      {
       "component": "apollo/button",
-      "id": 77,
+      "id": 80,
       "lit": 3,
       "r": [
        292,
@@ -8426,11 +9501,11 @@
        "policy": "pulse"
       },
       "un": {
-       "s": 68
+       "s": 70
       },
       "w": [
        {
-        "id": 78,
+        "id": 81,
         "look": 1,
         "r": [
          308,
@@ -8442,7 +9517,7 @@
         "value": "mdi:gesture-tap-button"
        },
        {
-        "id": 79,
+        "id": 82,
         "r": [
          308,
          536,
@@ -8452,13 +9527,13 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 69
+         "s": 71
         }
        }
       ]
      },
      {
-      "id": 80,
+      "id": 83,
       "r": [
        484,
        20,
@@ -8470,10 +9545,10 @@
      },
      {
       "component": "apollo/reading",
-      "id": 81,
+      "id": 84,
       "lit": 1,
       "on": {
-       "s": 70
+       "s": 72
       },
       "r": [
        484,
@@ -8493,10 +9568,10 @@
         "text": "#E8EAED",
         "warn": "#F5B547"
        },
-       "s": 71
+       "s": 73
       },
       "un": {
-       "s": 72
+       "s": 74
       },
       "w": [
        {
@@ -8511,9 +9586,9 @@
           "text": "#E8EAED",
           "warn": "#F5B547"
          },
-         "s": 71
+         "s": 73
         },
-        "id": 82,
+        "id": 85,
         "look": 1,
         "r": [
          500,
@@ -8523,11 +9598,11 @@
         ],
         "t": "image",
         "value": {
-         "s": 73
+         "s": 75
         }
        },
        {
-        "id": 83,
+        "id": 86,
         "r": [
          552,
          100,
@@ -8537,11 +9612,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 74
+         "s": 76
         }
        },
        {
-        "id": 84,
+        "id": 87,
         "r": [
          552,
          126,
@@ -8551,12 +9626,12 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 75
+         "s": 77
         }
        },
        {
         "al": 2,
-        "id": 85,
+        "id": 88,
         "px": 48,
         "r": [
          500,
@@ -8566,15 +9641,15 @@
         ],
         "t": "label",
         "text": {
-         "s": 75
+         "s": 77
         },
         "vis": {
-         "s": 76
+         "s": 78
         }
        },
        {
         "al": 2,
-        "id": 86,
+        "id": 89,
         "px": 28,
         "r": [
          500,
@@ -8584,20 +9659,20 @@
         ],
         "t": "label",
         "text": {
-         "s": 75
+         "s": 77
         },
         "vis": {
-         "s": 77
+         "s": 79
         }
        }
       ]
      },
      {
       "component": "apollo/reading",
-      "id": 87,
+      "id": 90,
       "lit": 1,
       "on": {
-       "s": 29
+       "s": 30
       },
       "r": [
        484,
@@ -8617,14 +9692,14 @@
         "text": "#E8EAED",
         "warn": "#F5B547"
        },
-       "s": 30
+       "s": 31
       },
       "un": {
-       "s": 31
+       "s": 32
       },
       "w": [
        {
-        "id": 88,
+        "id": 91,
         "look": 2,
         "r": [
          500,
@@ -8634,11 +9709,11 @@
         ],
         "t": "image",
         "value": {
-         "s": 32
+         "s": 33
         }
        },
        {
-        "id": 89,
+        "id": 92,
         "r": [
          532,
          292,
@@ -8648,12 +9723,12 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 78
+         "s": 80
         }
        },
        {
         "al": 2,
-        "id": 90,
+        "id": 93,
         "r": [
          688,
          293,
@@ -8663,17 +9738,17 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 33
+         "s": 34
         }
        }
       ]
      },
      {
       "component": "apollo/switch",
-      "id": 91,
+      "id": 94,
       "lit": 0,
       "on": {
-       "s": 79
+       "s": 81
       },
       "r": [
        484,
@@ -8686,11 +9761,11 @@
        "policy": "optimistic"
       },
       "un": {
-       "s": 80
+       "s": 82
       },
       "w": [
        {
-        "id": 92,
+        "id": 95,
         "look": 2,
         "r": [
          500,
@@ -8702,7 +9777,7 @@
         "value": "mdi:toggle-switch"
        },
        {
-        "id": 93,
+        "id": 96,
         "r": [
          532,
          356,
@@ -8712,12 +9787,12 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 81
+         "s": 83
         }
        },
        {
         "al": 2,
-        "id": 94,
+        "id": 97,
         "r": [
          688,
          357,
@@ -8727,14 +9802,14 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 82
+         "s": 84
         }
        }
       ]
      },
      {
       "component": "apollo/switch",
-      "id": 95,
+      "id": 98,
       "lit": 0,
       "on": {
        "s": 7
@@ -8754,7 +9829,7 @@
       },
       "w": [
        {
-        "id": 96,
+        "id": 99,
         "look": 1,
         "r": [
          500,
@@ -8766,7 +9841,7 @@
         "value": "mdi:toggle-switch"
        },
        {
-        "id": 97,
+        "id": 100,
         "r": [
          552,
          420,
@@ -8776,11 +9851,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 9
+         "s": 85
         }
        },
        {
-        "id": 98,
+        "id": 101,
         "r": [
          552,
          446,
@@ -8797,7 +9872,7 @@
      },
      {
       "component": "apollo/button",
-      "id": 99,
+      "id": 102,
       "lit": 3,
       "r": [
        484,
@@ -8810,11 +9885,11 @@
        "policy": "pulse"
       },
       "un": {
-       "s": 52
+       "s": 53
       },
       "w": [
        {
-        "id": 100,
+        "id": 103,
         "look": 2,
         "r": [
          500,
@@ -8826,7 +9901,7 @@
         "value": "mdi:script-text-outline"
        },
        {
-        "id": 101,
+        "id": 104,
         "r": [
          532,
          548,
@@ -8836,13 +9911,13 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 53
+         "s": 86
         }
        }
       ]
      },
      {
-      "id": 102,
+      "id": 105,
       "r": [
        868,
        20,
@@ -8863,10 +9938,10 @@
         32
        ],
        "title": {
-        "s": 45
+        "s": 46
        }
       },
-      "id": 103,
+      "id": 106,
       "lit": 3,
       "r": [
        868,
@@ -8876,21 +9951,21 @@
       ],
       "t": "card",
       "un": {
-       "s": 46
+       "s": 47
       },
       "w": [
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 104,
+        "id": 107,
         "r": [
          884,
-         396,
+         140,
          344,
-         48
+         304
         ],
-        "rows": 1,
+        "rows": 2,
         "t": "choice",
         "texts": [
          "Eco",
@@ -8899,14 +9974,14 @@
          "Boost"
         ],
         "value": {
-         "s": 47
+         "s": 48
         }
        }
       ]
      },
      {
       "component": "apollo/number",
-      "id": 105,
+      "id": 108,
       "lit": 3,
       "r": [
        868,
@@ -8916,11 +9991,11 @@
       ],
       "t": "card",
       "un": {
-       "s": 41
+       "s": 42
       },
       "w": [
        {
-        "id": 106,
+        "id": 109,
         "look": 2,
         "r": [
          884,
@@ -8932,7 +10007,7 @@
         "value": "mdi:numeric"
        },
        {
-        "id": 107,
+        "id": 110,
         "r": [
          916,
          484,
@@ -8942,12 +10017,12 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 42
+         "s": 87
         }
        },
        {
         "al": 2,
-        "id": 108,
+        "id": 111,
         "r": [
          1072,
          485,
@@ -8957,14 +10032,14 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 43
+         "s": 44
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 109,
+        "id": 112,
         "look": 1,
         "max": 26,
         "min": 16,
@@ -8977,14 +10052,14 @@
         "step": 0.5,
         "t": "slider",
         "value": {
-         "s": 44
+         "s": 45
         }
        }
       ]
      },
      {
       "component": "apollo/screen",
-      "id": 110,
+      "id": 113,
       "lit": 3,
       "r": [
        868,
@@ -8994,11 +10069,11 @@
       ],
       "t": "card",
       "un": {
-       "s": 48
+       "s": 49
       },
       "w": [
        {
-        "id": 111,
+        "id": 114,
         "look": 1,
         "r": [
          884,
@@ -9010,7 +10085,7 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 112,
+        "id": 115,
         "r": [
          936,
          612,
@@ -9020,11 +10095,11 @@
         "size": "m",
         "t": "label",
         "text": {
-         "s": 49
+         "s": 88
         }
        },
        {
-        "id": 113,
+        "id": 116,
         "r": [
          936,
          638,
@@ -9034,7 +10109,7 @@
         "size": "s",
         "t": "label",
         "text": {
-         "s": 50
+         "s": 51
         }
        },
        {
@@ -9042,20 +10117,20 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 114,
+        "id": 117,
         "look": 1,
         "max": 100,
         "min": 10,
         "r": [
          884,
-         724,
+         668,
          344,
-         40
+         96
         ],
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 51
+         "s": 52
         }
        }
       ]
@@ -9070,28 +10145,17 @@
     "view": 0,
     "w": [
      {
-      "id": 115,
-      "r": [
-       404,
-       20,
-       568,
-       56
-      ],
-      "t": "heading",
-      "text": "Sofa lamp"
-     },
-     {
       "component": "apollo/light",
-      "id": 116,
+      "id": 118,
       "lit": 0,
       "on": {
        "s": 1
       },
       "r": [
        404,
-       84,
+       256,
        568,
-       696
+       288
       ],
       "t": "card",
       "tint": {
@@ -9105,11 +10169,11 @@
         "c": {
          "s": 2
         },
-        "id": 117,
+        "id": 119,
         "look": 1,
         "r": [
          420,
-         102,
+         274,
          44,
          44
         ],
@@ -9117,10 +10181,10 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 118,
+        "id": 120,
         "r": [
          472,
-         100,
+         272,
          412,
          26
         ],
@@ -9129,10 +10193,10 @@
         "text": "Sofa lamp"
        },
        {
-        "id": 119,
+        "id": 121,
         "r": [
          472,
-         126,
+         298,
          412,
          22
         ],
@@ -9143,10 +10207,10 @@
         }
        },
        {
-        "id": 120,
+        "id": 122,
         "r": [
          892,
-         106,
+         278,
          64,
          36
         ],
@@ -9166,15 +10230,15 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 121,
+        "id": 123,
         "look": 1,
         "max": 100,
         "min": 1,
         "r": [
          420,
-         596,
+         328,
          536,
-         56
+         72
         ],
         "step": 1,
         "t": "slider",
@@ -9186,16 +10250,16 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 122,
+        "id": 124,
         "look": 1,
         "max": 360,
         "min": 0,
         "nv": 1,
         "r": [
          420,
-         660,
+         408,
          536,
-         48
+         56
         ],
         "step": 1,
         "t": "slider",
@@ -9209,23 +10273,50 @@
          "#FF0000"
         ],
         "value": {
-         "s": 83
+         "s": 89
+        },
+        "vis": {
+         "s": 1
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 123,
+        "icon": "mdi:palette",
+        "id": 125,
+        "look": 1,
+        "max": 360,
+        "min": 0,
+        "r": [
+         420,
+         408,
+         536,
+         56
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 89
+        },
+        "vis": {
+         "s": 90
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "id": 126,
         "look": 1,
         "max": 6500,
         "min": 2000,
         "nv": 1,
         "r": [
          420,
-         716,
+         472,
          536,
-         48
+         56
         ],
         "step": 50,
         "t": "slider",
@@ -9237,7 +10328,34 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 84
+         "s": 91
+        },
+        "vis": {
+         "s": 1
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:white-balance-sunny",
+        "id": 127,
+        "look": 1,
+        "max": 6500,
+        "min": 2000,
+        "r": [
+         420,
+         472,
+         536,
+         56
+        ],
+        "step": 50,
+        "t": "slider",
+        "value": {
+         "s": 91
+        },
+        "vis": {
+         "s": 90
         }
        }
       ]
@@ -9252,28 +10370,17 @@
     "view": 0,
     "w": [
      {
-      "id": 124,
-      "r": [
-       404,
-       20,
-       568,
-       56
-      ],
-      "t": "heading",
-      "text": "Light"
-     },
-     {
       "component": "apollo/light",
-      "id": 125,
+      "id": 128,
       "lit": 0,
       "on": {
        "s": 11
       },
       "r": [
        404,
-       84,
+       320,
        568,
-       696
+       160
       ],
       "t": "card",
       "tint": {
@@ -9287,11 +10394,11 @@
         "c": {
          "s": 12
         },
-        "id": 126,
+        "id": 129,
         "look": 1,
         "r": [
          420,
-         102,
+         338,
          44,
          44
         ],
@@ -9299,24 +10406,24 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 127,
+        "id": 130,
         "r": [
          472,
-         100,
+         336,
          412,
          26
         ],
         "size": "m",
         "t": "label",
         "text": {
-         "s": 14
+         "s": 92
         }
        },
        {
-        "id": 128,
+        "id": 131,
         "r": [
          472,
-         126,
+         362,
          412,
          22
         ],
@@ -9327,10 +10434,10 @@
         }
        },
        {
-        "id": 129,
+        "id": 132,
         "r": [
          892,
-         106,
+         342,
          64,
          36
         ],
@@ -9350,15 +10457,15 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 130,
+        "id": 133,
         "look": 1,
         "max": 100,
         "min": 1,
         "r": [
          420,
-         708,
+         392,
          536,
-         56
+         72
         ],
         "step": 1,
         "t": "slider",
@@ -9378,28 +10485,17 @@
     "view": 0,
     "w": [
      {
-      "id": 131,
-      "r": [
-       404,
-       20,
-       568,
-       56
-      ],
-      "t": "heading",
-      "text": "Sofa lamp"
-     },
-     {
       "component": "apollo/light",
-      "id": 132,
+      "id": 134,
       "lit": 0,
       "on": {
        "s": 21
       },
       "r": [
        404,
-       84,
+       192,
        568,
-       696
+       416
       ],
       "t": "card",
       "tint": {
@@ -9413,11 +10509,11 @@
         "c": {
          "s": 2
         },
-        "id": 133,
+        "id": 135,
         "look": 1,
         "r": [
          420,
-         102,
+         210,
          44,
          44
         ],
@@ -9425,10 +10521,10 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 134,
+        "id": 136,
         "r": [
          472,
-         100,
+         208,
          412,
          26
         ],
@@ -9437,10 +10533,10 @@
         "text": "Sofa lamp"
        },
        {
-        "id": 135,
+        "id": 137,
         "r": [
          472,
-         126,
+         234,
          412,
          22
         ],
@@ -9451,10 +10547,10 @@
         }
        },
        {
-        "id": 136,
+        "id": 138,
         "r": [
          892,
-         106,
+         214,
          64,
          36
         ],
@@ -9474,15 +10570,15 @@
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 137,
+        "id": 139,
         "look": 1,
         "max": 100,
         "min": 1,
         "r": [
          420,
-         476,
+         264,
          536,
-         56
+         72
         ],
         "step": 1,
         "t": "slider",
@@ -9494,16 +10590,16 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 138,
+        "id": 140,
         "look": 1,
         "max": 360,
         "min": 0,
         "nv": 1,
         "r": [
          420,
-         540,
+         344,
          536,
-         48
+         56
         ],
         "step": 1,
         "t": "slider",
@@ -9518,45 +10614,73 @@
         ],
         "value": {
          "s": 25
+        },
+        "vis": {
+         "s": 21
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:palette",
+        "id": 141,
+        "look": 1,
+        "max": 360,
+        "min": 0,
+        "r": [
+         420,
+         344,
+         536,
+         56
+        ],
+        "step": 1,
+        "t": "slider",
+        "value": {
+         "s": 25
+        },
+        "vis": {
+         "s": 26
         }
        },
        {
         "c": {
-         "s": 27
+         "s": 28
         },
         "change": {
          "policy": "optimistic"
         },
-        "id": 139,
+        "icon": "mdi:palette-outline",
+        "id": 142,
         "look": 1,
         "max": 100,
         "min": 0,
         "r": [
          420,
-         596,
+         408,
          536,
-         48
+         56
         ],
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 26
+         "s": 27
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 140,
+        "id": 143,
         "look": 1,
         "max": 6500,
         "min": 2000,
         "nv": 1,
         "r": [
          420,
-         652,
+         472,
          536,
-         48
+         56
         ],
         "step": 50,
         "t": "slider",
@@ -9568,7 +10692,34 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 28
+         "s": 29
+        },
+        "vis": {
+         "s": 21
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:white-balance-sunny",
+        "id": 144,
+        "look": 1,
+        "max": 6500,
+        "min": 2000,
+        "r": [
+         420,
+         472,
+         536,
+         56
+        ],
+        "step": 50,
+        "t": "slider",
+        "value": {
+         "s": 29
+        },
+        "vis": {
+         "s": 26
         }
        },
        {
@@ -9585,11 +10736,11 @@
          "#BF5AF2",
          "#FFA757"
         ],
-        "id": 141,
+        "id": 145,
         "look": 1,
         "r": [
          420,
-         708,
+         536,
          536,
          56
         ],
@@ -9608,46 +10759,35 @@
     "view": 1,
     "w": [
      {
-      "id": 142,
-      "r": [
-       404,
-       20,
-       568,
-       56
-      ],
-      "t": "heading",
-      "text": "Light"
-     },
-     {
       "component": "apollo/light",
-      "id": 143,
+      "id": 146,
       "lit": 0,
       "on": {
-       "s": 55
+       "s": 56
       },
       "r": [
        404,
-       84,
+       192,
        568,
-       696
+       416
       ],
       "t": "card",
       "tint": {
-       "s": 56
+       "s": 57
       },
       "un": {
-       "s": 57
+       "s": 58
       },
       "w": [
        {
         "c": {
-         "s": 56
+         "s": 57
         },
-        "id": 144,
+        "id": 147,
         "look": 1,
         "r": [
          420,
-         102,
+         210,
          44,
          44
         ],
@@ -9655,38 +10795,38 @@
         "value": "mdi:lightbulb"
        },
        {
-        "id": 145,
+        "id": 148,
         "r": [
          472,
-         100,
+         208,
          412,
          26
         ],
         "size": "m",
         "t": "label",
         "text": {
-         "s": 58
+         "s": 93
         }
        },
        {
-        "id": 146,
+        "id": 149,
         "r": [
          472,
-         126,
+         234,
          412,
          22
         ],
         "size": "s",
         "t": "label",
         "text": {
-         "s": 59
+         "s": 60
         }
        },
        {
-        "id": 147,
+        "id": 150,
         "r": [
          892,
-         106,
+         214,
          64,
          36
         ],
@@ -9695,47 +10835,47 @@
          "policy": "optimistic"
         },
         "value": {
-         "s": 55
+         "s": 56
         }
        },
        {
         "c": {
-         "s": 56
+         "s": 57
         },
         "change": {
          "policy": "optimistic"
         },
         "icon": "mdi:brightness-6",
-        "id": 148,
+        "id": 151,
         "look": 1,
         "max": 100,
         "min": 1,
         "r": [
          420,
-         476,
+         264,
          536,
-         56
+         72
         ],
         "step": 1,
         "t": "slider",
         "value": {
-         "s": 60
+         "s": 61
         }
        },
        {
         "change": {
          "policy": "optimistic"
         },
-        "id": 149,
+        "id": 152,
         "look": 1,
         "max": 6500,
         "min": 2200,
         "nv": 1,
         "r": [
          420,
-         540,
+         344,
          536,
-         48
+         56
         ],
         "step": 50,
         "t": "slider",
@@ -9747,7 +10887,34 @@
          "#FFFEFA"
         ],
         "value": {
-         "s": 61
+         "s": 62
+        },
+        "vis": {
+         "s": 56
+        }
+       },
+       {
+        "change": {
+         "policy": "optimistic"
+        },
+        "icon": "mdi:white-balance-sunny",
+        "id": 153,
+        "look": 1,
+        "max": 6500,
+        "min": 2200,
+        "r": [
+         420,
+         344,
+         536,
+         56
+        ],
+        "step": 50,
+        "t": "slider",
+        "value": {
+         "s": 62
+        },
+        "vis": {
+         "s": 63
         }
        },
        {
@@ -9764,11 +10931,11 @@
          "#BF5AF2",
          "#FFA757"
         ],
-        "id": 150,
+        "id": 154,
         "look": 1,
         "r": [
          420,
-         596,
+         408,
          536,
          56
         ],
@@ -9779,12 +10946,12 @@
         "change": {
          "policy": "optimistic"
         },
-        "id": 151,
+        "id": 155,
         "r": [
          420,
-         660,
+         472,
          536,
-         104
+         120
         ],
         "rows": 2,
         "t": "choice",
@@ -9795,109 +10962,7 @@
          "Night"
         ],
         "value": {
-         "s": 85
-        }
-       }
-      ]
-     }
-    ]
-   },
-   {
-    "id": "more~2",
-    "sub": 1,
-    "title": "Light",
-    "ttl": 60,
-    "view": 1,
-    "w": [
-     {
-      "id": 152,
-      "r": [
-       404,
-       20,
-       568,
-       56
-      ],
-      "t": "heading",
-      "text": "Light"
-     },
-     {
-      "component": "apollo/light",
-      "id": 153,
-      "lit": 0,
-      "on": {
-       "s": 62
-      },
-      "r": [
-       404,
-       84,
-       568,
-       696
-      ],
-      "t": "card",
-      "tint": {
-       "s": 63
-      },
-      "un": {
-       "s": 64
-      },
-      "w": [
-       {
-        "c": {
-         "s": 63
-        },
-        "id": 154,
-        "look": 1,
-        "r": [
-         420,
-         102,
-         44,
-         44
-        ],
-        "t": "image",
-        "value": "mdi:lightbulb"
-       },
-       {
-        "id": 155,
-        "r": [
-         472,
-         100,
-         412,
-         26
-        ],
-        "size": "m",
-        "t": "label",
-        "text": {
-         "s": 65
-        }
-       },
-       {
-        "id": 156,
-        "r": [
-         472,
-         126,
-         412,
-         22
-        ],
-        "size": "s",
-        "t": "label",
-        "text": {
-         "s": 66
-        }
-       },
-       {
-        "id": 157,
-        "r": [
-         892,
-         106,
-         64,
-         36
-        ],
-        "t": "switch",
-        "tap": {
-         "policy": "optimistic"
-        },
-        "value": {
-         "s": 62
+         "s": 94
         }
        }
       ]
@@ -9937,7 +11002,7 @@
   },
   "v": 2
  },
- "note": "The nine cards of the first version 2 library (package I9) on 2 normal pages, with the detail pages of the lights. Made by tests/cards_fixture.py in apollo_tab: 'dashboard' and 'facts' are what Home Assistant converts; 'layout' is the layout v2 for a tablet with the caps of contract.json 'engine_caps', 'v1' the layout v1 for a tablet with engine 0.1.0 (the caps of the .v1 meta file). 'devices' is what Home Assistant knows of each device, from which 'facts' are made.",
+ "note": "The nine cards of the first version 2 library (package I9) on 2 normal pages, with the detail pages of the lights that do more than turn on and off (the porch lamp has none). Made by tests/cards_fixture.py in apollo_tab: 'dashboard' and 'facts' are what Home Assistant converts; 'layout' is the layout v2 for a tablet with the caps of contract.json 'engine_caps', 'v1' the layout v1 for a tablet with engine 0.1.0 (the caps of the .v1 meta file). 'devices' is what Home Assistant knows of each device, from which 'facts' are made.",
  "v1": {
   "bindings": {
    "actions": {
@@ -10623,7 +11688,7 @@
     {
      "kind": "template",
      "n": 5,
-     "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (word_on if is_on else word_off) %}{{ state }}",
+     "template": "{% set is_on = (is_state(entity, 'on')) %}{% set state = (state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off)) %}{{ state }}",
      "variables": {
       "can": {
        "entity": {
@@ -11313,7 +12378,7 @@
    ]
   },
   "layout": {
-   "hash": "c85d32a6e2dd2ce4",
+   "hash": "9e39c8fba2591d1a",
    "nav": [
     {
      "icon": "mdi:home",
@@ -11608,7 +12673,7 @@
         56
        ],
        "t": "heading",
-       "text": "Sofa lamp · Farbe"
+       "text": "Sofa lamp · Colour"
       },
       {
        "component": "apollo/light-slider",
