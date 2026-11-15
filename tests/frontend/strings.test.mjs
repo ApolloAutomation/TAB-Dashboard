@@ -231,9 +231,9 @@ test("the tablet texts avoid jargon", () => {
   // The design's own sentences, word for word.
   assert.equal(strings["tablets.none"], "No TAB-1 tablet found in Home Assistant yet. Power the tablet on. If it asks for Wi-Fi, join \"Apollo TAB1 Hotspot\" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here. You can still build dashboards.");
   assert.equal(strings["tablets.make_first"], "Make a dashboard first.");
-  assert.equal(strings["editor.on_tablet_helper"], "To show something else on a tablet, pick it for that tablet on the Home screen.");
+  assert.equal(strings["editor.on_tablet_helper"], "Changes show on the tablet as you make them.");
   assert.equal(strings["editor.on_tablet_none"], "No tablets yet.");
-  assert.equal(strings["editor.on_tablet_nowhere"], "Not shown on a tablet yet");
+  assert.equal(strings["editor.on_tablet_nowhere"], "Not on a tablet yet");
 });
 
 test("no string uses the old jargon", () => {

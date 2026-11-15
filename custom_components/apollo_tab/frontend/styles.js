@@ -761,7 +761,8 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 .tab[aria-selected="true"],
 .list-row[aria-current="true"],
 .entity-option[aria-selected="true"],
-.icon-grid button[aria-pressed="true"] {
+.icon-grid button[aria-pressed="true"],
+.icon-grid button[aria-checked="true"] {
   background-color: var(--tab-accent-soft);
   box-shadow: inset 0 0 0 2px var(--tab-accent-text);
 }
@@ -769,7 +770,8 @@ input[type="range"]:focus-visible::-moz-range-thumb {
    takes the mark's colour and 1 px more is drawn inside it, so the mark is
    one 2 px line at the control's own edge. */
 .tab[aria-selected="true"],
-.icon-grid button[aria-pressed="true"] {
+.icon-grid button[aria-pressed="true"],
+.icon-grid button[aria-checked="true"] {
   border-color: var(--tab-accent-text);
   box-shadow: inset 0 0 0 1px var(--tab-accent-text);
 }
@@ -777,7 +779,9 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   .tab[aria-selected="true"],
   .list-row[aria-current="true"],
   .entity-option[aria-selected="true"],
-  .icon-grid button[aria-pressed="true"] {
+  .icon-grid button[aria-pressed="true"],
+  .icon-grid button[aria-checked="true"],
+  .theme-tile[aria-checked="true"] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
@@ -1298,7 +1302,8 @@ export const formStyles = `
 }
 /* The chosen icon also has a small tick, so it is not told by colour
    alone. */
-.icon-grid button[aria-pressed="true"]::after {
+.icon-grid button[aria-pressed="true"]::after,
+.icon-grid button[aria-checked="true"]::after {
   content: "✓";
   position: absolute;
   top: -6px;
@@ -1523,7 +1528,10 @@ ${barTokens}
   grid-template-areas: "bar" "block" "strip" "main";
 }
 .ed-header {
+  position: relative;
+  z-index: 5;
   grid-area: bar;
+  container: bar / inline-size;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -1538,7 +1546,7 @@ ${barTokens}
   block-size: 48px;
 }
 .root.compact .ed-header {
-  padding-inline: 4px 8px;
+  padding-inline: 4px;
   gap: 4px;
 }
 /* As in the panel header: no gap after a menu button that draws nothing. */
@@ -1548,14 +1556,18 @@ ${barTokens}
 .root.compact .ed-header > ha-menu-button {
   margin-inline-end: -4px;
 }
-/* The title, then the tablets that show the dashboard on one line, cut
-   when it does not fit. */
+/* The dashboard's name takes the free space and is cut first, but never
+   to nothing: a few letters of it always show. */
 .title-block {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
-  align-items: baseline;
-  gap: 16px;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
+}
+.root:not(.compact) .title-block {
+  min-width: 8em;
 }
 .ed-header h1 {
   flex: 0 1 auto;
@@ -1582,32 +1594,6 @@ ${barTokens}
   gap: 6px;
   min-width: 0;
   margin: 0;
-}
-/* In the bar the lines run on as words in one line, and the cut ends in
-   "…" with 16 px before the save state. */
-.ed-header .tablet-lines {
-  display: block;
-  flex: 1 1 0;
-  /* A long title is cut first: the lines keep at least their first words. */
-  min-width: min(12em, 40%);
-  padding-inline-end: 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ed-header .tablet-lines:empty {
-  min-width: 0;
-}
-.ed-header .tablet-line {
-  display: inline;
-}
-.ed-header .tablet-line + .tablet-line {
-  margin-inline-start: 16px;
-}
-.ed-header .tablet-line[data-tone]::before {
-  display: inline-block;
-  margin-inline-end: 6px;
-  vertical-align: 0.1em;
 }
 /* A dot in the tablet's tone, worked out from the tokens where it is shown
    (the bar's own inside the bar). */
@@ -1661,6 +1647,11 @@ ${barTokens}
   align-items: center;
   gap: 4px;
   margin-inline-start: auto;
+}
+/* A phone's bar: the icon buttons stand side by side, so the dashboard's
+   name keeps the room. Each is still 44 px wide. */
+.root.compact .header-actions {
+  gap: 0;
 }
 .sr-only {
   position: absolute;
@@ -2329,34 +2320,19 @@ ${barTokens}
 }
 /* What the inspector shows with nothing selected. */
 .idle,
-.idle-page,
-.idle-settings {
+.idle-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .idle-intro:empty,
-.idle-page:empty,
-.idle-settings:empty {
+.idle-page:empty {
   display: none;
 }
-/* Both buttons stay on one line; the settings link wraps its own words
-   when the panel is narrow, so the form starts as high as it can. */
+/* "Done" at the end of the form's top row. */
 .side-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-/* The arrow lines up with the form's words under it. */
-.side-back {
-  justify-self: start;
-  margin-inline-start: -4px;
-  padding-inline: 4px;
-  text-align: start;
-}
-.side-back > span {
-  display: inline-flex;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
 }
@@ -2589,6 +2565,596 @@ ${barTokens}
   gap: 6px;
   font-size: var(--tab-fs-small);
   line-height: var(--tab-lh-small);
+}
+
+/* ---- The top bar's controls ---- */
+/* The name is a button that turns into a field; the pencil shows on hover
+   and focus. It looks like the heading it is, not like a button. */
+.title-button {
+  justify-content: flex-start;
+  max-width: 100%;
+  padding-inline: 8px;
+  border-radius: var(--tab-r-s);
+  background-color: transparent;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+}
+.title-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.title-button > ha-icon {
+  flex: none;
+  color: var(--tab-text-2);
+  visibility: hidden;
+}
+.title-button:hover > ha-icon,
+.title-button:focus-visible > ha-icon {
+  visibility: visible;
+}
+/* A phone's bar: the name keeps the room (and has no pencil there). */
+.root.compact .title-button {
+  padding-inline: 2px 4px;
+}
+.ed-header h1:has(.title-button),
+.ed-header h1:has(.title-field) {
+  overflow: visible;
+}
+.title-field {
+  box-sizing: border-box;
+  width: min(100%, 28em);
+  min-height: var(--tab-control);
+  padding-inline: 8px;
+  border: 1px solid var(--tab-field-line);
+  border-radius: var(--tab-r-s);
+  background: transparent;
+  color: var(--tab-text);
+  font: inherit;
+}
+/* A refused rename: a small pop-up under the name, so nothing in the bar
+   moves. In compact and short it spans the bar under it. */
+.rename-alert {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-start: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(28em, calc(100vw - 24px));
+  margin: 0;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: var(--tab-shadow-dialog);
+}
+.root.compact .title-block,
+.root.short .title-block {
+  position: static;
+}
+/* A phone's rename field takes the free space, 8 px from the save state. */
+.root.compact .title-block:has(.title-field) {
+  flex: 1 1 0;
+  margin-inline-end: 8px;
+}
+.root.compact .title-field {
+  width: 100%;
+}
+.root.compact .rename-alert,
+.root.short .rename-alert {
+  top: calc(100% + 2px);
+  inset-inline: 8px;
+  width: auto;
+  max-width: none;
+}
+/* The Tablets chip: a dot in its tone and one short line, cut with "…"
+   should the words still be too long. */
+/* The name gives way first: the chip keeps its words. */
+.tablet-chip {
+  flex: none;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  max-width: 34ch;
+  padding-inline: 12px 8px;
+  border: 1px solid var(--tab-line);
+  background-color: transparent;
+  font-weight: 500;
+}
+.chip-words {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chip-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tab-text-2);
+}
+.tablet-chip[data-tone="ok"] .chip-dot {
+  background: var(--tab-ok-ink);
+}
+.tablet-chip[data-tone="busy"] .chip-dot {
+  background: var(--tab-info-ink);
+}
+.tablet-chip[data-tone="problem"] .chip-dot {
+  background: var(--tab-err-ink);
+}
+.tablet-chip > ha-icon {
+  flex: none;
+  color: var(--tab-text-2);
+}
+/* On a phone the chip is a row of its own under the picture. */
+.chip-row {
+  display: flex;
+}
+.chip-row .tablet-chip {
+  max-width: 100%;
+}
+/* The Theme button: a small swatch and the word, the swatch alone in a
+   narrower bar. */
+.theme-button {
+  flex: none;
+  gap: 8px;
+  padding-inline: 8px 12px;
+  border: 1px solid var(--tab-line);
+  background-color: transparent;
+}
+/* In a narrow bar (a short window, or a laptop at 200 %) the chip's words
+   give way too, cut with "…", and the save state is its icon. */
+@container bar (max-width: 899px) {
+  .tablet-chip {
+    flex: 0 1 auto;
+  }
+  .save-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@container bar (max-width: 1023px) {
+  .theme-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .theme-button {
+    padding-inline: 8px;
+  }
+}
+.theme-swatch.small-swatch {
+  width: 28px;
+  height: 20px;
+  padding: 3px;
+  border-radius: var(--tab-r-xs);
+}
+.theme-swatch.small-swatch .swatch-card {
+  width: 14px;
+  height: 14px;
+  padding: 2px;
+}
+.theme-swatch.small-swatch .swatch-dot {
+  width: 5px;
+  height: 5px;
+}
+/* The settings button of the selected page, after its tab. */
+.tab-owner {
+  display: contents;
+}
+.page-settings {
+  flex: none;
+  --mdc-icon-size: 20px;
+}
+
+/* ---- Pop-ups ---- */
+/* A box under the control that opened it; the page behind stays as it is.
+   The script places it (popover.js). */
+dialog.popover {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 16px));
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  background: var(--tab-surface);
+  color: var(--tab-text);
+  box-shadow: var(--tab-shadow-dialog);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+dialog.popover::backdrop {
+  background: transparent;
+}
+dialog.popover:focus {
+  outline: none;
+}
+/* In compact and short: a sheet from the bottom of the editor. */
+dialog.popover.sheet {
+  border-radius: var(--tab-r-dialog) var(--tab-r-dialog) 0 0;
+  border-bottom: 0;
+}
+dialog.popover.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+/* Over one part of the editor (the script gives its box): the rest stays
+   in view and is not dimmed. */
+dialog.popover.cover,
+dialog.popover.cover[data-test] {
+  border-width: 0;
+  border-inline-start-width: 1px;
+  border-radius: 0;
+  box-shadow: none;
+}
+.pop-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+dialog.popover.sheet .pop-body {
+  box-sizing: border-box;
+  max-width: 520px;
+  margin-inline: auto;
+  padding-bottom: calc(16px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+.pop-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.pop-form > button,
+.pop-body .shown-on > button {
+  justify-self: start;
+}
+/* A text link and a menu row take their side padding back, so their words
+   start on the content's edge; their ring is drawn inside them. */
+.pop-body .shown-on > button.text,
+.pop-body .menu-item {
+  margin-inline-start: -12px;
+  padding-inline: 12px;
+}
+.pop-body .shown-on > button.text:focus-visible,
+.pop-body .menu-item:focus-visible {
+  outline-offset: -3px;
+  box-shadow: none;
+}
+.pop-title {
+  margin: 0;
+  font-size: var(--tab-fs-head);
+  line-height: var(--tab-lh-head);
+  font-weight: 500;
+}
+.pop-title:focus:not(:focus-visible) {
+  outline: none;
+}
+.row-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The page pop-up's icons: 7 to a row. */
+.pop-form .icon-grid {
+  grid-template-columns: repeat(7, minmax(40px, 1fr));
+  gap: 4px;
+}
+.pop-form .icon-grid button {
+  min-width: 40px;
+}
+.pop-form .icon-grid button:not([aria-checked="true"]),
+.pop-form .icon-grid button:not([aria-checked="true"]):not(:disabled):hover {
+  border-color: transparent;
+}
+.icon-line {
+  margin: 4px 0 0;
+  color: var(--tab-text-2);
+}
+/* The theme gallery: tiles of three to a row, each a swatch painted from
+   the theme's own colours, its name under it. */
+dialog.popover[data-test="theme-gallery"] {
+  width: min(400px, calc(100vw - 16px));
+}
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.theme-heading {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  color: var(--tab-text-2);
+  font-size: var(--tab-fs-small);
+  font-weight: 600;
+}
+.theme-tile {
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 0;
+  padding: 6px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-s);
+  background-color: transparent;
+  font-weight: 400;
+}
+.theme-tile[aria-checked="true"] {
+  border-color: var(--tab-accent-text);
+  box-shadow: inset 0 0 0 1px var(--tab-accent-text);
+  background-color: var(--tab-accent-soft);
+}
+/* The chosen tile also has a tick, so it is not told by colour alone. */
+.theme-tile[aria-checked="true"]::after {
+  content: "✓";
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--tab-accent-fill);
+  color: var(--tab-accent-ink);
+  font-size: var(--tab-fs-small);
+  line-height: 1;
+}
+.theme-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 8px;
+  border-radius: var(--tab-r-xs);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+}
+.swatch-card {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  width: 60%;
+  height: 100%;
+  padding: 5px;
+  border-radius: var(--tab-r-xs);
+}
+.swatch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.swatch-bar {
+  width: 70%;
+  height: 4px;
+  border-radius: var(--tab-r-xs);
+}
+.theme-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The name's line is as high in every tile, with "Preview" or without,
+   so every swatch is in the same place. */
+.theme-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 20px;
+}
+.theme-preview {
+  flex: none;
+  padding-block: 0;
+  padding-inline: 6px;
+}
+.theme-description {
+  margin: 0;
+  color: var(--tab-text-2);
+}
+/* The Tablets pop-up: one grouped list. */
+.pop-body .shown-on .tablet-lines {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pop-body .shown-on-row {
+  min-height: 56px;
+}
+/* The status line of a tablet that shows this dashboard, under its name. */
+.pop-body .shown-on-row > .tablet-line {
+  flex: 1 0 100%;
+}
+.tablet-line.nowhere {
+  padding-block: 8px;
+  color: var(--tab-text-2);
+}
+/* A new tablet: a row like the others, its button at the end, with a
+   bar at its start that marks it as new. */
+.shown-on-new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  min-height: 56px;
+  padding-block: 4px;
+  padding-inline-start: 12px;
+  border-inline-start: 3px solid var(--tab-info-ink);
+}
+.shown-on-new p {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin: 0;
+}
+.shown-on-new > button {
+  flex: none;
+}
+/* The menu: its first items one under the other, as wide as the menu. */
+.menu-items {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--tab-line);
+}
+.menu-item {
+  justify-content: flex-start;
+  border-radius: var(--tab-r-s);
+  background-color: transparent;
+  font-weight: 400;
+}
+.automation-name > button {
+  min-height: var(--tab-control-s);
+}
+
+/* ---- The first-card notice ---- */
+/* It floats over the top of the stage and takes no height, so the
+   picture does not move when it comes. */
+.first-card {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  min-height: 44px;
+  padding-block: 2px;
+  padding-inline: 12px 4px;
+  border: 1px solid var(--tab-line);
+  border-radius: var(--tab-r-m);
+  background: var(--tab-surface);
+  box-shadow: var(--tab-shadow);
+  transform: translateX(-50%);
+}
+.first-card > ha-icon {
+  flex: none;
+  color: var(--tab-info-ink);
+}
+/* Its sentence is never cut: it wraps. */
+.first-card .notice-words {
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+.first-card > button:not(.icon) {
+  flex: none;
+}
+/* In medium the picture fills the stage and the open drawer covers its
+   end, so the notice is a row over the picture, ending at the drawer. A
+   low wide window has the same row (class row). */
+.root.medium .first-card,
+.first-card.row {
+  position: static;
+  flex: none;
+  flex-wrap: wrap;
+  width: auto;
+  max-width: none;
+  margin-block: 8px 0;
+  margin-inline: 16px;
+  box-shadow: none;
+  transform: none;
+}
+/* The button comes right after the sentence; only the close button is at
+   the end of the row. The row is wide, so it is one line and a long
+   sentence wraps inside it. */
+.root.medium .first-card,
+.root.wide .first-card.row {
+  flex-wrap: nowrap;
+}
+.root.medium .first-card .notice-words,
+.root.wide .first-card.row .notice-words {
+  flex: 0 1 auto;
+}
+.root.medium .first-card > button.icon,
+.root.wide .first-card.row > button.icon {
+  margin-inline-start: auto;
+}
+.first-card.row .notice-words {
+  flex: 1 1 12em;
+}
+.root.medium.drawer-open .first-card {
+  margin-inline-end: 336px;
+}
+/* Compact (under the picture): in the flow, the button under the words
+   and the close button at the top end. */
+.root.compact .first-card {
+  position: static;
+  display: grid;
+  flex: none;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0 8px;
+  width: auto;
+  max-width: none;
+  margin-top: 0;
+  padding-block: 4px 8px;
+  transform: none;
+}
+.root.compact .first-card > button:not(.icon) {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+}
+.root.compact .first-card > button.icon {
+  grid-column: 3;
+  grid-row: 1;
+}
+/* A wide one-column window has room for the button on the sentence's
+   line. */
+@media (min-width: 600px) {
+  .root.compact .first-card {
+    grid-template-columns: auto minmax(0, auto) auto minmax(0, 1fr);
+    align-items: center;
+    padding-block: 2px;
+  }
+  .root.compact .first-card > button:not(.icon) {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .root.compact .first-card > button.icon {
+    grid-column: 4;
+    justify-self: end;
+  }
+}
+/* Short: one row over the picture, the button on the words' line while
+   it fits, so the low stage keeps its height for the picture. */
+.root.short .first-card {
+  position: static;
+  flex: none;
+  flex-wrap: wrap;
+  width: auto;
+  max-width: none;
+  margin-block: 4px 0;
+  margin-inline: 12px;
+  padding-block: 2px;
+  box-shadow: none;
+  transform: none;
+}
+.root.short .first-card .notice-words {
+  flex: 1 1 12em;
 }
 `;
 

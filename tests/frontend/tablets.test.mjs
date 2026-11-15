@@ -407,9 +407,9 @@ test("the editor's caption has one line per tablet, at most three", () => {
     ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"],
   );
   assert.deepEqual(tablets.captionLines([KITCHEN], "night", t), [
-    { kind: "nowhere", text: "Not shown on a tablet yet" },
+    { kind: "nowhere", text: "Not on a tablet yet" },
   ]);
-  assert.deepEqual(tablets.captionLines([], "home", t), [{ kind: "nowhere", text: "Not shown on a tablet yet" }]);
+  assert.deepEqual(tablets.captionLines([], "home", t), [{ kind: "nowhere", text: "Not on a tablet yet" }]);
   const five = ["A", "B", "C", "D", "E"].map((letter, index) => tablet(`m${index}`, `${letter} tablet`));
   const lines = tablets.captionLines(five, "home", t);
   assert.deepEqual(
@@ -418,6 +418,72 @@ test("the editor's caption has one line per tablet, at most three", () => {
   );
   assert.equal(lines[0].mac, "m0");
   assert.equal(lines[0].tone, "ok");
+  // The editor's Tablets pop-up names every one.
+  assert.equal(tablets.captionLines(five, "home", t, Infinity).length, 5);
+});
+
+test("chipWords gives one short line for every situation", () => {
+  const words = (list, urlPath = "home") => tablets.chipWords(list, urlPath, t);
+  const named = (name, changes = {}) => tablet(`mac-${name}`, name, changes);
+  // Each row of the design's table.
+  assert.deepEqual(words([]), { text: "No tablets yet", tone: "quiet", more: 0, full: "No tablets yet" });
+  assert.deepEqual(words([PORCH]), { text: "Not on a tablet yet", tone: "quiet", more: 0, full: "Not on a tablet yet" });
+  assert.deepEqual(words([KITCHEN], "night"), { text: "Not on a tablet yet", tone: "quiet", more: 0, full: "Not on a tablet yet" });
+  assert.deepEqual(words([KITCHEN]), { text: "On Kitchen tablet", tone: "ok", more: 0, full: "On Kitchen tablet" });
+  const three = [named("A tablet"), named("B tablet"), named("C tablet")];
+  assert.deepEqual(words(three), { text: "On 3 tablets", tone: "ok", more: 0, full: "On 3 tablets" });
+  const sending = { ...KITCHEN, status: "sending" };
+  assert.deepEqual(words([sending]), { text: "Sending to Kitchen tablet…", tone: "busy", more: 0, full: "Sending to Kitchen tablet…" });
+  assert.equal(words([sending, { ...named("B tablet"), status: "sending" }]).text, "Sending to 2 tablets…");
+  const offline = { ...KITCHEN, status: "offline" };
+  assert.deepEqual(words([offline]), { text: "Kitchen tablet is offline", tone: "quiet", more: 0, full: "Kitchen tablet is offline" });
+  const broken = { ...KITCHEN, status: "failed", reason: "auth", retry: true };
+  assert.deepEqual(words([broken]), { text: "Kitchen tablet needs attention", tone: "problem", more: 0, full: "Kitchen tablet needs attention" });
+  // More that need a look: "+2"; a problem is named before an offline one.
+  const more = words([offline, broken, { ...named("Attic tablet"), status: "no_engine" }]);
+  assert.equal(more.text, "Attic tablet needs attention +2");
+  assert.equal(more.tone, "problem");
+  assert.equal(more.more, 2);
+  assert.equal(more.full, "Attic tablet needs attention 2 more need a look.");
+  const one = words([{ ...named("Hall tablet"), status: "offline" }, offline, named("Zed tablet")]);
+  assert.equal(one.text, "Hall tablet is offline +1");
+  assert.equal(one.full, "Hall tablet is offline 1 more needs a look.");
+  // The longest row of the design is 33 characters.
+  const longest = words([broken, { ...offline, mac: "x1", name: "Lounge tablet" }, { ...offline, mac: "x2", name: "Study tablet" }]);
+  assert.equal(longest.text, "Kitchen tablet needs attention +2");
+  assert.equal(longest.text.length, 33);
+  // A 14-letter name: no line is over 34 characters.
+  const fourteen = "Livingroom tab";
+  assert.equal(fourteen.length, 14);
+  for (const changes of [{}, { status: "sending" }, { status: "offline" }, { status: "failed", reason: "size" }, { status: "no_engine" }]) {
+    for (const extra of [[], [{ ...offline, mac: "o1" }, { ...broken, mac: "o2" }]]) {
+      const line = words([named(fourteen, changes), ...extra]);
+      assert.ok(line.text.length <= 34, `${line.text} is ${line.text.length} long`);
+      assert.ok(!line.text.includes("…") || changes.status === "sending", `${line.text} is cut`);
+    }
+  }
+  // A 40-letter name is cut with "…"; the words around it stay whole and
+  // the whole name is in `full`.
+  const forty = "The tablet on the wall by the back door!";
+  assert.equal(forty.length, 40);
+  for (const [changes, before, after] of [
+    [{}, "On ", ""],
+    [{ status: "sending" }, "Sending to ", "…"],
+    [{ status: "offline" }, "", " is offline"],
+    [{ status: "failed", reason: "size" }, "", " needs attention"],
+  ]) {
+    const line = words([named(forty, changes)]);
+    assert.ok(line.text.length <= 34, `${line.text} is ${line.text.length} long`);
+    assert.ok(line.text.startsWith(before) && line.text.endsWith(`…${after.replace(/^…/, "")}`), line.text);
+    // A sentence that ends in "…" after the name gets no second one.
+    assert.ok(!line.text.includes("……"), line.text);
+    assert.ok(line.full.includes(forty), line.full);
+  }
+  const cutMore = words([named(forty, { status: "offline" }), { ...offline, mac: "o3", name: "Zed tablet" }]);
+  assert.ok(cutMore.text.length <= 34 && cutMore.text.endsWith("… is offline +1"), cutMore.text);
+  assert.ok(cutMore.full.includes(forty));
+  // A shorter limit is kept as well.
+  assert.ok(tablets.chipWords([named(forty)], "home", t, 20).text.length <= 20);
 });
 
 test("the editor's Shown on block says what each tablet shows", () => {
@@ -491,7 +557,7 @@ test("new tablets are left out of what tablets show", () => {
     tablets.captionLines(list, "home", t).map((line) => line.text),
     ["On Kitchen tablet"],
   );
-  assert.deepEqual(tablets.captionLines([named], "home", t), [{ kind: "nowhere", text: "Not shown on a tablet yet" }]);
+  assert.deepEqual(tablets.captionLines([named], "home", t), [{ kind: "nowhere", text: "Not on a tablet yet" }]);
   assert.deepEqual(
     tablets.shownOnRows(list, "home", ROWS, t).map((row) => row.mac),
     [HALLWAY.mac, KITCHEN.mac],
@@ -593,9 +659,12 @@ test("a changed tablet replaces the one with its MAC", () => {
 test("every message about a new tablet says: pick a dashboard, then press the button", () => {
   const button = strings["tablets.turn_on"];
   const steps = new RegExp(`[Pp]ick (a dashboard|it)[^.]*, then press "${button}"|[Pp]ick it and press "${button}"`);
-  for (const key of ["tablets.status.new", "tablets.status.new_no_dashboard", "editor.on_tablet_new"]) {
+  for (const key of ["tablets.status.new", "tablets.status.new_no_dashboard"]) {
     assert.match(strings[key], steps, key);
   }
+  // The editor no longer tells the steps: its Tablets pop-up names the new
+  // tablet and "Set it up" goes to the start screen, where they are.
+  assert.equal(strings["editor.on_tablet_new"], "{tablet} is new and ready to turn on.");
   const en = JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/translations/en.json"), "utf8"));
   for (const [where, text] of [
     ["approval_needed", en.exceptions.approval_needed.message],
@@ -607,7 +676,6 @@ test("every message about a new tablet says: pick a dashboard, then press the bu
   // Round 8: the answers to a change that needs the button quote it and
   // end in a full stop, as the panel's own line does.
   const ending = `press "${button}".`;
-  assert.ok(strings["editor.on_tablet_new"].endsWith(ending));
   const shapes = JSON.parse(fs.readFileSync(path.join(root, "tests/harness/tablet-shapes.json"), "utf8"));
   for (const [where, text] of [
     ["approval_needed", en.exceptions.approval_needed.message],
@@ -725,6 +793,32 @@ test("a row that moves one Turn on button does not hold the others", () => {
   assert.deepEqual([...tablets.markMoved(null, new Map([["aa:01", [24, 300, 220, 40]]]), after, 900)], [["aa:02", 900]]);
 });
 
+test("after a scroll the panel made, every turn-on button waits again", () => {
+  const movedAt = new Map([
+    ["aa:01", 100],
+    ["aa:03", 50],
+  ]);
+  const marked = tablets.markAll(movedAt, ["aa:01", "aa:02"], 5000);
+  assert.deepEqual([...marked], [
+    ["aa:01", 5000],
+    ["aa:03", 50],
+    ["aa:02", 5000],
+  ]);
+  // The map it was given stays as it was.
+  assert.deepEqual([...movedAt], [
+    ["aa:01", 100],
+    ["aa:03", 50],
+  ]);
+  for (const mac of ["aa:01", "aa:02"]) {
+    assert.equal(tablets.turnOnSettled(marked.get(mac), 5000), false);
+    assert.equal(tablets.turnOnSettled(marked.get(mac), 5699), false);
+    assert.equal(tablets.turnOnSettled(marked.get(mac), 5700), true);
+  }
+  // Nothing named, or no map yet: nothing breaks.
+  assert.deepEqual([...tablets.markAll(null, ["aa:01"], 7)], [["aa:01", 7]]);
+  assert.deepEqual([...tablets.markAll(movedAt, undefined, 7)], [...movedAt]);
+});
+
 test("the panel guards each Turn on button by its own place, and shows the wait", async () => {
   const panel = fs.readFileSync(path.join(root, "custom_components/apollo_tab/frontend/panel.js"), "utf8");
   const turnOn = panel.slice(panel.indexOf("  _turnOn(mac) {"), panel.indexOf("  _pairButton("));
@@ -740,6 +834,7 @@ test("the panel guards each Turn on button by its own place, and shows the wait"
     "this._turnOnMovedAt = new Map();",
     "this._turnOnMovedAt = markMoved(this._turnOnMovedAt, this._turnOnPlaces, places, performance.now());",
     "this._turnOnMovedAt = new Map();",
+    "this._turnOnMovedAt = markAll(this._turnOnMovedAt, [...places.keys()], performance.now());",
   ]);
   const { panelStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
   // A button that waits looks exactly like a disabled filled button: one

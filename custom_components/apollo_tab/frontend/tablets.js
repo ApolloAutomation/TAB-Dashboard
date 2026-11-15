@@ -401,6 +401,18 @@ export function markMoved(movedAt, before, after, now) {
   return marked;
 }
 
+// Every named "Turn on" button waits again from `now`: after a scroll the
+// panel made, which moves every button on screen but changes none of their
+// places, since those are measured from the panel's own corner. A new Map;
+// `movedAt` stays as it was.
+export function markAll(movedAt, macs, now) {
+  const marked = new Map(movedAt instanceof Map ? movedAt : []);
+  for (const mac of Array.isArray(macs) ? macs : []) {
+    marked.set(mac, now);
+  }
+  return marked;
+}
+
 // The tablets an admin turned on, in the one order.
 export function approvedTablets(list) {
   return sortTablets(list).filter((tablet) => !isNewTablet(tablet));
@@ -530,26 +542,122 @@ export function deleteNote(tablets, urlPath, rows, t) {
   return t(one ? "tablets.delete_one" : "tablets.delete_many", { names, dashboard: title });
 }
 
-// The editor's lines above the tablet picture: one per tablet that shows
-// the dashboard (at most MAX_LINES, then "and 2 more"), or "Not shown on a
-// tablet yet". Each line is {kind, text}, with the tablet's mac and tone on
-// a tablet's line.
-export function captionLines(tablets, urlPath, t) {
+// The status lines of the tablets that show the dashboard: one per tablet
+// (at most `limit`, then "and 2 more"), or "Not on a tablet yet". Each line
+// is {kind, text}, with the tablet's mac and tone on a tablet's line. The
+// preview card names at most MAX_LINES; the editor's Tablets pop-up all.
+export function captionLines(tablets, urlPath, t, limit = MAX_LINES) {
   const showing = tabletsShowing(tablets, urlPath);
   if (!showing.length) {
     return [{ kind: "nowhere", text: t("editor.on_tablet_nowhere") }];
   }
   const lines = [];
-  for (const tablet of showing.slice(0, MAX_LINES)) {
+  for (const tablet of showing.slice(0, limit)) {
     const key = lineWordsKey(tablet);
     if (key) {
       lines.push({ kind: "tablet", mac: tablet.mac, tone: statusTone(tablet), text: t(key, { tablet: nameOf(tablet) }) });
     }
   }
-  if (showing.length > MAX_LINES) {
-    lines.push({ kind: "more", text: t("editor.on_tablet_more", { count: showing.length - MAX_LINES }) });
+  if (showing.length > limit) {
+    lines.push({ kind: "more", text: t("editor.on_tablet_more", { count: showing.length - limit }) });
   }
   return lines;
+}
+
+// The Tablets chip in the editor's top bar is never wider than this many
+// characters: the longest sentence of the design, "Kitchen tablet needs
+// attention +2", is 33.
+export const CHIP_LIMIT = 34;
+
+// Fills `key` with a tablet's name, cut with "…" when the sentence would be
+// longer than `limit`. The words around the name are never cut.
+function chipSentence(t, key, name, limit) {
+  const whole = t(key, { tablet: name });
+  if (whole.length <= limit) {
+    return whole;
+  }
+  // A sentence that already goes on with "…" right after the name
+  // ("Sending to Kitchen tablet…") needs no second one for the cut.
+  const shape = t(key, { tablet: "\u0001" });
+  const trailing = shape.slice(shape.indexOf("\u0001") + 1).startsWith("…");
+  const room = limit - (whole.length - name.length) - (trailing ? 0 : 1);
+  const cut = room > 0 ? name.slice(0, room).trimEnd() : "";
+  return t(key, { tablet: trailing ? cut : `${cut}…` });
+}
+
+// The tone of one tablet in the chip's words: the dot of its row in the
+// Tablets pop-up uses it too, so the two agree.
+export function chipTone(tablet) {
+  const kind = statusKind(tablet);
+  if (!kind) {
+    return "quiet";
+  }
+  return { on_tablet: "ok", sending: "busy", offline: "quiet" }[kind] || "problem";
+}
+
+// The Tablets chip: one short sentence about the tablets that show the
+// dashboard at urlPath. Returns { text, tone, more, full }: the words on
+// the chip (at most `limit` characters), its tone ("quiet", "ok", "busy" or
+// "problem"), how many more tablets need a look besides the one named, and
+// the whole sentence with the whole name, for the tooltip and the chip's
+// accessible name. A tablet with a problem is named before an offline one,
+// and both before one that is being sent to.
+export function chipWords(tablets, urlPath, t, limit = CHIP_LIMIT) {
+  const list = sortTablets(tablets);
+  if (!list.length) {
+    const text = t("editor.chip_none");
+    return { text, tone: "quiet", more: 0, full: text };
+  }
+  const showing = tabletsShowing(list, urlPath);
+  if (!showing.length) {
+    const text = t("editor.on_tablet_nowhere");
+    return { text, tone: "quiet", more: 0, full: text };
+  }
+  const kinds = showing.map((tablet) => [tablet, statusKind(tablet)]);
+  const problems = kinds.filter(([, kind]) => !["on_tablet", "sending", "offline"].includes(kind));
+  const offline = kinds.filter(([, kind]) => kind === "offline");
+  const sending = kinds.filter(([, kind]) => kind === "sending");
+  const look = [...problems, ...offline];
+  if (look.length) {
+    const [tablet, kind] = look[0];
+    const key = kind === "offline" ? "editor.on_tablet_offline" : "editor.chip_attention";
+    const more = look.length - 1;
+    const tag = more ? ` ${t("editor.chip_more", { count: more })}` : "";
+    const text = chipSentence(t, key, nameOf(tablet), limit - tag.length) + tag;
+    const moreFull = more === 1 ? t("editor.chip_more_full_one") : t("editor.chip_more_full", { count: more });
+    const full = t(key, { tablet: nameOf(tablet) }) + (more ? ` ${moreFull}` : "");
+    return { text, tone: chipTone(tablet), more, full };
+  }
+  if (sending.length) {
+    if (sending.length > 1) {
+      const text = t("editor.chip_sending_many", { count: sending.length });
+      return { text, tone: "busy", more: 0, full: text };
+    }
+    const name = nameOf(sending[0][0]);
+    return {
+      text: chipSentence(t, "editor.on_tablet_sending", name, limit),
+      tone: "busy",
+      more: 0,
+      full: t("editor.on_tablet_sending", { tablet: name }),
+    };
+  }
+  if (showing.length > 1) {
+    const text = t("editor.chip_on_many", { count: showing.length });
+    return { text, tone: "ok", more: 0, full: text };
+  }
+  const name = nameOf(showing[0]);
+  return {
+    text: chipSentence(t, "editor.on_tablet_on_tablet", name, limit),
+    tone: "ok",
+    more: 0,
+    full: t("editor.on_tablet_on_tablet", { tablet: name }),
+  };
+}
+
+// The new tablets, in the one order: they wait for an admin on the start
+// screen and show nothing yet.
+export function newTablets(list) {
+  return sortTablets(list).filter(isNewTablet);
 }
 
 // What the editor's "Shown on" block says for each tablet an admin turned

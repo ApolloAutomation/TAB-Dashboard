@@ -664,3 +664,28 @@ export function drawerShift(cardLeft, cardRight, drawerLeft, minLeft) {
   }
   return Math.min(need, Math.max(0, cardLeft - minLeft));
 }
+
+// Where a pop-up of `size` ({ width, height }) goes beside its opener
+// (`anchor`, a box with left, top, right and bottom), inside `bounds` (the
+// same kind of box): under the opener, lined up with its start edge, or
+// above it when only there is room. Moved to stay inside the bounds; when
+// it is larger than they are, its start edge and top stay inside. Returns
+// { left, top } in px. rtl: lined up with the opener's right edge.
+export function placeBeside(anchor, size, bounds, { rtl = false, gap = 4 } = {}) {
+  const width = Math.max(0, size.width);
+  const height = Math.max(0, size.height);
+  let top = anchor.bottom + gap;
+  const roomBelow = bounds.bottom - anchor.bottom - gap;
+  const roomAbove = anchor.top - gap - bounds.top;
+  if (height > roomBelow && roomAbove > roomBelow) {
+    top = anchor.top - gap - height;
+  }
+  top = Math.max(bounds.top, Math.min(top, bounds.bottom - height));
+  let left = rtl ? anchor.right - width : anchor.left;
+  left = Math.min(left, bounds.right - width);
+  left = Math.max(bounds.left, left);
+  if (rtl && width > bounds.right - bounds.left) {
+    left = bounds.right - width;
+  }
+  return { left: Math.round(left), top: Math.round(top) };
+}

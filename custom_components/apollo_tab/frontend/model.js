@@ -11,6 +11,9 @@ export const MAX_UNITS_WIDE = 6;
 export const MAX_ENTITIES = 8;
 export const HISTORY_LIMIT = 50;
 export const DEFAULT_THEME = "midnight";
+// Themes the gallery tags "Preview": they may still change. Kept here, not
+// in the theme's own entry, whose keys stay as they are.
+export const PREVIEW_THEMES = ["glass"];
 export const GROUP_IDS = [
   "lights",
   "climate",
@@ -2084,6 +2087,8 @@ export function styleDefaults(data, theme) {
   return result;
 }
 
+// group: while an object, every change pushed with that same object joins
+// one step, however long the time between them (the theme gallery is open).
 export function createHistory(config) {
   return {
     past: [],
@@ -2091,6 +2096,7 @@ export function createHistory(config) {
     future: [],
     key: null,
     at: 0,
+    group: null,
   };
 }
 
@@ -2100,16 +2106,19 @@ export function historyPush(
   {
     key = null,
     now = 0,
+    group = null,
   } = {},
 ) {
   if (sameConfig(config, history.present)) {
     return history;
   }
 
+  const sameGroup = group !== null && group === history.group;
   if (
-    key !== null
-    && key === history.key
-    && now - history.at < 1000
+    sameGroup
+    || (key !== null
+      && key === history.key
+      && now - history.at < 1000)
   ) {
     return {
       ...history,
@@ -2117,6 +2126,7 @@ export function historyPush(
       future: [],
       key,
       at: now,
+      group,
     };
   }
 
@@ -2129,7 +2139,16 @@ export function historyPush(
     future: [],
     key,
     at: now,
+    group,
   };
+}
+
+// Ends the open group: the next change is a step of its own.
+export function historyCloseGroup(history) {
+  if (!history || history.group === null || history.group === undefined) {
+    return history;
+  }
+  return { ...history, group: null };
 }
 
 export function historyUndo(history) {
@@ -2147,6 +2166,7 @@ export function historyUndo(history) {
       ...history.future,
     ],
     key: null,
+    group: null,
   };
 }
 
@@ -2168,6 +2188,7 @@ export function historyRedo(history) {
     present,
     future,
     key: null,
+    group: null,
   };
 }
 

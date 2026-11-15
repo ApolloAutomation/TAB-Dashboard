@@ -4,6 +4,7 @@ import {
   accentInk,
   accentText,
   formToStyle,
+  isHex,
   isIcon,
   parseCssColour,
   styleToForm,
@@ -976,18 +977,52 @@ export function buildOtherForm(ctx) {
   return form;
 }
 
-// The heading at the top of "This page" or "This dashboard", which takes
-// focus when the person comes back from a card's form.
-function settingsHeading(text) {
-  const heading = el("h3", null, text);
+// The title of a pop-up. It takes focus when the pop-up opens on a touch
+// screen, where a text field would bring the keyboard up unasked.
+function popTitle(text) {
+  const heading = el("h2", "pop-title", text);
   heading.tabIndex = -1;
-  heading.dataset.test = "settings-heading";
+  heading.dataset.focus = "pop-title";
   return heading;
 }
 
+// Arrow keys, Home and End move through a grid of radio buttons drawn as
+// buttons, `columns` to a row, and choose the one they land on, as a group
+// of radio buttons does.
+function radioKeys(event, buttons, index, columns, choose) {
+  const moves = {
+    ArrowRight: 1,
+    ArrowLeft: -1,
+    ArrowDown: columns,
+    ArrowUp: -columns,
+  };
+  let next = null;
+  if (Object.hasOwn(moves, event.key)) {
+    // Right to left, the arrows follow the page.
+    const flip = getComputedStyle(event.currentTarget).direction === "rtl" && Math.abs(moves[event.key]) === 1;
+    next = index + (flip ? -moves[event.key] : moves[event.key]);
+  } else if (event.key === "Home") {
+    next = 0;
+  } else if (event.key === "End") {
+    next = buttons.length - 1;
+  }
+  if (next === null) {
+    return;
+  }
+  event.preventDefault();
+  next = Math.max(0, Math.min(buttons.length - 1, next));
+  if (next !== index && !buttons[next].disabled) {
+    buttons[next].focus();
+    choose(next);
+  }
+}
+
+// The page pop-up: the page's name, the icon of its button on the tablet
+// (a radio group of 7 to a row, with the name of the icon under it), the
+// moves and Delete.
 export function buildPageSettings(ctx) {
-  const block = el("section", "form-block");
-  block.append(settingsHeading(t("page.heading")));
+  const block = el("section", "form-block pop-form");
+  block.append(popTitle(t("page.heading")));
 
   const { field } = textInput({
     label: t("page.name"),
@@ -1002,9 +1037,19 @@ export function buildPageSettings(ctx) {
   const iconsLabel = el("span", "field-label", t("page.icon"));
   iconsLabel.id = uid("page-icon");
   const grid = el("div", "icon-grid");
-  grid.setAttribute("role", "group");
+  grid.setAttribute("role", "radiogroup");
   grid.setAttribute("aria-labelledby", iconsLabel.id);
-  for (const name of PAGE_ICONS) {
+  // "Icon: Security", for the icon that is hovered, has focus or is chosen.
+  const line = el("p", "small icon-line");
+  line.dataset.test = "page-icon-line";
+  const chosenName = PAGE_ICONS.includes(ctx.icon) ? t(PAGE_ICON_NAMES[ctx.icon]) : "";
+  const showName = (name) => {
+    line.textContent = name ? t("page.icon_line", { name }) : t("page.icon_none");
+  };
+  showName(chosenName);
+  const buttons = [];
+  const chosen = PAGE_ICONS.indexOf(ctx.icon);
+  for (const [index, name] of PAGE_ICONS.entries()) {
     // A plain name, read out and shown as a tooltip.
     const plain = t(PAGE_ICON_NAMES[name]);
     const button = makeButton(null, {
@@ -1015,30 +1060,42 @@ export function buildPageSettings(ctx) {
     });
     button.title = plain;
     button.dataset.icon = name;
-    button.setAttribute("aria-pressed", String(ctx.icon === name));
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(ctx.icon === name));
+    // One stop for the Tab key: the chosen icon, or the first.
+    button.tabIndex = index === (chosen >= 0 ? chosen : 0) ? 0 : -1;
     button.append(icon(name));
+    button.addEventListener("pointerenter", () => showName(plain));
+    button.addEventListener("pointerleave", () => showName(grid.contains(grid.getRootNode().activeElement) ? null : chosenName));
+    button.addEventListener("focus", () => showName(plain));
+    button.addEventListener("blur", () => showName(chosenName));
+    button.addEventListener("keydown", (event) =>
+      radioKeys(event, buttons, index, 7, (next) => ctx.onIcon(PAGE_ICONS[next])),
+    );
+    buttons.push(button);
     grid.append(button);
   }
-  icons.append(iconsLabel, grid);
+  icons.append(iconsLabel, grid, line);
   block.append(icons);
 
   const moves = el("div", "row-buttons");
-  moves.append(
-    makeButton(t("page.move_left"), {
-      test: "page-left",
-      focus: "page-left",
-      focusAlt: "page-right",
-      disabled: ctx.index <= 0,
-      onClick: () => ctx.onMove(-1),
-    }),
-    makeButton(t("page.move_right"), {
-      test: "page-right",
-      focus: "page-right",
-      focusAlt: "page-left",
-      disabled: ctx.index >= ctx.count - 1,
-      onClick: () => ctx.onMove(1),
-    }),
-  );
+  const earlier = makeButton(t("page.move_left"), {
+    test: "page-left",
+    focus: "page-left",
+    focusAlt: "page-right",
+    disabled: ctx.index <= 0,
+    onClick: () => ctx.onMove(-1),
+  });
+  earlier.prepend(icon("mdi:arrow-left"));
+  const later = makeButton(t("page.move_right"), {
+    test: "page-right",
+    focus: "page-right",
+    focusAlt: "page-left",
+    disabled: ctx.index >= ctx.count - 1,
+    onClick: () => ctx.onMove(1),
+  });
+  later.prepend(icon("mdi:arrow-right"));
+  moves.append(earlier, later);
   block.append(moves);
 
   block.append(
@@ -1056,62 +1113,110 @@ export function buildPageSettings(ctx) {
   return block;
 }
 
-// Settings that apply to the whole dashboard. Name, sidebar and delete are
+// The theme gallery: a radio group of swatch tiles painted from each
+// theme's own colours (the wall, a card, the accent and the text), the
+// chosen theme's description under it. ctx: { themes, themeId, readOnly,
+// preview (the ids tagged "Preview"), onTheme(id) }.
+export function buildThemeGallery(ctx) {
+  const block = el("section", "form-block pop-form");
+  block.append(popTitle(t("settings.theme")));
+  const themes = (Array.isArray(ctx.themes) ? ctx.themes : []).filter((theme) => theme && typeof theme.id === "string");
+  const group = el("div", "theme-grid");
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", t("settings.theme"));
+  group.dataset.test = "theme";
+  group.dataset.value = ctx.themeId || "";
+  // With more than nine themes, the dark ones and the light ones each
+  // under a heading.
+  const split = themes.length > 9;
+  const ordered = split ? [...themes.filter((theme) => theme.dark), ...themes.filter((theme) => !theme.dark)] : themes;
+  const tiles = [];
+  const chosen = ordered.findIndex((theme) => theme.id === ctx.themeId);
+  let heading = null;
+  for (const [index, theme] of ordered.entries()) {
+    if (split && heading !== Boolean(theme.dark)) {
+      heading = Boolean(theme.dark);
+      group.append(el("p", "theme-heading", t(heading ? "editor.theme_dark" : "editor.theme_light")));
+    }
+    const tile = makeButton(null, {
+      className: "theme-tile",
+      test: "theme-tile",
+      focus: `theme:${theme.id}`,
+      onClick: () => {
+        if (!ctx.readOnly) {
+          ctx.onTheme(theme.id);
+        }
+      },
+    });
+    tile.dataset.theme = theme.id;
+    tile.setAttribute("role", "radio");
+    tile.setAttribute("aria-checked", String(theme.id === ctx.themeId));
+    if (ctx.readOnly) {
+      tile.setAttribute("aria-disabled", "true");
+    }
+    tile.tabIndex = index === (chosen >= 0 ? chosen : 0) ? 0 : -1;
+    const swatch = el("span", "theme-swatch");
+    swatch.setAttribute("aria-hidden", "true");
+    const colour = (value, fallback) => (isHex(value) ? value : fallback);
+    swatch.style.backgroundColor = colour(theme.wall, "#101418");
+    const card = el("span", "swatch-card");
+    card.style.backgroundColor = colour(theme.card, "#181c23");
+    const dot = el("span", "swatch-dot");
+    dot.style.backgroundColor = colour(theme.acc, "#f5b547");
+    const bar = el("span", "swatch-bar");
+    bar.style.backgroundColor = colour(theme.tx, "#e8eaed");
+    card.append(dot, bar);
+    swatch.append(card);
+    const title = typeof theme.name === "string" && theme.name ? theme.name : theme.id;
+    // The name's line, with "Preview" after the name where it applies.
+    const label = el("span", "theme-label");
+    label.append(el("span", "theme-name", title));
+    tile.append(swatch, label);
+    if ((ctx.preview || []).includes(theme.id)) {
+      // The tag is read after the name with a pause: "Glass, Preview".
+      label.append(el("span", "tag theme-preview", t("editor.theme_preview")));
+      tile.setAttribute("aria-label", `${title}, ${t("editor.theme_preview")}`);
+    }
+    tile.addEventListener("keydown", (event) =>
+      radioKeys(event, tiles, index, 3, (next) => {
+        if (!ctx.readOnly) {
+          ctx.onTheme(ordered[next].id);
+        }
+      }),
+    );
+    tiles.push(tile);
+    group.append(tile);
+  }
+  block.append(group);
+  const current = themes.find((theme) => theme.id === ctx.themeId);
+  if (current && typeof current.description === "string" && current.description) {
+    const text = el("p", "theme-description", current.description);
+    text.dataset.test = "theme-description";
+    block.append(text);
+  }
+  block.append(el("p", "helper", t("settings.theme_helper")));
+  return block;
+}
+
+// The menu of the top bar: Home Assistant's sidebar, the name for
+// automations with a copy button, and Delete. Name, sidebar and delete are
 // stored by Home Assistant itself, so a failure puts the control back and
-// says so next to it.
+// says so next to it. ctx.extra: controls that go first (Rename and Theme
+// on a phone, the picture's size on a short screen).
 export function buildDashboardSettings(ctx) {
-  const block = el("section", "form-block");
-  block.append(settingsHeading(t("settings.heading")));
+  const block = el("section", "form-block pop-form");
+  block.append(popTitle(t("settings.heading")));
+  if (Array.isArray(ctx.extra) && ctx.extra.length) {
+    const first = el("div", "menu-items");
+    first.append(...ctx.extra);
+    block.append(first);
+  }
 
   const failure = (line, error) => {
     line.textContent = t("settings.failed", { message: error?.message || error?.code || "" });
   };
 
   if (!ctx.readOnly) {
-    const nameAlert = el("p", "alert");
-    nameAlert.setAttribute("role", "alert");
-    let savedName = ctx.title;
-    const { field, input } = textInput({
-      label: t("settings.name"),
-      value: ctx.title,
-      maxLength: 80,
-      test: "dashboard-name",
-      onInput: () => {},
-    });
-    input.addEventListener("change", async () => {
-      const value = input.value.trim();
-      if (!value) {
-        input.value = savedName;
-        return;
-      }
-      try {
-        await ctx.onRename(value);
-        savedName = value;
-        nameAlert.textContent = "";
-      } catch (error) {
-        input.value = savedName;
-        failure(nameAlert, error);
-      }
-    });
-    block.append(field, nameAlert);
-
-    const themes = Array.isArray(ctx.themes) ? ctx.themes : [];
-    const { field: themeField } = select({
-      label: t("settings.theme"),
-      options: themes.map((theme) => [theme.id, theme.name]),
-      value: ctx.themeId,
-      focus: "dashboard-theme",
-      test: "theme",
-      onChange: (value) => ctx.onTheme(value),
-    });
-    themeField.append(el("span", "helper", t("settings.theme_helper")));
-    block.append(themeField);
-    // Which tablets show this dashboard, under the theme (ctx.shownOn is
-    // drawn and kept up to date by the editor).
-    if (ctx.shownOn) {
-      block.append(ctx.shownOn);
-    }
-
     const sidebarAlert = el("p", "alert");
     sidebarAlert.setAttribute("role", "alert");
     const {
@@ -1137,18 +1242,34 @@ export function buildDashboardSettings(ctx) {
     block.append(sidebarField, sidebarHelper, sidebarAlert);
   }
 
+  // The address, for the show_dashboard action in automations.
+  const name = el("div", "automation-name");
+  name.dataset.test = "automation-name";
+  const code = el("code", null, ctx.urlPath || "");
+  const copy = makeButton(t("editor.copy"), {
+    test: "automation-copy",
+    focus: "automation-copy",
+    onClick: async () => {
+      try {
+        await navigator.clipboard.writeText(ctx.urlPath || "");
+        copy.textContent = t("editor.copied");
+      } catch {
+        // Without the clipboard the words are selected, ready to copy.
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const selection = code.getRootNode().getSelection?.() || document.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+    },
+  });
+  copy.setAttribute("aria-label", `${t("editor.copy")} ${ctx.urlPath || ""}`);
+  name.append(el("span", "field-label", t("editor.on_tablet_name")), code, copy);
+  block.append(name);
+
   // There is deliberately no link to the dashboard in Home Assistant: its
   // own editor there offers cards the tablet cannot show.
-  if (ctx.readOnly) {
-    const theme = (Array.isArray(ctx.themes) ? ctx.themes : []).find((entry) => entry.id === ctx.themeId);
-    const field = el("div", "field");
-    field.append(el("span", "field-label", t("settings.theme")), el("span", null, theme?.name || ctx.themeId || ""));
-    block.append(field);
-    // A dashboard kept in a file can still be shown on a tablet.
-    if (ctx.shownOn) {
-      block.append(ctx.shownOn);
-    }
-  } else {
+  if (!ctx.readOnly) {
     const deleteAlert = el("p", "alert");
     deleteAlert.setAttribute("role", "alert");
     block.append(

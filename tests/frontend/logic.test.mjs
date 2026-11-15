@@ -508,3 +508,30 @@ test("shellHeight follows the keyboard and ignores a pinch zoom", () => {
   assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 640.6, offsetTop: 0, scale: 1.005 }, top: 0.4 }), 640);
   assert.equal(logic.shellHeight({ innerHeight: 300, visual: null, top: 400 }), 0);
 });
+
+test("placeBeside keeps a pop-up inside its bounds", () => {
+  const bounds = { left: 0, top: 0, right: 1000, bottom: 700 };
+  const anchor = { left: 600, top: 10, right: 700, bottom: 50 };
+  // Under its opener, lined up with the opener's start edge.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 200 }, bounds), { left: 600, top: 54 });
+  // Too wide to start there: moved left until its end is inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 500, height: 200 }, bounds), { left: 500, top: 54 });
+  // Right to left: its end lines up with the opener's end.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 200 }, bounds, { rtl: true }), { left: 400, top: 54 });
+  // No room under an opener near the bottom: above it.
+  const low = { left: 20, top: 600, right: 120, bottom: 640 };
+  assert.deepEqual(logic.placeBeside(low, { width: 200, height: 300 }, bounds), { left: 20, top: 296 });
+  // Taller than the bounds: its top stays inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 900 }, bounds), { left: 600, top: 0 });
+  // Wider than the bounds: its start edge stays inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 1200, height: 100 }, bounds), { left: 0, top: 54 });
+  // Every result is inside whenever it fits.
+  for (const x of [-50, 0, 400, 990, 1100]) {
+    for (const y of [-20, 0, 300, 690, 800]) {
+      const box = { left: x, top: y, right: x + 40, bottom: y + 40 };
+      const place = logic.placeBeside(box, { width: 344, height: 240 }, bounds);
+      assert.ok(place.left >= 0 && place.left + 344 <= 1000, `left ${place.left} for ${x},${y}`);
+      assert.ok(place.top >= 0 && place.top + 240 <= 700, `top ${place.top} for ${x},${y}`);
+    }
+  }
+});

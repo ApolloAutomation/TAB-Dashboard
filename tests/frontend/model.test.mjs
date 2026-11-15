@@ -2329,6 +2329,53 @@ test("historyUndo and historyRedo walk both ways and stop at the ends", () => {
   assert.equal(model.canRedo(history), false);
 });
 
+test("a history group joins changes five seconds apart", () => {
+  const group = {};
+  let history = model.createHistory({ theme: "midnight" });
+  history = model.historyPush(history, { theme: "warm" }, { now: 1000, group });
+  history = model.historyPush(history, { theme: "soft" }, { now: 6000, group });
+  history = model.historyPush(history, { theme: "mono" }, { now: 11000, group });
+  assert.deepStrictEqual(history.past, [{ theme: "midnight" }]);
+  assert.deepStrictEqual(history.present, { theme: "mono" });
+  // A change with another group, or with none, is a step of its own.
+  history = model.historyPush(history, { theme: "glass" }, { now: 11500, group: {} });
+  assert.equal(history.past.length, 2);
+  history = model.historyPush(history, { theme: "daylight" }, { now: 11600 });
+  assert.equal(history.past.length, 3);
+  assert.equal(history.group, null);
+  // One undo takes back everything the group joined.
+  let grouped = model.createHistory({ theme: "midnight" });
+  for (const [index, theme] of ["warm", "soft", "mono"].entries()) {
+    grouped = model.historyPush(grouped, { theme }, { now: index * 1200, group });
+  }
+  assert.deepStrictEqual(model.historyUndo(grouped).present, { theme: "midnight" });
+});
+
+test("undo, redo and closing end a history group", () => {
+  const group = {};
+  let history = model.createHistory({ value: 0 });
+  history = model.historyPush(history, { value: 1 }, { group });
+  history = model.historyCloseGroup(history);
+  assert.equal(history.group, null);
+  history = model.historyPush(history, { value: 2 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }]);
+  // Undo ends it: the next change with the same group is a new step.
+  history = model.historyUndo(history);
+  assert.equal(history.group, null);
+  history = model.historyPush(history, { value: 3 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }]);
+  history = model.historyPush(history, { value: 4 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }]);
+  history = model.historyUndo(history);
+  history = model.historyRedo(history);
+  assert.equal(history.group, null);
+  history = model.historyPush(history, { value: 5 }, { group });
+  assert.deepStrictEqual(history.past, [{ value: 0 }, { value: 1 }, { value: 4 }]);
+  // Closing a history without a group changes nothing.
+  const plain = model.createHistory({ value: 0 });
+  assert.equal(model.historyCloseGroup(plain), plain);
+});
+
 test("SaveQueue saves once after the delay and reports saved", async () => {
   const timers = makeTimers();
   const savedConfigs = [];

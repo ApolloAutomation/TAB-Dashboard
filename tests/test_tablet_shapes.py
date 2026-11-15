@@ -268,8 +268,13 @@ def test_the_approval_answers_use_the_agreed_words() -> None:
     for name in ("apollo_tab/tablet/assign", "apollo_tab/tablet/pair"):
         assert SHAPES["commands"][name]["errors"]["not_approved"] == NOT_APPROVED
     ending = f'press "{STRINGS["tablets.turn_on"]}".'
-    for text in (APPROVAL_NEEDED, NOT_APPROVED, STRINGS["editor.on_tablet_new"]):
+    for text in (APPROVAL_NEEDED, NOT_APPROVED):
         assert text.endswith(ending), text
+    # The editor's line (redesign v2 4.3) names the tablet and comes with
+    # its own "Set it up" button, which goes to the Home screen; it never
+    # turns the tablet on from the editor.
+    assert STRINGS["editor.on_tablet_new"] == "{tablet} is new and ready to turn on."
+    assert STRINGS["editor.on_tablet_set_up"] == "Set it up"
 
 
 def test_the_erased_line_says_what_home_assistant_asks() -> None:

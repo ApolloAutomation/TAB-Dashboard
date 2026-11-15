@@ -31,6 +31,7 @@ import {
   inputNoteKey,
   isNewTablet,
   keepOrder,
+  markAll,
   markMoved,
   offlineHelpKey,
   pairAgainIn,
@@ -168,6 +169,11 @@ export class ApolloTabPanel extends HTMLElement {
     this._turnOnPlaces = null;
     this._turnOnMovedAt = new Map();
     this._settleTimer = null;
+    // What the editor handed over when it left for this screen: { tablet,
+    // dashboard } for a tablet to set up, {} for the Tablets box. Kept in
+    // memory only, for the one drawing after that exit (see _arrive).
+    this._handover = null;
+    this._pendingExit = null;
     this._tabletsObserver = null;
     this._watchedBox = null;
     // The theme last read for the accent colours (see _themeChanged), and
@@ -311,14 +317,23 @@ export class ApolloTabPanel extends HTMLElement {
 
   _setPath(path) {
     const next = parsePath(path);
+    // A handover is for the move it came with; any other move drops it.
+    const exit = this._pendingExit;
+    this._pendingExit = null;
     if (next === this._path) {
+      this._handover = null;
       return;
     }
     const wasEditor = this._isEditor();
+    this._handover = next === "" && wasEditor && exit ? exit : null;
     this._path = next;
     // Home drawn again after another screen lists the tablets in the usual
     // order, new ones first; nothing moves under a pointer there yet.
     this._tabletOrder = null;
+    // A dashboard picked for a new tablet on an earlier visit is dropped:
+    // each visit starts at "Pick a dashboard", so no Turn on button can be
+    // pressed until a dashboard is picked again.
+    this._chosen.clear();
     this._forgetTurnOnPlaces();
     // The control that moved to the new screen went with the old one; focus
     // goes to the new screen's heading. The first screen the panel shows
@@ -330,7 +345,11 @@ export class ApolloTabPanel extends HTMLElement {
     this._draw();
   }
 
-  _go(path) {
+  // handover: what the editor hands to the start screen (see _arrive).
+  // The handover is set first: Home Assistant may set the route while the
+  // event is sent, and that move must find it.
+  _go(path, handover = null) {
+    this._pendingExit = handover && typeof handover === "object" ? handover : null;
     history.pushState(null, "", this._prefix() + path);
     window.dispatchEvent(new CustomEvent("location-changed"));
     this._setPath(path);
@@ -538,6 +557,8 @@ export class ApolloTabPanel extends HTMLElement {
     }
     const moved = this._headingFocus;
     this._headingFocus = false;
+    const handover = this._path === "" ? this._handover : null;
+    this._handover = null;
     // A control that is disabled while its action runs gets focus back once
     // the action has finished and it is drawn enabled again.
     const focusKey = moved ? null : this.shadowRoot.activeElement?.dataset?.focus || this._restoreFocus || null;
@@ -546,8 +567,12 @@ export class ApolloTabPanel extends HTMLElement {
     this.shadowRoot.replaceChildren(this._style, ...nodes);
     this._drawn = true;
     this._noteTabletLayout();
+    if (handover && moved) {
+      this._arrive(handover);
+      return;
+    }
     if (moved && focusLost()) {
-      this.shadowRoot.querySelector('[data-focus="heading"]')?.focus();
+      this.shadowRoot.querySelector('[data-focus="heading"]')?.focus({ preventScroll: true });
       return;
     }
     if (focusKey) {
@@ -555,7 +580,7 @@ export class ApolloTabPanel extends HTMLElement {
         (node) => node.dataset.focus === focusKey,
       );
       if (target && !target.disabled) {
-        target.focus();
+        target.focus({ preventScroll: true });
       } else if (target) {
         this._restoreFocus = focusKey;
       }
@@ -565,7 +590,8 @@ export class ApolloTabPanel extends HTMLElement {
   _showEditor(urlPath) {
     if (!this._designer) {
       this._designer = document.createElement("apollo-tab-designer");
-      this._designer.onExit = () => this._go("");
+      // A handover ({ tablet, dashboard } or {}) stays in memory only.
+      this._designer.onExit = (handover) => this._go("", handover || null);
       this._designer.onAdvanced = () => this._go("/advanced");
     }
     const designer = this._designer;
@@ -807,6 +833,34 @@ export class ApolloTabPanel extends HTMLElement {
     this._watchedBox = null;
   }
 
+  // Arriving from the editor with a handover: the tablet's row (only a new
+  // tablet that is in the list now), else the Tablets box, is scrolled into
+  // view at once, and focus goes to the tablet's name or the box's heading.
+  // The scroll moves every Turn on button, so each one waits again. Nothing
+  // is picked and nothing is sent.
+  _arrive(handover) {
+    const ui = this._tabletUi;
+    if (!ui?.box?.isConnected) {
+      this.shadowRoot.querySelector('[data-focus="heading"]')?.focus({ preventScroll: true });
+      return;
+    }
+    const tablet = (Array.isArray(this._tablets) ? this._tablets : []).find(
+      (entry) => entry?.mac === handover.tablet && isNewTablet(entry),
+    );
+    const row = tablet ? ui.rows.get(tablet.mac)?.row : null;
+    const target = row || ui.box;
+    // A row is centred; without one the Tablets heading goes to the top, so
+    // the heading that takes focus and the new tablets under it are in view.
+    target.scrollIntoView({ block: row ? "center" : "start", behavior: "instant" });
+    const places = this._turnOnPlaces || new Map();
+    this._turnOnMovedAt = markAll(this._turnOnMovedAt, [...places.keys()], performance.now());
+    this._showSettling();
+    const focus = row
+      ? row.querySelector(`[data-focus="name:${CSS.escape(tablet.mac)}"]`)
+      : ui.box.querySelector('[data-focus="tablets-heading"]');
+    focus?.focus({ preventScroll: true });
+  }
+
   _showsOptions(rows, tablet) {
     const suggested = isNewTablet(tablet) && typeof tablet.suggested === "string" ? tablet.suggested : null;
     return showsOptions(rows, tablet.dashboard, t, this._home?.unreadable, suggested);
@@ -820,7 +874,11 @@ export class ApolloTabPanel extends HTMLElement {
   _tabletsBox() {
     const box = el("section", "box tablets");
     box.dataset.test = "tablets";
-    box.append(el("h2", null, t("tablets.title")));
+    const heading = el("h2", null, t("tablets.title"));
+    // Focus comes here when the editor sends someone to the Tablets box.
+    heading.tabIndex = -1;
+    heading.dataset.focus = "tablets-heading";
+    box.append(heading);
     const ui = { box, rows: new Map(), shownOn: new Map(), shape: this._tabletShape() };
     this._tabletUi = ui;
 
@@ -1048,7 +1106,7 @@ export class ApolloTabPanel extends HTMLElement {
       );
       if (focusKey) {
         const find = (wanted) => [...refs.row.querySelectorAll("[data-focus]")].find((node) => node.dataset.focus === wanted);
-        (find(focusKey) || find(`name:${tablet.mac}`))?.focus();
+        (find(focusKey) || find(`name:${tablet.mac}`))?.focus({ preventScroll: true });
       }
     }
     // Turning on needs a dashboard picked first. While the change is on its
@@ -1202,7 +1260,7 @@ export class ApolloTabPanel extends HTMLElement {
         // an arrow key there would switch the tablet at once.
         const target =
           find(focusKey) || (focusKey.startsWith("turn-on:") ? find(`name:${focusKey.slice("turn-on:".length)}`) : null);
-        target?.focus();
+        target?.focus({ preventScroll: true });
       }
     } else if (Array.isArray(this._tablets)) {
       for (const tablet of this._tablets) {

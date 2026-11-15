@@ -14,6 +14,7 @@ import {
   buildHeadingForm,
   buildOtherForm,
   buildPageSettings,
+  buildThemeGallery,
   deviceText,
   el,
   fillItemNotes,
@@ -28,6 +29,7 @@ import { confirmOpen, openConfirm } from "./confirm.js";
 import { drawerShift, fitStage, layoutBand, shellHeight, warningBoxKind } from "./logic.js";
 import {
   DEFAULT_THEME,
+  PREVIEW_THEMES,
   addCard,
   addPage,
   canMove,
@@ -41,6 +43,7 @@ import {
   devicesLeft,
   followItem,
   getCard,
+  historyCloseGroup,
   historyPush,
   historyRedo,
   historyUndo,
@@ -70,11 +73,32 @@ import {
   usesWholeScreen,
 } from "./model.js";
 import { openCardPicker } from "./picker.js";
+import { openPopover } from "./popover.js";
 import { renderPage } from "./render.js";
 import { canvasStyles, designerStyles, formStyles, pickerStyles, rendererStyles } from "./styles.js";
-import { captionLines, deleteNote, newTabletCount, shownOnRows, tabletsShowing } from "./tablets.js";
+import {
+  approvedTablets,
+  captionLines,
+  chipTone,
+  chipWords,
+  deleteNote,
+  newTablets,
+  shownOnRows,
+  tabletName,
+  tabletsShowing,
+} from "./tablets.js";
 
 const KEEP_IN_SIDEBAR_KEY = "apollo_tab.sidebar_keep";
+// Under this height of the editor the first-card notice takes a row over
+// the picture instead of floating over the stage's top padding.
+const FIRST_CARD_FLOAT_HEIGHT = 700;
+
+// The dashboards whose first-card notice was shown in this browser.
+const FIRST_CARD_KEY = "apollo_tab.first_card";
+// Under this width of the editor a phone's top bar keeps Redo in the menu.
+const TIGHT_BAR = 400;
+// How long a failed rename says so under the name.
+const RENAME_ERROR_MS = 8000;
 const TOAST_MS = 6000;
 // A toast that offers a next step stays longer, and stays while it has
 // focus or the pointer is over it.
@@ -332,6 +356,31 @@ function keepInSidebar(urlPath) {
   }
 }
 
+function firstCardSeen() {
+  try {
+    const list = JSON.parse(localStorage.getItem(FIRST_CARD_KEY) || "[]");
+    return Array.isArray(list) ? list.filter((entry) => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function markFirstCardSeen(urlPath) {
+  try {
+    const list = firstCardSeen();
+    if (!list.includes(urlPath)) {
+      localStorage.setItem(FIRST_CARD_KEY, JSON.stringify([...list, urlPath]));
+    }
+  } catch {
+    // Without storage the notice may show once more on another visit.
+  }
+}
+
+// The cards on every page of a dashboard.
+function dashboardCards(config) {
+  return (Array.isArray(config?.views) ? config.views : []).reduce((total, view) => total + cardCount(view), 0);
+}
+
 function sameSource(a, b) {
   return Array.isArray(a) && Array.isArray(b) && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 }
@@ -405,6 +454,7 @@ export class ApolloTabDesigner extends HTMLElement {
     this._toast = null;
     this._toastTimer = null;
     this._compact = false;
+    this._tight = false;
     // Compact: what opened the edit mode ("hit", "row" or null), the page
     // column's scroll then, and the page. Leaving it puts the person back
     // there. _opener hands the first two over from _select.
@@ -446,7 +496,21 @@ export class ApolloTabDesigner extends HTMLElement {
     this._tabRowsTimer = null;
     this._assigning = new Set();
     this._shownOnError = "";
-    this._shownOnKey = null;
+    // The open pop-up ({ update, close, dialog }) and which one it is
+    // ("tablets", "theme", "menu" or "page"); the history group of the open
+    // theme gallery.
+    this._popover = null;
+    this._popKind = null;
+    this._themeGroup = null;
+    // The dashboard's name is a field while it is renamed; a failed rename
+    // says so under it for a while.
+    this._renaming = false;
+    this._renameError = "";
+    this._renameTimer = null;
+    // The first card of a dashboard no tablet shows raises a notice once
+    // it is saved: due until then, then what it says.
+    this._firstCardDue = false;
+    this._firstCard = null;
 
     // Work left behind by a closed editor has its own guard (see leftBehind).
     this._onBeforeUnload = (event) => {
@@ -572,6 +636,11 @@ export class ApolloTabDesigner extends HTMLElement {
     this._tabRowsSeq += 1;
     this._assigning.clear();
     this._shownOnError = "";
+    this._renaming = false;
+    this._renameError = "";
+    clearTimeout(this._renameTimer);
+    this._firstCardDue = false;
+    this._firstCard = null;
     // A message about this dashboard is not shown for the next one.
     this._toast = null;
     clearInterval(this._refreshTimer);
@@ -582,6 +651,7 @@ export class ApolloTabDesigner extends HTMLElement {
     this._stageObserver = null;
     this._els.pageHost?.__atCleanup?.();
     this._els.previewHost?.__atCleanup?.();
+    this._popover?.close({ refocus: false });
     this._closePickers();
   }
 
@@ -757,8 +827,7 @@ export class ApolloTabDesigner extends HTMLElement {
       onTabletsChanged(this._conn, (tablets) => this._tabletsChanged(tablets), {
         onError: (error) => {
           this._tabletsError = error;
-          this._fillTabletLines();
-          this._fillShownOn();
+          this._tabletsShown();
         },
       }),
     );
@@ -921,6 +990,13 @@ export class ApolloTabDesigner extends HTMLElement {
     this._band = band;
     this._compact = band === "compact";
     this._bandWidth = this.getBoundingClientRect().width;
+    this._tight = this._isTight(this._bandWidth);
+  }
+
+  // A phone's bar under 400 px has no room for Redo beside the dashboard's
+  // name: Redo is in the menu there, and Undo stays in the bar.
+  _isTight(width) {
+    return this._compact && width > 0 && width < TIGHT_BAR;
   }
 
   // Whether a text field of the editor or of one of its dialogs has focus.
@@ -957,13 +1033,30 @@ export class ApolloTabDesigner extends HTMLElement {
     this._bandHeld = false;
     this._bandWidth = width;
     if (band === this._band) {
+      // The bar got too narrow for Redo, or wide enough again. The menu is
+      // drawn for one or the other, so an open one closes.
+      if (this._isTight(width) !== this._tight) {
+        this._tight = !this._tight;
+        if (this._popKind === "menu") {
+          this._popover?.close();
+        }
+        this._renderHeader();
+      }
       // The tab list may have got narrower.
       this._showTab();
+      // The window got low or high enough for the notice to change place.
+      if (this._firstCard && this._firstCardRow() !== this._firstCardIsRow) {
+        this._placeFirstCard();
+      }
       return;
     }
     const active = this.shadowRoot.activeElement;
-    const focusKey = active?.dataset?.focus || null;
+    // Focus in an open pop-up goes back to the control that opened it.
+    const inPop = Boolean(active && this._popover?.dialog?.contains(active));
+    const focusKey = (inPop ? this._popAnchor : active?.dataset?.focus) || null;
     const wasEdit = this._els.side?.dataset.mode === "edit";
+    // A pop-up is a sheet in one layout and not in another: it closes.
+    this._popover?.close({ refocus: false });
     this._setBand(band);
     this._drawerOpen = false;
     this._shift = 0;
@@ -1067,14 +1160,13 @@ export class ApolloTabDesigner extends HTMLElement {
     const side = el("aside", "side");
     side.dataset.test = "side";
     // What the inspector shows while no card is selected (in the compact
-    // layout it is the end of the page column): the card list, the notes
-    // about the picture, and for now the page and dashboard settings.
+    // layout it is the end of the page column): the cards on this page and
+    // the notes about the picture.
     const idle = el("div", "idle");
     idle.dataset.test = "idle";
     const idleIntro = el("div", "idle-intro");
     const idlePage = el("div", "idle-page");
-    const idleSettings = el("div", "idle-settings");
-    idle.append(idleIntro, idlePage, idleSettings);
+    idle.append(idleIntro, idlePage);
     const toasts = el("div", "toast-region");
     toasts.setAttribute("aria-live", "polite");
     root.append(banners, tabs, page, side, toasts);
@@ -1089,7 +1181,6 @@ export class ApolloTabDesigner extends HTMLElement {
       idle,
       idleIntro,
       idlePage,
-      idleSettings,
       toasts,
     });
 
@@ -1164,12 +1255,13 @@ export class ApolloTabDesigner extends HTMLElement {
   // picture. In the compact layout they come after the picture and the
   // tablet lines, before the card list, every one shown.
   _placeAdvice(focusKey = this._focusKeyIn(this._els.advice)) {
-    const { advice, page, stageArea, pageBox, under, tabletLines, idle } = this._els;
+    const { advice, page, stageArea, pageBox, under, chipRow, idle } = this._els;
     if (!advice || !page) {
       return;
     }
     if (this._compact) {
-      const after = [tabletLines, under, stageArea, pageBox].find((node) => node?.parentNode === page);
+      const notice = this.shadowRoot.querySelector(".first-card");
+      const after = [notice, chipRow, under, stageArea, pageBox].find((node) => node?.parentNode === page);
       if (after) {
         after.after(advice);
       } else if (idle?.parentNode === page) {
@@ -1191,11 +1283,16 @@ export class ApolloTabDesigner extends HTMLElement {
     return active && region?.contains(active) ? active.dataset.focus || null : null;
   }
 
+  // The top bar: Back, the dashboard's name (pressed, it becomes a field),
+  // the Tablets chip, the Theme button, the save state, Undo and Redo, and
+  // the menu. In the compact layout the chip is under the picture and the
+  // menu holds Theme and Rename (see _placeCompactParts and _openMenu).
   _renderHeader() {
     const header = this._els.header;
     if (!header) {
       return;
     }
+    const focusKey = this._focusKeyIn(header);
     header.replaceChildren();
     // Home Assistant's menu button shows itself only when the sidebar is
     // out of reach (see the panel's header).
@@ -1210,53 +1307,273 @@ export class ApolloTabDesigner extends HTMLElement {
       focus: "back",
       onClick: () => this._back(),
     });
-    const title = screenHeading(this._dashboard?.title || "");
+    const title = screenHeading("");
     title.dataset.focus = "title";
     this._els.title = title;
-    // After the title, the tablets that show this dashboard, on one line
-    // that is cut when it does not fit; under the picture in the compact
-    // layout (see _fillTabletLines).
     const titleBlock = el("div", "title-block");
     titleBlock.append(title);
-    if (this._status === "ready") {
-      const tabletLines = el("div", "tablet-lines");
-      tabletLines.dataset.test = "tablet-lines";
-      const before = this._els.tabletLines;
-      this._els.tabletLines = tabletLines;
-      if (!this._compact) {
-        titleBlock.append(tabletLines);
-      } else if (before?.isConnected) {
-        before.replaceWith(tabletLines);
-      }
-      this._fillTabletLines();
-    }
     header.append(back, titleBlock);
+    this._fillTitle();
+    const oldRow = this._els.chipRow;
+    Object.assign(this._els, { chip: null, chipRow: null, themeButton: null, saveState: null, saveLive: null, undo: null, redo: null });
 
-    if (this._status !== "ready" || this._readOnly) {
+    if (this._status !== "ready") {
+      oldRow?.remove();
       return;
     }
+    const chip = this._chip();
+    if (this._compact) {
+      // Under the picture, in the page column (see _placeCompactParts).
+      const row = el("div", "chip-row");
+      row.append(chip);
+      this._els.chipRow = row;
+      if (oldRow?.parentNode) {
+        oldRow.replaceWith(row);
+      }
+    } else {
+      oldRow?.remove();
+      header.append(chip);
+      header.append(this._themeButton());
+    }
     const actions = el("div", "header-actions");
-    const live = el("div", "save-state");
-    live.setAttribute("aria-live", "polite");
-    const state = el("span", "save-state");
-    state.dataset.test = "save-state";
-    live.append(state);
-    const undo = this._iconButton("mdi:undo", t("undo.undo"), {
-      test: "undo",
-      focus: "undo",
-      focusAlt: "redo",
-      onClick: () => this._undo(),
+    if (!this._readOnly) {
+      // The state is shown; only "Not saved" and the first "Saved" after it
+      // are read out, from a region of their own.
+      const state = el("span", "save-state");
+      state.dataset.test = "save-state";
+      const live = el("span", "sr-only");
+      live.setAttribute("aria-live", "polite");
+      const undo = this._iconButton("mdi:undo", t("undo.undo"), {
+        test: "undo",
+        focus: "undo",
+        focusAlt: "redo",
+        onClick: () => this._undo(),
+      });
+      const redo = this._iconButton("mdi:redo", t("undo.redo"), {
+        test: "redo",
+        focus: "redo",
+        focusAlt: "undo",
+        onClick: () => this._redo(),
+      });
+      // In a bar under 400 px Redo is in the menu (see _menuBody).
+      const shown = this._tight ? [undo] : [undo, redo];
+      actions.append(state, live, ...shown);
+      Object.assign(this._els, { saveState: state, saveLive: live, undo, redo: this._tight ? null : redo });
+    }
+    const more = this._iconButton("mdi:dots-vertical", t("editor.menu"), {
+      test: "dash-menu",
+      focus: "dash-menu",
+      onClick: () => this._openMenu(),
     });
-    const redo = this._iconButton("mdi:redo", t("undo.redo"), {
-      test: "redo",
-      focus: "redo",
-      focusAlt: "undo",
-      onClick: () => this._redo(),
-    });
-    actions.append(live, undo, redo);
+    more.setAttribute("aria-haspopup", "dialog");
+    actions.append(more);
     header.append(actions);
-    Object.assign(this._els, { saveState: state, undo, redo });
     this._updateHeader();
+    if (focusKey && !this.shadowRoot.activeElement) {
+      this._focus(focusKey);
+    }
+  }
+
+  // The dashboard's name: a button that turns into a field while it is
+  // renamed, a plain heading on a dashboard that cannot be changed. A
+  // failed rename says so under it for a while.
+  _fillTitle() {
+    const title = this._els.title;
+    if (!title) {
+      return;
+    }
+    const name = this._dashboard?.title || "";
+    title.replaceChildren();
+    title.closest(".title-block")?.querySelector(".rename-alert")?.remove();
+    if (this._status !== "ready" || this._readOnly) {
+      title.textContent = name;
+      return;
+    }
+    if (this._renaming) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "title-field";
+      input.value = name;
+      input.maxLength = 80;
+      input.autocomplete = "off";
+      input.dataset.test = "dashboard-name";
+      input.dataset.focus = "dashboard-name";
+      input.setAttribute("aria-label", t("settings.name"));
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          this._finishRename(input.value);
+        } else if (event.key === "Escape") {
+          // Only the rename is cancelled; a selected card stays selected.
+          event.preventDefault();
+          event.stopPropagation();
+          this._finishRename(null);
+        }
+      });
+      input.addEventListener("blur", () => this._finishRename(input.value, { refocus: false }));
+      title.append(input);
+    } else {
+      const button = makeButton(null, {
+        className: "title-button",
+        test: "title-button",
+        focus: "title-button",
+        onClick: () => this._startRename(),
+      });
+      button.title = t("editor.rename");
+      button.append(el("span", "title-text", name));
+      // The pencil shows on hover and focus. A phone has no hover, and the
+      // pencil would take the name's room there.
+      if (!this._compact) {
+        button.append(icon("mdi:pencil"));
+      }
+      button.setAttribute("aria-label", `${name}, ${t("editor.rename")}`);
+      title.append(button);
+    }
+    if (this._renameError) {
+      const alert = alertLine(this._renameError);
+      alert.classList.add("rename-alert");
+      alert.dataset.test = "rename-error";
+      title.after(alert);
+    }
+  }
+
+  _startRename() {
+    if (this._readOnly || this._status !== "ready") {
+      return;
+    }
+    this._renaming = true;
+    this._renameError = "";
+    clearTimeout(this._renameTimer);
+    this._fillTitle();
+    const input = this._els.title?.querySelector("input");
+    if (input) {
+      input.focus({ preventScroll: true });
+      input.select();
+    }
+  }
+
+  // text: the new name (Enter, or the field lost focus), or null (Escape).
+  // An empty or unchanged name changes nothing. A refused rename puts the
+  // old name back and says why.
+  async _finishRename(text, { refocus = true } = {}) {
+    if (!this._renaming) {
+      return;
+    }
+    this._renaming = false;
+    const dashboard = this._dashboard;
+    const value = typeof text === "string" ? text.trim() : "";
+    const done = () => {
+      this._fillTitle();
+      if (refocus && (focusLost() || !this.shadowRoot.activeElement)) {
+        this._focus("title-button");
+      }
+    };
+    if (!value || value === dashboard?.title) {
+      done();
+      return;
+    }
+    // The new name shows at once; a refusal puts the old one back.
+    const before = dashboard.title;
+    dashboard.title = value;
+    done();
+    try {
+      await this._updateDashboard({ title: value });
+    } catch (error) {
+      if (dashboard !== this._dashboard) {
+        return;
+      }
+      dashboard.title = before;
+      this._renameError = t("settings.failed", { message: errorMessage(error) });
+      clearTimeout(this._renameTimer);
+      this._renameTimer = setTimeout(() => {
+        this._renameError = "";
+        if (!this._renaming) {
+          this._fillTitle();
+        }
+      }, RENAME_ERROR_MS);
+      if (!this._renaming) {
+        const had = this._focusKeyIn(this._els.header);
+        this._fillTitle();
+        if (had) {
+          this._focus(had);
+        }
+      }
+    }
+  }
+
+  // The Tablets chip: a dot in its tone and one short sentence; the whole
+  // sentence is its tooltip and its name. It opens the Tablets pop-up.
+  _chip() {
+    const chip = makeButton(null, {
+      className: "tablet-chip",
+      test: "tablet-chip",
+      focus: "tablet-chip",
+      onClick: () => this._openTablets(),
+    });
+    chip.setAttribute("aria-haspopup", "dialog");
+    this._els.chip = chip;
+    this._fillChip();
+    return chip;
+  }
+
+  _fillChip() {
+    const chip = this._els.chip;
+    if (!chip) {
+      return;
+    }
+    const known = Array.isArray(this._tablets) && !this._tabletsError;
+    const words = known
+      ? chipWords(this._tablets, this._urlPath, t)
+      : { text: t("editor.on_tablet_heading"), tone: "quiet", full: t("editor.on_tablet_heading") };
+    if (chip.dataset.tone === words.tone && chip.title === words.full) {
+      return;
+    }
+    chip.dataset.tone = words.tone;
+    chip.title = words.full;
+    chip.setAttribute("aria-label", words.full);
+    // The words change in place: a press that starts while the tablets
+    // change still lands on the chip.
+    const text = chip.querySelector(".chip-words");
+    if (text) {
+      text.textContent = words.text;
+      return;
+    }
+    chip.replaceChildren(el("span", "chip-dot"), el("span", "chip-words", words.text), icon("mdi:chevron-down"));
+  }
+
+  // The Theme button: a small swatch of the dashboard's theme and the word,
+  // which only its swatch stands for in a narrow bar.
+  _themeButton() {
+    const button = makeButton(null, {
+      className: "theme-button",
+      test: "theme-button",
+      focus: "theme-button",
+      onClick: () => this._openTheme(),
+    });
+    button.setAttribute("aria-haspopup", "dialog");
+    this._els.themeButton = button;
+    this._fillThemeButton();
+    return button;
+  }
+
+  _fillThemeButton() {
+    const button = this._els.themeButton;
+    if (!button) {
+      return;
+    }
+    const theme = (this._library?.themes || []).find((entry) => entry?.id === this._themeId()) || {};
+    const colour = (value, fallback) => (typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback);
+    const swatch = el("span", "theme-swatch small-swatch");
+    swatch.setAttribute("aria-hidden", "true");
+    swatch.style.backgroundColor = colour(theme.wall, "#101418");
+    const card = el("span", "swatch-card");
+    card.style.backgroundColor = colour(theme.card, "#181c23");
+    const dot = el("span", "swatch-dot");
+    dot.style.backgroundColor = colour(theme.acc, "#f5b547");
+    card.append(dot);
+    swatch.append(card);
+    button.title = t("editor.theme_button");
+    button.replaceChildren(swatch, el("span", "theme-word", t("editor.theme_button")));
   }
 
   // A round button with an icon only; its words are its name and tooltip.
@@ -1268,15 +1585,16 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   _updateHeader() {
-    const { saveState, undo, redo } = this._els;
+    const { saveState, saveLive, undo, redo } = this._els;
     if (!saveState) {
       return;
     }
     const state = this._queue?.state || "saved";
+    const was = saveState.dataset.state;
     saveState.dataset.state = state;
     const icons = {
-      saved: "mdi:check",
-      error: "mdi:alert-circle-outline",
+      saved: "mdi:check-circle-outline",
+      error: "mdi:alert-circle",
       paused: "mdi:pause-circle-outline",
     };
     const words = {
@@ -1289,11 +1607,20 @@ export class ApolloTabDesigner extends HTMLElement {
       icon(icons[state] || "mdi:sync"),
       el("span", "save-word", words[state] || t("save.saving")),
     );
+    if (state !== was && saveLive) {
+      if (state === "error") {
+        saveLive.textContent = words.error;
+      } else if (state === "saved" && was === "error") {
+        saveLive.textContent = words.saved;
+      }
+    }
     const active = this.shadowRoot.activeElement;
     undo.disabled = !canUndo(this._history);
-    redo.disabled = !canRedo(this._history);
+    if (redo) {
+      redo.disabled = !canRedo(this._history);
+    }
     // Undo pressed back to the first step can no longer hold focus.
-    if ((active === undo || active === redo) && active.disabled) {
+    if (active && (active === undo || active === redo) && active.disabled) {
       restoreFocus(this._els.header, active.dataset.focus);
     }
   }
@@ -1304,6 +1631,10 @@ export class ApolloTabDesigner extends HTMLElement {
     this._lastSaveState = state;
     this._updateHeader();
     this._renderBanners();
+    if (state === "saved" && this._firstCardDue) {
+      this._firstCardDue = false;
+      this._showFirstCard();
+    }
     if (failedNow) {
       // A save whose answer was lost with the connection may have been
       // stored all the same: what Home Assistant holds says (see
@@ -1633,7 +1964,10 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   // The page tabs and Add page. "Add card" sits at the strip's other end
-  // (see _renderPageArea), so it is not redrawn with them.
+  // (see _renderPageArea), so it is not redrawn with them. The selected
+  // page's tab has a settings button after it, which opens the page pop-up;
+  // the tabs stay one list for screen readers (aria-owns), with the button
+  // outside it.
   _renderTabs() {
     const strip = this._els.tabList;
     if (!strip) {
@@ -1643,11 +1977,16 @@ export class ApolloTabDesigner extends HTMLElement {
       strip.replaceChildren();
       const pages = pageList(this._draft);
       const list = el("div", "tabs");
-      list.setAttribute("role", "tablist");
-      list.setAttribute("aria-label", t("page.tabs_label"));
+      const owner = el("div", "tab-owner");
+      owner.setAttribute("role", "tablist");
+      owner.setAttribute("aria-label", t("page.tabs_label"));
+      const ids = [];
+      list.append(owner);
       for (const page of pages) {
         const selected = page.view === this._view;
         const tab = makeButton(null, { className: "tab", test: "page-tab", focus: `tab:${page.view}` });
+        tab.id = `page-tab-${page.view}`;
+        ids.push(tab.id);
         tab.setAttribute("role", "tab");
         tab.setAttribute("aria-selected", String(selected));
         tab.tabIndex = selected ? 0 : -1;
@@ -1662,14 +2001,21 @@ export class ApolloTabDesigner extends HTMLElement {
         if (page.kind !== "page") {
           tab.append(el("span", "tag", t("page.not_shown")));
         }
-        // Pressing the tab of the page shown while a card is selected lets the
-        // card go and moves to the page's settings, where it is renamed.
-        tab.addEventListener("click", () =>
-          page.view === this._view && this._selected ? this._toSettings() : this._selectView(page.view),
-        );
+        tab.addEventListener("click", () => this._selectView(page.view));
         tab.addEventListener("keydown", (event) => this._tabKeys(event, page.view, pages.length));
         list.append(tab);
+        if (selected && !this._readOnly && page.kind === "page") {
+          const gear = this._iconButton("mdi:cog-outline", t("page.settings", { page: name }), {
+            className: "page-settings",
+            test: "page-settings",
+            focus: "page-settings",
+            onClick: () => this._openPageMenu(),
+          });
+          gear.setAttribute("aria-haspopup", "dialog");
+          list.append(gear);
+        }
       }
+      owner.setAttribute("aria-owns", ids.join(" "));
       strip.append(list);
       if (!this._readOnly) {
         const add = makeButton(null, { className: "add-page", test: "add-page", focus: "add-page", onClick: () => this._addPage() });
@@ -1685,6 +2031,10 @@ export class ApolloTabDesigner extends HTMLElement {
         strip.append(add);
       }
     });
+    if (this._els.page) {
+      this._els.page.setAttribute("role", "tabpanel");
+      this._els.page.setAttribute("aria-labelledby", `page-tab-${this._view}`);
+    }
     this._showTab();
   }
 
@@ -1697,18 +2047,27 @@ export class ApolloTabDesigner extends HTMLElement {
     if (!tab) {
       return;
     }
+    // The tab and its settings button after it, both whole.
+    const gear = tab.nextElementSibling?.classList.contains("page-settings") ? tab.nextElementSibling : null;
     const box = list.getBoundingClientRect();
-    const rect = tab.getBoundingClientRect();
+    const first = tab.getBoundingClientRect();
+    const last = (gear || tab).getBoundingClientRect();
+    const rect = { left: Math.min(first.left, last.left), right: Math.max(first.right, last.right) };
     const pad = parseFloat(getComputedStyle(list).paddingInlineStart) || 0;
     if (rect.left < box.left + pad) {
       list.scrollLeft += rect.left - box.left - pad;
     } else if (rect.right > box.right - pad) {
-      list.scrollLeft += rect.right - box.right + pad;
+      list.scrollLeft += Math.min(rect.right - box.right + pad, rect.left - box.left - pad);
     }
   }
 
   _tabKeys(event, view, count) {
     let next = null;
+    if (event.key === "F2" && view === this._view && this.shadowRoot.querySelector('[data-test="page-settings"]')) {
+      event.preventDefault();
+      this._openPageMenu();
+      return;
+    }
     if (event.key === "ArrowRight") {
       next = (view + 1) % count;
     } else if (event.key === "ArrowLeft") {
@@ -1910,6 +2269,7 @@ export class ApolloTabDesigner extends HTMLElement {
     this._renderPreviewError();
     this._renderNotes();
     this._renderList();
+    this._placeFirstCard();
     this._restoreFocus(focusKey);
   }
 
@@ -1920,17 +2280,204 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   // In the compact layout the page column goes on after the picture with the
-  // tablet lines and the idle holder (the notices go between them, see
+  // Tablets chip and the idle holder (the notices go between them, see
   // _placeAdvice).
   _placeCompactParts() {
-    const { page, tabletLines, idle } = this._els;
+    const { page, chipRow, idle, stageArea, pageBox } = this._els;
     if (!this._compact || !page) {
       return;
     }
-    if (tabletLines) {
-      page.append(tabletLines);
+    // Only moved when out of place: a node that moves loses a press that
+    // has started on it. The chip comes right under the picture, before
+    // the screen pager.
+    const top = [stageArea, pageBox].find((node) => node?.parentNode === page);
+    if (chipRow && top) {
+      if (top.nextElementSibling !== chipRow) {
+        top.after(chipRow);
+      }
     }
-    page.append(idle);
+    const tail = [top ? null : chipRow, idle].filter(Boolean);
+    const last = [...page.children].slice(-tail.length);
+    if (!tail.every((node, index) => last[index] === node)) {
+      page.append(...tail);
+    }
+  }
+
+  // The first-card notice says where the dashboard goes now that it has a
+  // card: to the one new tablet, to the Tablets list when several are new
+  // (it names none of them), or to the Tablets pop-up. Without any tablet
+  // there is no notice. Shown once per dashboard; it sends nothing.
+  _showFirstCard() {
+    const notice = this._firstCardFor();
+    if (!notice) {
+      return;
+    }
+    markFirstCardSeen(this._urlPath);
+    this._firstCard = notice;
+    // The notice already says "Saved.": a plain "Card added" toast would
+    // only lie on top of it.
+    if (this._toast && !this._toast.tied && this._toast.text === t("toast.card_added")) {
+      clearTimeout(this._toastTimer);
+      this._toast = null;
+      this._renderToast();
+    }
+    this._placeFirstCard();
+  }
+
+  // What the notice says for the tablets as they are now; null for none.
+  _firstCardFor() {
+    const tablets = Array.isArray(this._tablets) ? this._tablets : [];
+    if (this._status !== "ready" || tabletsShowing(tablets, this._urlPath).length) {
+      return null;
+    }
+    const fresh = newTablets(tablets);
+    if (fresh.length === 1) {
+      return { kind: "one", mac: fresh[0].mac, name: tabletName(fresh[0]) };
+    }
+    if (fresh.length > 1) {
+      return { kind: "many", count: fresh.length };
+    }
+    return approvedTablets(tablets).length ? { kind: "none" } : null;
+  }
+
+  // The tablets changed while the notice is up: it is drawn again for them,
+  // or goes when it has nothing left to say. Focus inside it stays on the
+  // same control when it is still there.
+  _refreshFirstCard() {
+    const before = this._firstCard;
+    if (!before) {
+      return;
+    }
+    const notice = this._firstCardFor();
+    if (JSON.stringify(notice) !== JSON.stringify(before)) {
+      this._firstCard = notice;
+      this._placeFirstCard();
+    }
+  }
+
+  // In a low wide window the stage's top padding is too short for the
+  // floating notice, so it takes a row over the picture, as in medium.
+  _firstCardRow() {
+    if (this._compact) {
+      return false;
+    }
+    if (this._band === "short" || this._band === "medium") {
+      return true;
+    }
+    const top = (this._els.root || this).getBoundingClientRect().top;
+    return window.innerHeight - top < FIRST_CARD_FLOAT_HEIGHT;
+  }
+
+  // Draws the notice over the top of the stage, where it takes no height.
+  // On a phone the picture is small and the notice would cover the new
+  // card, so it goes under the picture instead; in medium and short it is
+  // a row over the picture.
+  _placeFirstCard() {
+    const area = this._els.stageArea;
+    const old = this.shadowRoot.querySelector(".first-card");
+    // Focus in the notice stays on the same control when it is drawn again.
+    const key = old?.contains(this.shadowRoot.activeElement) ? this.shadowRoot.activeElement.dataset.focus : null;
+    old?.remove();
+    const notice = this._firstCard;
+    this._firstCardIsRow = false;
+    if (!notice || !area) {
+      this._liftForFirstCard();
+      if (key) {
+        this._focus("add-card") || this._focus(`tab:${this._view}`);
+      }
+      return;
+    }
+    const box = el("div", "notice first-card");
+    box.dataset.test = "first-card-notice";
+    box.setAttribute("role", "status");
+    const words =
+      notice.kind === "one"
+        ? t("editor.first_card_one", { tablet: notice.name })
+        : notice.kind === "many"
+          ? t("editor.first_card_many", { count: notice.count })
+          : t("editor.first_card_none");
+    box.append(icon("mdi:information-outline"), el("span", "notice-words", words));
+    if (notice.kind === "none") {
+      box.append(
+        makeButton(t("editor.first_card_choose"), {
+          test: "choose-tablet",
+          focus: "choose-tablet",
+          onClick: () => this._openTablets(),
+        }),
+      );
+    } else {
+      box.append(
+        makeButton(t(notice.kind === "one" ? "editor.first_card_put" : "editor.first_card_go"), {
+          test: "put-on-tablet",
+          focus: "put-on-tablet",
+          onClick: () => {
+            // The tablet is handed over only while it is still the one new
+            // tablet the notice names; else the Tablets list is shown.
+            const now = this._firstCardFor();
+            const one = notice.kind === "one" && now?.kind === "one" && now.mac === notice.mac;
+            const handover = one ? { tablet: notice.mac, dashboard: this._urlPath } : {};
+            this._firstCard = null;
+            this._leaveFor(handover);
+          },
+        }),
+      );
+    }
+    box.append(
+      this._iconButton("mdi:close", t("editor.first_card_close"), {
+        test: "first-card-close",
+        focus: "first-card-close",
+        onClick: () => {
+          const had = box.contains(this.shadowRoot.activeElement);
+          this._firstCard = null;
+          box.remove();
+          this._liftForFirstCard();
+          if (had) {
+            this._focus("add-card") || this._focus(`tab:${this._view}`);
+          }
+        },
+      }),
+    );
+    if (this._compact) {
+      // Under the picture and the Tablets chip.
+      const chipRow = this._els.chipRow;
+      (chipRow?.parentNode === area.parentNode ? chipRow : area).after(box);
+    } else if (this._firstCardRow()) {
+      // There the picture fills the stage (and the drawer covers its end),
+      // so floating, the notice would lie on the new card: it is a row of
+      // its own over the picture, with the page notices.
+      this._firstCardIsRow = true;
+      if (this._band !== "short" && this._band !== "medium") {
+        box.classList.add("row");
+      }
+      area.before(box);
+    } else {
+      area.append(box);
+    }
+    this._liftForFirstCard();
+    if (key && !this._focus(key)) {
+      this._focus("add-card") || this._focus(`tab:${this._view}`);
+    }
+  }
+
+  // Wide: the floating notice lies over the stage's top padding. Where it
+  // would still reach the frame, the frame moves down into the free space
+  // under it; the picture keeps its size.
+  _liftForFirstCard() {
+    const { device, stageArea } = this._els;
+    if (!device) {
+      return;
+    }
+    device.style.translate = "";
+    const box = stageArea?.querySelector(":scope > .first-card");
+    if (!box || this._compact || this._firstCardIsRow) {
+      return;
+    }
+    const frame = device.getBoundingClientRect();
+    const reach = box.getBoundingClientRect().bottom + 8 - frame.top;
+    const room = stageArea.getBoundingClientRect().bottom - frame.bottom;
+    if (reach > 0) {
+      device.style.translate = `0 ${Math.round(Math.min(reach, Math.max(0, room)))}px`;
+    }
   }
 
   // The 40 px strip under the picture: the size and the zoom on the left,
@@ -2148,6 +2695,7 @@ export class ApolloTabDesigner extends HTMLElement {
     if (this._zoom === "100" && this._hasStatusStrip()) {
       this._els.hits?.querySelector('.hit[aria-pressed="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
+    this._liftForFirstCard();
     this._queuePlaceToast();
   }
 
@@ -2591,7 +3139,6 @@ export class ApolloTabDesigner extends HTMLElement {
     side.inert = this._band === "medium" && !drawer;
     this._els.openCards?.setAttribute("aria-expanded", String(drawer));
     this._els.sideNotes = null;
-    this._els.shownOn = null;
     // The same card drawn again keeps where its form was scrolled to.
     const formScroll = this._els.editForm?.scrollTop || 0;
     this._els.previewHost?.__atCleanup?.();
@@ -2604,28 +3151,16 @@ export class ApolloTabDesigner extends HTMLElement {
     this._keepFocus(side, () => {
       side.replaceChildren();
       if (card) {
-        // Every new card is selected, which hides "This page" and "This
-        // dashboard" (the dashboard's theme). Both buttons bring them back;
-        // the first says so and moves to them.
+        // "Done" lets the card go and brings the card list back.
         const top = el("div", "side-top");
-        const settings = makeButton(null, {
-          className: "link side-back",
-          test: "to-settings",
-          focus: "to-settings",
-          onClick: () => this._toSettings(),
-        });
-        // The arrow and the words in one span, which takes the link's ring.
-        const words = el("span");
-        words.append(icon("mdi:arrow-left"), el("span", null, t("editor.to_settings")));
-        settings.append(words);
         const close = makeButton(null, {
           className: "sheet-close",
           test: "close-panel",
           focus: "close-panel",
           onClick: () => this._closeForm(),
         });
-        close.append(icon("mdi:close"), el("span", null, t("editor.close_panel")));
-        top.append(settings, close);
+        close.append(icon("mdi:check"), el("span", null, t("editor.close_panel")));
+        top.append(close);
         side.append(top);
         const form = this._itemForm(source, card);
         if (edit) {
@@ -2690,17 +3225,15 @@ export class ApolloTabDesigner extends HTMLElement {
     return strip;
   }
 
-  // The idle holder's words and settings. The settings are left out while a
-  // card is selected: the card's form has the step back to them.
+  // The idle holder's words. The page's and the dashboard's settings are
+  // in their pop-ups (the page strip's settings button and the top bar).
   _fillIdle(selected) {
-    const { idleIntro, idleSettings } = this._els;
+    const { idleIntro } = this._els;
     idleIntro.replaceChildren();
-    idleSettings.replaceChildren();
     if (selected) {
       return;
     }
-    const draft = this._draft;
-    const views = Array.isArray(draft?.views) ? draft.views : [];
+    const views = Array.isArray(this._draft?.views) ? this._draft.views : [];
     const view = views[this._view];
     // A page the tablet does not show has no picture and no cards to press.
     if (view && pageKind(view) !== "page") {
@@ -2712,51 +3245,337 @@ export class ApolloTabDesigner extends HTMLElement {
       line.dataset.test = "side-intro";
       idleIntro.append(line);
     }
-    if (!this._readOnly && pageKind(view) === "page") {
-      const vi = this._view;
-      idleSettings.append(
-        buildPageSettings({
-          title: typeof view.title === "string" ? view.title : "",
-          icon: view.icon,
-          index: vi,
-          count: views.length,
-          onRename: (text) =>
-            this._commit(renamePage(this._draft, vi, text), {
-              key: `${vi}:page-name`,
-              continuous: true,
-              side: false,
-            }),
-          onIcon: (name) => this._commit(setPageIcon(this._draft, vi, name)),
-          onMove: (delta) => {
-            const result = movePage(this._draft, vi, delta);
-            this._view = result.view;
-            this._commit(result.config);
-          },
-          onDelete: () => this._removePage(vi, true),
+  }
+
+  // ---- Pop-ups ----
+
+  // Opens one of the pop-ups; the one open before closes. In the compact
+  // and the short layouts it is a sheet from the bottom.
+  _openPop(kind, options) {
+    this._popover = openPopover({
+      root: this.shadowRoot,
+      sheet: this._compact || this._band === "short",
+      ...options,
+      onClose: () => {
+        if (this._popKind === kind) {
+          this._popover = null;
+          this._popKind = null;
+          this._popAnchor = null;
+        }
+        options.onClose?.();
+      },
+    });
+    this._popKind = kind;
+    this._popAnchor = options.anchorKey;
+    return this._popover;
+  }
+
+  // The Tablets pop-up: which tablets show this dashboard, Show here for
+  // the others, a new tablet with its way to be set up, and the way to
+  // the start screen's Tablets list. Nothing here turns a tablet on or
+  // changes one without a press on Show here.
+  _openTablets() {
+    if (this._status !== "ready") {
+      return;
+    }
+    this._openPop("tablets", {
+      anchorKey: "tablet-chip",
+      test: "tablets-pop",
+      label: t("editor.on_tablet_heading"),
+      first: "pop-title",
+      build: (body) => body.append(this._tabletsBody()),
+    });
+  }
+
+  _tabletsBody() {
+    const box = el("div", "shown-on");
+    box.dataset.test = "shown-on";
+    const heading = el("h2", "pop-title", t("editor.on_tablet_heading"));
+    heading.tabIndex = -1;
+    heading.dataset.focus = "pop-title";
+    heading.dataset.test = "shown-on-heading";
+    box.append(heading);
+    const failure = this._tabletsError ? errorMessage(this._tabletsError) : "";
+    if (failure) {
+      box.append(alertLine(t("tablets.load_failed", { message: failure })));
+    }
+    const tablets = Array.isArray(this._tablets) && !failure ? this._tablets : null;
+    if (tablets === null) {
+      if (!failure) {
+        box.append(el("p", "small", t("tablets.loading")));
+      }
+    } else {
+      // "Changes show on the tablet as you make them." while one does.
+      if (!this._readOnly && tabletsShowing(tablets, this._urlPath).length) {
+        box.append(el("p", "helper", t("editor.on_tablet_helper")));
+      }
+      const lines = el("ul", "tablet-lines");
+      lines.dataset.test = "tablet-lines";
+      const status = new Map();
+      for (const line of captionLines(tablets, this._urlPath, t, Infinity)) {
+        // With no tablet at all, "No tablets yet." below says it alone.
+        if (line.kind === "nowhere" && tablets.length) {
+          const nowhere = el("li", "tablet-line nowhere", line.text);
+          nowhere.dataset.test = "tablet-line";
+          nowhere.dataset.kind = line.kind;
+          lines.append(nowhere);
+        } else if (line.mac) {
+          status.set(line.mac, line);
+        }
+      }
+      // A row per tablet that is on: its name, what it shows, and for one
+      // that shows this dashboard what is going on with it, in full.
+      for (const row of shownOnRows(tablets, this._urlPath, this._tabRows || [], t)) {
+        const item = el("li", "shown-on-row");
+        item.dataset.test = "shown-on-row";
+        item.dataset.mac = row.mac;
+        item.dataset.here = String(row.here);
+        const words = el("div", "shown-on-text");
+        words.append(el("span", "shown-on-name", row.name), el("span", "small", row.text));
+        item.append(words);
+        const line = row.here ? status.get(row.mac) : null;
+        if (line) {
+          const text = el("p", "small tablet-line", line.text);
+          text.dataset.test = "tablet-line";
+          text.dataset.kind = line.kind;
+          text.dataset.mac = row.mac;
+          // The dot has the chip's tone, so the two agree.
+          text.dataset.tone = chipTone(tablets.find((tablet) => tablet.mac === row.mac));
+          item.append(text);
+        }
+        // A tablet always shows one dashboard, so there is nothing to untick
+        // here; another tablet can be moved to this one.
+        // Read-only dashboards keep it: showing one changes nothing in it.
+        if (!row.here) {
+          const button = makeButton(t("editor.on_tablet_show"), {
+            test: "show-here",
+            focus: `show-here:${row.mac}`,
+            disabled: this._assigning.has(row.mac),
+            onClick: () => this._showHere(row.mac),
+          });
+          button.dataset.mac = row.mac;
+          button.setAttribute("aria-label", `${t("editor.on_tablet_show")}: ${row.name}`);
+          item.append(button);
+        }
+        lines.append(item);
+      }
+      box.append(lines);
+      // A tablet that came up and waits to be turned on is set up on the
+      // start screen; the editor sends nothing for it.
+      for (const tablet of newTablets(tablets)) {
+        const item = el("div", "shown-on-new");
+        item.dataset.test = "shown-on-new";
+        item.append(el("p", null, t("editor.on_tablet_new", { tablet: tabletName(tablet) })));
+        const go = makeButton(t("editor.on_tablet_set_up"), {
+          test: "set-up-tablet",
+          focus: `set-up:${tablet.mac}`,
+          onClick: () => this._leaveFor({ tablet: tablet.mac, dashboard: this._urlPath }),
+        });
+        go.dataset.mac = tablet.mac;
+        // Two new tablets give two such buttons: each names its tablet.
+        go.setAttribute("aria-label", `${t("editor.on_tablet_set_up")}: ${tabletName(tablet)}`);
+        item.append(go);
+        box.append(item);
+      }
+      if (!tablets.length) {
+        const none = el("p", "small", t("editor.on_tablet_none"));
+        none.dataset.test = "shown-on-none";
+        box.append(
+          none,
+          makeButton(t("editor.on_tablet_how"), {
+            className: "text",
+            test: "how-to-add",
+            focus: "how-to-add",
+            onClick: () => this._leaveFor({}),
+          }),
+        );
+      }
+    }
+    if (this._shownOnError) {
+      const alert = alertLine(this._shownOnError);
+      alert.dataset.test = "shown-on-error";
+      box.append(alert);
+    }
+    // With no tablet, "How to add a tablet" already goes there.
+    if (!(Array.isArray(this._tablets) && !failure && !this._tablets.length)) {
+      box.append(
+        makeButton(t("editor.on_tablet_manage"), {
+          className: "text",
+          test: "manage-tablets",
+          focus: "manage-tablets",
+          onClick: () => this._leaveFor({}),
         }),
       );
     }
-    idleSettings.append(
-      buildDashboardSettings({
-        readOnly: Boolean(this._readOnly),
-        title: this._dashboard?.title || "",
-        themes: this._library?.themes || [],
-        themeId: this._themeId(),
-        shownOn: this._shownOnBlock(),
-        showInSidebar: this._dashboard?.show_in_sidebar === true,
-        onRename: (title) => this._updateDashboard({ title }),
-        onTheme: (themeId) => this._commit(setTheme(this._draft, themeId), { side: false }),
-        onSidebar: async (show) => {
-          // Ticking the box is already the answer the sidebar notice asks for.
-          if (show) {
-            this._sidebarDismissed = true;
-            keepInSidebar(this._urlPath);
-          }
-          await this._updateDashboard({ show_in_sidebar: show });
+    return box;
+  }
+
+  // To the start screen, with what it should show first: { tablet,
+  // dashboard } for a tablet to set up, {} for the Tablets list. Kept in
+  // memory by the panel only; nothing is sent.
+  _leaveFor(handover) {
+    this._popover?.close({ refocus: false });
+    this.onExit?.(handover);
+  }
+
+  // The theme gallery. Every theme tried while it is open is one step for
+  // Undo, however long it stays open.
+  _openTheme() {
+    if (this._status !== "ready") {
+      return;
+    }
+    this._themeGroup = {};
+    this._openPop("theme", {
+      anchorKey: this._compact ? "dash-menu" : "theme-button",
+      test: "theme-gallery",
+      label: t("settings.theme"),
+      first: `theme:${this._themeId()}`,
+      // Short: over the inspector, so the picture beside it stays in view.
+      cover: this._band === "short" ? () => this._els.side?.getBoundingClientRect() : null,
+      build: (body) =>
+        body.append(
+          buildThemeGallery({
+            themes: this._library?.themes || [],
+            themeId: this._themeId(),
+            readOnly: Boolean(this._readOnly),
+            preview: PREVIEW_THEMES,
+            onTheme: (themeId) => {
+              if (themeId !== this._themeId()) {
+                this._commit(setTheme(this._draft, themeId), { side: false, group: this._themeGroup });
+              }
+            },
+          }),
+        ),
+      onClose: () => {
+        this._themeGroup = null;
+        this._history = historyCloseGroup(this._history);
+      },
+    });
+  }
+
+  // The menu of the top bar. On a phone it also has Rename and Theme.
+  _openMenu() {
+    if (this._status !== "ready") {
+      return;
+    }
+    this._openPop("menu", {
+      anchorKey: "dash-menu",
+      test: "dash-menu-pop",
+      label: t("editor.menu"),
+      first: "pop-title",
+      build: (body) => body.append(this._menuBody()),
+    });
+  }
+
+  _menuBody() {
+    const extra = [];
+    if (this._tight && !this._readOnly) {
+      // The bar has no room for it. The menu closes, so the change shows.
+      const redo = makeButton(null, {
+        className: "menu-item",
+        test: "redo",
+        focus: "menu-redo",
+        disabled: !canRedo(this._history),
+        onClick: () => {
+          this._popover?.close();
+          this._redo();
         },
-        onDelete: () => this._deleteDashboard(),
-      }),
-    );
+      });
+      redo.append(icon("mdi:redo"), el("span", null, t("undo.redo")));
+      extra.push(redo);
+    }
+    if (this._compact && !this._readOnly) {
+      const rename = makeButton(null, {
+        className: "menu-item",
+        test: "menu-rename",
+        focus: "menu-rename",
+        onClick: () => {
+          this._popover?.close({ refocus: false });
+          this._startRename();
+        },
+      });
+      rename.append(icon("mdi:pencil"), el("span", null, t("editor.rename")));
+      extra.push(rename);
+    }
+    if (this._compact) {
+      const theme = makeButton(null, {
+        className: "menu-item",
+        test: "menu-theme",
+        focus: "menu-theme",
+        onClick: () => this._openTheme(),
+      });
+      theme.append(icon("mdi:palette-outline"), el("span", null, t("editor.theme_button")));
+      extra.push(theme);
+    }
+    return buildDashboardSettings({
+      readOnly: Boolean(this._readOnly),
+      showInSidebar: this._dashboard?.show_in_sidebar === true,
+      urlPath: this._urlPath,
+      extra,
+      onSidebar: async (show) => {
+        // Ticking the box is already the answer the sidebar notice asks for.
+        if (show) {
+          this._sidebarDismissed = true;
+          keepInSidebar(this._urlPath);
+        }
+        await this._updateDashboard({ show_in_sidebar: show });
+      },
+      onDelete: () => {
+        this._popover?.close({ refocus: false });
+        return this._deleteDashboard();
+      },
+    });
+  }
+
+  // The page pop-up of the selected page: its name, its icon, its moves and
+  // Delete. It closes when the page is gone.
+  _openPageMenu() {
+    if (this._status !== "ready" || this._readOnly) {
+      return;
+    }
+    const view = this._draft?.views?.[this._view];
+    if (pageKind(view) !== "page") {
+      return;
+    }
+    // The page is followed by its place, which a move changes (see onMove).
+    const page = { view: this._view };
+    this._openPop("page", {
+      anchorKey: "page-settings",
+      test: "page-menu",
+      label: t("page.heading"),
+      first: "page-name",
+      alive: () => pageKind(this._draft?.views?.[page.view]) === "page" && page.view === this._view,
+      build: (body) => {
+        const views = this._draft.views;
+        const vi = page.view;
+        const current = views[vi];
+        body.append(
+          buildPageSettings({
+            title: typeof current.title === "string" ? current.title : "",
+            icon: current.icon,
+            index: vi,
+            count: views.length,
+            onRename: (text) =>
+              this._commit(renamePage(this._draft, vi, text), {
+                key: `${vi}:page-name`,
+                continuous: true,
+                side: false,
+              }),
+            onIcon: (name) => this._commit(setPageIcon(this._draft, vi, name), { side: false }),
+            onMove: (delta) => {
+              const result = movePage(this._draft, vi, delta);
+              this._view = result.view;
+              page.view = result.view;
+              this._commit(result.config);
+            },
+            onDelete: () => {
+              this._popover?.close({ refocus: false });
+              this._removePage(vi, true);
+            },
+          }),
+        );
+      },
+    });
   }
 
   // A different item starts at the top of the side panel; the same item
@@ -3091,13 +3910,14 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   // Records a new draft. side: false keeps the side panel as it is, so
-  // typing into it is never interrupted.
-  _commit(config, { key = null, continuous = false, side = true } = {}) {
+  // typing into it is never interrupted. group: changes with the same
+  // group are one step for Undo (the theme gallery).
+  _commit(config, { key = null, continuous = false, side = true, group = null } = {}) {
     if (this._readOnly) {
       return false;
     }
     const before = this._history;
-    this._history = historyPush(this._history, config, { key, now: Date.now() });
+    this._history = historyPush(this._history, config, { key, now: Date.now(), group });
     if (this._history === before) {
       return false;
     }
@@ -3141,6 +3961,8 @@ export class ApolloTabDesigner extends HTMLElement {
     }
     // Last, so focus that was in the toast has somewhere to go.
     this._dropStaleToast();
+    this._fillThemeButton();
+    this._popover?.update();
   }
 
   async _requestPreview() {
@@ -3302,22 +4124,6 @@ export class ApolloTabDesigner extends HTMLElement {
       page.scrollTop = from.scroll;
     }
     return here;
-  }
-
-  // Lets the card go and moves to "This page" and "This dashboard". They
-  // are below the card list, in the inspector (the drawer in the medium
-  // layout) or in the page column, so they are scrolled to.
-  _toSettings() {
-    if (this._band === "medium") {
-      this._drawerOpen = true;
-    }
-    this._select(null);
-    const heading = this._els.idleSettings?.querySelector('[data-test="settings-heading"]');
-    if (!heading) {
-      return;
-    }
-    heading.focus({ preventScroll: true });
-    heading.scrollIntoView({ block: "start" });
   }
 
   // "Use the whole screen" from a card's form: the card stays selected at
@@ -3510,17 +4316,9 @@ export class ApolloTabDesigner extends HTMLElement {
     this._view = result.view;
     this._screen = 0;
     this._selected = null;
-    // The new page's name is in the inspector: the drawer in the medium
-    // layout, the page column in the compact one.
-    if (this._band === "medium") {
-      this._drawerOpen = true;
-    }
-    this._commit(result.config);
-    const input = this._els.idleSettings?.querySelector('[data-test="page-name"]');
-    if (input) {
-      input.focus({ preventScroll: true });
-      input.select();
-      input.scrollIntoView({ block: "nearest" });
+    // The new page opens with its pop-up, its name ready to be typed over.
+    if (this._commit(result.config)) {
+      this._openPageMenu();
     }
   }
 
@@ -3593,10 +4391,18 @@ export class ApolloTabDesigner extends HTMLElement {
       opener?.isConnected && opener.focus();
       return;
     }
+    // The first card of a dashboard no tablet shows: a notice says where
+    // it goes once it is saved (see _saveStateChanged).
+    const first =
+      dashboardCards(this._draft) === 0 &&
+      Array.isArray(this._tablets) &&
+      !tabletsShowing(this._tablets, this._urlPath).length &&
+      !firstCardSeen().includes(this._urlPath);
     const added = addCard(this._draft, vi, result.component, result.params);
     if (!added.source) {
       return;
     }
+    this._firstCardDue = first;
     const key = sourceKey(added.source);
     this._view = vi;
     this._selected = added.source;
@@ -3647,11 +4453,14 @@ export class ApolloTabDesigner extends HTMLElement {
     if (dashboard !== this._dashboard) {
       return;
     }
-    if (typeof changes.title === "string" && this._els.title) {
-      this._els.title.textContent = changes.title;
+    if (typeof changes.title === "string" && !this._renaming) {
+      this._fillTitle();
     }
     if (typeof changes.show_in_sidebar === "boolean") {
       this._renderBanners();
+    }
+    if (this._popKind === "menu") {
+      this._popover?.update();
     }
   }
 
@@ -3674,12 +4483,20 @@ export class ApolloTabDesigner extends HTMLElement {
   _tabletsChanged(tablets) {
     this._tablets = tablets;
     this._tabletsError = null;
-    this._fillTabletLines();
-    this._fillShownOn();
+    this._tabletsShown();
+  }
+
+  // The tablets changed: the chip says so, the Tablets pop-up too.
+  _tabletsShown() {
+    this._fillChip();
+    this._refreshFirstCard();
+    if (this._popKind === "tablets") {
+      this._popover?.update();
+    }
   }
 
   // Reads the TAB-1 dashboards with their titles, in the one order, for the
-  // "Shown on" block and the delete question. Kept as it was when Home
+  // Tablets pop-up and the delete question. Kept as it was when Home
   // Assistant cannot be reached.
   async _loadTabRows() {
     if (!this._hass || this._status !== "ready") {
@@ -3700,7 +4517,7 @@ export class ApolloTabDesigner extends HTMLElement {
       return;
     }
     this._tabRows = rows;
-    this._fillShownOn();
+    this._tabletsShown();
   }
 
   // Several saves in a row are read once, after the last.
@@ -3712,131 +4529,6 @@ export class ApolloTabDesigner extends HTMLElement {
     }, 300);
   }
 
-  // The lines under "What the tablet will show": a line per tablet that
-  // shows this dashboard, or "Not shown on a tablet yet". Nothing while the
-  // tablets are not known.
-  _fillTabletLines() {
-    const box = this._els.tabletLines;
-    if (!box) {
-      return;
-    }
-    if (!Array.isArray(this._tablets) || this._tabletsError) {
-      box.replaceChildren();
-      return;
-    }
-    const lines = captionLines(this._tablets, this._urlPath, t);
-    box.replaceChildren(
-      ...lines.map((line) => {
-        const node = el("p", "small tablet-line", line.text);
-        node.dataset.test = "tablet-line";
-        node.dataset.kind = line.kind;
-        if (line.mac) {
-          node.dataset.mac = line.mac;
-        }
-        if (line.tone) {
-          node.dataset.tone = line.tone;
-        }
-        return node;
-      }),
-    );
-  }
-
-  // The "Shown on" block under the dashboard's theme. It is made with the
-  // side panel and filled again when the tablets change.
-  _shownOnBlock() {
-    const block = el("div", "shown-on");
-    block.dataset.test = "shown-on";
-    this._els.shownOn = block;
-    this._shownOnKey = null;
-    this._fillShownOn();
-    return block;
-  }
-
-  _fillShownOn() {
-    const block = this._els.shownOn;
-    if (!block) {
-      return;
-    }
-    const rows = Array.isArray(this._tablets)
-      ? shownOnRows(this._tablets, this._urlPath, this._tabRows || [], t)
-      : null;
-    // New tablets are not listed: an admin turns one on from Home.
-    const waiting = Array.isArray(this._tablets) ? newTabletCount(this._tablets) > 0 : false;
-    const failure = this._tabletsError ? errorMessage(this._tabletsError) : null;
-    // Drawn again only when something it says changed, so a status change
-    // on a tablet does not take focus from its button.
-    const key = JSON.stringify([rows, waiting, failure, this._shownOnError, [...this._assigning], this._urlPath]);
-    if (key === this._shownOnKey) {
-      return;
-    }
-    this._shownOnKey = key;
-    const active = this.shadowRoot.activeElement;
-    const focusKey = active && block.contains(active) ? active.dataset.focus || "shown-on-heading" : null;
-
-    const heading = el("h4", "shown-on-heading", t("editor.on_tablet_heading"));
-    heading.tabIndex = -1;
-    heading.dataset.focus = "shown-on-heading";
-    const children = [heading];
-    if (failure !== null) {
-      children.push(alertLine(t("tablets.load_failed", { message: failure })));
-    } else if (rows === null) {
-      children.push(el("p", "small", t("tablets.loading")));
-    } else if (!rows.length) {
-      if (!waiting) {
-        const none = el("p", "small", t("editor.on_tablet_none"));
-        none.dataset.test = "shown-on-none";
-        children.push(none);
-      }
-    } else {
-      const list = el("ul", "shown-on-list");
-      for (const row of rows) {
-        const item = el("li", "shown-on-row");
-        item.dataset.test = "shown-on-row";
-        item.dataset.mac = row.mac;
-        item.dataset.here = String(row.here);
-        const words = el("div", "shown-on-text");
-        words.append(el("span", "shown-on-name", row.name), el("span", "small", row.text));
-        item.append(words);
-        // A tablet always shows one dashboard, so there is nothing to untick
-        // here; another tablet can be moved to this one.
-        if (!row.here) {
-          const button = makeButton(t("editor.on_tablet_show"), {
-            test: "show-here",
-            focus: `show-here:${row.mac}`,
-            disabled: this._assigning.has(row.mac),
-            onClick: () => this._showHere(row.mac),
-          });
-          button.dataset.mac = row.mac;
-          item.append(button);
-        }
-        list.append(item);
-      }
-      children.push(list, el("p", "helper", t("editor.on_tablet_helper")));
-    }
-    if (failure === null && waiting) {
-      const note = el("p", "small", t("editor.on_tablet_new"));
-      note.dataset.test = "shown-on-new";
-      children.push(note);
-    }
-    if (this._shownOnError) {
-      const alert = alertLine(this._shownOnError);
-      alert.dataset.test = "shown-on-error";
-      children.push(alert);
-    }
-    // The address, for the show_dashboard action in automations.
-    const name = el("p", "automation-name");
-    name.dataset.test = "automation-name";
-    name.append(el("span", "field-label", t("editor.on_tablet_name")), el("code", null, this._urlPath || ""));
-    children.push(name);
-    block.replaceChildren(...children);
-
-    if (focusKey) {
-      const target = [...block.querySelectorAll("[data-focus]")].find((node) => node.dataset.focus === focusKey);
-      // The button is gone once its tablet shows this dashboard.
-      (target && !target.disabled ? target : heading).focus({ preventScroll: true });
-    }
-  }
-
   async _showHere(mac) {
     if (this._assigning.has(mac) || !this._conn) {
       return;
@@ -3845,7 +4537,7 @@ export class ApolloTabDesigner extends HTMLElement {
     const urlPath = this._urlPath;
     this._assigning.add(mac);
     this._shownOnError = "";
-    this._fillShownOn();
+    this._tabletsShown();
     try {
       // The answer reaches every listener of the tablet list, this one too.
       await assignTablet(this._conn, mac, urlPath);
@@ -3856,7 +4548,7 @@ export class ApolloTabDesigner extends HTMLElement {
     } finally {
       if (run === this._run) {
         this._assigning.delete(mac);
-        this._fillShownOn();
+        this._tabletsShown();
       }
     }
   }

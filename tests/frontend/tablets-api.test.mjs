@@ -7,6 +7,8 @@ import * as api from "../../custom_components/apollo_tab/frontend/api.js";
 
 const { assignTablet, listTablets, onTabletsChanged, pairTablet } = api;
 
+const FRONTEND = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../custom_components/apollo_tab/frontend");
+
 const flush = async () => {
   for (let i = 0; i < 5; i += 1) {
     await Promise.resolve();
@@ -170,14 +172,69 @@ test("assign sends approve only when asked, and only as true", async () => {
     { type: "apollo_tab/tablet/assign", mac: "aa:01", url_path: "home" },
     { type: "apollo_tab/tablet/assign", mac: "aa:01", url_path: "home" },
   ]);
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-  const frontend = path.join(root, "custom_components/apollo_tab/frontend");
-  // In the panel, only _turnOn passes approve; the editor never does.
-  const panel = fs.readFileSync(path.join(frontend, "panel.js"), "utf8");
-  assert.equal(panel.match(/approve: true/g)?.length, 1);
+  // Every file of the frontend folder is read, so a new file is held to
+  // the same rules: only the panel's _turnOn passes approve, the assign
+  // command is written in api.js alone, and no code presses a control.
+  const files = fs
+    .readdirSync(FRONTEND)
+    .filter((name) => name.endsWith(".js"))
+    .map((name) => [name, fs.readFileSync(path.join(FRONTEND, name), "utf8")]);
+  assert.ok(files.length > 10, "the frontend folder was read");
+  const holding = (pattern) => files.filter(([, text]) => pattern.test(text)).map(([name]) => name);
+  const count = (pattern) => files.reduce((total, [, text]) => total + (text.match(pattern)?.length || 0), 0);
+  assert.deepEqual(holding(/apollo_tab\/tablet\/assign/), ["api.js"]);
+  assert.equal(count(/approve: true/g), 1);
+  assert.deepEqual(holding(/approve: true/), ["panel.js"]);
+  // No approve of any value in any other file (api.js names it in a comment).
+  assert.deepEqual(
+    holding(/approve\s*:/).filter((name) => !["panel.js", "api.js"].includes(name)),
+    [],
+  );
+  // Not even the word, so a shorthand `{ approve }` cannot pass one either.
+  assert.deepEqual(holding(/\bapprove\b/).sort(), ["api.js", "panel.js"]);
+  const panelText = files.find(([name]) => name === "panel.js")[1];
+  assert.equal(panelText.match(/approve\s*:/g)?.length, 1);
+  assert.equal(count(/this\._turnOn\(/g), 1);
+  // _turnOn is defined once and called once, nowhere else.
+  assert.equal(count(/\b_turnOn\b/g), 2);
+  // The only stored things are the two lists of dashboards in designer.js.
+  assert.equal(count(/setItem\(/g), 2);
+  for (const [name, text] of files) {
+    assert.doesNotMatch(text, /\.click\s*\(/, `${name} presses a control`);
+    assert.doesNotMatch(text, /new (Mouse|Pointer|Keyboard|Touch)Event\(/, `${name} makes an input event`);
+    assert.doesNotMatch(
+      text,
+      /new \w*Event\(\s*["'`](click|dblclick|auxclick|mouse|pointer|key|touch)/i,
+      `${name} makes an input event`,
+    );
+  }
+  const panel = fs.readFileSync(path.join(FRONTEND, "panel.js"), "utf8");
   assert.match(panel, /this\._assign\(mac, urlPath, \{ approve: true \}\);/);
-  const designer = fs.readFileSync(path.join(frontend, "designer.js"), "utf8");
-  assert.doesNotMatch(designer, /approve:/);
+});
+
+// The editor hands the start screen a tablet to set up in memory only, and
+// the start screen scrolls to it at once, never smoothly, so no Turn on
+// button is still moving when it can be pressed.
+test("the start screen keeps a handover in memory and scrolls at once", async () => {
+  const panel = fs.readFileSync(path.join(FRONTEND, "panel.js"), "utf8");
+  assert.doesNotMatch(panel, /localStorage|sessionStorage|indexedDB/);
+  const states = [...panel.matchAll(/history\.(pushState|replaceState)\(([^,]*),/g)];
+  assert.ok(states.length >= 2, "the panel moves between screens with pushState");
+  for (const [, , first] of states) {
+    assert.equal(first.trim(), "null");
+  }
+  const scrolls = [...panel.matchAll(/scrollIntoView\(([^)]*)\)/g)];
+  assert.ok(scrolls.length >= 1, "the arrival scrolls");
+  for (const [, args] of scrolls) {
+    assert.match(args, /behavior: "instant"/);
+  }
+  const focuses = [...panel.matchAll(/\.focus\(([^)]*)\)/g)];
+  assert.ok(focuses.length >= 4);
+  for (const [, args] of focuses) {
+    assert.match(args, /preventScroll: true/);
+  }
+  const { panelStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
+  assert.doesNotMatch(panelStyles, /scroll-behavior/);
 });
 
 test("setting a tablet up again sends its address and shows the answer at once", async () => {
