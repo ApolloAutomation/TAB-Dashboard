@@ -476,7 +476,9 @@ export function pressCounts({ press, click, movedAt, runStart, mac } = {}) {
 // single taps on "Put it on the tablet" (journey step 131) turned the
 // tablet on with the editor's dashboard once its wait was over (rule 9).
 // docs/tablets.md says the panel never picks a dashboard for you: change
-// that sentence when this is turned on.
+// that sentence when this is turned on. It also draws no "Shows" list, and
+// the Turn on button no longer names the dashboard: show the name some
+// other way first.
 export const PREPICK_ONLY_DASHBOARD = false;
 
 // The dashboard that is picked for a new tablet without the person,

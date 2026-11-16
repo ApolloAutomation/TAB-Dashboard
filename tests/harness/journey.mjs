@@ -5551,12 +5551,11 @@ function chains(realConfig) {
       await r.eval(`__apolloMockHass.answerWS({ type: "lovelace/dashboards/delete",
         dashboard_id: __apolloMockHass.getDashboard("night").id }); true`);
       if (PREPICK_ONLY_DASHBOARD) {
-        // One dashboard is left and the tablet was waiting: the button now
-        // names it, without a list, and waits again (rules 2 and 5).
+        // One dashboard is left and the tablet was waiting: no list now,
+        // and the button waits again (rules 2 and 5).
         await r.waitFor(
-          `__j.count('[data-test="dashboard-row"]') === 1 &&
-            __j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') === "TAB-1"`,
-          "the button to name the dashboard that is left",
+          `__j.count('[data-test="dashboard-row"]') === 1`,
+          "only the dashboard that is left",
         );
         const left = await r.eval(`(() => { const button = __j.find(${JSON.stringify(turnOn)});
           return { list: !!__j.find(${JSON.stringify(tabletShows(PORCH))}), settling: button.hasAttribute("data-settling") }; })()`);
@@ -8306,8 +8305,7 @@ function chains(realConfig) {
       await r.open({ seed: "sample", tablets: "new" }, `${home} && __j.find(${JSON.stringify(turnOnOf(PORCH))})`);
       const first = await r.eval(`({ settling: __j.find(${JSON.stringify(turnOnOf(PORCH))}).hasAttribute("data-settling"),
         list: !!__j.find(${JSON.stringify(tabletShows(PORCH))}),
-        disabled: __j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled,
-        name: __j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') })`);
+        disabled: __j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled })`);
       // The new tablet's block reads top to bottom: "Shows" right above the
       // button, in one column; the status at the top right on a desktop,
       // under the name on a phone, where the button is full width.
@@ -8328,7 +8326,6 @@ function chains(realConfig) {
       }
       if (PREPICK_ONLY_DASHBOARD) {
         check(!first.list, "the pre-picked row draws a Shows list");
-        check(first.name === "TAB-1", `the button names "${first.name}"`);
         check(first.settling, "the button takes presses at first paint");
         check(!first.disabled, "the pre-picked button is disabled");
         await r.click(turnOnOf(PORCH));
@@ -8371,13 +8368,13 @@ function chains(realConfig) {
       await pickShows(r, PORCH, "night");
       await sleep(300);
       check((await assigns(r)) === 0, "picking sent an assign");
-      // Deleting one of two dashboards: the waiting tablet's button names
-      // the one left and waits again.
+      // Deleting one of two dashboards: the waiting tablet's button waits
+      // again.
       await r.open({ seed: "sample", night: "1", tablets: "new" }, `${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`);
       await sleep(900);
       await r.eval(`__apolloMockHass.callWS({ type: "lovelace/dashboards/delete", dashboard_id: "night" }).then(() => true)`);
       if (PREPICK_ONLY_DASHBOARD) {
-        await r.waitFor(`__j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') === "TAB-1"`, "the button to name the dashboard left", 5000);
+        await r.waitFor(`__j.count('[data-test="dashboard-row"]') === 1`, "the deleted dashboard to go", 5000);
         check((await settling(r, PORCH)) === true, "the button does not wait after the delete");
         await sleep(200);
         await r.click(turnOnOf(PORCH));

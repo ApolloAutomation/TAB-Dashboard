@@ -1749,28 +1749,18 @@ export class ApolloTabPanel extends HTMLElement {
         (find(focusKey) || find(`name:${tablet.mac}`))?.focus({ preventScroll: true });
       }
     }
-    // Turning on needs a dashboard to send. The button's second line names
-    // it. While the change is on its way the button stays as it is, so it
+    // Turning on needs a dashboard to send; the "Shows" list names it.
+    // While the change is on its way the button stays as it is, so it
     // keeps focus; a second press is ignored.
     const turnOn = refs.notes.querySelector('[data-test="tablet-turn-on"]');
     if (turnOn) {
       const sends = this._wouldSend(tablet.mac);
       turnOn.disabled = !sends;
-      const named = sends ? this._dashboardTitle(sends) : "";
-      const second = turnOn.querySelector('[data-test="tablet-turn-on-name"]');
-      if (second && second.textContent !== named) {
-        second.textContent = named;
-      }
       const first = refs.notes.querySelector('[data-test="tablet-pick-first"]');
       if (first) {
         first.dataset.shown = String(!sends);
       }
     }
-  }
-
-  _dashboardTitle(urlPath) {
-    const row = (this._home?.rows || []).find((entry) => entry?.url_path === urlPath);
-    return row?.title || urlPath;
   }
 
   // An offline tablet's "What to do": its help, folded. Open or shut, it
@@ -1794,10 +1784,10 @@ export class ApolloTabPanel extends HTMLElement {
     return fold;
   }
 
-  // "Turn on with this dashboard", with the dashboard it would send on a
-  // second line, and "Pick a dashboard first." under it while it has none.
-  // The button is the same size whatever it names, so a pick does not
-  // move it, and it is never inside a label. Its press record (rule 6)
+  // "Turn on with this dashboard", one line, and "Pick a dashboard first."
+  // under it while it has none. The "Shows" list right above it names the
+  // dashboard, so the button does not repeat it, and a pick does not move
+  // it. It is never inside a label. Its press record (rule 6)
   // comes from its own listeners; the click asks pressCounts.
   _turnOnButton(mac, text, test) {
     const wrap = el("div", "turn-on-wrap");
@@ -1823,9 +1813,6 @@ export class ApolloTabPanel extends HTMLElement {
     button.classList.add("tablet-turn-on");
     button.dataset.mac = mac;
     button.append(el("span", "turn-on-words", text));
-    const second = el("span", "turn-on-name");
-    second.dataset.test = "tablet-turn-on-name";
-    button.append(second);
     // "Turn on with this dashboard Kitchen Porch tablet", described by the
     // check line and the note.
     button.id = `tablet-turn-on-${mac}`;
