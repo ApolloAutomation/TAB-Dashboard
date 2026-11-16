@@ -1548,23 +1548,13 @@ button.settings-row .small {
 .tablet-check-warning {
   flex: 1 0 100%;
 }
-/* "Turn on with this dashboard" over the dashboard it sends: one size
-   whatever it names, so a pick does not move it. */
+/* "Turn on with this dashboard": one line, as wide as its words. */
 .turn-on-wrap {
   display: grid;
   justify-items: start;
   gap: 6px;
 }
 .tablet-notes .tablet-turn-on {
-  display: grid;
-  justify-items: start;
-  align-content: center;
-  gap: 0;
-  width: 280px;
-  max-width: 100%;
-  min-height: 56px;
-  padding-block: 6px;
-  text-align: start;
   /* It takes presses the moment it looks filled. */
   transition: none;
 }
@@ -1578,22 +1568,6 @@ button.settings-row .small {
   .tablet-notes .tablet-turn-on {
     width: 100%;
   }
-}
-.turn-on-name {
-  display: block;
-  width: 100%;
-  min-height: 1.33em;
-  overflow: hidden;
-  font-size: var(--tab-fs-small);
-  font-weight: 400;
-  line-height: var(--tab-lh-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* With no dashboard to name, the one line sits in the middle; the button
-   keeps its 56 px, so a pick moves nothing. */
-.turn-on-name:empty {
-  display: none;
 }
 .tablet-pick-first[data-shown="false"] {
   visibility: hidden;

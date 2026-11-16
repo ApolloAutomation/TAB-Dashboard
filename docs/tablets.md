@@ -61,8 +61,8 @@ that it shows Home and that its values no longer change." That is the
 tablet you just added again.
 
 To turn it on in the panel, pick its first dashboard under "Shows", then
-press "Turn on with this dashboard". The button names the dashboard it
-sends on its second line. The panel never picks a dashboard for you, also
+press "Turn on with this dashboard". It sends the dashboard "Shows"
+names. The panel never picks a dashboard for you, also
 not with only one dashboard or when the editor sends you to the tablet;
 until you pick one, the button cannot be pressed and "Pick a dashboard
 first." stands under it. Picking alone changes nothing, also
