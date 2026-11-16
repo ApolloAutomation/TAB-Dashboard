@@ -112,7 +112,7 @@ test(
       fs
         .readdirSync(dir, { withFileTypes: true })
         .flatMap((entry) => (entry.isDirectory() ? list(path.join(dir, entry.name), base) : [path.relative(base, path.join(dir, entry.name))]))
-        .filter((file) => file !== "ruff.toml" && !file.split(path.sep).includes("__pycache__"))
+        .filter((file) => file !== "ruff.toml" && !file.split(path.sep).some((part) => part === "__pycache__" || part === ".ruff_cache"))
         .sort();
     const ours = list(CONTRACT);
     assert.deepEqual(ours, list(TAB1_CONTRACT));
