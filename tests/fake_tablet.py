@@ -3,11 +3,18 @@
 It sits behind MemoryTabletLink and follows CONTRACT.md: chunk rules, hash
 check, typed slots, pairing, auth checks on signed calls, a staged build
 that the test finishes when it wants, knocks and signed input.
+
+It plays one of two engines. "0.1.0", the default, is today's engine: it
+speaks proto [1, 1] and takes only device layout version 1, at most 20
+pages. "0.2.0" speaks [1, 2], answers the caps of contract.json
+engine_caps, and takes version 1 and 2 with the page rules of contract 4.2
+(the cases of fixtures/commit_v2.json).
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -21,6 +28,23 @@ OPEN_WITHOUT_SESSION = ("tab_hello", "tab_status", "tab_pair", "tab_layout")
 # Session nonces of this boot that a tab_hello may not use again (contract 3).
 NONCE_RING = 16
 
+ENGINE_V1 = "0.1.0"
+ENGINE_V2 = "0.2.0"
+# What engine 0.1.0 answers in caps: no max_pages, no max_stored.
+CAPS_V1 = {
+    "w": list(device.WIDGET_KINDS),
+    "icons": 1,
+    "screen": [1280, 800],
+    "max_layout": device.MAX_LAYOUT_BYTES,
+    "max_chunk": device.CHUNK_BYTES,
+    "max_slots": device.MAX_SLOTS,
+    "max_widgets": device.MAX_WIDGETS,
+}
+# What engine 0.2.0 answers (contract.json engine_caps).
+CAPS_V2 = json.loads(
+    (Path(__file__).parent / "contract" / "contract.json").read_text("utf-8")
+)["engine_caps"]
+
 
 class FakeTablet:
     """One simulated tablet with the engine."""
@@ -32,11 +56,15 @@ class FakeTablet:
         *,
         psk: bytes | None = bytes(range(32)),
         caps: dict | None = None,
-        proto: tuple[int, int] = (1, 1),
-        engine: str = "0.1.0",
+        proto: tuple[int, int] | None = None,
+        engine: str = ENGINE_V1,
         boot: int = 1,
     ) -> None:
-        """Start empty: connected, with the engine, not paired, no layout."""
+        """Start empty: connected, with the engine, not paired, no layout.
+
+        engine picks the mode (ENGINE_V1 or ENGINE_V2), and with it the
+        default proto and caps.
+        """
         self.hass = hass
         self.mac = mac
         self.hex = tp.mac_hex(mac)
@@ -46,8 +74,11 @@ class FakeTablet:
         self.encryption_supported = True
         self.connected = True
         self.has_engine = True
-        self.caps = {"w": list(device.WIDGET_KINDS), **device.CAPS_DEFAULTS}
+        self.v2 = engine == ENGINE_V2
+        self.caps = json.loads(json.dumps(CAPS_V2 if self.v2 else CAPS_V1))
         self.caps.update(caps or {})
+        if proto is None:
+            proto = (1, 2) if self.v2 else (1, 1)
         self.proto = list(proto)
         self.engine = engine
         self.boot = boot
@@ -241,6 +272,9 @@ class FakeTablet:
             if self.transfer and self.transfer["hash"] == hash:
                 self.transfer = None
             return {}
+        if self.staged and hash == self.staged:
+            # Still being built: success, and the build carries on (contract 5).
+            return {}
         transfer = self.transfer
         if (
             transfer is None
@@ -258,17 +292,41 @@ class FakeTablet:
             raise LinkError("parse") from err
         if not isinstance(layout, dict) or not isinstance(layout.get("pages"), list):
             raise LinkError("parse")
-        if layout.get("v") != 1:
-            raise LinkError("version")
+        if code := self._commit_check(layout):
+            raise LinkError(code)
         slots = layout.get("slots", "")
-        if len(layout["pages"]) > 20 or len(slots) > self.caps["max_slots"]:
-            raise LinkError("limits")
         self.transfer = None
         self.staged = hash
         self.staged_slots = slots
         self.staged_values = dict.fromkeys(range(1, len(slots) + 1))
         self.build = ""
         return {}
+
+    def _commit_check(self, layout: dict) -> str:
+        """Return the version or limits error of a parsed layout, or "".
+
+        Engine 0.1.0 takes "v": 1 only, at most 20 pages. Engine 0.2.0 takes
+        1 and 2. In version 2 a page is a detail page when its sub is
+        exactly 1 and it is not page 0; at most min(caps.max_pages, 64)
+        pages, of which at most 20 are normal (contract 4.2).
+        """
+        version = layout.get("v")
+        if isinstance(version, bool) or version not in ((1, 2) if self.v2 else (1,)):
+            return "version"
+        pages = layout["pages"]
+        if version == 1:
+            too_many = len(pages) > device.MAX_PAGES
+        else:
+            normal = sum(
+                1
+                for index, page in enumerate(pages)
+                if not (index > 0 and isinstance(page, dict) and page.get("sub") == 1)
+            )
+            limit = min(int(self.caps["max_pages"]), device.MAX_PAGES_V2)
+            too_many = len(pages) > limit or normal > device.MAX_PAGES
+        if too_many or len(layout.get("slots", "")) > self.caps["max_slots"]:
+            return "limits"
+        return ""
 
     def _on_tab_set(self, data: str, auth: str) -> dict:
         """Apply slot values to the active or the staged layout."""

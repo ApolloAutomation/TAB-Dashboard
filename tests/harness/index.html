@@ -17,6 +17,13 @@
       --primary-color: #009ac7;
       --text-primary-color: #ffffff;
       --error-color: #db4437;
+      --secondary-background-color: #282828;
+      --app-header-background-color: #101e24;
+      --app-header-text-color: #e1e1e1;
+      --disabled-text-color: #6f6f6f;
+      --success-color: #43a047;
+      --warning-color: #ffa600;
+      --info-color: #039be5;
       font-family: system-ui, sans-serif;
     }
     :root.ha-light {
@@ -28,12 +35,21 @@
       --primary-color: #009ac7;
       --text-primary-color: #ffffff;
       --error-color: #db4437;
+      --secondary-background-color: #e5e5e5;
+      --app-header-background-color: var(--primary-color);
+      --app-header-text-color: #ffffff;
+      --disabled-text-color: #bdbdbd;
+      --success-color: #43a047;
+      --warning-color: #ffa600;
+      --info-color: #039be5;
     }
     * {
       box-sizing: border-box;
     }
+    /* Home Assistant's base text size. */
     body {
       margin: 0;
+      font-size: 14px;
       min-height: 100vh;
       background: var(--primary-background-color);
       color: var(--primary-text-color);
@@ -66,6 +82,7 @@
   <main id="app"></main>
   <script type="module">
     import { createMockHass } from "./mock-hass.js";
+    import { fillWords } from "../../custom_components/apollo_tab/frontend/logic.js";
 
     const query = new URLSearchParams(location.search);
     const view = query.get("view") || "cards";
@@ -87,12 +104,16 @@
       getJson("../../custom_components/apollo_tab/library/strings.json"),
       seed === "real" ? getJson("./real-dashboard.json") : Promise.resolve(null),
     ]);
-    fixtures.strings = strings;
+    // With the word for turning a tablet on put in, as the panel loads them.
+    fixtures.strings = fillWords(strings);
 
     const mock = createMockHass(fixtures, {
       seed,
       realConfig,
       community: Boolean(query.get("community")),
+      graphs: Boolean(query.get("graphs")),
+      // cards=many: more cards, so the picker offers 32.
+      many: query.get("cards") === "many",
       // "three", "no-engine", "new" or "all" stand-in tablets, and a second
       // dashboard, "Night".
       tablets: query.get("tablets") || "none",
@@ -203,7 +224,67 @@
       });
     }
 
-    if (view === "cards") {
+    // The tablet drawing of the contract's layout_v2_kit, one page at a time,
+    // to set beside the engine's own pictures of it.
+    async function renderKit() {
+      const { renderPage } = await import("../../custom_components/apollo_tab/frontend/render.js");
+      const { rendererStyles } = await import("../../custom_components/apollo_tab/frontend/styles.js");
+      const kit = await getJson("../contract/fixtures/layout_v2_kit.source.json");
+      const style = document.createElement("style");
+      style.textContent = rendererStyles;
+      document.head.append(style);
+      document.body.style.margin = "0";
+      app.style.padding = "0";
+      const host = document.createElement("div");
+      host.dataset.test = "kit-page";
+      app.append(host);
+      const page = Number(query.get("page") || 0);
+      renderPage(host, kit.layout, page, { values: kit.values, errors: {} }, { sx: 1, sy: 1, tablet: true });
+      // Drawn again once the tablet's font is there.
+      await document.fonts?.ready;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      renderPage(host, kit.layout, page, { values: kit.values, errors: {} }, { sx: 1, sy: 1, tablet: true });
+      host.dataset.ready = "1";
+    }
+
+    // Every schema 2 card variant in a browser, with its devices picked.
+    function renderCards2() {
+      document.body.style.background = theme.wall;
+      const grid = document.createElement("div");
+      grid.className = "cards-grid";
+      for (const fixture of fixtures.cards_v2 || []) {
+        for (const [name, variant] of Object.entries(fixture.variants || {})) {
+          if (name === "full") continue;
+          const wrap = document.createElement("section");
+          wrap.className = "sample";
+          const label = document.createElement("div");
+          label.className = "sample-label";
+          label.textContent = `${fixture.name} (${name})`;
+          const card = document.createElement("apollo-tab-card");
+          card.dataset.test = "card2";
+          card.dataset.component = fixture.id;
+          card.dataset.variant = name;
+          // As wide as the card, or the screen on a phone; the card scales.
+          card.style.width = `min(${variant.init.w}px, calc(100vw - 40px))`;
+          card.style.aspectRatio = `${variant.init.w} / ${variant.init.h}`;
+          const params = {};
+          for (const [key, spec] of Object.entries(fixture.form?.params || {})) {
+            if (spec.kind === "entity") params[key] = `${spec.domains?.[0] || "light"}.sample`;
+          }
+          card.setConfig({ ...variant.card, component: fixture.id, variant: name, params });
+          card.hass = mock;
+          wrap.append(label, card);
+          grid.append(wrap);
+        }
+      }
+      app.append(grid);
+    }
+
+    if (view === "cards2") {
+      renderCards2();
+    } else if (view === "kit") {
+      await renderKit();
+    } else if (view === "cards") {
       renderCards();
     } else if (view === "states") {
       renderStates();

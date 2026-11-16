@@ -17,6 +17,10 @@ from .assignments import (
 )
 from .const import DOMAIN
 from .live import CallError, CardSubscription, async_call_output, json_safe
+from .maker.features import card_facts, param_entities
+
+# The most devices card/facts reads in one call.
+MAX_FACT_ENTITIES = 64
 
 if TYPE_CHECKING:
     from . import ApolloTabData
@@ -30,8 +34,8 @@ MAX_CARD_SUBSCRIPTIONS = 100
 # panel's "Turn on with this dashboard", and to pairing such a tablet. It
 # quotes the button and ends in a full stop, as the panel's own texts do.
 NOT_APPROVED = (
-    "This tablet is new. Pick a dashboard for it on the Home screen, "
-    'then press "Turn on with this dashboard".'
+    "This tablet is new. Pick a dashboard for it under Tablets, then "
+    'press "Turn on with this dashboard".'
 )
 
 
@@ -192,6 +196,7 @@ async def websocket_library_approve(
         probatio.Required("type"): "apollo_tab/card/subscribe",
         probatio.Required("card"): dict,
         probatio.Optional("dashboard"): probatio.Any(str, None),
+        probatio.Optional("detail", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -228,6 +233,8 @@ async def websocket_card_subscribe(
         probatio.Required("event"): probatio.In(["tap", "change"]),
         probatio.Optional("value"): probatio.Any(bool, int, float, str),
         probatio.Optional("confirmed", default=False): bool,
+        probatio.Optional("dashboard"): probatio.Any(str, None),
+        probatio.Optional("detail", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -243,6 +250,46 @@ async def websocket_card_call(
         connection.send_error(msg["id"], err.code, str(err))
         return
     connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        probatio.Required("type"): "apollo_tab/card/facts",
+        probatio.Required("component"): str,
+        probatio.Optional("params", default={}): dict,
+    }
+)
+@websocket_api.async_response
+async def websocket_card_facts(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Return what a card's devices can do, for the card form (C.7).
+
+    It reads the facts a conversion would use now and writes nothing.
+    """
+    if (data := _loaded_data(hass, connection, msg["id"])) is None:
+        return
+    component = data.library.components.get(msg["component"])
+    if component is None:
+        connection.send_error(msg["id"], "not_found", "Unknown card")
+        return
+    params = msg["params"]
+    unknown = [name for name in params if name not in component["params"]]
+    if unknown:
+        connection.send_error(
+            msg["id"], "invalid_format", f"Unknown param {unknown[0]}"
+        )
+        return
+    entities = param_entities(component, params)
+    entity_ids = list(dict.fromkeys(e for ids in entities.values() for e in ids))
+    if len(entity_ids) > MAX_FACT_ENTITIES:
+        connection.send_error(
+            msg["id"], "invalid_format", f"At most {MAX_FACT_ENTITIES} devices"
+        )
+        return
+    facts = data.facts.facts_for(entity_ids)
+    connection.send_result(msg["id"], json_safe(card_facts(component, params, facts)))
 
 
 @websocket_api.require_admin
@@ -447,6 +494,8 @@ async def websocket_layout_get(
     {
         probatio.Required("type"): "apollo_tab/layout/preview",
         probatio.Required("config"): dict,
+        # The layout version to make; the editor asks for 2 once it draws it.
+        probatio.Optional("dl", default=1): probatio.In([1, 2]),
     }
 )
 @websocket_api.async_response
@@ -460,7 +509,7 @@ async def websocket_layout_preview(
     if (data := _loaded_data(hass, connection, msg["id"])) is None:
         return
     try:
-        preview = await data.manager.async_preview(msg["config"])
+        preview = await data.manager.async_preview(msg["config"], msg["dl"])
     except Exception:
         _LOGGER.exception("Preview conversion failed")
         connection.send_error(
@@ -519,7 +568,7 @@ async def websocket_layout_subscribe(
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    """Register the fifteen commands of the websocket API."""
+    """Register the sixteen commands of the websocket API."""
     websocket_api.async_register_command(hass, websocket_strings)
     websocket_api.async_register_command(hass, websocket_library)
     websocket_api.async_register_command(hass, websocket_library_subscribe)
@@ -527,6 +576,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_library_approve)
     websocket_api.async_register_command(hass, websocket_card_subscribe)
     websocket_api.async_register_command(hass, websocket_card_call)
+    websocket_api.async_register_command(hass, websocket_card_facts)
     websocket_api.async_register_command(hass, websocket_dashboards)
     websocket_api.async_register_command(hass, websocket_layout_get)
     websocket_api.async_register_command(hass, websocket_layout_preview)

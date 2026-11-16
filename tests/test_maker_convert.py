@@ -611,6 +611,46 @@ def test_chart_cap_leaves_card_out(components, themes):
     assert warning["card"] == 0
 
 
+def test_chart_cap_leaves_a_page_with_nothing_but_the_warning(components, themes):
+    """A card over the chart budget is left out even alone on its page.
+
+    The page then has no widgets, only the warning with its rectangle: the
+    editor draws the left-out box from it (frontend model.js omittedOnPage)
+    and must not take the page for an empty one.
+    """
+    five = validate_component(
+        {
+            "id": "me/five-graphs",
+            "name": "Five graphs",
+            "description": "One sensor as five lines.",
+            "icon": "mdi:chart-line",
+            "version": "1.0.0",
+            "size": "2x2",
+            "params": {"entity": {"domain": "sensor"}},
+            "inputs": {
+                "history": {
+                    "source": "recorder",
+                    "entity": "{{ entity }}",
+                    "hours": 24,
+                }
+            },
+            "layout": [{"type": "chart", "value": "history"} for _ in range(5)],
+        }
+    )
+    five["source"] = "user"
+    config = make_dashboard(
+        [{"cards": [tab_card(five["id"], params={"entity": "sensor.a"})]}]
+    )
+    result = convert(config, {**components, five["id"]: five}, themes)
+    [page] = result["layout"]["pages"]
+    assert page["w"] == []
+    [warning] = result["warnings"]
+    assert warning["code"] == "over_budget_charts"
+    assert warning["page"] == page["id"]
+    assert (warning["view"], warning["section"], warning["card"]) == (0, 0, 0)
+    assert len(warning["r"]) == 4
+
+
 def test_arc_cap_leaves_card_out(components, themes):
     """The fifth thermostat card on a page is left out with over_budget_arcs."""
     config = make_dashboard(

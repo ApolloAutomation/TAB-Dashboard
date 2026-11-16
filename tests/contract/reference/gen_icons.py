@@ -3,9 +3,10 @@
 Usage: gen_icons.py <materialdesignicons-webfont.ttf> <out icons.json>
 
 Each icon has a code point and the icon-set level that added it. Level 1 is
-this list. A later contract adds icons at level 2 and up; it never removes or
-renumbers one. The tablet reports the level it has; Home Assistant sends the
-fallback glyph for icons above that level.
+the list of contract version 1, level 2 the icons version 2 adds. A later
+contract adds icons at a higher level; it never removes or renumbers one.
+The tablet reports the level it has; Home Assistant sends the fallback glyph
+for icons above that level.
 """
 
 import json
@@ -29,6 +30,57 @@ weather-windy weather-windy-variant weather-cloudy-alert
 door door-open window-closed window-open garage-open water-percent water fire snowflake
 motion-sensor bell robot-vacuum ceiling-light floor-lamp lamp led-strip-variant
 power-plug toggle-switch car calendar clock-outline
+""".split()
+
+LEVEL_2 = """
+home-thermometer home-floor-g home-floor-0 home-floor-1 home-floor-2
+wall-sconce-flat desk-lamp outdoor-lamp string-lights track-light
+lightbulb-off lightbulb-multiple light-switch brightness-6 palette-outline
+creation white-balance-sunny movie-open spa leaf book-open-variant
+moon-waning-crescent sleep weather-sunset coffee-maker dishwasher
+tumble-dryer fridge-outline stove pot-steam kettle sprinkler flash
+solar-power ev-station car-electric transmission-tower molecule-co2
+air-filter air-purifier air-humidifier air-conditioner radiator
+water-boiler water-pump fan-off autorenew rocket-launch home-export-outline
+thermometer-low thermometer-high blinds-open window-shutter
+window-shutter-open gate gate-open garage-alert door-closed angle-acute
+lock-alert shield-check shield-alert shield-outline bell-ring bell-off
+smoke-detector pipe-leak walk umbrella alarm timer-outline calendar-today
+check-circle toggle-switch-off gesture-tap-button script-text-outline
+numeric dots-horizontal map-marker shuffle repeat volume-mute volume-low
+speaker-multiple cast television-play battery battery-50 battery-20
+battery-charging battery-alert
+""".split()
+
+LEVELS = ((1, LEVEL_1), (2, LEVEL_2))
+
+# The 258 standard Macintosh glyph names, in the order of the 'post' table. A
+# format 2 table names a glyph by its index in this list, or from 258 up by a
+# string of its own.
+MAC_GLYPHS = """
+.notdef .null nonmarkingreturn space exclam quotedbl numbersign dollar percent
+ampersand quotesingle parenleft parenright asterisk plus comma hyphen period slash
+zero one two three four five six seven eight nine colon semicolon less equal greater
+question at A B C D E F G H I J K L M N O P Q R S T U V W X Y Z bracketleft backslash
+bracketright asciicircum underscore grave a b c d e f g h i j k l m n o p q r s t u v
+w x y z braceleft bar braceright asciitilde Adieresis Aring Ccedilla Eacute Ntilde
+Odieresis Udieresis aacute agrave acircumflex adieresis atilde aring ccedilla eacute
+egrave ecircumflex edieresis iacute igrave icircumflex idieresis ntilde oacute ograve
+ocircumflex odieresis otilde uacute ugrave ucircumflex udieresis dagger degree cent
+sterling section bullet paragraph germandbls registered copyright trademark acute
+dieresis notequal AE Oslash infinity plusminus lessequal greaterequal yen mu
+partialdiff summation product pi integral ordfeminine ordmasculine Omega ae oslash
+questiondown exclamdown logicalnot radical florin approxequal Delta guillemotleft
+guillemotright ellipsis nonbreakingspace Agrave Atilde Otilde OE oe endash emdash
+quotedblleft quotedblright quoteleft quoteright divide lozenge ydieresis Ydieresis
+fraction currency guilsinglleft guilsinglright fi fl daggerdbl periodcentered
+quotesinglbase quotedblbase perthousand Acircumflex Ecircumflex Aacute Edieresis
+Egrave Iacute Icircumflex Idieresis Igrave Oacute Ocircumflex apple Ograve Uacute
+Ucircumflex Ugrave dotlessi circumflex tilde macron breve dotaccent ring cedilla
+hungarumlaut ogonek caron Lslash lslash Scaron scaron Zcaron zcaron brokenbar Eth eth
+Yacute yacute Thorn thorn minus multiply onesuperior twosuperior threesuperior onehalf
+onequarter threequarters franc Gbreve gbreve Idotaccent Scedilla scedilla Cacute
+cacute Ccaron ccaron dcroat
 """.split()
 
 
@@ -74,7 +126,7 @@ def _names(data, tables):
         size = data[pos]
         strings.append(data[pos + 1 : pos + 1 + size].decode("latin1"))
         pos += 1 + size
-    return [strings[i - 258] if i >= 258 else f".std{i}" for i in index]
+    return [strings[i - 258] if i >= 258 else MAC_GLYPHS[i] for i in index]
 
 
 def main() -> None:
@@ -88,15 +140,16 @@ def main() -> None:
     }
     icons = {}
     missing = []
-    for name in LEVEL_1:
-        if name not in by_name:
-            missing.append(name)
-            continue
-        icons[f"mdi:{name}"] = [by_name[name], 1]
+    for level, names_of_level in LEVELS:
+        for name in names_of_level:
+            if name not in by_name:
+                missing.append(name)
+                continue
+            icons[f"mdi:{name}"] = [by_name[name], level]
     if missing:
         raise SystemExit("not in the font: " + " ".join(missing))
     out = {
-        "version": 1,
+        "version": LEVELS[-1][0],
         "fallback": "mdi:help-circle-outline",
         "placeholder": "mdi:image-outline",
         "icons": dict(sorted(icons.items())),

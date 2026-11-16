@@ -6,7 +6,10 @@ from .const import (
     ACTION_RE,
     ALLOWED_ACTION_DOMAINS,
     ALLOWED_DOMAIN_SERVICES,
+    BORDERS,
+    CODE_KEYS,
     COLOR_RE,
+    CORNERS,
     DATA_KEY_RE,
     DEFAULT_THEME,
     DOMAIN_RE,
@@ -17,6 +20,7 @@ from .const import (
     FOR_EACH_MAX,
     ICON_RE,
     ID_RE,
+    LIT_LOOKS,
     LOCAL_ACTIONS,
     MAX_DATA_KEYS,
     MAX_INPUTS,
@@ -30,6 +34,7 @@ from .const import (
     RESERVED_NAMES,
     SENSITIVE_DOMAINS,
     SIZE_RE,
+    SURFACES,
     TARGET_KEYS,
     THEME_IDS,
     VAR_RE,
@@ -87,7 +92,18 @@ _LAYOUT_KEYS = {
     "image": {"type", "value", "on_tap", "confirm", "side", "for_each", "as"},
 }
 
-_STYLE_KEYS = {"theme", "color", "gradient", "transparency", "accent"}
+_STYLE_KEYS = {
+    "theme",
+    "color",
+    "gradient",
+    "transparency",
+    "accent",
+    "lit",
+    "tint",
+    "surface",
+    "corners",
+    "border",
+}
 
 
 def _is_template(value: object) -> bool:
@@ -204,6 +220,8 @@ def _validate_data(data: object, path: str, *, allow_templates: bool) -> dict:
             raise MakerError(
                 "bad_value", kpath, f"{key} would reach beyond the picked entity"
             )
+        if key in CODE_KEYS:
+            raise MakerError("bad_value", kpath, "a card carries no code (D.4)")
         if isinstance(value, bool | int | float):
             continue
         if isinstance(value, str):
@@ -802,10 +820,15 @@ def _validate_gradient(raw: object) -> dict:
 def validate_component(raw: object) -> dict:
     """Validate one component document and return its normalised form."""
     doc = _as_mapping(raw, "")
-    _reject_unknown_keys(doc, _TOP_KEYS, "")
     schema_version = doc.get("schema", 1)
+    if type(schema_version) is int and schema_version == 2:
+        # Schema 2 has a validator of its own; schema 1 below stays as it was.
+        from .schema2 import validate_component2
+
+        return validate_component2(doc)
+    _reject_unknown_keys(doc, _TOP_KEYS, "")
     if isinstance(schema_version, bool) or schema_version != 1:
-        raise MakerError("bad_value", "schema", "schema must be 1")
+        raise MakerError("bad_value", "schema", "schema must be 1 or 2")
     comp_id = _required(doc, "id", "")
     if not isinstance(comp_id, str) or len(comp_id) > 64 or not _ID.match(comp_id):
         raise MakerError("bad_id", "id", f"bad id {comp_id!r}")
@@ -936,6 +959,12 @@ def _grid_rows(grid: dict, size: list) -> int:
 
 def validate_card_config(component: dict, raw: object) -> dict:
     """Validate a stored card config against its component definition."""
+    if component.get("schema", 1) != 1:
+        # Schema 2 cards are compiled by a later package; until then they
+        # are left out with a clear reason instead of being misread here.
+        raise MakerError(
+            "not_supported", "", "this card needs a newer version of Apollo TAB"
+        )
     cfg = _as_mapping(raw, "")
     raw_params = cfg.get("params")
     if raw_params is None:
@@ -996,20 +1025,44 @@ def validate_style(raw: object) -> dict:
         out["transparency"] = transparency
     if "accent" in style:
         out["accent"] = _validate_colour(style["accent"], "style.accent")
+    if "lit" in style:
+        if not isinstance(style["lit"], str) or style["lit"] not in LIT_LOOKS:
+            raise MakerError("bad_value", "style.lit", f"expected one of {LIT_LOOKS}")
+        out["lit"] = style["lit"]
+    if "tint" in style:
+        if not isinstance(style["tint"], bool):
+            raise MakerError("bad_value", "style.tint", "expected true or false")
+        out["tint"] = style["tint"]
+    # The theme's own look (the first word) is the same as no key: not kept.
+    for key, words in (
+        ("surface", SURFACES),
+        ("corners", tuple(CORNERS)),
+        ("border", tuple(BORDERS)),
+    ):
+        if key not in style:
+            continue
+        word = style[key]
+        if not isinstance(word, str) or word not in words:
+            raise MakerError("bad_value", f"style.{key}", f"expected one of {words}")
+        if word != words[0]:
+            out[key] = word
     return out
 
 
 def validate_dashboard_options(raw: object) -> dict:
     """Validate the apollo_tab block of a dashboard configuration."""
     options = _as_mapping(raw, "apollo_tab")
-    _reject_unknown_keys(options, {"version", "theme"}, "apollo_tab")
+    _reject_unknown_keys(options, {"version", "theme", "accent"}, "apollo_tab")
     version = options.get("version", 1)
     if isinstance(version, bool) or version != 1:
         raise MakerError("bad_value", "apollo_tab.version", "version must be 1")
     theme = options.get("theme", DEFAULT_THEME)
-    if theme not in THEME_IDS:
+    if not isinstance(theme, str) or theme not in THEME_IDS:
         raise MakerError("bad_value", "apollo_tab.theme", f"unknown theme {theme!r}")
-    return {"version": 1, "theme": theme}
+    out = {"version": 1, "theme": theme}
+    if "accent" in options:
+        out["accent"] = _validate_colour(options["accent"], "apollo_tab.accent")
+    return out
 
 
 def is_tab_dashboard(config: object) -> bool:
@@ -1017,8 +1070,66 @@ def is_tab_dashboard(config: object) -> bool:
     return isinstance(config, dict) and isinstance(config.get("apollo_tab"), dict)
 
 
+# Item keys that may hold a template; templates.py::_LAYOUT_KEYS holds the
+# same list. A templated key missing here is never checked at load.
+TEMPLATE_ITEM_KEYS = (
+    "value",
+    "min",
+    "max",
+    "step",
+    "text",
+    "confirm",
+    "visible",
+    "colour",
+    "selected",
+    "icon_live",
+    "mark",
+    "rate",
+)
+# Card-level keys of schema 2 that may hold a template.
+TEMPLATE_CARD_KEYS = ("on", "tint", "state", "unavailable")
+
+
+def _template_of(value: object) -> str | None:
+    """Return the template text of a field, marked or not, else None."""
+    if isinstance(value, dict):
+        value = value.get("template")
+    return value if _is_template(value) else None
+
+
+def _component_templates2(component: dict) -> list[str]:
+    """Collect the templates of a schema 2 card file."""
+    from .schema2 import iter_items
+
+    templates: list[str] = []
+    for spec in component["inputs"].values():
+        if spec["kind"] == "template":
+            templates.append(spec["template"])
+        elif spec["kind"] == "action":
+            templates.append(spec["result"])
+    for spec in component["outputs"].values():
+        if spec["kind"] != "action":
+            continue
+        for value in spec["data"].values():
+            for entry in value if isinstance(value, list) else [value]:
+                if _is_template(entry):
+                    templates.append(entry)
+    for key in TEMPLATE_CARD_KEYS:
+        text = _template_of(component.get(key))
+        if text is not None:
+            templates.append(text)
+    for _path, item in iter_items(component):
+        for key in TEMPLATE_ITEM_KEYS:
+            text = _template_of(item.get(key))
+            if text is not None:
+                templates.append(text)
+    return templates
+
+
 def component_templates(component: dict) -> list[str]:
     """Collect every template string that must pass a syntax check."""
+    if component.get("schema") == 2:
+        return _component_templates2(component)
     templates: list[str] = []
     for spec in component["inputs"].values():
         if spec["kind"] == "template":

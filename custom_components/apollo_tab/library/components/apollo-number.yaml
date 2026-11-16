@@ -1,0 +1,70 @@
+schema: 2
+id: apollo/number
+version: 2.0.0
+name: Number
+description: Set a number with a bar or with minus and plus.
+icon: mdi:gauge
+group: more
+
+params:
+  entity: {domain: [number, input_number], label: Number}
+
+options:
+  control: {type: choice, section: controls, label: Control, default: bar,
+            choices: {bar: Bar, buttons: Minus and plus}}
+
+inputs:
+  now:  "{{ states(entity) | float(none) }}"
+  # The state line: the number and its unit, or why there is none (never
+  # "unavailable °C").
+  text: >-
+    {{ (states(entity) ~ ' ' ~ (state_attr(entity, 'unit_of_measurement') or '')) | trim if now is number else state_translated(entity) }}
+  # The row's value column: a dash while there is no number (the bar fades).
+  short: "{{ text if now is number else '—' }}"
+
+outputs:
+  set:  {action: {number: number.set_value, input_number: input_number.set_value},
+         data: {entity_id: "{{ entity }}", value: "{{ value }}"}, feedback: optimistic}
+  # Minus and plus go to the next step of the number's grid (min, min +
+  # step, ...), kept in range, and give a step's number, not 0.30000000000000004.
+  down: {action: {number: number.set_value, input_number: input_number.set_value}, uses: {now: number},
+         data: {entity_id: "{{ entity }}",
+                value: "{{ [(((now - can.min) / can.step) | round(6) | round(0, 'ceil') - 1) * can.step + can.min, can.min] | max | round(6) }}"},
+         feedback: optimistic}
+  up:   {action: {number: number.set_value, input_number: input_number.set_value}, uses: {now: number},
+         data: {entity_id: "{{ entity }}",
+                value: "{{ [(((now - can.min) / can.step) | round(6) | round(0, 'floor') + 1) * can.step + can.min, can.max] | min | round(6) }}"},
+         feedback: optimistic}
+
+state: text
+lit: none
+# A card too small for its bar shows the number, not its icon.
+alone: short
+
+parts:
+  bar:     {type: slider, look: bar, value: now, min: "{{ can.min }}", max: "{{ can.max }}",
+            step: "{{ can.step }}", on_change: set, when: ["control=bar"]}
+  buttons: {type: row, when: ["control=buttons"], items: [
+             {type: button, icon: "mdi:minus", text: Less, on_tap: down},
+             {type: button, icon: "mdi:plus", text: More, on_tap: up}]}
+  # What a tablet with older software shows under the bar.
+  old_text: {type: label, text: "{{ text }}", size: s, when: ["!tablet.v2"]}
+
+variants:
+  row:
+    name: Row
+    grid: [12, 2]
+    header: chip
+    state: short
+    layout: [{use: bar, height: 48}, {use: buttons}]
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    # The control takes the card's height: no empty band under the header.
+    layout: [{use: bar, grow: true}, {use: buttons}, {use: old_text}]
+
+preview:
+  params: {entity: number.example}
+  can: {min: 0, max: 100, step: 1, unit: "%"}
+  inputs: {now: 40, text: "40 %"}

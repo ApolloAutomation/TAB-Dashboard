@@ -1,0 +1,104 @@
+schema: 2
+id: apollo/fan-speed
+version: 2.0.0
+name: Fan
+description: Turn a fan on or off, set its speed and let it turn from side to side.
+icon: mdi:fan
+group: climate
+replaces: [apollo/fan]
+v1: apollo/fan
+
+params:
+  entity: {domain: fan, label: Fan}
+
+options:
+  show_speed:     {type: toggle, section: controls, label: Speed bar, default: true,
+                   needs: can.speed, needs_text: This fan has one speed only}
+  show_presets:   {type: toggle, section: controls, label: Presets, default: true,
+                   needs: can.presets, needs_text: This fan has no presets}
+  show_oscillate: {type: toggle, section: controls, label: Turning from side to side, default: true,
+                   needs: can.oscillate, needs_text: This fan does not turn}
+
+inputs:
+  is_on:     "{{ is_state(entity, 'on') }}"
+  pct:       "{{ state_attr(entity, 'percentage') or 0 }}"
+  preset_at: >-
+    {{ can.presets.index(state_attr(entity, 'preset_mode')) if state_attr(entity, 'preset_mode') in can.presets else none }}
+  turning:   "{{ state_attr(entity, 'oscillating') }}"
+  gone:      "{{ states(entity) in ['unavailable', 'unknown'] }}"
+  # "On · 50%", joined as the lights join their state line.
+  state:     "{{ state_translated(entity) ~ (' · ' ~ pct ~ '%' if is_on and can.speed else '') }}"
+
+outputs:
+  toggle:     {action: fan.toggle, data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+  set_pct:    {action: fan.set_percentage, data: {entity_id: "{{ entity }}", percentage: "{{ value }}"},
+               feedback: optimistic}
+  set_preset: {action: fan.set_preset_mode, data: {entity_id: "{{ entity }}", preset_mode: "{{ option }}"},
+               feedback: optimistic}
+  oscillate:  {action: fan.oscillate, uses: {turning: bool},
+               data: {entity_id: "{{ entity }}", oscillating: "{{ not turning }}"}, feedback: optimistic}
+
+on: is_on
+state: state
+lit: fill
+tap:
+  default: toggle
+  choices:
+    toggle: {label: Turns it on or off, output: toggle}
+    detail: {label: Opens its controls}
+    none:   {label: Does nothing}
+hold: detail
+
+parts:
+  speed:   {type: slider, look: bar, value: pct, min: 0, max: 100, step: "{{ can.step }}",
+            icon: "mdi:fan", on_change: set_pct, when: [can.speed, show_speed]}
+  # While the fan is gone the presets and the turning button are not
+  # there: faded, they would read as loose words.
+  presets: {type: choice, options: can.presets, value: preset_at, on_change: set_preset,
+            when: [can.presets, show_presets], visible: "{{ not gone }}"}
+  turning: {type: button, text: Side to side, icon: "mdi:autorenew", selected: turning,
+            on_tap: oscillate, when: [can.oscillate, show_oscillate], visible: "{{ not gone }}"}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    # As Lights together: the name over "On · 50%", then the bar takes the
+    # tile's height (LOOK-NOTES decision 10).
+    header: tile
+    layout: [{use: speed, grow: true}]
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    trailing: switch
+    # Eight presets need two rows, which a wide card does not hold: they
+    # are on Large and the controls. The bar takes the card's height.
+    layout: [{use: speed, grow: true}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: tile
+    trailing: switch
+    # The controls stack down from the header, the bar the tallest. Each
+    # row of presets is 56 high; what is left stays at the foot (LOOK-NOTES
+    # decision 12).
+    layout: [{use: speed, height: 96}, {use: presets, height: 56}, {use: turning, height: 56}]
+  full:
+    name: Controls
+    grid: [18, 11]
+    header: tile
+    trailing: switch
+    picker: false
+    # Every row at least 56 high, the speed bar the tallest (LOOK-NOTES
+    # decision 1).
+    layout:
+      - {use: speed, height: 72}
+      - {use: presets, rows: 2, height: 120}
+      - {use: turning, height: 56}
+detail: full
+
+preview:
+  params: {entity: fan.example}
+  can: {speed: true, oscillate: true, presets: [Breeze, Sleep], step: 25}
+  inputs: {is_on: true, pct: 50, preset_at: null, turning: false, gone: false, state: "On · 50%"}

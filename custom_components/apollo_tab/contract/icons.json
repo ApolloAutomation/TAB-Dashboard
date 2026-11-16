@@ -1,5 +1,5 @@
 {
- "version": 1,
+ "version": 2,
  "fallback": "mdi:help-circle-outline",
  "placeholder": "mdi:image-outline",
  "icons": {
@@ -11,9 +11,33 @@
    983054,
    1
   ],
+  "mdi:air-conditioner": [
+   983067,
+   2
+  ],
+  "mdi:air-filter": [
+   986435,
+   2
+  ],
+  "mdi:air-humidifier": [
+   987289,
+   2
+  ],
+  "mdi:air-purifier": [
+   986436,
+   2
+  ],
+  "mdi:alarm": [
+   983072,
+   2
+  ],
   "mdi:alert-circle-outline": [
    984534,
    1
+  ],
+  "mdi:angle-acute": [
+   985399,
+   2
   ],
   "mdi:arrow-down": [
    983109,
@@ -31,9 +55,33 @@
    983133,
    1
   ],
+  "mdi:autorenew": [
+   983146,
+   2
+  ],
   "mdi:baby-face-outline": [
    986749,
    1
+  ],
+  "mdi:battery": [
+   983161,
+   2
+  ],
+  "mdi:battery-20": [
+   983163,
+   2
+  ],
+  "mdi:battery-50": [
+   983166,
+   2
+  ],
+  "mdi:battery-alert": [
+   983171,
+   2
+  ],
+  "mdi:battery-charging": [
+   983172,
+   2
   ],
   "mdi:bed": [
    983779,
@@ -43,17 +91,49 @@
    983194,
    1
   ],
+  "mdi:bell-off": [
+   983195,
+   2
+  ],
+  "mdi:bell-ring": [
+   983198,
+   2
+  ],
   "mdi:blinds": [
    983212,
    1
+  ],
+  "mdi:blinds-open": [
+   987153,
+   2
+  ],
+  "mdi:book-open-variant": [
+   983230,
+   2
+  ],
+  "mdi:brightness-6": [
+   983263,
+   2
   ],
   "mdi:calendar": [
    983277,
    1
   ],
+  "mdi:calendar-today": [
+   983286,
+   2
+  ],
   "mdi:car": [
    983307,
    1
+  ],
+  "mdi:car-electric": [
+   985964,
+   2
+  ],
+  "mdi:cast": [
+   983320,
+   2
   ],
   "mdi:cctv": [
    985006,
@@ -70,6 +150,10 @@
   "mdi:check": [
    983340,
    1
+  ],
+  "mdi:check-circle": [
+   984544,
+   2
   ],
   "mdi:chevron-down": [
    983360,
@@ -95,29 +179,65 @@
    983382,
    1
   ],
+  "mdi:coffee-maker": [
+   987295,
+   2
+  ],
   "mdi:cog": [
    984211,
    1
+  ],
+  "mdi:creation": [
+   984692,
+   2
   ],
   "mdi:desk": [
    987705,
    1
   ],
+  "mdi:desk-lamp": [
+   985439,
+   2
+  ],
+  "mdi:dishwasher": [
+   985772,
+   2
+  ],
   "mdi:door": [
    985114,
    1
+  ],
+  "mdi:door-closed": [
+   985115,
+   2
   ],
   "mdi:door-open": [
    985116,
    1
   ],
+  "mdi:dots-horizontal": [
+   983512,
+   2
+  ],
+  "mdi:ev-station": [
+   984561,
+   2
+  ],
   "mdi:fan": [
    983568,
    1
   ],
+  "mdi:fan-off": [
+   985117,
+   2
+  ],
   "mdi:fire": [
    983608,
    1
+  ],
+  "mdi:flash": [
+   983617,
+   2
   ],
   "mdi:floor-lamp": [
    985309,
@@ -127,17 +247,37 @@
    983626,
    1
   ],
+  "mdi:fridge-outline": [
+   983695,
+   2
+  ],
   "mdi:garage": [
    984793,
    1
+  ],
+  "mdi:garage-alert": [
+   985202,
+   2
   ],
   "mdi:garage-open": [
    984794,
    1
   ],
+  "mdi:gate": [
+   983705,
+   2
+  ],
+  "mdi:gate-open": [
+   987498,
+   2
+  ],
   "mdi:gauge": [
    983706,
    1
+  ],
+  "mdi:gesture-tap-button": [
+   987816,
+   2
   ],
   "mdi:help-circle-outline": [
    984613,
@@ -151,6 +291,30 @@
    985040,
    1
   ],
+  "mdi:home-export-outline": [
+   987035,
+   2
+  ],
+  "mdi:home-floor-0": [
+   986578,
+   2
+  ],
+  "mdi:home-floor-1": [
+   986496,
+   2
+  ],
+  "mdi:home-floor-2": [
+   986497,
+   2
+  ],
+  "mdi:home-floor-g": [
+   986501,
+   2
+  ],
+  "mdi:home-thermometer": [
+   986964,
+   2
+  ],
   "mdi:image-off-outline": [
    987601,
    1
@@ -163,6 +327,10 @@
    983805,
    1
   ],
+  "mdi:kettle": [
+   984570,
+   2
+  ],
   "mdi:lamp": [
    984757,
    1
@@ -171,9 +339,17 @@
    983833,
    1
   ],
+  "mdi:leaf": [
+   983850,
+   2
+  ],
   "mdi:led-strip-variant": [
    987217,
    1
+  ],
+  "mdi:light-switch": [
+   985470,
+   2
   ],
   "mdi:lightbulb": [
    983861,
@@ -182,6 +358,14 @@
   "mdi:lightbulb-group": [
    987731,
    1
+  ],
+  "mdi:lightbulb-multiple": [
+   987733,
+   2
+  ],
+  "mdi:lightbulb-off": [
+   986703,
+   2
   ],
   "mdi:lightbulb-on": [
    984808,
@@ -199,6 +383,10 @@
    983870,
    1
   ],
+  "mdi:lock-alert": [
+   985326,
+   2
+  ],
   "mdi:lock-open": [
    983871,
    1
@@ -207,13 +395,29 @@
    983873,
    1
   ],
+  "mdi:map-marker": [
+   983886,
+   2
+  ],
   "mdi:minus": [
    983924,
    1
   ],
+  "mdi:molecule-co2": [
+   985060,
+   2
+  ],
+  "mdi:moon-waning-crescent": [
+   986981,
+   2
+  ],
   "mdi:motion-sensor": [
    986513,
    1
+  ],
+  "mdi:movie-open": [
+   987086,
+   2
   ],
   "mdi:music": [
    984922,
@@ -223,13 +427,29 @@
    983944,
    1
   ],
+  "mdi:numeric": [
+   983968,
+   2
+  ],
+  "mdi:outdoor-lamp": [
+   987220,
+   2
+  ],
   "mdi:palette": [
    984024,
    1
   ],
+  "mdi:palette-outline": [
+   986636,
+   2
+  ],
   "mdi:pause": [
    984036,
    1
+  ],
+  "mdi:pipe-leak": [
+   985225,
+   2
   ],
   "mdi:play": [
    984074,
@@ -243,6 +463,10 @@
    984085,
    1
   ],
+  "mdi:pot-steam": [
+   984666,
+   2
+  ],
   "mdi:power": [
    984101,
    1
@@ -251,9 +475,33 @@
    984741,
    1
   ],
+  "mdi:radiator": [
+   984120,
+   2
+  ],
+  "mdi:repeat": [
+   984150,
+   2
+  ],
   "mdi:robot-vacuum": [
    984845,
    1
+  ],
+  "mdi:rocket-launch": [
+   988382,
+   2
+  ],
+  "mdi:script-text-outline": [
+   986051,
+   2
+  ],
+  "mdi:shield-alert": [
+   986828,
+   2
+  ],
+  "mdi:shield-check": [
+   984421,
+   2
   ],
   "mdi:shield-home": [
    984714,
@@ -267,9 +515,17 @@
    985502,
    1
   ],
+  "mdi:shield-outline": [
+   984217,
+   2
+  ],
   "mdi:shower": [
    985504,
    1
+  ],
+  "mdi:shuffle": [
+   984221,
+   2
   ],
   "mdi:silverware-fork-knife": [
    985712,
@@ -283,6 +539,14 @@
    984238,
    1
   ],
+  "mdi:sleep": [
+   984242,
+   2
+  ],
+  "mdi:smoke-detector": [
+   983954,
+   2
+  ],
   "mdi:snowflake": [
    984855,
    1
@@ -291,9 +555,25 @@
    984249,
    1
   ],
+  "mdi:solar-power": [
+   985714,
+   2
+  ],
+  "mdi:spa": [
+   986321,
+   2
+  ],
   "mdi:speaker": [
    984259,
    1
+  ],
+  "mdi:speaker-multiple": [
+   986424,
+   2
+  ],
+  "mdi:sprinkler": [
+   987231,
+   2
   ],
   "mdi:star": [
    984270,
@@ -302,6 +582,14 @@
   "mdi:stop": [
    984283,
    1
+  ],
+  "mdi:stove": [
+   984286,
+   2
+  ],
+  "mdi:string-lights": [
+   987834,
+   2
   ],
   "mdi:tablet": [
    984310,
@@ -315,17 +603,53 @@
    984322,
    1
   ],
+  "mdi:television-play": [
+   986831,
+   2
+  ],
   "mdi:thermometer": [
    984335,
    1
+  ],
+  "mdi:thermometer-high": [
+   987330,
+   2
+  ],
+  "mdi:thermometer-low": [
+   987331,
+   2
   ],
   "mdi:thermostat": [
    983955,
    1
   ],
+  "mdi:timer-outline": [
+   984347,
+   2
+  ],
   "mdi:toggle-switch": [
    984353,
    1
+  ],
+  "mdi:toggle-switch-off": [
+   984354,
+   2
+  ],
+  "mdi:track-light": [
+   985364,
+   2
+  ],
+  "mdi:transmission-tower": [
+   986430,
+   2
+  ],
+  "mdi:tumble-dryer": [
+   985367,
+   2
+  ],
+  "mdi:umbrella": [
+   984394,
+   2
   ],
   "mdi:view-dashboard": [
    984430,
@@ -335,13 +659,29 @@
    984446,
    1
   ],
+  "mdi:volume-low": [
+   984447,
+   2
+  ],
   "mdi:volume-medium": [
    984448,
    1
   ],
+  "mdi:volume-mute": [
+   984927,
+   2
+  ],
   "mdi:volume-off": [
    984449,
    1
+  ],
+  "mdi:walk": [
+   984451,
+   2
+  ],
+  "mdi:wall-sconce-flat": [
+   985373,
+   2
   ],
   "mdi:washing-machine": [
    984874,
@@ -351,9 +691,17 @@
    984460,
    1
   ],
+  "mdi:water-boiler": [
+   987026,
+   2
+  ],
   "mdi:water-percent": [
    984462,
    1
+  ],
+  "mdi:water-pump": [
+   984463,
+   2
   ],
   "mdi:weather-cloudy": [
    984464,
@@ -407,6 +755,10 @@
    984473,
    1
   ],
+  "mdi:weather-sunset": [
+   984474,
+   2
+  ],
   "mdi:weather-windy": [
    984477,
    1
@@ -414,6 +766,10 @@
   "mdi:weather-windy-variant": [
    984478,
    1
+  ],
+  "mdi:white-balance-sunny": [
+   984488,
+   2
   ],
   "mdi:wifi-off": [
    984490,
@@ -426,6 +782,14 @@
   "mdi:window-open": [
    984497,
    1
+  ],
+  "mdi:window-shutter": [
+   987420,
+   2
+  ],
+  "mdi:window-shutter-open": [
+   987422,
+   2
   ]
  }
 }

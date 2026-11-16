@@ -18,6 +18,7 @@ from jinja2.sandbox import ImmutableSandboxedEnvironment
 from .const import (
     BLOCKED_TEXT_METHODS,
     DATA_TEMPLATE_FILTERS,
+    DATA_TEMPLATE_FILTERS_2,
     DATA_TEMPLATE_TESTS,
     UNAVAILABLE_FILTERS,
     UNAVAILABLE_GLOBALS,
@@ -33,7 +34,24 @@ _PARSE_ENV = ImmutableSandboxedEnvironment(
     extensions=["jinja2.ext.loopcontrols", "jinja2.ext.do"]
 )
 
-_LAYOUT_KEYS = ("value", "min", "max", "step", "text", "confirm")
+# Item keys that may hold a template; schema.py::TEMPLATE_ITEM_KEYS holds the
+# same list. A templated key missing here is never checked at load.
+_LAYOUT_KEYS = (
+    "value",
+    "min",
+    "max",
+    "step",
+    "text",
+    "confirm",
+    "visible",
+    "colour",
+    "selected",
+    "icon_live",
+    "mark",
+    "rate",
+)
+# Card-level keys of schema 2 that may hold a template.
+_CARD_KEYS = ("on", "tint", "state", "unavailable")
 
 
 def _is_template(value: object) -> bool:
@@ -114,9 +132,26 @@ def _check_tree(tree: nodes.Template, path: str) -> None:
             )
 
 
-def _check_data_tree(tree: nodes.Template, path: str, allowed_names: set[str]) -> None:
+def _check_data_tree(
+    tree: nodes.Template,
+    path: str,
+    allowed_names: set[str],
+    inputs: frozenset[str] | set[str] = frozenset(),
+    filters: frozenset[str] = DATA_TEMPLATE_FILTERS,
+) -> None:
     """Limit a service data template to plain expressions over allowed names."""
     for node in _iter_nodes(tree):
+        if (
+            isinstance(node, nodes.Name)
+            and node.name not in allowed_names
+            and node.name in inputs
+        ):
+            raise MakerError(
+                "bad_template",
+                path,
+                f"service data may read the input {node.name!r} only when "
+                "the output lists it in uses",
+            )
         if isinstance(node, nodes.Stmt) and not isinstance(node, nodes.Output):
             raise MakerError(
                 "bad_template",
@@ -130,7 +165,7 @@ def _check_data_tree(tree: nodes.Template, path: str, allowed_names: set[str]) -
                 "service data templates may only use the card's params, "
                 f"loop names and value, not {node.name!r}",
             )
-        if isinstance(node, nodes.Filter) and node.name not in DATA_TEMPLATE_FILTERS:
+        if isinstance(node, nodes.Filter) and node.name not in filters:
             raise MakerError(
                 "bad_template",
                 path,
@@ -155,15 +190,69 @@ def check_template(text: str, path: str) -> None:
     _check_tree(_parse(text, path), path)
 
 
-def check_data_template(text: str, path: str, allowed_names: set[str]) -> None:
+def check_data_template(
+    text: str,
+    path: str,
+    allowed_names: set[str],
+    inputs: frozenset[str] | set[str] = frozenset(),
+    filters: frozenset[str] = DATA_TEMPLATE_FILTERS,
+) -> None:
     """Run check_template, then limit a service data template to allowed names."""
     tree = _parse(text, path)
     _check_tree(tree, path)
-    _check_data_tree(tree, path, allowed_names)
+    _check_data_tree(tree, path, allowed_names, inputs, filters)
+
+
+def _marked_template(value: object) -> str | None:
+    """Return the template text of a field, marked or not, else None."""
+    if isinstance(value, dict):
+        value = value.get("template")
+    return value if _is_template(value) else None
+
+
+def _check_component_templates2(component: dict) -> None:
+    """Check every template of a schema 2 card file."""
+    from .schema2 import data_template_names, iter_items
+
+    for name, spec in component["inputs"].items():
+        if spec["kind"] == "template":
+            check_template(spec["template"], f"inputs.{name}")
+        elif spec["kind"] == "action":
+            check_template(spec["result"], f"inputs.{name}.result")
+    for key in _CARD_KEYS:
+        text = _marked_template(component.get(key))
+        if text is not None:
+            check_template(text, key)
+    for path, item in iter_items(component):
+        for key in _LAYOUT_KEYS:
+            text = _marked_template(item.get(key))
+            if text is not None:
+                check_template(text, f"{path}.{key}")
+    inputs = frozenset(component["inputs"])
+    for name, spec in component["outputs"].items():
+        if spec["kind"] != "action":
+            continue
+        allowed = data_template_names(component, spec)
+        for key, value in spec["data"].items():
+            if key == "entity_id":
+                continue
+            entries = value if isinstance(value, list) else [value]
+            for index, entry in enumerate(entries):
+                if not _is_template(entry):
+                    continue
+                data_path = f"outputs.{name}.data.{key}"
+                if isinstance(value, list):
+                    data_path = f"{data_path}.{index}"
+                check_data_template(
+                    entry, data_path, allowed, inputs, DATA_TEMPLATE_FILTERS_2
+                )
 
 
 def check_component_templates(component: dict) -> None:
     """Check every template of a normalised Component; raise on the first failure."""
+    if component.get("schema") == 2:
+        _check_component_templates2(component)
+        return
     for name, spec in component["inputs"].items():
         if spec["kind"] == "template":
             check_template(spec["template"], f"inputs.{name}")

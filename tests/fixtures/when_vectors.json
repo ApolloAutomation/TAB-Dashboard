@@ -1,0 +1,555 @@
+{
+ "note": "Vectors for when_holds (maker/when.py) and whenHolds (frontend/logic.js). 'names' is one flat mapping from a term's name to its value: an option by its name, a fact as can.<what> or can.<param>.<what>, has.<param>, and tablet.v2. 'base' means the mapping under 'base'. A name that is not there is false. On: yes, a number that is not 0, a text that is not empty and not none, a list that is not empty. name=a|b: the value is one of them (for a list, one entry is); none also matches no value, an empty text and an empty list. name!=a|b is the opposite. A term of a bad shape never holds.",
+ "base": {
+  "show_brightness": true,
+  "bar_on_tile": false,
+  "colour_control": "bar",
+  "favourites": [
+   "#FF453A",
+   "2700K"
+  ],
+  "effects_shown": [],
+  "label_text": "",
+  "greeting": "none",
+  "level": 0,
+  "steps": 3,
+  "picked": null,
+  "modes_shown": [
+   "heat",
+   "cool"
+  ],
+  "can.brightness": true,
+  "can.colour": false,
+  "can.effects": false,
+  "can.effect_list": [],
+  "can.modes": [
+   "off",
+   "heat"
+  ],
+  "can.min_kelvin": 2000,
+  "can.kind": "garage",
+  "can.lights.colour": true,
+  "has.entity": true,
+  "has.extra": false,
+  "tablet.v2": true
+ },
+ "cases": [
+  {
+   "terms": [],
+   "names": "base",
+   "holds": true,
+   "why": "no terms: it holds"
+  },
+  {
+   "terms": [
+    "show_brightness"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a toggle that is on"
+  },
+  {
+   "terms": [
+    "bar_on_tile"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a toggle that is off"
+  },
+  {
+   "terms": [
+    "!bar_on_tile"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "not a toggle that is off"
+  },
+  {
+   "terms": [
+    "!show_brightness"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "not a toggle that is on"
+  },
+  {
+   "terms": [
+    "colour_control"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a choice that is not empty and not none"
+  },
+  {
+   "terms": [
+    "colour_control=bar"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a choice equal to its value"
+  },
+  {
+   "terms": [
+    "colour_control=dots|both"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a choice that is none of the values"
+  },
+  {
+   "terms": [
+    "colour_control=dots|bar"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a choice that is one of the values"
+  },
+  {
+   "terms": [
+    "colour_control!=bar"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "not equal, but it is"
+  },
+  {
+   "terms": [
+    "colour_control!=dots"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "not equal, and it is not"
+  },
+  {
+   "terms": [
+    "colour_control!=dots|both"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "not one of them"
+  },
+  {
+   "terms": [
+    "greeting"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a text that reads none counts as off"
+  },
+  {
+   "terms": [
+    "greeting=none"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "none matches the text none"
+  },
+  {
+   "terms": [
+    "label_text"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "an empty text is off"
+  },
+  {
+   "terms": [
+    "label_text=none"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "none matches an empty text"
+  },
+  {
+   "terms": [
+    "picked"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "no value is off"
+  },
+  {
+   "terms": [
+    "picked=none"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "none matches no value"
+  },
+  {
+   "terms": [
+    "picked!=none"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "no value is none"
+  },
+  {
+   "terms": [
+    "favourites"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a list that is not empty"
+  },
+  {
+   "terms": [
+    "effects_shown"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "an empty list is off"
+  },
+  {
+   "terms": [
+    "effects_shown=none"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "none matches an empty list"
+  },
+  {
+   "terms": [
+    "modes_shown=cool"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a list: one entry is enough"
+  },
+  {
+   "terms": [
+    "modes_shown=dry|fan"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a list with none of the values"
+  },
+  {
+   "terms": [
+    "modes_shown!=cool"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a list that holds the value"
+  },
+  {
+   "terms": [
+    "level"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a number 0 is off"
+  },
+  {
+   "terms": [
+    "steps"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a number that is not 0 is on"
+  },
+  {
+   "terms": [
+    "steps=3"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a number compared as its text"
+  },
+  {
+   "terms": [
+    "steps=4"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a number that differs"
+  },
+  {
+   "terms": [
+    "can.brightness"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a fact that is true"
+  },
+  {
+   "terms": [
+    "can.colour"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a fact that is false"
+  },
+  {
+   "terms": [
+    "!can.colour"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "not a fact that is false"
+  },
+  {
+   "terms": [
+    "can.effect_list"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a list fact that is empty"
+  },
+  {
+   "terms": [
+    "can.modes"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a list fact that is not empty"
+  },
+  {
+   "terms": [
+    "can.modes=heat"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a list fact holding the value"
+  },
+  {
+   "terms": [
+    "can.min_kelvin"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a number fact"
+  },
+  {
+   "terms": [
+    "can.kind=garage|gate|door"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a text fact equal to one of them"
+  },
+  {
+   "terms": [
+    "can.kind!=garage"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a text fact that is the value"
+  },
+  {
+   "terms": [
+    "can.lights.colour"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a fact of another param"
+  },
+  {
+   "terms": [
+    "can.unknown"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a fact nobody reported is false"
+  },
+  {
+   "terms": [
+    "!can.unknown"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "not a fact nobody reported"
+  },
+  {
+   "terms": [
+    "has.entity"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "a param with a value"
+  },
+  {
+   "terms": [
+    "has.extra"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "an optional param without a value"
+  },
+  {
+   "terms": [
+    "!has.extra"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "not a param without a value"
+  },
+  {
+   "terms": [
+    "tablet.v2"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "made for version 2"
+  },
+  {
+   "terms": [
+    "!tablet.v2"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "only in the version 1 form"
+  },
+  {
+   "terms": [
+    "tablet.v2"
+   ],
+   "names": {
+    "show_brightness": true,
+    "bar_on_tile": false,
+    "colour_control": "bar",
+    "favourites": [
+     "#FF453A",
+     "2700K"
+    ],
+    "effects_shown": [],
+    "label_text": "",
+    "greeting": "none",
+    "level": 0,
+    "steps": 3,
+    "picked": null,
+    "modes_shown": [
+     "heat",
+     "cool"
+    ],
+    "can.brightness": true,
+    "can.colour": false,
+    "can.effects": false,
+    "can.effect_list": [],
+    "can.modes": [
+     "off",
+     "heat"
+    ],
+    "can.min_kelvin": 2000,
+    "can.kind": "garage",
+    "can.lights.colour": true,
+    "has.entity": true,
+    "has.extra": false,
+    "tablet.v2": false
+   },
+   "holds": false,
+   "why": "made for version 1"
+  },
+  {
+   "terms": [
+    "!tablet.v2"
+   ],
+   "names": {
+    "show_brightness": true,
+    "bar_on_tile": false,
+    "colour_control": "bar",
+    "favourites": [
+     "#FF453A",
+     "2700K"
+    ],
+    "effects_shown": [],
+    "label_text": "",
+    "greeting": "none",
+    "level": 0,
+    "steps": 3,
+    "picked": null,
+    "modes_shown": [
+     "heat",
+     "cool"
+    ],
+    "can.brightness": true,
+    "can.colour": false,
+    "can.effects": false,
+    "can.effect_list": [],
+    "can.modes": [
+     "off",
+     "heat"
+    ],
+    "can.min_kelvin": 2000,
+    "can.kind": "garage",
+    "can.lights.colour": true,
+    "has.entity": true,
+    "has.extra": false,
+    "tablet.v2": false
+   },
+   "holds": true,
+   "why": "the version 1 form"
+  },
+  {
+   "terms": [
+    "not_there"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a name that is not there is false"
+  },
+  {
+   "terms": [
+    "!not_there"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "not a name that is not there"
+  },
+  {
+   "terms": [
+    "can.brightness",
+    "show_brightness",
+    "colour_control=bar|both",
+    "tablet.v2"
+   ],
+   "names": "base",
+   "holds": true,
+   "why": "every term holds"
+  },
+  {
+   "terms": [
+    "can.brightness",
+    "show_brightness",
+    "bar_on_tile"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "one term fails"
+  },
+  {
+   "terms": [
+    "can.colour",
+    "colour_control=bar|both"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "the fact fails although the option holds"
+  },
+  {
+   "terms": [
+    "!can.colour=bar"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a term of a bad shape never holds"
+  },
+  {
+   "terms": [
+    "Colour"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a name of a bad shape never holds"
+  },
+  {
+   "terms": [
+    "show_brightness",
+    "!show_brightness"
+   ],
+   "names": "base",
+   "holds": false,
+   "why": "a term and its opposite"
+  }
+ ]
+}

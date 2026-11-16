@@ -1,0 +1,487 @@
+{
+ "call": {
+  "auth": "0.63cb060e0ce562e88abfe4982d1bc6d8",
+  "nonce": "0123456789abcdef0123456789abcdef"
+ },
+ "cases": [
+  {
+   "dl": 2,
+   "expect": [
+    "send_state"
+   ],
+   "max_pages": 64,
+   "name": "speaks_1_and_2",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "ef98088e1fda910d",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     2
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want": "2"
+  },
+  {
+   "dl": 1,
+   "expect": [
+    "send_state"
+   ],
+   "max_pages": 64,
+   "name": "speaks_1_only",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "a9326c033e45f2f4",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want": "1"
+  },
+  {
+   "dl": 1,
+   "expect": [
+    "send_layout",
+    "send_state"
+   ],
+   "max_pages": 64,
+   "name": "speaks_1_only_holds_a_version_2_layout",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "ef98088e1fda910d",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     1
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want": "1"
+  },
+  {
+   "dl": 2,
+   "expect": [
+    "send_state"
+   ],
+   "max_pages": 64,
+   "name": "speaks_2_only",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "ef98088e1fda910d",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     2,
+     2
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want": "2"
+  },
+  {
+   "dl": 2,
+   "expect": [
+    "send_state"
+   ],
+   "max_pages": 64,
+   "name": "speaks_2_and_3",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "ef98088e1fda910d",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     2,
+     3
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want": "2"
+  },
+  {
+   "dl": 0,
+   "expect": [],
+   "max_pages": 0,
+   "name": "speaks_3_and_4",
+   "reason": "tablet_new",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "ef98088e1fda910d",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     3,
+     4
+    ],
+    "session": 1
+   },
+   "status": "unsupported",
+   "stored_kid": "d9ccb8a994337e34",
+   "want": null
+  },
+  {
+   "dl": 2,
+   "expect": [
+    "send_layout",
+    "send_state"
+   ],
+   "max_pages": 64,
+   "name": "without_choice",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "ef98088e1fda910d",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     2
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want": "2_nochoice"
+  },
+  {
+   "dl": 2,
+   "expect": [
+    "send_state"
+   ],
+   "max_pages": 20,
+   "name": "without_max_pages",
+   "note": "HA sends at most 20 pages to this tablet.",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 1,
+    "engine": "0.2.0",
+    "kid": "d9ccb8a994337e34",
+    "layout": "ef98088e1fda910d",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     2
+    ],
+    "session": 1
+   },
+   "stored_kid": "d9ccb8a994337e34",
+   "want": "2"
+  },
+  {
+   "dl": 2,
+   "expect": [
+    "send_layout",
+    "send_state"
+   ],
+   "max_pages": 64,
+   "name": "without_encryption",
+   "reason": "needs_encryption",
+   "response": {
+    "boot": 3,
+    "caps": {
+     "icons": 2,
+     "max_chunk": 16000,
+     "max_layout": 262144,
+     "max_pages": 64,
+     "max_slots": 1024,
+     "max_stored": 131072,
+     "max_widgets": 2048,
+     "screen": [
+      1280,
+      800
+     ],
+     "w": [
+      "heading",
+      "card",
+      "label",
+      "button",
+      "switch",
+      "slider",
+      "thermostat",
+      "chart",
+      "image",
+      "choice"
+     ]
+    },
+    "enc": 0,
+    "engine": "0.2.0",
+    "kid": "",
+    "layout": "",
+    "mem": {
+     "block": 16000000,
+     "int": 61000,
+     "psram": 28000000
+    },
+    "proto": [
+     1,
+     2
+    ],
+    "session": 1
+   },
+   "stored_kid": null,
+   "want": "2"
+  }
+ ],
+ "layouts": {
+  "1": "a9326c033e45f2f4",
+  "2": "ef98088e1fda910d",
+  "2_nochoice": "ecb4558dda0de604"
+ },
+ "mac": "aabbccddeeff",
+ "note": "tab_hello responses of tablets that may speak version 2, and what HA does next. 'dl': the device layout version HA compiles (0: none, unsupported). 'want': which of 'layouts' HA compiles for this tablet: '1' is layout_small (the dashboard of version 1), '2' layout_v2_kit, '2_nochoice' its form for a tablet without choice. 'max_pages': the most pages HA sends. 'expect': as in hello.json. The first case is what engine 0.2.0 answers (with TAB_PROTO_HIGH 2), caps equal to engine_caps of contract.json.",
+ "secret_hex": "6465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283"
+}

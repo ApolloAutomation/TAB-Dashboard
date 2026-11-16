@@ -1,6 +1,8 @@
 {
- "proto": 1,
- "dl_version": 1,
+ "proto": 2,
+ "proto_low": 1,
+ "input_version": 1,
+ "dl_version": 2,
  "limits": {
   "chunk_bytes": 16000,
   "max_layout_bytes": 262144,
@@ -12,7 +14,18 @@
   "max_nav": 8,
   "max_slots": 1024,
   "max_widgets": 2048,
-  "max_input_payload": 200
+  "max_input_payload": 200,
+  "max_pages_v2": 64,
+  "max_options": 16,
+  "max_option_text_bytes": 40,
+  "max_track": 8,
+  "max_stored_bytes": 131072,
+  "page_charts": 8,
+  "page_arcs": 8,
+  "page_tracks": 12,
+  "send_charts": 4,
+  "send_arcs": 4,
+  "send_tracks": 6
  },
  "caps_defaults": {
   "w": [
@@ -34,6 +47,33 @@
   "max_layout": 262144,
   "max_chunk": 16000,
   "max_slots": 1024,
+  "max_widgets": 2048,
+  "max_pages": 20,
+  "max_stored": 131072
+ },
+ "engine_caps": {
+  "w": [
+   "heading",
+   "card",
+   "label",
+   "button",
+   "switch",
+   "slider",
+   "thermostat",
+   "chart",
+   "image",
+   "choice"
+  ],
+  "icons": 2,
+  "screen": [
+   1280,
+   800
+  ],
+  "max_pages": 64,
+  "max_layout": 262144,
+  "max_stored": 131072,
+  "max_chunk": 16000,
+  "max_slots": 1024,
   "max_widgets": 2048
  },
  "fonts": {
@@ -43,18 +83,26 @@
    16,
    18,
    20,
+   28,
    34
   ],
   "digits_px": [
-   48
+   48,
+   96,
+   192
   ],
-  "digits_glyphs": "0123456789.,-",
+  "digits_glyphs": "0123456789.,-:\u00b0%+ ",
   "icon_px": [
    24,
    28,
    48,
    72
   ],
+  "row_px": {
+   "48": 60,
+   "96": 120,
+   "192": 240
+  },
   "text_glyphs": [
    [
     32,
@@ -102,7 +150,7 @@
    0.3,
    0.5
   ],
-  "status_poll_limit_s": 20,
+  "status_poll_limit_s": 60,
   "ack_timeout_s": 4,
   "progress_timeout_s": 30,
   "retry_s": [
@@ -111,7 +159,14 @@
    60,
    300
   ],
-  "repair_once_per_s": 60
+  "repair_once_per_s": 60,
+  "hold_ms": 500,
+  "hold_move_px": 12,
+  "swipe_px": 48,
+  "card_press_ms": 80,
+  "sub_ttl_s": 60,
+  "cache_bucket": 12,
+  "cache_refill_s": 7200
  },
  "widget_kinds": [
   "heading",
@@ -299,5 +354,146 @@
   "kid": "apollo-tab1 kid v1",
   "wrap": "apollo-tab1 wrap v1",
   "call": "apollo-tab1 call v1"
+ },
+ "v2": {
+  "widget_kinds": [
+   "choice"
+  ],
+  "style_colours": [
+   "card_pr",
+   "card2_pr",
+   "accf",
+   "accf_pr",
+   "onbg_pr",
+   "ion"
+  ],
+  "card_keys": [
+   "tap",
+   "cf",
+   "confirm",
+   "hold",
+   "ic",
+   "tint",
+   "lit",
+   "un"
+  ],
+  "page_keys": [
+   "sub",
+   "ttl",
+   "theme"
+  ],
+  "widget_keys": {
+   "heading": [
+    "c"
+   ],
+   "label": [
+    "vis",
+    "hold",
+    "px",
+    "al",
+    "c",
+    "clk",
+    "value"
+   ],
+   "button": [
+    "vis",
+    "hold",
+    "value",
+    "ic",
+    "c",
+    "shape",
+    "isz"
+   ],
+   "switch": [
+    "vis",
+    "hold",
+    "c"
+   ],
+   "slider": [
+    "vis",
+    "look",
+    "dir",
+    "track",
+    "icon",
+    "c",
+    "nv",
+    "rate"
+   ],
+   "thermostat": [
+    "vis",
+    "c",
+    "mark",
+    "bs"
+   ],
+   "chart": [
+    "vis",
+    "hold",
+    "c",
+    "mark",
+    "st"
+   ],
+   "image": [
+    "vis",
+    "hold",
+    "look",
+    "c"
+   ],
+   "choice": [
+    "vis",
+    "texts",
+    "icons",
+    "cols",
+    "value",
+    "rows",
+    "look"
+   ]
+  },
+  "look_keys": [
+   "px",
+   "al",
+   "shape",
+   "isz",
+   "look",
+   "dir",
+   "rows",
+   "st",
+   "bs",
+   "lit",
+   "ttl"
+  ],
+  "lit": [
+   "fill",
+   "icon",
+   "outline",
+   "none"
+  ],
+  "align": [
+   "left",
+   "centre",
+   "right"
+  ],
+  "shapes": [
+   "box",
+   "round",
+   "bare"
+  ],
+  "slider_looks": [
+   "knob",
+   "bar"
+  ],
+  "dirs": [
+   "right",
+   "up",
+   "down"
+  ],
+  "image_looks": [
+   "box",
+   "badge",
+   "bare"
+  ],
+  "choice_looks": [
+   "cells",
+   "dots"
+  ]
  }
 }

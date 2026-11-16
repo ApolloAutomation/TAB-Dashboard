@@ -37,9 +37,20 @@ CONTRACT = json.loads(
 TRANSLATIONS = json.loads(
     (COMPONENT / "translations" / "en.json").read_text(encoding="utf-8")
 )
-STRINGS = json.loads(
+_RAW_STRINGS = json.loads(
     (COMPONENT / "library" / "strings.json").read_text(encoding="utf-8")
 )
+# The strings as the panel shows them: the word for turning a tablet on
+# (tablets.word.*) put in where a sentence names it, as logic.js fillWords.
+_WORDS = {
+    key.removeprefix("tablets.word."): value
+    for key, value in _RAW_STRINGS.items()
+    if key.startswith("tablets.word.")
+}
+STRINGS = {
+    key: re.sub(r"\{([a-z_]+)\}", lambda m: _WORDS.get(m[1], m[0]), value)
+    for key, value in _RAW_STRINGS.items()
+}
 
 LIGHT = {
     "type": "custom:apollo-tab-card",
@@ -138,6 +149,12 @@ def check_tablet(where: str, tablet: Any) -> None:
         assert tablet["input"] == "not_paired", where
     assert tablet["short_name"] in short_names(tablet["name"]), where
     assert (tablet["reauth"] is None) == (tablet["reauth_name"] is None), where
+    # What the layout made for it leaves out or keeps; nothing without one.
+    assert tablet["simpler"] >= 0, where
+    assert tablet["dropped"] >= 0, where
+    if tablet["dashboard"] is None:
+        left = (tablet["simpler"], tablet["dropped"], tablet["not_kept"])
+        assert left == (0, 0, False), where
 
 
 def check_tablet_list(where: str, tablets: Any) -> None:
@@ -250,7 +267,7 @@ AGREED_APPROVAL_NEEDED = (
     'dashboard for it, then press "Turn on with this dashboard".'
 )
 AGREED_NOT_APPROVED = (
-    "This tablet is new. Pick a dashboard for it on the Home screen, then "
+    "This tablet is new. Pick a dashboard for it under Tablets, then "
     'press "Turn on with this dashboard".'
 )
 
@@ -268,8 +285,13 @@ def test_the_approval_answers_use_the_agreed_words() -> None:
     for name in ("apollo_tab/tablet/assign", "apollo_tab/tablet/pair"):
         assert SHAPES["commands"][name]["errors"]["not_approved"] == NOT_APPROVED
     ending = f'press "{STRINGS["tablets.turn_on"]}".'
-    for text in (APPROVAL_NEEDED, NOT_APPROVED, STRINGS["editor.on_tablet_new"]):
+    for text in (APPROVAL_NEEDED, NOT_APPROVED):
         assert text.endswith(ending), text
+    # The editor's line (redesign v2 4.3) names the tablet and comes with
+    # its own "Set it up" button, which goes to the start screen; it never
+    # turns the tablet on from the editor.
+    assert STRINGS["editor.on_tablet_new"] == "{tablet} is new and ready to turn on."
+    assert STRINGS["editor.on_tablet_set_up"] == "Set it up"
 
 
 def test_the_erased_line_says_what_home_assistant_asks() -> None:
@@ -411,7 +433,7 @@ async def test_the_integration_sends_the_shared_shapes(
     bedroom = make_tablet(mac="AA:BB:CC:DD:EE:03", name="Bedroom Tablet")
     make_tablet(mac="AA:BB:CC:DD:EE:04", name="Den Tablet", psk=None)
     make_tablet(mac="AA:BB:CC:DD:EE:05", name="Office Tablet", proto=(0, 0))
-    make_tablet(mac="AA:BB:CC:DD:EE:06", name="Garage Tablet", proto=(2, 3))
+    make_tablet(mac="AA:BB:CC:DD:EE:06", name="Garage Tablet", proto=(3, 4))
     make_tablet(mac="AA:BB:CC:DD:EE:07", name="Attic Tablet", caps={"max_layout": 200})
     make_tablet(mac="AA:BB:CC:DD:EE:08", name="Loft Tablet")
     make_tablet(mac="AA:BB:CC:DD:EE:09", name="Loft Tablet")

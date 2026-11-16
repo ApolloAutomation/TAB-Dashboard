@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .maker.compile2_v1 import keeps_nothing, level1_names
 from .maker.const import (
+    CARD_GROUPS,
     MAX_COMPONENTS,
     MAX_DOCS_PER_FILE,
     MAX_FILE_BYTES,
@@ -26,6 +29,7 @@ from .maker.convert import alias_tag
 from .maker.errors import MakerError
 from .maker.schema import component_templates, validate_component
 from .maker.templates import check_component_templates
+from .protocol import CONTRACT_DIR
 from .sandbox import ComponentTemplate
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +40,15 @@ _BUILTIN_DIR = Path(__file__).parent / "library"
 
 # Bound a load so a pathological file cannot stall startup or reload.
 LOAD_TIMEOUT_SECONDS = 30
+
+# The groups of the card picker, the same as a schema 2 file's `group`.
+# The panel gives each its title.
+PICKER_GROUPS = CARD_GROUPS
+MAX_KEYWORDS = 8
+MAX_KEYWORD_LENGTH = 24
+# A search word: lower-case words of letters and digits, with single spaces,
+# hyphens or apostrophes between them.
+_KEYWORD = re.compile(r"[a-z0-9]+(?:[ '-][a-z0-9]+)*")
 
 
 class _ComponentLoader(yaml.SafeLoader):
@@ -70,6 +83,48 @@ def _read_json(path: Path) -> Any:
         return None
 
 
+def _read_level1() -> frozenset[str]:
+    """Read the names of the icons of level 1 (engine 0.1.0 holds those)."""
+    data = _read_json(CONTRACT_DIR / "icons.json")
+    if not isinstance(data, dict) or not isinstance(data.get("icons"), dict):
+        _LOGGER.error("The contract's icons.json is missing or not an object")
+    return level1_names(data)
+
+
+def _keeps_nothing(component: dict, variant: str, level1: frozenset[str]) -> bool:
+    """Return keeps_nothing, or False when the check itself fails.
+
+    It runs after the loader's guard for each file, so one odd file must not
+    stop the whole library from loading.
+    """
+    try:
+        return keeps_nothing(component, variant, level1)
+    except Exception:
+        _LOGGER.exception(
+            "Checking the version 1 form of %s (%s) failed", component["id"], variant
+        )
+        return False
+
+
+def _empty_v1_forms(candidates: list[dict]) -> dict[str, frozenset[str]]:
+    """Return, per schema 2 card, the variants whose own version 1 form is empty.
+
+    Worked out once per load, from the file alone (C.6 rule 2, C.7).
+    """
+    level1 = _read_level1()
+    out: dict[str, frozenset[str]] = {}
+    for candidate in candidates:
+        component = candidate["component"]
+        if component.get("schema") != 2:
+            continue
+        out[component["id"]] = frozenset(
+            name
+            for name in component["variants"]
+            if _keeps_nothing(component, name, level1)
+        )
+    return out
+
+
 def _read_themes() -> dict[str, dict]:
     """Read the built-in themes, keyed by id in file order."""
     data = _read_json(_BUILTIN_DIR / "themes.json")
@@ -83,6 +138,15 @@ def _read_themes() -> dict[str, dict]:
     return themes
 
 
+def _read_status() -> dict[str, Any]:
+    """Read the built-in status colours (good, warn, bad, info) per theme."""
+    data = _read_json(_BUILTIN_DIR / "status.json")
+    if not isinstance(data, dict):
+        _LOGGER.error("Built-in status.json is missing or not an object")
+        return {}
+    return data
+
+
 def _read_strings() -> dict[str, str]:
     """Read the built-in UI strings."""
     data = _read_json(_BUILTIN_DIR / "strings.json")
@@ -90,6 +154,67 @@ def _read_strings() -> dict[str, str]:
         _LOGGER.error("Built-in strings.json is missing or not an object")
         return {}
     return {key: value for key, value in data.items() if isinstance(value, str)}
+
+
+def picker_entry_problem(entry: Any) -> str | None:
+    """Return why an entry of picker.json cannot be used, or None."""
+    if not isinstance(entry, dict):
+        return "the entry is not an object"
+    unknown = set(entry) - {"group", "keywords"}
+    if unknown:
+        return f"unknown key {sorted(unknown)[0]!r}"
+    if entry.get("group") not in PICKER_GROUPS:
+        return f"unknown group {entry.get('group')!r}"
+    keywords = entry.get("keywords", [])
+    if not isinstance(keywords, list) or len(keywords) > MAX_KEYWORDS:
+        return f"keywords must be a list of at most {MAX_KEYWORDS} words"
+    for word in keywords:
+        if (
+            not isinstance(word, str)
+            or len(word) > MAX_KEYWORD_LENGTH
+            or not _KEYWORD.fullmatch(word)
+        ):
+            return f"{word!r} is not a short plain search word"
+    if len(set(keywords)) != len(keywords):
+        return "a search word is listed twice"
+    return None
+
+
+def read_picker(path: Path | None = None) -> dict[str, dict]:
+    """Read picker.json: a group and search words per built-in card id.
+
+    An entry that fails the checks is left out and logged, because the file
+    ships with the integration. An entry for a card that is not there is
+    never used.
+    """
+    data = _read_json(path or _BUILTIN_DIR / "picker.json")
+    if not isinstance(data, dict):
+        _LOGGER.error("Built-in picker.json is missing or not an object")
+        return {}
+    entries: dict[str, dict] = {}
+    for card_id, entry in data.items():
+        problem = picker_entry_problem(entry)
+        if problem is not None:
+            _LOGGER.error("Built-in picker.json, %s: %s", card_id, problem)
+            continue
+        entries[card_id] = {
+            "group": entry["group"],
+            "keywords": list(entry.get("keywords", [])),
+        }
+    return entries
+
+
+def picker_fields(component: dict, picker: dict[str, dict]) -> dict[str, Any]:
+    """Return the picker's group and search words for one card.
+
+    The card file's own win; else the card's entry in picker.json. A card
+    with neither has an empty group, and the panel guesses one.
+    """
+    entry = picker.get(component.get("id"), {})
+    return {
+        "group": component.get("group") or entry.get("group", ""),
+        "keywords": list(component.get("keywords") or entry.get("keywords", [])),
+    }
 
 
 def _builtin_component_files() -> list[Path]:
@@ -136,6 +261,200 @@ def _read_documents(path: Path) -> tuple[list | None, dict | None]:
     return docs, None
 
 
+def _v1_targets(component: dict) -> list[str]:
+    """Return the ids a schema 2 card names for version 1 tablets."""
+    if component.get("schema") != 2:
+        return []
+    names = [component.get("v1")]
+    names.extend(variant.get("v1") for variant in component["variants"].values())
+    return [name for name in names if name not in (None, "note")]
+
+
+def _drop_unknown_v1(candidates: list[dict], errors: list[dict]) -> list[dict]:
+    """Refuse schema 2 cards whose v1 is not a loaded schema 1 card."""
+    schema1 = {
+        candidate["component"]["id"]
+        for candidate in candidates
+        if candidate["component"].get("schema", 1) == 1
+    }
+    kept = []
+    for candidate in candidates:
+        component = candidate["component"]
+        missing = [name for name in _v1_targets(component) if name not in schema1]
+        if missing:
+            errors.append(
+                _error(
+                    candidate["file"],
+                    candidate["index"],
+                    component["id"],
+                    "unknown_v1",
+                    f"v1 names {missing[0]}, which is not a loaded schema 1 card",
+                )
+            )
+            continue
+        kept.append(candidate)
+    return kept
+
+
+def _mark_v1_sensitive(candidates: list[dict]) -> None:
+    """Mark a person's schema 2 file sensitive when its v1 names a sensitive card.
+
+    A built-in Lock or Alarm card is sensitive too. Without this, a file with
+    no action of its own could name one and put Unlock or Disarm on a
+    version 1 tablet without an admin's approval (C.6 rule 1).
+    """
+    sensitive = {
+        candidate["component"]["id"]
+        for candidate in candidates
+        if candidate["component"].get("schema", 1) == 1
+        and candidate["component"].get("sensitive")
+    }
+    for candidate in candidates:
+        component = candidate["component"]
+        if candidate["source"] != "user" or component.get("sensitive"):
+            continue
+        if any(name in sensitive for name in _v1_targets(component)):
+            component["sensitive"] = True
+
+
+def _param_entry(spec: dict) -> dict:
+    """Return one param as the form reads it (C.7), for both schemas."""
+    if spec.get("kind") != "entity":
+        return {
+            **spec,
+            "optional": spec.get("optional", False),
+            "label": spec.get("label", ""),
+            "help": spec.get("help", ""),
+        }
+    domains = spec.get("domains")
+    if domains is None:
+        domains = [spec["domain"]] if spec.get("domain") else []
+    entry = {
+        "kind": "entity",
+        "domains": list(domains),
+        "multiple": spec.get("multiple", False),
+        "optional": spec.get("optional", False),
+        "device_class": spec.get("device_class"),
+        "label": spec.get("label", ""),
+        "help": spec.get("help", ""),
+    }
+    if len(domains) == 1:
+        # Today's text; the panel reads it where a param has one kind.
+        entry["domain"] = domains[0]
+    if entry["multiple"]:
+        entry["max"] = spec.get("max", 8)
+    return entry
+
+
+def _variant_entries(
+    component: dict, needs_v2: dict[str, bool] | None = None
+) -> list[dict]:
+    """Return the variants as the picker reads them.
+
+    needs_v2 says per variant whether a version 1 tablet shows the note for
+    it (Library.needs_v2); without it only a variant whose `v1` is `note`.
+    """
+    if component.get("schema") != 2:
+        size = component.get("size", [1, 1])
+        return [
+            {
+                "id": "default",
+                "name": component.get("name", ""),
+                "grid": [size[0] * 6, size[1] * 3],
+                "picker": True,
+                "needs_v2": False,
+            }
+        ]
+    default_v1 = component.get("v1")
+    needs_v2 = needs_v2 or {}
+    entries = []
+    for name, variant in component["variants"].items():
+        v1 = variant.get("v1") or default_v1
+        entry = {
+            "id": name,
+            "name": variant["name"],
+            "grid": list(variant["grid"]),
+            "picker": variant["picker"],
+            "needs_v2": needs_v2.get(name, v1 == "note"),
+        }
+        if variant.get("needs"):
+            # The form offers it only where the fact holds, and says why
+            # not with needs_text, as for an option.
+            entry["needs"] = variant["needs"]
+            entry["needs_text"] = variant.get("needs_text", "")
+        entries.append(entry)
+    return entries
+
+
+def _option_entries(component: dict) -> list[dict]:
+    """Return the options in file order, each with its name (C.7)."""
+    return [
+        {"name": name, **spec} for name, spec in component.get("options", {}).items()
+    ]
+
+
+def _standard(component: dict) -> dict:
+    """Return which standard options a card offers (C.2.3)."""
+    if component.get("schema") != 2:
+        return {"title": True, "icon": False, "hold": False, "lit": None, "tint": False}
+    return {
+        "title": any(
+            variant["header"] != "none" for variant in component["variants"].values()
+        ),
+        "icon": True,
+        "hold": component.get("detail") is not None,
+        "lit": component.get("lit"),
+        "tint": component.get("tint") is not None,
+    }
+
+
+def _tap_entry(component: dict) -> dict | None:
+    """Return the tap choices, with the standard "Goes to a page" before none."""
+    tap = component.get("tap")
+    if tap is None:
+        return None
+    choices = [
+        {"value": choice["value"], "label": choice["label"], "needs": choice["needs"]}
+        for choice in tap["choices"]
+    ]
+    page = {"value": "page", "label": "Goes to a page", "needs": ""}
+    at = next(
+        (i for i, choice in enumerate(choices) if choice["value"] == "none"),
+        len(choices),
+    )
+    choices.insert(at, page)
+    return {"default": tap["default"], "choices": choices}
+
+
+def form_entry(
+    component: dict, legacy: bool, needs_v2: dict[str, bool] | None = None
+) -> dict:
+    """Return the static fields of one card for the form and picker (C.7)."""
+    variants = _variant_entries(component, needs_v2)
+    first = next(variant for variant in variants if variant["picker"])
+    columns, rows = first["grid"]
+    picker = [variant for variant in variants if variant["picker"]]
+    return {
+        "schema": component.get("schema", 1),
+        "group": component.get("group", "more"),
+        "legacy": legacy,
+        "replaces": list(component.get("replaces", [])),
+        "needs_v2": all(variant["needs_v2"] for variant in picker),
+        "size": [max(1, min(6, -(-columns // 6))), max(1, min(4, -(-rows // 3)))],
+        "grid": {"columns": columns, "rows": rows},
+        "variants": variants,
+        "has_detail": component.get("detail") is not None,
+        "params": {
+            name: _param_entry(spec)
+            for name, spec in component.get("params", {}).items()
+        },
+        "options": _option_entries(component),
+        "standard": _standard(component),
+        "tap": _tap_entry(component),
+        "notes": [dict(note) for note in component.get("notes", [])],
+    }
+
+
 class Library:
     """Hold the Components, themes and strings offered to dashboards."""
 
@@ -145,12 +464,16 @@ class Library:
         self.components: dict[str, dict] = {}
         self.errors: list[dict] = []
         self.themes: dict[str, dict] = {}
+        self.status: dict[str, Any] = {}
         self.strings: dict[str, str] = {}
+        self.picker: dict[str, dict] = {}
         self.user_dir: str = hass.config.path(DOMAIN, "components")
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.approvals")
         self._approved: dict[str, str] = {}
         self._store_loaded = False
         self._listeners: list[Callable[[], None]] = []
+        # Per schema 2 card, the variants whose own version 1 form is empty.
+        self._empty_v1: dict[str, frozenset[str]] = {}
 
     async def async_load(self) -> None:
         """Load or reload all files and notify the listeners."""
@@ -189,9 +512,12 @@ class Library:
                     error["message"],
                 )
         self.components = components
+        self._empty_v1 = result["empty_v1"]
         self.errors = errors
         self.themes = result["themes"]
+        self.status = result["status"]
         self.strings = result["strings"]
+        self.picker = result["picker"]
         self._notify()
 
     def _check_templates(self, component: dict) -> str | None:
@@ -234,7 +560,9 @@ class Library:
     def _load_files(self) -> dict[str, Any]:
         """Read, validate and check all files; runs in the executor."""
         themes = _read_themes()
+        status = _read_status()
         strings = _read_strings()
+        picker = read_picker()
         files: list[tuple[Path, str]] = [
             (path, "builtin") for path in _builtin_component_files()
         ]
@@ -256,9 +584,14 @@ class Library:
                         f"{type(err).__name__}: {err}",
                     )
                 )
+        candidates = _drop_unknown_v1(candidates, errors)
+        _mark_v1_sensitive(candidates)
         return {
+            "empty_v1": _empty_v1_forms(candidates),
             "themes": themes,
+            "status": status,
             "strings": strings,
+            "picker": picker,
             "candidates": candidates,
             "errors": errors,
             "builtin_files": {
@@ -296,6 +629,19 @@ class Library:
                         )
                     )
                     continue
+                if source == "user" and component.get("replaces"):
+                    # A stranger's file could otherwise hide the built-in
+                    # cards in the picker and take their place.
+                    errors.append(
+                        _error(
+                            path.name,
+                            index,
+                            component_id,
+                            "replaces_not_allowed",
+                            "only built-in cards may replace other cards",
+                        )
+                    )
+                    continue
                 if component_id in seen:
                     errors.append(
                         _error(
@@ -319,6 +665,10 @@ class Library:
                     )
                     continue
                 seen.add(component_id)
+                if source == "user" and component.get("uses_inputs"):
+                    # Service data that reads an input can carry house state
+                    # out; a person's own file needs an admin's approval.
+                    component["sensitive"] = True
                 check_component_templates(component)
                 template_error = self._check_templates(component)
                 if template_error is not None:
@@ -358,6 +708,19 @@ class Library:
                     )
                 )
 
+    def replaced_ids(self) -> set[str]:
+        """Return the ids that a built-in schema 2 card names in replaces.
+
+        `replaces` is read from built-in files only (C.2.1); a person's file
+        that carries it is refused when it loads.
+        """
+        return {
+            replaced
+            for component in self.components.values()
+            if component.get("source") == "builtin"
+            for replaced in component.get("replaces", [])
+        }
+
     def approved_ids(self) -> set[str]:
         """Return ids of sensitive user Components whose stored hash matches."""
         return {
@@ -367,6 +730,53 @@ class Library:
             and component.get("sensitive")
             and self._approved.get(component_id) == component.get("hash")
         }
+
+    def needs_v2(self, component: dict) -> dict[str, bool]:
+        """Return per variant whether a version 1 tablet shows the note (C.6).
+
+        True for a variant whose `v1` is `note`, and for one whose own
+        version 1 form keeps nothing while no old card stands in for it: the
+        old card it names is not loaded, is a sensitive file from the
+        person's folder without approval, is sensitive while this file is
+        a person's file without approval, or does not fit the variant's
+        grid. Whether a device passes the old card's own checks is known only
+        per card; the converter decides that.
+        """
+        if component.get("schema") != 2:
+            return {}
+        empty = self._empty_v1.get(component["id"], frozenset())
+        default_v1 = component.get("v1")
+        out = {}
+        for name, variant in component["variants"].items():
+            target = variant.get("v1") or default_v1
+            if target == "note":
+                out[name] = True
+            elif isinstance(target, str) and self._stands_in(
+                target, variant, component
+            ):
+                out[name] = False
+            else:
+                out[name] = name in empty
+        return out
+
+    def _stands_in(self, target: str, variant: dict, component: dict) -> bool:
+        """Return whether the old card a variant names can stand in for it.
+
+        A sensitive old card stands in only for a built-in card or an
+        approved file from the person's folder, as in the converter.
+        """
+        old = self.components.get(target)
+        if old is None or old.get("schema", 1) != 1 or not self.is_approved(target):
+            return False
+        if (
+            old.get("sensitive")
+            and component.get("source") == "user"
+            and component["id"] not in self.approved_ids()
+        ):
+            return False
+        size = old.get("size") or [1, 1]
+        grid = variant["grid"]
+        return size[0] * 6 <= grid[0] and size[1] * 3 <= grid[1]
 
     def is_approved(self, component_id: str) -> bool:
         """Return True unless this is a sensitive user Component without approval."""
@@ -407,28 +817,33 @@ class Library:
     def as_dict(self) -> dict[str, Any]:
         """Return the library as a JSON-able dict for the frontend."""
         components = []
+        replaced = self.replaced_ids()
         for component in self.components.values():
-            size = component.get("size", [1, 1])
-            components.append(
-                {
-                    "id": component["id"],
-                    "tag": alias_tag(component["id"]),
-                    "name": component.get("name", ""),
-                    "description": component.get("description", ""),
-                    "icon": component.get("icon", ""),
-                    "version": component.get("version", ""),
-                    "size": size,
-                    "grid": {"columns": size[0] * 6, "rows": size[1] * 3},
-                    "source": component.get("source", "user"),
-                    "sensitive": component.get("sensitive", False),
-                    "approved": self.is_approved(component["id"]),
-                    "params": component.get("params", {}),
-                }
+            entry = {
+                "id": component["id"],
+                "tag": alias_tag(component["id"]),
+                "name": component.get("name", ""),
+                "description": component.get("description", ""),
+                "icon": component.get("icon", ""),
+                "version": component.get("version", ""),
+                "source": component.get("source", "user"),
+                "sensitive": component.get("sensitive", False),
+                "approved": self.is_approved(component["id"]),
+            }
+            entry.update(
+                form_entry(
+                    component, component["id"] in replaced, self.needs_v2(component)
+                )
             )
+            # The picker's group and search words: a schema 2 file's own
+            # group, else picker.json's entry, else none (the panel guesses).
+            entry.update(picker_fields(component, self.picker))
+            components.append(entry)
         components.sort(key=lambda item: (item["source"] != "builtin", item["name"]))
         return {
             "components": components,
             "errors": self.errors,
             "themes": list(self.themes.values()),
+            "status": self.status,
             "components_path": self.user_dir,
         }

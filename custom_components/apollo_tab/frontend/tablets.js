@@ -358,20 +358,25 @@ export function keepOrder(list, previous) {
 export const TURN_ON_SETTLE_MS = 700;
 
 // Whether a "Turn on" button may be pressed at `now`, when it last moved at
-// `movedAt` (both performance.now() times; movedAt null when it has not).
+// `movedAt` (both performance.now() times). A button with no time is not
+// settled: every button counts as moved at its first look.
 export function turnOnSettled(movedAt, now) {
-  return !Number.isFinite(movedAt) || !Number.isFinite(now) || now - movedAt >= TURN_ON_SETTLE_MS;
+  return Number.isFinite(movedAt) && Number.isFinite(now) && now - movedAt >= TURN_ON_SETTLE_MS;
 }
 
 // The "Turn on" buttons that moved or came between two looks at the page.
 // `before` and `after` map a tablet's MAC to its button's place, [left,
 // top, width, height] in pixels from the panel's corner; `before` is null
-// before the first look, when nothing moved. A change of half a pixel or
-// less is rounding, not a move. Words that change elsewhere, without moving
-// the button, are no move: the button under the pointer is still the same.
+// before the first look, when every button is new. A change of half a
+// pixel or less is rounding, not a move. Words that change elsewhere,
+// without moving the button, are no move: the button under the pointer is
+// still the same.
 export function movedTurnOns(before, after) {
-  if (!(before instanceof Map) || !(after instanceof Map)) {
+  if (!(after instanceof Map)) {
     return [];
+  }
+  if (!(before instanceof Map)) {
+    return [...after.keys()];
   }
   const moved = [];
   for (const [mac, place] of after) {
@@ -399,6 +404,161 @@ export function markMoved(movedAt, before, after, now) {
     marked.set(mac, now);
   }
   return marked;
+}
+
+// Every named "Turn on" button waits again from `now`: after a scroll the
+// panel made, which moves every button on screen but changes none of their
+// places, since those are measured from the panel's own corner. A new Map;
+// `movedAt` stays as it was.
+export function markAll(movedAt, macs, now) {
+  const marked = new Map(movedAt instanceof Map ? movedAt : []);
+  for (const mac of Array.isArray(macs) ? macs : []) {
+    marked.set(mac, now);
+  }
+  return marked;
+}
+
+// The times after another look at what each button would send.
+// before and after map a MAC to that dashboard, or to null when the
+// button cannot be pressed. own is the MAC whose list the person
+// just changed, or null. Every button whose dashboard is new or
+// another than before gets `now`, except own. A new Map; `movedAt` stays
+// as it was.
+export function markPicks(movedAt, before, after, own, now) {
+  const marked = new Map(movedAt instanceof Map ? movedAt : []);
+  if (!(after instanceof Map)) {
+    return marked;
+  }
+  const was = before instanceof Map ? before : new Map();
+  for (const [mac, sends] of after) {
+    if (mac === own || !sends) {
+      continue;
+    }
+    if (was.get(mac) !== sends) {
+      marked.set(mac, now);
+    }
+  }
+  return marked;
+}
+
+// Whether a click on a turn-on button turns its tablet on.
+// press: what began on this button since its last click, or null:
+//   { kind: "pointer" | "key", at, repeat, foreign, sends }
+// click: { at, detail, sends }. movedAt: the button's time.
+// runStart: the MAC whose button took the first click (detail 1) of
+// the run of clicks this one belongs to, or null. mac: this button's.
+// A click with no press behind it (a screen reader, voice control) needs
+// only a dashboard and a settled button, so the guard locks nobody out.
+export function pressCounts({ press, click, movedAt, runStart, mac } = {}) {
+  if (!isObject(click) || typeof click.sends !== "string" || !click.sends) {
+    return false;
+  }
+  if (!turnOnSettled(movedAt, click.at)) {
+    return false;
+  }
+  if (Number.isFinite(click.detail) && click.detail >= 2 && runStart !== mac) {
+    return false;
+  }
+  if (press === null || press === undefined) {
+    return true;
+  }
+  if (!isObject(press) || press.repeat === true || press.foreign === true) {
+    return false;
+  }
+  return turnOnSettled(movedAt, press.at) && press.sends === click.sends;
+}
+
+// Whether the only dashboard may be picked for a new tablet that was
+// already waiting when the start screen opened (security review, variant A
+// narrowed). Only in the same change that holds every rule of the review
+// with its tests green; false is variant B: nothing is picked for the
+// person, also not on arrival from the editor. Off: on a phone, a run of
+// single taps on "Put it on the tablet" (journey step 131) turned the
+// tablet on with the editor's dashboard once its wait was over (rule 9).
+// docs/tablets.md says the panel never picks a dashboard for you: change
+// that sentence when this is turned on.
+export const PREPICK_ONLY_DASHBOARD = false;
+
+// The dashboard that is picked for a new tablet without the person,
+// or null. rows: the dashboards listed. unreadable: those that
+// cannot be read. fresh: the list was read during this visit to the
+// start screen. waiting: the MACs that were new in the first tablet
+// list of this visit and have been new ever since.
+export function prepicked({ tablet, rows, unreadable, fresh, waiting, enabled = PREPICK_ONLY_DASHBOARD } = {}) {
+  if (!enabled || fresh !== true || !isNewTablet(tablet)) {
+    return null;
+  }
+  const list = (Array.isArray(rows) ? rows : []).filter((row) => isObject(row) && typeof row.url_path === "string");
+  const broken = Array.isArray(unreadable) ? unreadable.length > 0 : Boolean(unreadable);
+  if (list.length !== 1 || broken) {
+    return null;
+  }
+  if (!(waiting instanceof Set) || !waiting.has(tablet.mac)) {
+    return null;
+  }
+  if (typeof tablet.suggested === "string" && tablet.suggested) {
+    return null;
+  }
+  if (nameClaimsOtherEnding(tablet) || nameWarns(tablet)) {
+    return null;
+  }
+  return list[0].url_path;
+}
+
+// True when a new tablet's name ends in six hex characters that are not
+// the end of its own address: a device that calls itself "Apollo TAB-1
+// a1b2c3", the name of the owner's real tablet, while its address ends in
+// something else. Its row warns and nothing is picked for it.
+export function nameClaimsOtherEnding(tablet) {
+  if (!isNewTablet(tablet) || typeof tablet.name !== "string") {
+    return false;
+  }
+  const match = /(?:^|[^0-9a-f])([0-9a-f]{6})\s*$/i.exec(tablet.name);
+  return Boolean(match) && match[1].toLowerCase() !== macEnding(tablet.mac, SCREEN_NAME_MAC_CHARS);
+}
+
+// Spaces, punctuation and invisible characters (zero-width spaces and
+// joiners, direction marks) at the end of a name. The name warning looks
+// past them, so "Apollo TAB-1 a1b2c3." is read as ending in a1b2c3.
+const NAME_TAIL = /[\s\p{P}\p{Cf}]+$/u;
+
+// The six hex characters a new tablet's name ends in, before any trailing
+// punctuation or invisible characters, or "". For the name warning.
+export function claimedEnding(tablet) {
+  const name = typeof tablet?.name === "string" ? tablet.name.replace(NAME_TAIL, "") : "";
+  const match = /(?:^|[^0-9a-f])([0-9a-f]{6})$/i.exec(name);
+  return match ? match[1].toLowerCase() : "";
+}
+
+// Whether a new tablet's row shows the name warning: its name ends in six
+// hex characters with at least one digit among them, before any trailing
+// punctuation or invisible characters, and they are not the end of its
+// own address. Narrower than nameClaimsOtherEnding, so plain words such as
+// "Front facade" are not warned about. Every row still has the check line
+// with the tablet's own six characters; prepicked asks both rules.
+export function nameWarns(tablet) {
+  if (!isNewTablet(tablet)) {
+    return false;
+  }
+  const ending = claimedEnding(tablet);
+  return /[0-9]/.test(ending) && ending !== macEnding(tablet.mac, SCREEN_NAME_MAC_CHARS);
+}
+
+// The check line of a new tablet in three parts, [before, ending, after],
+// so the six characters can stand in a fixed-width face of their own:
+// "Look at the tablet. The name on its screen ends in ", "ddee0e", ".".
+export function deviceLineParts(tablet, t) {
+  if (!isObject(tablet)) {
+    return ["", "", ""];
+  }
+  const ending = macEnding(tablet.mac, SCREEN_NAME_MAC_CHARS);
+  const mark = "\u0001";
+  const whole = t("tablets.device_line", { mac: mark });
+  const at = whole.indexOf(mark);
+  if (at < 0) {
+    return [whole, "", ""];
+  }
+  return [whole.slice(0, at), ending, whole.slice(at + mark.length)];
 }
 
 // The tablets an admin turned on, in the one order.
@@ -530,26 +690,122 @@ export function deleteNote(tablets, urlPath, rows, t) {
   return t(one ? "tablets.delete_one" : "tablets.delete_many", { names, dashboard: title });
 }
 
-// The editor's lines above the tablet picture: one per tablet that shows
-// the dashboard (at most MAX_LINES, then "and 2 more"), or "Not shown on a
-// tablet yet". Each line is {kind, text}, with the tablet's mac and tone on
-// a tablet's line.
-export function captionLines(tablets, urlPath, t) {
+// The status lines of the tablets that show the dashboard: one per tablet
+// (at most `limit`, then "and 2 more"), or "Not on a tablet yet". Each line
+// is {kind, text}, with the tablet's mac and tone on a tablet's line. The
+// preview card names at most MAX_LINES; the editor's Tablets pop-up all.
+export function captionLines(tablets, urlPath, t, limit = MAX_LINES) {
   const showing = tabletsShowing(tablets, urlPath);
   if (!showing.length) {
     return [{ kind: "nowhere", text: t("editor.on_tablet_nowhere") }];
   }
   const lines = [];
-  for (const tablet of showing.slice(0, MAX_LINES)) {
+  for (const tablet of showing.slice(0, limit)) {
     const key = lineWordsKey(tablet);
     if (key) {
       lines.push({ kind: "tablet", mac: tablet.mac, tone: statusTone(tablet), text: t(key, { tablet: nameOf(tablet) }) });
     }
   }
-  if (showing.length > MAX_LINES) {
-    lines.push({ kind: "more", text: t("editor.on_tablet_more", { count: showing.length - MAX_LINES }) });
+  if (showing.length > limit) {
+    lines.push({ kind: "more", text: t("editor.on_tablet_more", { count: showing.length - limit }) });
   }
   return lines;
+}
+
+// The Tablets chip in the editor's top bar is never wider than this many
+// characters: the longest sentence of the design, "Kitchen tablet needs
+// attention +2", is 33.
+export const CHIP_LIMIT = 34;
+
+// Fills `key` with a tablet's name, cut with "…" when the sentence would be
+// longer than `limit`. The words around the name are never cut.
+function chipSentence(t, key, name, limit) {
+  const whole = t(key, { tablet: name });
+  if (whole.length <= limit) {
+    return whole;
+  }
+  // A sentence that already goes on with "…" right after the name
+  // ("Sending to Kitchen tablet…") needs no second one for the cut.
+  const shape = t(key, { tablet: "\u0001" });
+  const trailing = shape.slice(shape.indexOf("\u0001") + 1).startsWith("…");
+  const room = limit - (whole.length - name.length) - (trailing ? 0 : 1);
+  const cut = room > 0 ? name.slice(0, room).trimEnd() : "";
+  return t(key, { tablet: trailing ? cut : `${cut}…` });
+}
+
+// The tone of one tablet in the chip's words: the dot of its row in the
+// Tablets pop-up uses it too, so the two agree.
+export function chipTone(tablet) {
+  const kind = statusKind(tablet);
+  if (!kind) {
+    return "quiet";
+  }
+  return { on_tablet: "ok", sending: "busy", offline: "quiet" }[kind] || "problem";
+}
+
+// The Tablets chip: one short sentence about the tablets that show the
+// dashboard at urlPath. Returns { text, tone, more, full }: the words on
+// the chip (at most `limit` characters), its tone ("quiet", "ok", "busy" or
+// "problem"), how many more tablets need a look besides the one named, and
+// the whole sentence with the whole name, for the tooltip and the chip's
+// accessible name. A tablet with a problem is named before an offline one,
+// and both before one that is being sent to.
+export function chipWords(tablets, urlPath, t, limit = CHIP_LIMIT) {
+  const list = sortTablets(tablets);
+  if (!list.length) {
+    const text = t("editor.chip_none");
+    return { text, tone: "quiet", more: 0, full: text };
+  }
+  const showing = tabletsShowing(list, urlPath);
+  if (!showing.length) {
+    const text = t("editor.on_tablet_nowhere");
+    return { text, tone: "quiet", more: 0, full: text };
+  }
+  const kinds = showing.map((tablet) => [tablet, statusKind(tablet)]);
+  const problems = kinds.filter(([, kind]) => !["on_tablet", "sending", "offline"].includes(kind));
+  const offline = kinds.filter(([, kind]) => kind === "offline");
+  const sending = kinds.filter(([, kind]) => kind === "sending");
+  const look = [...problems, ...offline];
+  if (look.length) {
+    const [tablet, kind] = look[0];
+    const key = kind === "offline" ? "editor.on_tablet_offline" : "editor.chip_attention";
+    const more = look.length - 1;
+    const tag = more ? ` ${t("editor.chip_more", { count: more })}` : "";
+    const text = chipSentence(t, key, nameOf(tablet), limit - tag.length) + tag;
+    const moreFull = more === 1 ? t("editor.chip_more_full_one") : t("editor.chip_more_full", { count: more });
+    const full = t(key, { tablet: nameOf(tablet) }) + (more ? ` ${moreFull}` : "");
+    return { text, tone: chipTone(tablet), more, full };
+  }
+  if (sending.length) {
+    if (sending.length > 1) {
+      const text = t("editor.chip_sending_many", { count: sending.length });
+      return { text, tone: "busy", more: 0, full: text };
+    }
+    const name = nameOf(sending[0][0]);
+    return {
+      text: chipSentence(t, "editor.on_tablet_sending", name, limit),
+      tone: "busy",
+      more: 0,
+      full: t("editor.on_tablet_sending", { tablet: name }),
+    };
+  }
+  if (showing.length > 1) {
+    const text = t("editor.chip_on_many", { count: showing.length });
+    return { text, tone: "ok", more: 0, full: text };
+  }
+  const name = nameOf(showing[0]);
+  return {
+    text: chipSentence(t, "editor.on_tablet_on_tablet", name, limit),
+    tone: "ok",
+    more: 0,
+    full: t("editor.on_tablet_on_tablet", { tablet: name }),
+  };
+}
+
+// The new tablets, in the one order: they wait for an admin on the start
+// screen and show nothing yet.
+export function newTablets(list) {
+  return sortTablets(list).filter(isNewTablet);
 }
 
 // What the editor's "Shown on" block says for each tablet an admin turned

@@ -1,0 +1,75 @@
+schema: 2
+id: apollo/switch
+version: 2.0.0
+name: Switch
+description: Turn something on or off with a tap.
+icon: mdi:toggle-switch
+group: lights
+
+params:
+  entity: {domain: [switch, input_boolean, siren, fan, light], label: Device}
+
+options:
+  word_on:  {type: text, section: shows, label: Word while on, default: "On", max: 20}
+  word_off: {type: text, section: shows, label: Word while off, default: "Off", max: 20}
+
+inputs:
+  is_on: "{{ is_state(entity, 'on') }}"
+  # While the device is gone the card fades; its word says why, not "Off".
+  state: "{{ state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else (word_on if is_on else word_off) }}"
+  gone: "{{ states(entity) in ['unavailable', 'unknown'] }}"
+
+outputs:
+  toggle: {action: {switch: switch.toggle, input_boolean: input_boolean.toggle, siren: siren.toggle,
+                    fan: fan.toggle, light: light.toggle},
+           data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+
+on: is_on
+unavailable: gone
+lit: fill
+state: state
+tap:
+  default: toggle
+  choices:
+    toggle: {label: Turns it on or off, output: toggle}
+    none:   {label: Does nothing}
+
+parts:
+  # What a tablet with older software shows: the switch and the word. On the
+  # tile the trailing switch is that switch already.
+  old_switch: {type: switch, value: is_on, on_tap: toggle, when: ["!tablet.v2"]}
+  old_state:  {type: label, text: "{{ state }}", size: s, when: ["!tablet.v2"]}
+
+variants:
+  chip:
+    name: Chip
+    grid: [12, 1]
+    header: chip
+    layout:
+      - {use: old_switch}
+  small:
+    name: Small
+    grid: [6, 2]
+    # As the Tile without its button: the word beside the badge, the name
+    # across the card under them (LOOK-NOTES decision 14).
+    header: tile
+    layout:
+      - {use: old_switch}
+  tile:
+    name: Tile
+    grid: [6, 3]
+    # The badge with the word beside it ("On", "unavailable"), the name
+    # across the tile under them; one large power button takes the foot, as
+    # on the light that only turns on and off (LOOK-NOTES decision 14). In a
+    # taller card it stops at 120, as that light's does.
+    header: tile
+    layout:
+      - {type: button, icon: "mdi:power", on_tap: toggle, selected: is_on, big_icon: true,
+         grow: true, most: 120, when: [tablet.v2]}
+      - {use: old_switch}
+      - {use: old_state}
+
+preview:
+  params: {entity: switch.example}
+  can: {toggle: true}
+  inputs: {is_on: true, state: "On", gone: false}

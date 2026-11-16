@@ -1,5 +1,6 @@
 import {
   assignTablet,
+  cardFacts,
   getConnection,
   loadLibrary,
   loadStrings,
@@ -14,47 +15,60 @@ import {
   buildHeadingForm,
   buildOtherForm,
   buildPageSettings,
+  buildThemeGallery,
   deviceText,
   el,
   fillItemNotes,
   focusLost,
   icon,
   makeButton,
+  resetParts,
+  showPart,
   restoreFocus,
   screenHeading,
   uid,
 } from "./card-form.js";
 import { confirmOpen, openConfirm } from "./confirm.js";
-import { warningBoxKind } from "./logic.js";
+import { drawerShift, fitStage, layoutBand, shellHeight, warningBoxKind } from "./logic.js";
 import {
   DEFAULT_THEME,
+  PREVIEW_THEMES,
   addCard,
   addPage,
   canMove,
   canRedo,
+  biggerSize,
   canUndo,
   cardKind,
+  cardPlace,
   classifyRemote,
   componentOf,
   createHistory,
   dashboardNotes,
   devicesLeft,
+  duplicateCard,
   followItem,
   getCard,
+  historyCloseGroup,
   historyPush,
   historyRedo,
   historyUndo,
   maxUnitsWide,
   mergeDashboards,
+  mergeStyle,
+  newerCard,
   moveCardToPage,
   moveItem,
   movePage,
   nextDashboardTitle,
+  olderCards,
+  omittedOnPage,
   pageItems,
   pageKind,
   pageList,
   pageNotes,
   pageScreens,
+  pruneOptions,
   removeItem,
   removePage,
   renamePage,
@@ -62,6 +76,12 @@ import {
   sameConfig,
   SaveQueue,
   setHeadingText,
+  setOption,
+  setStyleKey,
+  setVariant,
+  stableStringify,
+  swapAllOlder,
+  swapCard,
   setPageIcon,
   setTheme,
   sourceKey,
@@ -69,13 +89,50 @@ import {
   useWholeScreen,
   usesWholeScreen,
 } from "./model.js";
+import { followPress } from "./drag.js";
 import { openCardPicker } from "./picker.js";
+import { openPopover } from "./popover.js";
+import {
+  SNAP_COLS,
+  SNAP_ROWS,
+  canPlace,
+  cardCells,
+  firstFree,
+  freezePage,
+  isPlaced,
+  occupied,
+  placeCard,
+  readPosition,
+  rectOfCell,
+  sizeCard,
+  snapMove,
+  snapSize,
+} from "./placement.js";
 import { renderPage } from "./render.js";
 import { canvasStyles, designerStyles, formStyles, pickerStyles, rendererStyles } from "./styles.js";
-import { captionLines, deleteNote, newTabletCount, shownOnRows, tabletsShowing } from "./tablets.js";
+import {
+  approvedTablets,
+  captionLines,
+  chipTone,
+  chipWords,
+  deleteNote,
+  newTablets,
+  shownOnRows,
+  tabletName,
+  tabletsShowing,
+} from "./tablets.js";
 
 const KEEP_IN_SIDEBAR_KEY = "apollo_tab.sidebar_keep";
-const COMPACT_BELOW = 900;
+// Under this height of the editor the first-card notice takes a row over
+// the picture instead of floating over the stage's top padding.
+const FIRST_CARD_FLOAT_HEIGHT = 700;
+
+// The dashboards whose first-card notice was shown in this browser.
+const FIRST_CARD_KEY = "apollo_tab.first_card";
+// Under this width of the editor a phone's top bar keeps Redo in the menu.
+const TIGHT_BAR = 400;
+// How long a failed rename says so under the name.
+const RENAME_ERROR_MS = 8000;
 const TOAST_MS = 6000;
 // A toast that offers a next step stays longer, and stays while it has
 // focus or the pointer is over it.
@@ -313,13 +370,46 @@ function errorMessage(error) {
   return error?.message || error?.code || String(error ?? "");
 }
 
-function keptInSidebar() {
+export function keptInSidebar() {
   try {
     const list = JSON.parse(localStorage.getItem(KEEP_IN_SIDEBAR_KEY) || "[]");
     return Array.isArray(list) ? list.filter((entry) => typeof entry === "string") : [];
   } catch {
     return [];
   }
+}
+
+// Tablet dashboards the panel has hidden from Home Assistant's sidebar
+// once. One the owner turns back on is not hidden again.
+const HIDDEN_ONCE_KEY = "apollo_tab.sidebar_hidden";
+
+function readList(key) {
+  try {
+    const list = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(list) ? list.filter((entry) => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+// Adds a dashboard to one of the lists of dashboards kept in this browser.
+function addToList(key, urlPath) {
+  try {
+    const list = readList(key);
+    if (!list.includes(urlPath)) {
+      localStorage.setItem(key, JSON.stringify([...list, urlPath]));
+    }
+  } catch {
+    // Without storage the step may simply come again on another visit.
+  }
+}
+
+export function hiddenOnce() {
+  return readList(HIDDEN_ONCE_KEY);
+}
+
+export function markHiddenOnce(urlPath) {
+  addToList(HIDDEN_ONCE_KEY, urlPath);
 }
 
 function keepInSidebar(urlPath) {
@@ -331,6 +421,20 @@ function keepInSidebar(urlPath) {
   } catch {
     // Without storage the notice simply comes back next time.
   }
+}
+
+function firstCardSeen() {
+  return readList(FIRST_CARD_KEY);
+}
+
+// Without storage the notice may show once more on another visit.
+function markFirstCardSeen(urlPath) {
+  addToList(FIRST_CARD_KEY, urlPath);
+}
+
+// The cards on every page of a dashboard.
+function dashboardCards(config) {
+  return (Array.isArray(config?.views) ? config.views : []).reduce((total, view) => total + cardCount(view), 0);
 }
 
 function sameSource(a, b) {
@@ -392,6 +496,9 @@ export class ApolloTabDesigner extends HTMLElement {
     this._view = 0;
     this._screen = 0;
     this._selected = null;
+    // Where to open the next dashboard that loads, set by the start screen:
+    // { urlPath, view, source } or null (see the load).
+    this.openAt = null;
     this._rows = [];
     // The other version while the person chooses, and what Home Assistant
     // holds then when that is not the other version (see _takeOver).
@@ -406,6 +513,27 @@ export class ApolloTabDesigner extends HTMLElement {
     this._toast = null;
     this._toastTimer = null;
     this._compact = false;
+    this._tight = false;
+    // Compact: what opened the edit mode ("hit", "row" or null), the page
+    // column's scroll then, and the page. Leaving it puts the person back
+    // there. _opener hands the first two over from _select.
+    this._editFrom = null;
+    this._opener = null;
+    // The layout: "wide", "medium", "compact" or "short" (layoutBand).
+    this._band = "wide";
+    // The band is not changed while a text field has focus; true while a
+    // change waits for the field to lose it.
+    this._bandHeld = false;
+    // "fit" or "100": the picture fitted to its space, or at its real size.
+    this._zoom = "fit";
+    // Medium layout: the drawer shows the card list after "Cards".
+    this._drawerOpen = false;
+    // How far the picture is moved left to clear the drawer, in px.
+    this._shift = 0;
+    // The page notices: all of them shown ("+2 more" pressed), and the ones
+    // whose long text is open.
+    this._noticesOpen = false;
+    this._whyOpen = new Set();
     this._els = {};
     this._areaKey = null;
     this._sideKey = null;
@@ -413,7 +541,6 @@ export class ApolloTabDesigner extends HTMLElement {
     this._screenFor = null;
     // A token for the open card picker, or null.
     this._picking = null;
-    this._revealOnPreview = false;
     this._frame = 0;
     this._lastSaveState = null;
     this._titleFocus = false;
@@ -428,7 +555,21 @@ export class ApolloTabDesigner extends HTMLElement {
     this._tabRowsTimer = null;
     this._assigning = new Set();
     this._shownOnError = "";
-    this._shownOnKey = null;
+    // The open pop-up ({ update, close, dialog }) and which one it is
+    // ("tablets", "theme", "menu" or "page"); the history group of the open
+    // theme gallery.
+    this._popover = null;
+    this._popKind = null;
+    this._themeGroup = null;
+    // The dashboard's name is a field while it is renamed; a failed rename
+    // says so under it for a while.
+    this._renaming = false;
+    this._renameError = "";
+    this._renameTimer = null;
+    // The first card of a dashboard no tablet shows raises a notice once
+    // it is saved: due until then, then what it says.
+    this._firstCardDue = false;
+    this._firstCard = null;
 
     // Work left behind by a closed editor has its own guard (see leftBehind).
     this._onBeforeUnload = (event) => {
@@ -438,13 +579,16 @@ export class ApolloTabDesigner extends HTMLElement {
     };
     this._onWindowKey = (event) => this._handleShortcut(event);
     this.addEventListener("keydown", (event) => this._handleEscape(event));
-    // A shown toast moves out of the way of whatever comes into view or
-    // gets focus (see _placeToast).
     this._toastFrame = 0;
-    this._onViewport = () => this._queuePlaceToast();
-    this.shadowRoot.addEventListener("focusin", (event) => this._clearOfSheet(event.target));
-    this.shadowRoot.addEventListener("focusin", this._onViewport);
-    this.shadowRoot.addEventListener("scroll", this._onViewport, { capture: true, passive: true });
+    // The window's size decides the shell's height and the layout.
+    this._onViewport = () => this._checkLayout();
+    // A layout change held while a text field had focus happens once it
+    // has lost it.
+    this.shadowRoot.addEventListener("focusout", () => {
+      if (this._bandHeld) {
+        requestAnimationFrame(() => this._checkLayout());
+      }
+    });
   }
 
   set hass(value) {
@@ -497,6 +641,8 @@ export class ApolloTabDesigner extends HTMLElement {
       return;
     }
     this._library = value;
+    // A changed card file can ask about other facts.
+    this._facts?.clear();
     if (this._status === "ready") {
       this._requestPreview();
       this._renderSide();
@@ -510,13 +656,14 @@ export class ApolloTabDesigner extends HTMLElement {
   connectedCallback() {
     window.addEventListener("beforeunload", this._onBeforeUnload);
     window.addEventListener("keydown", this._onWindowKey);
-    window.addEventListener("scroll", this._onViewport, { capture: true, passive: true });
     window.addEventListener("resize", this._onViewport, { passive: true });
     window.visualViewport?.addEventListener("resize", this._onViewport, { passive: true });
     window.visualViewport?.addEventListener("scroll", this._onViewport, { passive: true });
-    this._hostObserver = new ResizeObserver(() => this._checkCompact());
+    this._hostObserver = new ResizeObserver(() => this._checkLayout());
     this._hostObserver.observe(this);
-    this._compact = this.getBoundingClientRect().width < COMPACT_BELOW;
+    this._setBand(this._measureBand());
+    // Each visit starts with the inspector's parts in their usual state.
+    resetParts();
     this._start();
   }
 
@@ -526,7 +673,6 @@ export class ApolloTabDesigner extends HTMLElement {
     this._stop();
     window.removeEventListener("beforeunload", this._onBeforeUnload);
     window.removeEventListener("keydown", this._onWindowKey);
-    window.removeEventListener("scroll", this._onViewport, { capture: true });
     window.removeEventListener("resize", this._onViewport);
     window.visualViewport?.removeEventListener("resize", this._onViewport);
     window.visualViewport?.removeEventListener("scroll", this._onViewport);
@@ -542,6 +688,7 @@ export class ApolloTabDesigner extends HTMLElement {
     // First, while the status still says whether the dashboard was deleted.
     this._releaseQueue();
     this._run += 1;
+    this._facts?.clear();
     this._started = false;
     this._status = "idle";
     this._stops.forEach((stop) => stop?.());
@@ -553,6 +700,11 @@ export class ApolloTabDesigner extends HTMLElement {
     this._tabRowsSeq += 1;
     this._assigning.clear();
     this._shownOnError = "";
+    this._renaming = false;
+    this._renameError = "";
+    clearTimeout(this._renameTimer);
+    this._firstCardDue = false;
+    this._firstCard = null;
     // A message about this dashboard is not shown for the next one.
     this._toast = null;
     clearInterval(this._refreshTimer);
@@ -562,6 +714,8 @@ export class ApolloTabDesigner extends HTMLElement {
     this._stageObserver?.disconnect();
     this._stageObserver = null;
     this._els.pageHost?.__atCleanup?.();
+    this._els.previewHost?.__atCleanup?.();
+    this._popover?.close({ refocus: false });
     this._closePickers();
   }
 
@@ -682,6 +836,12 @@ export class ApolloTabDesigner extends HTMLElement {
     this._started = true;
     const run = ++this._run;
     this._status = "loading";
+    // Every opening starts with the picture fitted and the drawer closed.
+    this._zoom = "fit";
+    this._drawerOpen = false;
+    this._shift = 0;
+    this._noticesOpen = false;
+    this._whyOpen.clear();
     this._render();
 
     try {
@@ -722,6 +882,8 @@ export class ApolloTabDesigner extends HTMLElement {
         this._conn,
         (event) => this._layoutEvent(event),
         () => {
+          // Devices may have changed while the connection was down.
+          this._facts?.clear();
           this._checkRemote();
           this._loadTabRows();
         },
@@ -731,8 +893,7 @@ export class ApolloTabDesigner extends HTMLElement {
       onTabletsChanged(this._conn, (tablets) => this._tabletsChanged(tablets), {
         onError: (error) => {
           this._tabletsError = error;
-          this._fillTabletLines();
-          this._fillShownOn();
+          this._tabletsShown();
         },
       }),
     );
@@ -813,6 +974,21 @@ export class ApolloTabDesigner extends HTMLElement {
     this._view = 0;
     this._screen = 0;
     this._selected = null;
+    // The start screen's "left out" link: this page, with that card
+    // selected, so the card's panel says why the tablet leaves it out.
+    const at = this.openAt;
+    this.openAt = null;
+    if (isObject(at) && at.urlPath === urlPath && Number.isInteger(at.view)) {
+      const views = Array.isArray(config.views) ? config.views : [];
+      if (at.view >= 0 && at.view < views.length) {
+        this._view = at.view;
+        const source = Array.isArray(at.source) ? at.source : null;
+        const card = source ? views[source[0]]?.sections?.[source[1]]?.cards?.[source[2]] : null;
+        if (source && source[0] === at.view && isObject(card)) {
+          this._selected = [...source];
+        }
+      }
+    }
     this._preview = null;
     this._conflict = null;
     this._conflictStored = null;
@@ -857,9 +1033,6 @@ export class ApolloTabDesigner extends HTMLElement {
     this._status = "ready";
     this._render();
     this._requestPreview();
-    if (this._conflict) {
-      this._revealBanners();
-    }
   }
 
   _fail(error) {
@@ -886,24 +1059,135 @@ export class ApolloTabDesigner extends HTMLElement {
     this._start();
   }
 
-  _checkCompact() {
-    const compact = this.getBoundingClientRect().width < COMPACT_BELOW;
-    if (compact === this._compact) {
+  // The band for the editor's own width (Home Assistant's docked sidebar
+  // counts) and the window's height below the editor's top. Neither the
+  // on-screen keyboard nor pinch zoom changes that height.
+  _measureBand() {
+    const box = (this._els.root || this).getBoundingClientRect();
+    return layoutBand(this.getBoundingClientRect().width, window.innerHeight - box.top);
+  }
+
+  _setBand(band) {
+    this._band = band;
+    this._compact = band === "compact";
+    this._bandWidth = this.getBoundingClientRect().width;
+    this._tight = this._isTight(this._bandWidth);
+  }
+
+  // A phone's bar under 400 px has no room for Redo beside the dashboard's
+  // name: Redo is in the menu there, and Undo stays in the bar.
+  _isTight(width) {
+    return this._compact && width > 0 && width < TIGHT_BAR;
+  }
+
+  // Whether a text field of the editor or of one of its dialogs has focus.
+  _typing() {
+    const active = this.shadowRoot.activeElement;
+    if (!active) {
+      return false;
+    }
+    // A switch, a choice or a slider brings up no keyboard. A list to choose
+    // from opens its own picker on a phone, so it holds the band too.
+    if (active.tagName === "INPUT") {
+      return !["checkbox", "radio", "range", "color", "button", "submit"].includes(active.type);
+    }
+    return active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable;
+  }
+
+  // Fits the shell to the window, and changes the layout when the band
+  // changed. While a text field has focus the band is kept, so a web view
+  // that shrinks the window for the keyboard does not move the field away.
+  // The keyboard only changes the height: when the width changes too (a
+  // window snapped to half the screen, a phone turned) the band follows.
+  _checkLayout() {
+    this._fitShell();
+    // Not laid out (taken out of the page, or hidden): nothing to measure.
+    const width = this.isConnected ? this.getBoundingClientRect().width : 0;
+    if (!width) {
       return;
     }
-    this._compact = compact;
-    this._els.root?.classList.toggle("compact", compact);
-    this._placeAdvice();
-    this._renderSide();
+    const band = this._measureBand();
+    if (this._typing() && Math.abs(width - (this._bandWidth ?? width)) <= 4) {
+      this._bandHeld = band !== this._band;
+      return;
+    }
+    this._bandHeld = false;
+    this._bandWidth = width;
+    if (band === this._band) {
+      // The bar got too narrow for Redo, or wide enough again. The menu is
+      // drawn for one or the other, so an open one closes.
+      if (this._isTight(width) !== this._tight) {
+        this._tight = !this._tight;
+        if (this._popKind === "menu") {
+          this._popover?.close();
+        }
+        this._renderHeader();
+      }
+      // The tab list may have got narrower.
+      this._showTab();
+      // The window got low or high enough for the notice to change place.
+      if (this._firstCard && this._firstCardRow() !== this._firstCardIsRow) {
+        this._placeFirstCard();
+      }
+      return;
+    }
+    const active = this.shadowRoot.activeElement;
+    // Focus in an open pop-up goes back to the control that opened it.
+    const inPop = Boolean(active && this._popover?.dialog?.contains(active));
+    const focusKey = (inPop ? this._popAnchor : active?.dataset?.focus) || null;
+    const wasEdit = this._els.side?.dataset.mode === "edit";
+    // A pop-up is a sheet in one layout and not in another: it closes.
+    this._popover?.close({ refocus: false });
+    this._setBand(band);
+    this._drawerOpen = false;
+    this._shift = 0;
+    if (!this._hasStatusStrip()) {
+      this._zoom = "fit";
+    }
+    this._render();
+    // Focus that was in the editor stays in it: on the same control when
+    // the new layout has it in reach, else on the selected card's form,
+    // else on the tab of the page shown. A change that opens the edit mode
+    // gives focus to it, as choosing a card does.
+    const opened = this._els.side?.dataset.mode === "edit" && !wasEdit;
+    if ((active || opened) && !this.shadowRoot.activeElement) {
+      (focusKey && this._focus(focusKey)) || this._focusForm() || this._focus(`tab:${this._view}`) || this._focus("back");
+    }
+  }
+
+  // The bands with a status strip under the picture, and with zoom.
+  _hasStatusStrip() {
+    return this._band === "wide" || this._band === "medium";
+  }
+
+  // The shell is exactly as tall as the space below its top: above a phone's
+  // keyboard, and not smaller while the page is pinch-zoomed.
+  _fitShell() {
+    const root = this._els.root;
+    if (!root?.isConnected) {
+      return;
+    }
+    const view = window.visualViewport;
+    const height = shellHeight({
+      innerHeight: window.innerHeight,
+      visual: view ? { height: view.height, offsetTop: view.offsetTop, scale: view.scale } : null,
+      top: root.getBoundingClientRect().top,
+    });
+    root.style.height = `${height}px`;
+    this._queuePlaceToast();
   }
 
   // ---- drawing ---------------------------------------------------------
 
+  // The editor is a grid as tall as the window (see _fitShell): the top bar,
+  // the notices that block, the page strip, the stage column and the
+  // inspector, each placed by the name of its row.
   _render() {
     this._stageObserver?.disconnect();
     this._stageObserver = null;
     this._els.pageHost?.__atCleanup?.();
-    const root = el("div", this._compact ? "root compact" : "root");
+    this._els.previewHost?.__atCleanup?.();
+    const root = el("div", `root ${this._band}`);
     this._els = { root };
     this._areaKey = null;
     // An open dialog stays where it is: taking a modal dialog out of the page,
@@ -914,6 +1198,7 @@ export class ApolloTabDesigner extends HTMLElement {
       }
     }
     this._style.after(root);
+    this._fitShell();
 
     const header = el("header", "ed-header");
     this._els.header = header;
@@ -921,7 +1206,7 @@ export class ApolloTabDesigner extends HTMLElement {
     this._renderHeader();
 
     if (this._status === "loading" || this._status === "idle") {
-      root.append(el("p", "missing", t("editor.loading")));
+      this._renderOpening(root);
       return;
     }
     this._takeTitleFocus();
@@ -945,27 +1230,83 @@ export class ApolloTabDesigner extends HTMLElement {
     }
 
     const banners = el("div", "banners");
-    // The banners that offer a choice rather than report a problem (see
-    // _placeAdvice for where they go).
+    // The page notices: one line each, above the picture (see _renderAdvice;
+    // _placeAdvice puts the row in its place).
     const advice = el("div", "banners advice-banners");
-    const body = el("div", "body");
-    const main = el("div", "main");
     const tabs = el("div", "tab-strip");
+    const tabList = el("div", "strip-tabs");
+    const stripEnd = el("div", "strip-end");
+    tabs.append(tabList, stripEnd);
     const page = el("div", "main");
     const side = el("aside", "side");
     side.dataset.test = "side";
+    // What the inspector shows while no card is selected (in the compact
+    // layout it is the end of the page column): the cards on this page and
+    // the notes about the picture.
+    const idle = el("div", "idle");
+    idle.dataset.test = "idle";
+    const idleIntro = el("div", "idle-intro");
+    const idlePage = el("div", "idle-page");
+    idle.append(idleIntro, idlePage);
     const toasts = el("div", "toast-region");
     toasts.setAttribute("aria-live", "polite");
-    main.append(tabs, page);
-    body.append(main, side);
-    root.append(banners, advice, body, toasts);
-    Object.assign(this._els, { banners, advice, tabs, page, side, toasts });
+    root.append(banners, tabs, page, side, toasts);
+    Object.assign(this._els, {
+      banners,
+      advice,
+      tabs,
+      tabList,
+      stripEnd,
+      page,
+      side,
+      idle,
+      idleIntro,
+      idlePage,
+      toasts,
+    });
 
     this._renderBanners();
     this._renderTabs();
     this._renderPageArea();
     this._renderSide();
     this._renderToast();
+  }
+
+  // While the dashboard opens: the frame with "Opening your dashboard…" in
+  // it, and grey rows where the inspector's list will be.
+  // The frame has the size the picture will have, with the status strip's
+  // place kept free, so it does not jump when the dashboard is in.
+  _renderOpening(root) {
+    const page = el("div", "main");
+    const area = el("div", "stage-area");
+    const device = el("div", "device");
+    const frame = el("div", "stage opening");
+    frame.append(el("p", "stage-message", t("editor.loading")));
+    device.append(frame);
+    area.append(device);
+    page.append(area);
+    if (this._hasStatusStrip()) {
+      page.append(el("div", "status-strip"));
+    }
+    // In the compact layout the list is under the picture, in the page
+    // column, so its grey rows are there too.
+    const side = el("aside", "side opening");
+    const rows = this._compact ? el("div", "placeholder-rows") : side;
+    for (let row = 0; row < 3; row += 1) {
+      rows.append(el("div", "placeholder-row"));
+    }
+    if (this._compact) {
+      page.append(rows);
+    }
+    root.append(el("div", "tab-strip"), page, side);
+    this._stageObserver = new ResizeObserver(() => {
+      const width = this._stageWidth(area, device);
+      if (width) {
+        frame.style.width = `${width}px`;
+        frame.style.height = `${width / 1.6}px`;
+      }
+    });
+    this._stageObserver.observe(area);
   }
 
   // The panel moved here from another screen: once the editor has loaded,
@@ -991,25 +1332,26 @@ export class ApolloTabDesigner extends HTMLElement {
     }
   }
 
-  // The banners that offer a choice (the sidebar and narrow columns) sit
-  // above the page on a wide screen. On a phone they are taller than the
-  // screen has room for and would push the tablet picture off the first
-  // screen, so there they come after the picture, before the card list.
+  // The page notices are the first row of the stage column, above the
+  // picture. In the compact layout they come after the picture and the
+  // tablet lines, before the card list, every one shown.
   _placeAdvice(focusKey = this._focusKeyIn(this._els.advice)) {
-    const { advice, banners, page, listBlock } = this._els;
-    if (!advice || !banners) {
+    const { advice, page, stageArea, pageBox, under, chipRow, idle } = this._els;
+    if (!advice || !page) {
       return;
     }
-    if (this._compact && page?.childElementCount) {
-      if (listBlock?.parentNode === page) {
-        if (advice.nextSibling !== listBlock) {
-          listBlock.before(advice);
-        }
-      } else if (advice.parentNode !== page || advice.nextSibling) {
+    if (this._compact) {
+      const notice = this.shadowRoot.querySelector(".first-card");
+      const after = [notice, chipRow, under, stageArea, pageBox].find((node) => node?.parentNode === page);
+      if (after) {
+        after.after(advice);
+      } else if (idle?.parentNode === page) {
+        idle.before(advice);
+      } else {
         page.append(advice);
       }
-    } else if (banners.nextSibling !== advice) {
-      banners.after(advice);
+    } else if (page.firstChild !== advice) {
+      page.prepend(advice);
     }
     // Moving a control takes its focus away; it is given back.
     if (focusKey && !advice.contains(this.shadowRoot.activeElement)) {
@@ -1022,11 +1364,16 @@ export class ApolloTabDesigner extends HTMLElement {
     return active && region?.contains(active) ? active.dataset.focus || null : null;
   }
 
+  // The top bar: Back, the dashboard's name (pressed, it becomes a field),
+  // the Tablets chip, the Theme button, the save state, Undo and Redo, and
+  // the menu. In the compact layout the chip is under the picture and the
+  // menu holds Theme and Rename (see _placeCompactParts and _openMenu).
   _renderHeader() {
     const header = this._els.header;
     if (!header) {
       return;
     }
+    const focusKey = this._focusKeyIn(header);
     header.replaceChildren();
     // Home Assistant's menu button shows itself only when the sidebar is
     // out of reach (see the panel's header).
@@ -1035,67 +1382,326 @@ export class ApolloTabDesigner extends HTMLElement {
     menu.narrow = this._narrow;
     header.append(menu);
     this._els.menu = menu;
-    const back = makeButton(null, {
+    const back = this._iconButton("mdi:arrow-left", t("editor.back"), {
       className: "back",
       test: "back",
       focus: "back",
       onClick: () => this._back(),
     });
-    back.append(icon("mdi:arrow-left"), el("span", null, t("editor.back")));
-    const title = screenHeading(this._dashboard?.title || "");
+    const title = screenHeading("");
     title.dataset.focus = "title";
     this._els.title = title;
-    header.append(back, title);
+    const titleBlock = el("div", "title-block");
+    titleBlock.append(title);
+    header.append(back, titleBlock);
+    this._fillTitle();
+    const oldRow = this._els.chipRow;
+    Object.assign(this._els, { chip: null, chipRow: null, themeButton: null, saveState: null, saveLive: null, undo: null, redo: null });
 
-    if (this._status !== "ready" || this._readOnly) {
+    if (this._status !== "ready") {
+      oldRow?.remove();
       return;
     }
+    const chip = this._chip();
+    if (this._compact) {
+      // Under the picture, in the page column (see _placeCompactParts).
+      const row = el("div", "chip-row");
+      row.append(chip);
+      this._els.chipRow = row;
+      if (oldRow?.parentNode) {
+        oldRow.replaceWith(row);
+      }
+    } else {
+      oldRow?.remove();
+      header.append(chip);
+      header.append(this._themeButton());
+    }
     const actions = el("div", "header-actions");
-    const live = el("div", "save-state");
-    live.setAttribute("aria-live", "polite");
-    const state = el("span", "save-state");
-    state.dataset.test = "save-state";
-    live.append(state);
-    const undo = makeButton(t("undo.undo"), {
-      test: "undo",
-      focus: "undo",
-      focusAlt: "redo",
-      onClick: () => this._undo(),
+    if (!this._readOnly) {
+      // The state is shown; only "Not saved" and the first "Saved" after it
+      // are read out, from a region of their own.
+      const state = el("span", "save-state");
+      state.dataset.test = "save-state";
+      const live = el("span", "sr-only");
+      live.setAttribute("aria-live", "polite");
+      const undo = this._iconButton("mdi:undo", t("undo.undo"), {
+        test: "undo",
+        focus: "undo",
+        focusAlt: "redo",
+        onClick: () => this._undo(),
+      });
+      const redo = this._iconButton("mdi:redo", t("undo.redo"), {
+        test: "redo",
+        focus: "redo",
+        focusAlt: "undo",
+        onClick: () => this._redo(),
+      });
+      // In a bar under 400 px Redo is in the menu (see _menuBody).
+      const shown = this._tight ? [undo] : [undo, redo];
+      actions.append(state, live, ...shown);
+      Object.assign(this._els, { saveState: state, saveLive: live, undo, redo: this._tight ? null : redo });
+    }
+    const more = this._iconButton("mdi:dots-vertical", t("editor.menu"), {
+      test: "dash-menu",
+      focus: "dash-menu",
+      onClick: () => this._openMenu(),
     });
-    const redo = makeButton(t("undo.redo"), {
-      test: "redo",
-      focus: "redo",
-      focusAlt: "undo",
-      onClick: () => this._redo(),
-    });
-    actions.append(live, undo, redo);
+    more.setAttribute("aria-haspopup", "dialog");
+    actions.append(more);
     header.append(actions);
-    Object.assign(this._els, { saveState: state, undo, redo });
     this._updateHeader();
+    if (focusKey && !this.shadowRoot.activeElement) {
+      this._focus(focusKey);
+    }
+  }
+
+  // The dashboard's name: a button that turns into a field while it is
+  // renamed, a plain heading on a dashboard that cannot be changed. A
+  // failed rename says so under it for a while.
+  _fillTitle() {
+    const title = this._els.title;
+    if (!title) {
+      return;
+    }
+    const name = this._dashboard?.title || "";
+    title.replaceChildren();
+    title.closest(".title-block")?.querySelector(".rename-alert")?.remove();
+    if (this._status !== "ready" || this._readOnly) {
+      title.textContent = name;
+      return;
+    }
+    if (this._renaming) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "title-field";
+      input.value = name;
+      input.maxLength = 80;
+      input.autocomplete = "off";
+      input.dataset.test = "dashboard-name";
+      input.dataset.focus = "dashboard-name";
+      input.setAttribute("aria-label", t("settings.name"));
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          this._finishRename(input.value);
+        } else if (event.key === "Escape") {
+          // Only the rename is cancelled; a selected card stays selected.
+          event.preventDefault();
+          event.stopPropagation();
+          this._finishRename(null);
+        }
+      });
+      input.addEventListener("blur", () => this._finishRename(input.value, { refocus: false }));
+      title.append(input);
+    } else {
+      const button = makeButton(null, {
+        className: "title-button",
+        test: "title-button",
+        focus: "title-button",
+        onClick: () => this._startRename(),
+      });
+      button.title = t("editor.rename");
+      button.append(el("span", "title-text", name));
+      // The pencil shows on hover and focus. A phone has no hover, and the
+      // pencil would take the name's room there.
+      if (!this._compact) {
+        button.append(icon("mdi:pencil"));
+      }
+      button.setAttribute("aria-label", `${name}, ${t("editor.rename")}`);
+      title.append(button);
+    }
+    if (this._renameError) {
+      const alert = alertLine(this._renameError);
+      alert.classList.add("rename-alert");
+      alert.dataset.test = "rename-error";
+      title.after(alert);
+    }
+  }
+
+  _startRename() {
+    if (this._readOnly || this._status !== "ready") {
+      return;
+    }
+    this._renaming = true;
+    this._renameError = "";
+    clearTimeout(this._renameTimer);
+    this._fillTitle();
+    const input = this._els.title?.querySelector("input");
+    if (input) {
+      input.focus({ preventScroll: true });
+      input.select();
+    }
+  }
+
+  // text: the new name (Enter, or the field lost focus), or null (Escape).
+  // An empty or unchanged name changes nothing. A refused rename puts the
+  // old name back and says why.
+  async _finishRename(text, { refocus = true } = {}) {
+    if (!this._renaming) {
+      return;
+    }
+    this._renaming = false;
+    const dashboard = this._dashboard;
+    const value = typeof text === "string" ? text.trim() : "";
+    const done = () => {
+      this._fillTitle();
+      if (refocus && (focusLost() || !this.shadowRoot.activeElement)) {
+        this._focus("title-button");
+      }
+    };
+    if (!value || value === dashboard?.title) {
+      done();
+      return;
+    }
+    // The new name shows at once; a refusal puts the old one back.
+    const before = dashboard.title;
+    dashboard.title = value;
+    done();
+    try {
+      await this._updateDashboard({ title: value });
+    } catch (error) {
+      if (dashboard !== this._dashboard) {
+        return;
+      }
+      dashboard.title = before;
+      this._renameError = t("settings.failed", { message: errorMessage(error) });
+      clearTimeout(this._renameTimer);
+      this._renameTimer = setTimeout(() => {
+        this._renameError = "";
+        if (!this._renaming) {
+          this._fillTitle();
+        }
+      }, RENAME_ERROR_MS);
+      if (!this._renaming) {
+        const had = this._focusKeyIn(this._els.header);
+        this._fillTitle();
+        if (had) {
+          this._focus(had);
+        }
+      }
+    }
+  }
+
+  // The Tablets chip: a dot in its tone and one short sentence; the whole
+  // sentence is its tooltip and its name. It opens the Tablets pop-up.
+  _chip() {
+    const chip = makeButton(null, {
+      className: "tablet-chip",
+      test: "tablet-chip",
+      focus: "tablet-chip",
+      onClick: () => this._openTablets(),
+    });
+    chip.setAttribute("aria-haspopup", "dialog");
+    this._els.chip = chip;
+    this._fillChip();
+    return chip;
+  }
+
+  _fillChip() {
+    const chip = this._els.chip;
+    if (!chip) {
+      return;
+    }
+    const known = Array.isArray(this._tablets) && !this._tabletsError;
+    const words = known
+      ? chipWords(this._tablets, this._urlPath, t)
+      : { text: t("editor.on_tablet_heading"), tone: "quiet", full: t("editor.on_tablet_heading") };
+    if (chip.dataset.tone === words.tone && chip.title === words.full) {
+      return;
+    }
+    chip.dataset.tone = words.tone;
+    chip.title = words.full;
+    chip.setAttribute("aria-label", words.full);
+    // The words change in place: a press that starts while the tablets
+    // change still lands on the chip.
+    const text = chip.querySelector(".chip-words");
+    if (text) {
+      text.textContent = words.text;
+      return;
+    }
+    chip.replaceChildren(el("span", "chip-dot"), el("span", "chip-words", words.text), icon("mdi:chevron-down"));
+  }
+
+  // The Theme button: a small swatch of the dashboard's theme and the word,
+  // which only its swatch stands for in a narrow bar.
+  _themeButton() {
+    const button = makeButton(null, {
+      className: "theme-button",
+      test: "theme-button",
+      focus: "theme-button",
+      onClick: () => this._openTheme(),
+    });
+    button.setAttribute("aria-haspopup", "dialog");
+    this._els.themeButton = button;
+    this._fillThemeButton();
+    return button;
+  }
+
+  _fillThemeButton() {
+    const button = this._els.themeButton;
+    if (!button) {
+      return;
+    }
+    const theme = (this._library?.themes || []).find((entry) => entry?.id === this._themeId()) || {};
+    const colour = (value, fallback) => (typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback);
+    const swatch = el("span", "theme-swatch small-swatch");
+    swatch.setAttribute("aria-hidden", "true");
+    swatch.style.backgroundColor = colour(theme.wall, "#101418");
+    const card = el("span", "swatch-card");
+    card.style.backgroundColor = colour(theme.card, "#181c23");
+    const dot = el("span", "swatch-dot");
+    dot.style.backgroundColor = colour(theme.acc, "#f5b547");
+    card.append(dot);
+    swatch.append(card);
+    button.title = t("editor.theme_button");
+    button.replaceChildren(swatch, el("span", "theme-word", t("editor.theme_button")));
+  }
+
+  // A round button with an icon only; its words are its name and tooltip.
+  _iconButton(name, words, options) {
+    const button = makeButton(null, { ...options, kind: "icon", ariaLabel: words });
+    button.title = words;
+    button.append(icon(name));
+    return button;
   }
 
   _updateHeader() {
-    const { saveState, undo, redo } = this._els;
+    const { saveState, saveLive, undo, redo } = this._els;
     if (!saveState) {
       return;
     }
     const state = this._queue?.state || "saved";
+    const was = saveState.dataset.state;
     saveState.dataset.state = state;
-    saveState.replaceChildren();
-    if (state === "saved") {
-      saveState.append(icon("mdi:check"), t("save.saved"));
-    } else if (state === "error") {
-      saveState.append(icon("mdi:alert-circle-outline"), t("save.error"));
-    } else if (state === "paused") {
-      saveState.append(t("save.paused"));
-    } else {
-      saveState.append(t("save.saving"));
+    const icons = {
+      saved: "mdi:check-circle-outline",
+      error: "mdi:alert-circle",
+      paused: "mdi:pause-circle-outline",
+    };
+    const words = {
+      saved: t("save.saved"),
+      error: t("save.error"),
+      paused: t("save.paused"),
+    };
+    // In the compact layout only the icon shows; the word stays its name.
+    saveState.replaceChildren(
+      icon(icons[state] || "mdi:sync"),
+      el("span", "save-word", words[state] || t("save.saving")),
+    );
+    if (state !== was && saveLive) {
+      if (state === "error") {
+        saveLive.textContent = words.error;
+      } else if (state === "saved" && was === "error") {
+        saveLive.textContent = words.saved;
+      }
     }
     const active = this.shadowRoot.activeElement;
     undo.disabled = !canUndo(this._history);
-    redo.disabled = !canRedo(this._history);
+    if (redo) {
+      redo.disabled = !canRedo(this._history);
+    }
     // Undo pressed back to the first step can no longer hold focus.
-    if ((active === undo || active === redo) && active.disabled) {
+    if (active && (active === undo || active === redo) && active.disabled) {
       restoreFocus(this._els.header, active.dataset.focus);
     }
   }
@@ -1106,20 +1712,15 @@ export class ApolloTabDesigner extends HTMLElement {
     this._lastSaveState = state;
     this._updateHeader();
     this._renderBanners();
+    if (state === "saved" && this._firstCardDue) {
+      this._firstCardDue = false;
+      this._showFirstCard();
+    }
     if (failedNow) {
-      this._revealBanners();
       // A save whose answer was lost with the connection may have been
       // stored all the same: what Home Assistant holds says (see
       // _checkRemote). The read waits while the connection is down.
       this._checkRemote();
-    }
-  }
-
-  // In the phone layout the card sheet covers the lower part of the screen,
-  // so a banner that needs an answer is scrolled into view above it.
-  _revealBanners() {
-    if (this._compact && this._els.banners?.childElementCount) {
-      this._els.banners.scrollIntoView({ block: "start" });
     }
   }
 
@@ -1138,20 +1739,51 @@ export class ApolloTabDesigner extends HTMLElement {
     }
   }
 
+  // Gives focus to the control named `key`. True only when it took it: a
+  // control in the closed drawer or under the edit mode cannot.
   _focus(key) {
-    const target = [...this.shadowRoot.querySelectorAll("[data-focus]")].find(
-      (node) => node.dataset.focus === key && !node.disabled,
-    );
-    if (target) {
-      target.focus();
-      return true;
+    return Boolean(this._focusFirstOf([key], { scroll: true }));
+  }
+
+  // Gives focus to the first of `keys` whose control takes it and returns
+  // that control, or null. scroll: false leaves the page where it is.
+  // inView: only a control that shows in the page column.
+  _focusFirstOf(keys, { scroll = false, inView = false } = {}) {
+    const nodes = [...this.shadowRoot.querySelectorAll("[data-focus]")];
+    for (const key of keys) {
+      for (const node of nodes) {
+        if (node.dataset.focus !== key || node.disabled || (inView && !this._shows(node))) {
+          continue;
+        }
+        node.focus({ preventScroll: !scroll });
+        if (this.shadowRoot.activeElement === node) {
+          return node;
+        }
+      }
     }
-    return false;
+    return null;
+  }
+
+  // Whether the middle of `node` shows in the page column.
+  _shows(node) {
+    const column = this._els.page?.getBoundingClientRect();
+    const rect = node.getBoundingClientRect();
+    const middle = (rect.top + rect.bottom) / 2;
+    return Boolean(column) && middle >= column.top && middle <= Math.min(column.bottom, window.innerHeight);
+  }
+
+  // The selected card's form takes focus, at its title.
+  _focusForm() {
+    const title = this._selected ? this._els.side?.querySelector(".side-title") : null;
+    title?.focus({ preventScroll: true });
+    return Boolean(title) && this.shadowRoot.activeElement === title;
   }
 
   _applyPendingFocus() {
-    if (this._pendingFocus && this._focus(this._pendingFocus)) {
+    const key = this._pendingFocus;
+    if (key && [...this.shadowRoot.querySelectorAll("[data-focus]")].some((node) => node.dataset.focus === key && !node.disabled)) {
       this._pendingFocus = null;
+      this._focus(key);
     }
   }
 
@@ -1215,86 +1847,186 @@ export class ApolloTabDesigner extends HTMLElement {
       }
       // An answered banner is gone; the page tabs below it come next.
     }, `tab:${this._view}`);
+    this._markFilled();
     this._renderAdvice();
   }
 
-  // The sidebar and narrow-columns banners. Each keeps its words next to
-  // its buttons, so both choices and the reason for them stay in view.
+  // The editor's one filled button: "Add the first card" on an empty page,
+  // else "Add card"; neither while a banner asks to retry a save or to
+  // choose between two versions, whose own button is the filled one then.
+  _markFilled() {
+    const asking = this._queue?.state === "error" || Boolean(this._conflict);
+    const first = this._els.overlay?.querySelector('[data-test="add-first-card"]') || null;
+    first?.classList.toggle("primary", !asking);
+    // Until the picture is drawn, whether the page is empty comes from the
+    // dashboard itself, so "Add card" does not change its look twice.
+    const view = this._draft?.views?.[this._view];
+    const cards = (Array.isArray(view?.sections) ? view.sections : []).some(
+      (section) => Array.isArray(section?.cards) && section.cards.length > 0,
+    );
+    const empty = this._preview ? Boolean(first) : !cards;
+    this._els.addCard?.classList.toggle("primary", !asking && !empty);
+  }
+
+  // The page notices, one line each, in a fixed order: cards the tablet
+  // leaves out, narrow columns, the sidebar. One shows; "+2 more" shows the
+  // rest under it, in place. A notice's long explanation opens under its
+  // line from "Why?". In the compact layout every notice shows, and a line
+  // may wrap.
   _renderAdvice() {
     const box = this._els.advice;
     if (!box || this._status !== "ready") {
       return;
     }
-    const text = (title, body) => {
-      const words = el("div", "banner-text");
-      words.append(el("h2", null, title), el("p", null, body));
-      return words;
-    };
     this._keepFocus(
       box,
       () => {
-        box.replaceChildren();
-        if (this._showSidebarNotice()) {
-          const notice = banner("advice");
-          notice.dataset.test = "sidebar-notice";
-          const actions = el("div", "row-buttons");
-          actions.append(
-            makeButton(t("sidebar.hide"), {
-              className: "primary",
-              test: "sidebar-hide",
-              focus: "sidebar-hide",
-              onClick: () => this._hideFromSidebar(),
-            }),
-            makeButton(t("sidebar.keep"), {
-              test: "sidebar-keep",
-              focus: "sidebar-keep",
-              onClick: () => {
-                keepInSidebar(this._urlPath);
-                this._sidebarDismissed = true;
-                this._renderBanners();
-              },
-            }),
-          );
-          notice.append(text(t("sidebar.title"), t("sidebar.text")), actions);
-          if (this._sidebarError) {
-            const line = el("p", "alert", this._sidebarError);
-            line.setAttribute("role", "alert");
-            notice.append(line);
-          }
-          box.append(notice);
+        const notices = this._pageNotices();
+        const all = this._compact || this._noticesOpen || notices.length < 2;
+        const nodes = (all ? notices : notices.slice(0, 1)).map((notice) => this._noticeLine(notice));
+        if (!this._compact && notices.length > 1) {
+          const open = this._noticesOpen;
+          const more = makeButton(open ? t("editor.notices_fewer") : t("editor.notices_more", { count: notices.length - 1 }), {
+            className: "notices-more",
+            test: "notices-more",
+            focus: "notices-more",
+            onClick: () => {
+              this._noticesOpen = !this._noticesOpen;
+              this._renderAdvice();
+            },
+          });
+          more.setAttribute("aria-expanded", String(open));
+          nodes[0].querySelector(".notice-line").append(more);
         }
-
-        const view = this._draft?.views?.[this._view];
-        if (
-          !this._readOnly &&
-          pageKind(view) === "page" &&
-          Array.isArray(view.sections) &&
-          view.sections.length > 0 &&
-          !usesWholeScreen(this._draft, this._view)
-        ) {
-          const notice = banner("advice");
-          notice.dataset.test = "columns-notice";
-          const actions = el("div", "row-buttons");
-          actions.append(
-            makeButton(t("editor.columns_fix"), {
-              test: "use-whole-screen",
-              focus: "use-whole-screen",
-              onClick: () => {
-                this._selected = null;
-                this._commit(useWholeScreen(this._draft, this._view));
-              },
-            }),
-          );
-          notice.append(text(t("editor.columns_title"), t("editor.columns_text")), actions);
-          box.append(notice);
-        }
+        box.replaceChildren(...nodes);
+        box.classList.toggle("open", all && notices.length > 1);
       },
-      // An answered banner is gone; focus goes on to what comes next. That
-      // is never the other banner's button, where one more Enter would make
-      // a choice the person did not read: the page tabs below the banners on
-      // a wide screen, the card list below them on a phone.
+      // An answered notice is gone; focus goes on to what comes next. That
+      // is never another notice's button, where one more Enter would make a
+      // choice the person did not read: the page tabs on a wide screen, the
+      // card list on a phone.
       () => (this._compact && this._focusFirst(this._els.list)) || this._focus(`tab:${this._view}`),
     );
+  }
+
+  // What each page notice says and offers, in their order.
+  _pageNotices() {
+    const notices = [];
+    const hidden = this._els.stage && this._preview ? this._rows.filter((row) => !row.shown).length : 0;
+    if (hidden) {
+      const words = el(
+        "span",
+        "notice-words",
+        hidden === 1 ? t("editor.not_shown_one") : t("editor.not_shown_many", { count: hidden }),
+      );
+      words.id = uid("not-shown");
+      const go = makeButton(t("editor.not_shown_go"), {
+        test: "not-shown-go",
+        focus: "not-shown-go",
+        onClick: () => this._goToHidden(),
+      });
+      go.setAttribute("aria-describedby", words.id);
+      notices.push({ test: "not-shown-hint", tone: "warn", icon: "mdi:eye-off-outline", words, buttons: [go] });
+    }
+
+    const view = this._draft?.views?.[this._view];
+    if (
+      !this._readOnly &&
+      pageKind(view) === "page" &&
+      Array.isArray(view.sections) &&
+      view.sections.length > 0 &&
+      !usesWholeScreen(this._draft, this._view) &&
+      !isPlaced(this._draft, this._view)
+    ) {
+      notices.push({
+        test: "columns-notice",
+        icon: "mdi:view-column-outline",
+        words: el("span", "notice-words", t("editor.columns_title")),
+        why: t("editor.columns_text"),
+        buttons: [
+          makeButton(t("editor.columns_fix"), {
+            test: "use-whole-screen",
+            focus: "use-whole-screen",
+            onClick: () => {
+              this._selected = null;
+              this._commit(useWholeScreen(this._draft, this._view));
+            },
+          }),
+        ],
+      });
+    }
+
+    if (this._showSidebarNotice()) {
+      notices.push({
+        test: "sidebar-notice",
+        icon: "mdi:dock-left",
+        words: el("span", "notice-words", t("sidebar.title")),
+        why: t("sidebar.text"),
+        buttons: [
+          makeButton(t("sidebar.hide"), {
+            test: "sidebar-hide",
+            focus: "sidebar-hide",
+            onClick: () => this._hideFromSidebar(),
+          }),
+          makeButton(t("sidebar.keep"), {
+            test: "sidebar-keep",
+            focus: "sidebar-keep",
+            onClick: () => {
+              keepInSidebar(this._urlPath);
+              this._sidebarDismissed = true;
+              this._renderBanners();
+            },
+          }),
+        ],
+        alert: this._sidebarError,
+      });
+    }
+    return notices;
+  }
+
+  // One page notice: its icon, its sentence, "Why?" when it has more to
+  // say, and its buttons; the long text and a failure under the line.
+  _noticeLine({ test, tone = null, icon: name, words, why = null, buttons, alert = "" }) {
+    const notice = el("div", "notice page-notice");
+    notice.dataset.test = test;
+    if (tone) {
+      notice.dataset.tone = tone;
+    }
+    const line = el("div", "notice-line");
+    words.title = words.textContent;
+    line.append(icon(name), words);
+    let text = null;
+    if (why) {
+      const open = this._whyOpen.has(test);
+      text = el("p", "notice-why-text", why);
+      text.id = uid("why");
+      text.hidden = !open;
+      const button = makeButton(t("editor.notice_why"), {
+        className: "text",
+        test: "notice-why",
+        focus: `why:${test}`,
+        onClick: () => {
+          if (this._whyOpen.has(test)) {
+            this._whyOpen.delete(test);
+          } else {
+            this._whyOpen.add(test);
+          }
+          this._renderAdvice();
+        },
+      });
+      button.setAttribute("aria-expanded", String(open));
+      button.setAttribute("aria-controls", text.id);
+      line.append(button);
+    }
+    line.append(...buttons);
+    notice.append(line);
+    if (text) {
+      notice.append(text);
+    }
+    if (alert) {
+      notice.append(alertLine(alert));
+    }
+    return notice;
   }
 
   _focusFirst(region) {
@@ -1313,8 +2045,13 @@ export class ApolloTabDesigner extends HTMLElement {
     );
   }
 
+  // The page tabs and Add page. "Add card" sits at the strip's other end
+  // (see _renderPageArea), so it is not redrawn with them. The selected
+  // page's tab has a settings button after it, which opens the page pop-up;
+  // the tabs stay one list for screen readers (aria-owns), with the button
+  // outside it.
   _renderTabs() {
-    const strip = this._els.tabs;
+    const strip = this._els.tabList;
     if (!strip) {
       return;
     }
@@ -1322,11 +2059,16 @@ export class ApolloTabDesigner extends HTMLElement {
       strip.replaceChildren();
       const pages = pageList(this._draft);
       const list = el("div", "tabs");
-      list.setAttribute("role", "tablist");
-      list.setAttribute("aria-label", t("page.tabs_label"));
+      const owner = el("div", "tab-owner");
+      owner.setAttribute("role", "tablist");
+      owner.setAttribute("aria-label", t("page.tabs_label"));
+      const ids = [];
+      list.append(owner);
       for (const page of pages) {
         const selected = page.view === this._view;
         const tab = makeButton(null, { className: "tab", test: "page-tab", focus: `tab:${page.view}` });
+        tab.id = `page-tab-${page.view}`;
+        ids.push(tab.id);
         tab.setAttribute("role", "tab");
         tab.setAttribute("aria-selected", String(selected));
         tab.tabIndex = selected ? 0 : -1;
@@ -1341,25 +2083,73 @@ export class ApolloTabDesigner extends HTMLElement {
         if (page.kind !== "page") {
           tab.append(el("span", "tag", t("page.not_shown")));
         }
-        // Pressing the tab of the page shown while a card is selected lets the
-        // card go and moves to the page's settings, where it is renamed.
-        tab.addEventListener("click", () =>
-          page.view === this._view && this._selected ? this._toSettings() : this._selectView(page.view),
-        );
+        tab.addEventListener("click", () => this._selectView(page.view));
         tab.addEventListener("keydown", (event) => this._tabKeys(event, page.view, pages.length));
         list.append(tab);
+        if (selected && !this._readOnly && page.kind === "page") {
+          const gear = this._iconButton("mdi:cog-outline", t("page.settings", { page: name }), {
+            className: "page-settings",
+            test: "page-settings",
+            focus: "page-settings",
+            onClick: () => this._openPageMenu(),
+          });
+          gear.setAttribute("aria-haspopup", "dialog");
+          list.append(gear);
+        }
       }
+      owner.setAttribute("aria-owns", ids.join(" "));
       strip.append(list);
       if (!this._readOnly) {
         const add = makeButton(null, { className: "add-page", test: "add-page", focus: "add-page", onClick: () => this._addPage() });
-        add.append(icon("mdi:plus"), el("span", null, t("page.add")));
+        // In the compact layout only its icon shows; its words stay its name.
+        if (this._compact) {
+          add.classList.add("icon");
+          add.setAttribute("aria-label", t("page.add"));
+          add.title = t("page.add");
+          add.append(icon("mdi:plus"));
+        } else {
+          add.append(icon("mdi:plus"), el("span", null, t("page.add")));
+        }
         strip.append(add);
       }
     });
+    if (this._els.page) {
+      this._els.page.setAttribute("role", "tabpanel");
+      this._els.page.setAttribute("aria-labelledby", `page-tab-${this._view}`);
+    }
+    this._showTab();
+  }
+
+  // Scrolls the tab list so the selected page's tab is whole in it. Called
+  // once Add page and Add card have their places beside the list, since
+  // they make it narrower, and when the window's width changes.
+  _showTab() {
+    const list = this._els.tabList?.querySelector(".tabs");
+    const tab = list?.querySelector('[aria-selected="true"]');
+    if (!tab) {
+      return;
+    }
+    // The tab and its settings button after it, both whole.
+    const gear = tab.nextElementSibling?.classList.contains("page-settings") ? tab.nextElementSibling : null;
+    const box = list.getBoundingClientRect();
+    const first = tab.getBoundingClientRect();
+    const last = (gear || tab).getBoundingClientRect();
+    const rect = { left: Math.min(first.left, last.left), right: Math.max(first.right, last.right) };
+    const pad = parseFloat(getComputedStyle(list).paddingInlineStart) || 0;
+    if (rect.left < box.left + pad) {
+      list.scrollLeft += rect.left - box.left - pad;
+    } else if (rect.right > box.right - pad) {
+      list.scrollLeft += Math.min(rect.right - box.right + pad, rect.left - box.left - pad);
+    }
   }
 
   _tabKeys(event, view, count) {
     let next = null;
+    if (event.key === "F2" && view === this._view && this.shadowRoot.querySelector('[data-test="page-settings"]')) {
+      event.preventDefault();
+      this._openPageMenu();
+      return;
+    }
     if (event.key === "ArrowRight") {
       next = (view + 1) % count;
     } else if (event.key === "ArrowLeft") {
@@ -1389,6 +2179,13 @@ export class ApolloTabDesigner extends HTMLElement {
     this._renderSide();
   }
 
+  // The stage column: the page notices, the tablet picture in its frame,
+  // and the status strip with the zoom, the screen pager and a failure to
+  // update the picture. Without a status strip (compact and short) the
+  // pager and the failure line are a row under the picture. The card list
+  // and the notes go into the idle holder (see _renderSide); in the compact
+  // layout the notes follow the picture, and the tablet lines, the notices
+  // and the idle holder come after it in the one scrolling column.
   _renderPageArea() {
     const area = this._els.page;
     if (!area) {
@@ -1397,7 +2194,15 @@ export class ApolloTabDesigner extends HTMLElement {
     this._stageObserver?.disconnect();
     this._stageObserver = null;
     this._els.pageHost?.__atCleanup?.();
+    const { idlePage, stripEnd, advice } = this._els;
+    // Focus in what is drawn again is given back once it is there.
+    const adviceFocus = this._focusKeyIn(advice);
+    const focusKey = this._focusKeyIn(area) || this._focusKeyIn(idlePage) || this._focusKeyIn(stripEnd) ||
+      this._focusKeyIn(this._els.addCard);
+    this._els.addCard?.remove();
     Object.assign(this._els, {
+      stageArea: null,
+      device: null,
       stage: null,
       pageHost: null,
       hits: null,
@@ -1406,25 +2211,30 @@ export class ApolloTabDesigner extends HTMLElement {
       notes: null,
       list: null,
       listBlock: null,
-      hint: null,
       previewError: null,
       addCard: null,
+      pageBox: null,
+      under: null,
+      zoomCaption: null,
+      statusStrip: null,
+      openCards: null,
     });
-    // On a phone the choice banners are in this area (see _placeAdvice).
-    const adviceFocus = this._focusKeyIn(this._els.advice);
     area.replaceChildren();
+    idlePage.replaceChildren();
+    stripEnd.replaceChildren();
 
     const views = Array.isArray(this._draft?.views) ? this._draft.views : [];
     const view = views[this._view];
     const kind = pageKind(view);
     this._areaKey = `${this._view}:${kind}`;
     if (!view) {
+      this._placeCompactParts();
       this._placeAdvice(adviceFocus);
       return;
     }
 
     if (kind !== "page") {
-      const box = banner();
+      const box = banner("page-box");
       box.dataset.test = "page-box";
       const old = kind === "old_preview";
       box.append(
@@ -1434,7 +2244,7 @@ export class ApolloTabDesigner extends HTMLElement {
       if (!this._readOnly) {
         box.append(
           makeButton(t("page.remove"), {
-            className: "primary",
+            kind: "danger",
             test: "page-remove",
             disabled: views.length <= 1,
             onClick: () => this._removePage(this._view, false),
@@ -1445,32 +2255,35 @@ export class ApolloTabDesigner extends HTMLElement {
         }
       }
       area.append(box);
+      this._els.pageBox = box;
+      this._placeCompactParts();
       this._placeAdvice(adviceFocus);
+      this._restoreFocus(focusKey);
       return;
     }
 
-    const caption = el("div", "caption-row");
-    const captionText = el("div");
-    // Under the heading: which tablets show this dashboard, and how it is
-    // going there (see _fillTabletLines).
-    const tabletLines = el("div", "tablet-lines");
-    tabletLines.dataset.test = "tablet-lines";
-    captionText.append(el("h2", null, t("editor.tablet_label")), tabletLines);
-    caption.append(captionText);
-    this._els.tabletLines = tabletLines;
-    this._fillTabletLines();
+    // "Add card": at the end of the page strip, or a floating button at the
+    // bottom of the compact layout.
     if (!this._readOnly) {
       const add = makeButton(null, {
-        className: "primary",
+        className: this._compact ? "fab" : null,
         test: "add-card",
         focus: "add-card",
         onClick: (event) => this._openPicker(event.currentTarget),
       });
       add.append(icon("mdi:plus"), el("span", null, t("editor.add_card")));
-      caption.append(add);
+      if (this._compact) {
+        this._els.root.append(add);
+      } else {
+        stripEnd.append(add);
+      }
       this._els.addCard = add;
     }
+    this._showTab();
 
+    const stageArea = el("div", "stage-area");
+    stageArea.dataset.zoom = this._zoom;
+    const device = el("div", "device");
     const stage = el("div", "stage");
     stage.dataset.test = "canvas";
     // The drawn tablet is a picture: screen readers and the keyboard use the
@@ -1487,50 +2300,383 @@ export class ApolloTabDesigner extends HTMLElement {
     pageRoot.append(pageStyle, pageHost);
     const hits = el("div", "hit-layer");
     hits.setAttribute("role", "group");
-    hits.setAttribute("aria-label", t("a11y.canvas"));
+    hits.setAttribute("aria-label", this._readOnly ? t("a11y.canvas") : `${t("a11y.canvas")} ${t("a11y.place_keys")}`);
     const overlay = el("div");
-    stage.append(pageFrame, hits, overlay);
+    // Says where a card went, or that there is no room, as it is placed.
+    const placeLive = el("span", "sr-only");
+    placeLive.setAttribute("aria-live", "polite");
+    stage.append(pageFrame, hits, overlay, placeLive);
+    this._els.placeLive = placeLive;
+    device.append(stage);
+    stageArea.append(device);
     // A press on the picture outside every card clears the selection.
     stage.addEventListener("click", (event) => {
-      if (this._selected && !event.target.closest("button")) {
+      if (this._selected && !event.target.closest("button, .resize-handle")) {
         this._select(null);
       }
     });
 
-    // Right above the picture, where it is seen first: how many cards on
-    // this page the tablet leaves out (see _renderHint).
-    const hint = el("div", "hint-box");
     const screens = el("div", "screens");
-    const previewError = el("div");
+    const previewError = el("div", "preview-error");
     const notes = el("div", "notes");
     const listBlock = el("section", "list-block");
     const list = el("ol", "card-list");
     listBlock.append(el("h2", null, t("list.title")), list);
-
-    area.append(caption, hint, stage, screens, previewError, notes, listBlock);
-    Object.assign(this._els, { stage, pageHost, hits, overlay, screens, notes, list, listBlock, hint, previewError });
+    area.append(stageArea);
+    if (this._hasStatusStrip()) {
+      area.append(this._statusStrip(screens, previewError));
+      idlePage.append(listBlock, notes);
+    } else {
+      const under = el("div", "under");
+      under.append(screens, previewError);
+      area.append(under);
+      this._els.under = under;
+      if (this._compact) {
+        under.append(notes);
+        idlePage.append(listBlock);
+      } else {
+        idlePage.append(listBlock, notes);
+      }
+    }
+    Object.assign(this._els, { stageArea, device, stage, pageHost, hits, overlay, screens, notes, list, listBlock, previewError });
+    this._placeCompactParts();
     this._placeAdvice(adviceFocus);
 
+    // The free space decides the picture's size, so the stage area is
+    // watched, not the picture.
     this._stageObserver = new ResizeObserver(() => {
       cancelAnimationFrame(this._frame);
       this._frame = requestAnimationFrame(() => this._drawCanvas());
     });
-    this._stageObserver.observe(stage);
+    this._stageObserver.observe(stageArea);
 
     this._drawCanvas();
     this._renderScreens();
     this._renderPreviewError();
     this._renderNotes();
     this._renderList();
+    this._placeFirstCard();
+    this._restoreFocus(focusKey);
+  }
+
+  _restoreFocus(key) {
+    if (key && !this.shadowRoot.activeElement) {
+      this._focus(key);
+    }
+  }
+
+  // In the compact layout the page column goes on after the picture with the
+  // Tablets chip and the idle holder (the notices go between them, see
+  // _placeAdvice).
+  _placeCompactParts() {
+    const { page, chipRow, idle, stageArea, pageBox } = this._els;
+    if (!this._compact || !page) {
+      return;
+    }
+    // Only moved when out of place: a node that moves loses a press that
+    // has started on it. The chip comes right under the picture, before
+    // the screen pager.
+    const top = [stageArea, pageBox].find((node) => node?.parentNode === page);
+    if (chipRow && top) {
+      if (top.nextElementSibling !== chipRow) {
+        top.after(chipRow);
+      }
+    }
+    const tail = [top ? null : chipRow, idle].filter(Boolean);
+    const last = [...page.children].slice(-tail.length);
+    if (!tail.every((node, index) => last[index] === node)) {
+      page.append(...tail);
+    }
+  }
+
+  // The first-card notice says where the dashboard goes now that it has a
+  // card: to the one new tablet, to the Tablets list when several are new
+  // (it names none of them), or to the Tablets pop-up. Without any tablet
+  // there is no notice. Shown once per dashboard; it sends nothing.
+  _showFirstCard() {
+    const notice = this._firstCardFor();
+    if (!notice) {
+      return;
+    }
+    markFirstCardSeen(this._urlPath);
+    this._firstCard = notice;
+    // The notice already says "Saved.": a plain "Card added" toast would
+    // only lie on top of it.
+    if (this._toast && !this._toast.tied && this._toast.text === t("toast.card_added")) {
+      clearTimeout(this._toastTimer);
+      this._toast = null;
+      this._renderToast();
+    }
+    this._placeFirstCard();
+  }
+
+  // What the notice says for the tablets as they are now; null for none.
+  _firstCardFor() {
+    const tablets = Array.isArray(this._tablets) ? this._tablets : [];
+    if (this._status !== "ready" || tabletsShowing(tablets, this._urlPath).length) {
+      return null;
+    }
+    const fresh = newTablets(tablets);
+    if (fresh.length === 1) {
+      return { kind: "one", mac: fresh[0].mac, name: tabletName(fresh[0]) };
+    }
+    if (fresh.length > 1) {
+      return { kind: "many", count: fresh.length };
+    }
+    return approvedTablets(tablets).length ? { kind: "none" } : null;
+  }
+
+  // The tablets changed while the notice is up: it is drawn again for them,
+  // or goes when it has nothing left to say. Focus inside it stays on the
+  // same control when it is still there.
+  _refreshFirstCard() {
+    const before = this._firstCard;
+    if (!before) {
+      return;
+    }
+    const notice = this._firstCardFor();
+    if (JSON.stringify(notice) !== JSON.stringify(before)) {
+      this._firstCard = notice;
+      this._placeFirstCard();
+    }
+  }
+
+  // In a low wide window the stage's top padding is too short for the
+  // floating notice, so it takes a row over the picture, as in medium.
+  _firstCardRow() {
+    if (this._compact) {
+      return false;
+    }
+    if (this._band === "short" || this._band === "medium") {
+      return true;
+    }
+    const top = (this._els.root || this).getBoundingClientRect().top;
+    return window.innerHeight - top < FIRST_CARD_FLOAT_HEIGHT;
+  }
+
+  // Draws the notice over the top of the stage, where it takes no height.
+  // On a phone the picture is small and the notice would cover the new
+  // card, so it goes under the picture instead; in medium and short it is
+  // a row over the picture.
+  _placeFirstCard() {
+    const area = this._els.stageArea;
+    const old = this.shadowRoot.querySelector(".first-card");
+    // Focus in the notice stays on the same control when it is drawn again.
+    const key = old?.contains(this.shadowRoot.activeElement) ? this.shadowRoot.activeElement.dataset.focus : null;
+    old?.remove();
+    const notice = this._firstCard;
+    this._firstCardIsRow = false;
+    if (!notice || !area) {
+      this._liftForFirstCard();
+      if (key) {
+        this._focus("add-card") || this._focus(`tab:${this._view}`);
+      }
+      return;
+    }
+    const box = el("div", "notice first-card");
+    box.dataset.test = "first-card-notice";
+    box.setAttribute("role", "status");
+    const words =
+      notice.kind === "one"
+        ? t("editor.first_card_one", { tablet: notice.name })
+        : notice.kind === "many"
+          ? t("editor.first_card_many", { count: notice.count })
+          : t("editor.first_card_none");
+    box.append(icon("mdi:information-outline"), el("span", "notice-words", words));
+    if (notice.kind === "none") {
+      box.append(
+        makeButton(t("editor.first_card_choose"), {
+          test: "choose-tablet",
+          focus: "choose-tablet",
+          onClick: () => this._openTablets(),
+        }),
+      );
+    } else {
+      box.append(
+        makeButton(t(notice.kind === "one" ? "editor.first_card_put" : "editor.first_card_go"), {
+          test: "put-on-tablet",
+          focus: "put-on-tablet",
+          onClick: () => {
+            // The tablet is handed over only while it is still the one new
+            // tablet the notice names; else the Tablets list is shown.
+            const now = this._firstCardFor();
+            const one = notice.kind === "one" && now?.kind === "one" && now.mac === notice.mac;
+            const handover = one ? { tablet: notice.mac, dashboard: this._urlPath } : {};
+            this._firstCard = null;
+            this._leaveFor(handover);
+          },
+        }),
+      );
+    }
+    box.append(
+      this._iconButton("mdi:close", t("editor.first_card_close"), {
+        test: "first-card-close",
+        focus: "first-card-close",
+        onClick: () => {
+          const had = box.contains(this.shadowRoot.activeElement);
+          this._firstCard = null;
+          box.remove();
+          this._liftForFirstCard();
+          if (had) {
+            this._focus("add-card") || this._focus(`tab:${this._view}`);
+          }
+        },
+      }),
+    );
+    if (this._compact) {
+      // Under the picture and the Tablets chip.
+      const chipRow = this._els.chipRow;
+      (chipRow?.parentNode === area.parentNode ? chipRow : area).after(box);
+    } else if (this._firstCardRow()) {
+      // There the picture fills the stage (and the drawer covers its end),
+      // so floating, the notice would lie on the new card: it is a row of
+      // its own over the picture, with the page notices.
+      this._firstCardIsRow = true;
+      if (this._band !== "short" && this._band !== "medium") {
+        box.classList.add("row");
+      }
+      area.before(box);
+    } else {
+      area.append(box);
+    }
+    this._liftForFirstCard();
+    if (key && !this._focus(key)) {
+      this._focus("add-card") || this._focus(`tab:${this._view}`);
+    }
+  }
+
+  // Wide: the floating notice lies over the stage's top padding. Where it
+  // would still reach the frame, the frame moves down into the free space
+  // under it; the picture keeps its size.
+  _liftForFirstCard() {
+    const { device, stageArea } = this._els;
+    if (!device) {
+      return;
+    }
+    device.style.translate = "";
+    const box = stageArea?.querySelector(":scope > .first-card");
+    if (!box || this._compact || this._firstCardIsRow) {
+      return;
+    }
+    const frame = device.getBoundingClientRect();
+    const reach = box.getBoundingClientRect().bottom + 8 - frame.top;
+    const room = stageArea.getBoundingClientRect().bottom - frame.bottom;
+    if (reach > 0) {
+      device.style.translate = `0 ${Math.round(Math.min(reach, Math.max(0, room)))}px`;
+    }
+  }
+
+  // The 40 px strip under the picture: the size and the zoom on the left,
+  // the screen pager in the middle, and on the right a failure to update
+  // the picture and, in the medium layout, "Cards" for the drawer.
+  _statusStrip(screens, previewError) {
+    const strip = el("div", "status-strip");
+    this._els.statusStrip = strip;
+    const start = el("div", "status-start");
+    const caption = el("span", "zoom-caption");
+    this._els.zoomCaption = caption;
+    start.append(caption, this._zoomControl());
+    const end = el("div", "status-end");
+    end.append(previewError);
+    if (this._band === "medium") {
+      const cards = makeButton(null, {
+        test: "open-cards",
+        focus: "open-cards",
+        onClick: () => this._openDrawer(),
+      });
+      cards.append(icon("mdi:format-list-bulleted"), el("span", null, t("editor.cards_button")));
+      cards.setAttribute("aria-expanded", "false");
+      end.append(cards);
+      this._els.openCards = cards;
+    }
+    strip.append(start, screens, end);
+    return strip;
+  }
+
+  // "Fit" and "100 %": a radio group drawn as one pill.
+  _zoomControl() {
+    const group = el("div", "segmented zoom");
+    group.setAttribute("role", "radiogroup");
+    const name = uid("zoom");
+    for (const [value, words, test] of [
+      ["fit", t("editor.zoom_fit"), "zoom-fit"],
+      ["100", t("editor.zoom_100"), "zoom-100"],
+    ]) {
+      const label = el("label");
+      label.dataset.test = test;
+      const input = el("input");
+      input.type = "radio";
+      input.name = name;
+      input.value = value;
+      input.checked = this._zoom === value;
+      input.dataset.focus = test;
+      input.addEventListener("change", () => this._setZoom(value));
+      label.append(input, el("span", null, words));
+      group.append(label);
+    }
+    return group;
+  }
+
+  // At 100 % the picture is the tablet's real size and the stage area
+  // scrolls both ways, with the selected card brought into view.
+  _setZoom(value) {
+    this._zoom = value;
+    if (this._els.stageArea) {
+      this._els.stageArea.dataset.zoom = value;
+    }
+    this._drawCanvas();
+  }
+
+  _updateZoomCaption(width) {
+    if (this._els.zoomCaption) {
+      this._els.zoomCaption.textContent = t("editor.zoom_caption", { percent: Math.round((width / 1280) * 100) });
+    }
+  }
+
+  // The picture's width in px: 1280 at 100 %, else as large as the stage
+  // area holds once its padding and the frame's bezel are taken off. In the
+  // compact layout only the width decides, up to 960 px.
+  _stageWidth(stageArea = this._els.stageArea, device = this._els.device) {
+    if (this._zoom === "100" && this._hasStatusStrip()) {
+      return 1280;
+    }
+    const box = stageArea.getBoundingClientRect();
+    if (!box.width) {
+      return 0;
+    }
+    const pad = getComputedStyle(stageArea);
+    const bezel = getComputedStyle(device);
+    const sum = (style, a, b) => parseFloat(style[a]) + parseFloat(style[b]);
+    const across = sum(pad, "paddingLeft", "paddingRight") + sum(bezel, "paddingLeft", "paddingRight");
+    const down = sum(pad, "paddingTop", "paddingBottom") + sum(bezel, "paddingTop", "paddingBottom");
+    if (this._compact) {
+      return fitStage(Math.min(box.width - across, 960), Infinity);
+    }
+    return fitStage(box.width - across, box.height - down);
   }
 
   _drawCanvas() {
+    // While a card is dragged the picture stays as it is; it is drawn once
+    // after the drop or the cancel.
+    if (this._drag) {
+      this._drawOwed = true;
+      return;
+    }
     const { stage, pageHost, hits, overlay } = this._els;
     if (!stage) {
       return;
     }
+    const width = this._stageWidth();
+    if (!width) {
+      return;
+    }
+    stage.style.width = `${width}px`;
+    stage.style.height = `${width / 1.6}px`;
+    this._updateZoomCaption(width);
+    // A card on the picture or "Add the first card" on an empty page that
+    // has focus hands it on to the new drawing.
     const focused = this.shadowRoot.activeElement;
-    const focusKey = focused && hits.contains(focused) ? focused.dataset.focus : null;
+    const focusKey = focused && (hits.contains(focused) || overlay.contains(focused)) ? focused.dataset.focus : null;
     pageHost.__atCleanup?.();
     pageHost.replaceChildren();
     hits.replaceChildren();
@@ -1538,10 +2684,7 @@ export class ApolloTabDesigner extends HTMLElement {
 
     if (!this._preview) {
       overlay.append(el("div", "stage-message", t("editor.loading")));
-      return;
-    }
-    const width = stage.getBoundingClientRect().width;
-    if (!width) {
+      this._markFilled();
       return;
     }
     const scale = width / 1280;
@@ -1557,16 +2700,17 @@ export class ApolloTabDesigner extends HTMLElement {
     );
 
     const page = layout.pages?.[screenIndex];
+    const omitted = page ? this._omittedOn(page) : [];
     // A page with no cards is still a page on the tablet, with its side bar
-    // entry; here it gets the "add the first card" help.
-    if (!page || !Array.isArray(page.w) || !page.w.length) {
+    // entry; here it gets the "add the first card" help. A page whose only
+    // card was left out is not empty: it gets that card's box below.
+    if (!page || !Array.isArray(page.w) || (!page.w.length && !omitted.length)) {
       const empty = el("div", "empty-page");
       empty.style.color = layout.theme?.tx || "#E8EAED";
       empty.append(el("p", null, t("editor.empty_page")));
       if (!this._readOnly) {
         empty.append(
           makeButton(t("editor.add_first_card"), {
-            className: "primary",
             test: "add-first-card",
             focus: "add-first-card",
             onClick: (event) => this._openPicker(event.currentTarget),
@@ -1575,39 +2719,188 @@ export class ApolloTabDesigner extends HTMLElement {
         empty.append(el("p", "small", t("editor.empty_page_tablet")));
       }
       overlay.append(empty);
+      this._markFilled();
+      this._keepHitFocus(focusKey);
       this._applyPendingFocus();
+      this._afterDraw();
       return;
     }
 
     const sources = isObject(this._preview.sources) ? this._preview.sources : {};
     const items = (page.w || []).filter((item) => Object.hasOwn(sources, String(item.id)));
-    const omitted = (this._preview.warnings || []).filter(
-      (warning) => warning.page === page.id && warningBoxKind(warning) === "omitted",
-    );
     const count = items.length + omitted.length;
-    const wall = pageHost.querySelector(".at-page");
     let n = 0;
 
     for (const item of items) {
       n += 1;
       this._hitButton(sources[String(item.id)], item.r, scale, n, count, item.t === "heading" ? item.text : null);
     }
+    this._drawOmitted(pageHost, omitted, scale);
     for (const warning of omitted) {
       n += 1;
-      const box = el("div", "warning-box", t("preview.omitted"));
+      this._hitButton([warning.view, warning.section, warning.card], warning.r, scale, n, count, null);
+    }
+
+    this._placeHandle();
+    this._keepHitFocus(focusKey);
+    this._markFilled();
+    this._applyPendingFocus();
+    this._afterDraw();
+  }
+
+  // The card on the picture that had focus has it again after a new
+  // drawing. When it is not on the picture any more (the card after a
+  // removed one may be on another screen, or left out, or the last card
+  // that could be drawn was removed), Add card takes it, or the page's tab.
+  _keepHitFocus(key) {
+    if (key && !this.shadowRoot.activeElement) {
+      this._focus(key) || this._focus("add-first-card") || this._focus("add-card") || this._focus(`tab:${this._view}`);
+    }
+  }
+
+  // The cards the tablet leaves out on the screen `page`, each with the
+  // place the layout kept for it.
+  _omittedOn(page) {
+    return omittedOnPage(this._preview, page.id).filter((warning) => Array.isArray(warning.r));
+  }
+
+  // A hatched "Left out" box for each of them on the page drawn in `host`.
+  _drawOmitted(host, omitted, scale) {
+    const wall = host.querySelector(".at-page");
+    for (const warning of omitted) {
+      const box = el("div", "warning-box");
+      box.append(el("span", null, t("preview.omitted")));
       box.style.left = `${warning.r[0] * scale}px`;
       box.style.top = `${warning.r[1] * scale}px`;
       box.style.width = `${warning.r[2] * scale}px`;
       box.style.height = `${warning.r[3] * scale}px`;
       wall?.append(box);
-      this._hitButton([warning.view, warning.section, warning.card], warning.r, scale, n, count, null);
     }
+  }
 
-    if (focusKey && !this.shadowRoot.activeElement) {
-      this._focus(focusKey);
+  // After the picture or the selection changed: the drawer shift, the edit
+  // mode's preview strip, the selected card in view at 100 %, and the toast.
+  _afterDraw() {
+    this._applyDrawerShift();
+    this._drawEditPreview();
+    if (this._zoom === "100" && this._hasStatusStrip()) {
+      this._els.hits?.querySelector('.hit[aria-pressed="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
-    this._applyPendingFocus();
+    this._liftForFirstCard();
     this._queuePlaceToast();
+  }
+
+  // Medium layout: the picture slides left just far enough for the selected
+  // card to clear the open drawer, and back when the drawer closes. The
+  // places are worked out without the slide, so a slide under way does not
+  // count.
+  _applyDrawerShift() {
+    const { device, stage, stageArea, side, hits, page, root } = this._els;
+    if (!device) {
+      return;
+    }
+    let shift = 0;
+    const hit = hits?.querySelector('.hit[aria-pressed="true"]');
+    if (this._band === "medium" && root.classList.contains("drawer-open") && hit && getComputedStyle(this).direction !== "rtl") {
+      const area = stageArea.getBoundingClientRect();
+      const left = area.left - stageArea.scrollLeft + device.offsetLeft + stage.offsetLeft + parseFloat(hit.style.left);
+      const right = left + parseFloat(hit.style.width);
+      const drawerLeft = page.getBoundingClientRect().right - side.offsetWidth;
+      const minLeft = area.left + parseFloat(getComputedStyle(stageArea).paddingLeft);
+      shift = drawerShift(left, right, drawerLeft, minLeft);
+    }
+    this._shift = shift;
+    device.style.transform = shift ? `translateX(${-shift}px)` : "";
+    // An empty page's message is centred in the part of the picture the
+    // open drawer leaves in view.
+    const empty = this._els.overlay?.querySelector(".empty-page");
+    if (empty) {
+      let hidden = 0;
+      if (this._band === "medium" && root.classList.contains("drawer-open") && getComputedStyle(this).direction !== "rtl") {
+        const area = stageArea.getBoundingClientRect();
+        const drawerLeft = page.getBoundingClientRect().right - side.offsetWidth;
+        const right = area.left - stageArea.scrollLeft + device.offsetLeft + stage.offsetLeft + stage.offsetWidth - shift;
+        hidden = Math.max(0, right - drawerLeft);
+      }
+      empty.style.right = hidden ? `${hidden}px` : "";
+    }
+  }
+
+  // The tablet's rectangle of the selected card on the screen shown, or
+  // null when it is not on that screen.
+  _selectedRect(layout, screenIndex) {
+    const key = this._selectedKey();
+    const page = layout.pages?.[screenIndex];
+    if (!key || !page) {
+      return null;
+    }
+    const sources = isObject(this._preview?.sources) ? this._preview.sources : {};
+    for (const item of Array.isArray(page.w) ? page.w : []) {
+      const source = sources[String(item.id)];
+      if (Array.isArray(source) && sourceKey(source) === key && Array.isArray(item.r)) {
+        return item.r;
+      }
+    }
+    for (const warning of this._omittedOn(page)) {
+      if (sourceKey([warning.view, warning.section, warning.card]) === key) {
+        return warning.r;
+      }
+    }
+    return null;
+  }
+
+  // Compact edit mode: the strip above the form draws the page again, with
+  // the selected card in its middle, at up to its real size, and the cards
+  // around it dimmed. A card the tablet leaves out has its hatched box
+  // there, as on the main picture. A card with no place on the screen shown
+  // (one the tablet cannot draw) gets the whole page and no ring. It is
+  // drawn again whenever the main picture is.
+  _drawEditPreview() {
+    const { editPreview: strip, previewHost: host, previewFrame: frame, previewMark: mark } = this._els;
+    if (!strip?.isConnected) {
+      return;
+    }
+    host.__atCleanup?.();
+    host.replaceChildren();
+    const layout = this._preview?.layout || {};
+    const screens = pageScreens(this._preview, this._view);
+    const screenIndex = screens[this._screen] ?? -1;
+    const place = this._preview ? this._selectedRect(layout, screenIndex) : null;
+    // A card with no place on the picture gets the strip's lowest height.
+    strip.classList.toggle("whole", Boolean(this._preview) && !place);
+    const box = strip.getBoundingClientRect();
+    if (!this._preview || box.width < 48 || box.height < 48) {
+      mark.hidden = true;
+      return;
+    }
+    const rect = place || [0, 0, 1280, 800];
+    const scale = Math.min(1, (box.width - 24) / rect[2], (box.height - 24) / rect[3]);
+    renderPage(
+      host,
+      layout,
+      screenIndex,
+      { values: this._preview.values || {}, errors: {} },
+      { sx: scale, sy: scale, interactive: false, tablet: true },
+    );
+    const page = layout.pages?.[screenIndex];
+    if (page) {
+      this._drawOmitted(host, this._omittedOn(page), scale);
+    }
+    // The selected card in the middle, but a page larger than the strip is
+    // never moved so far that part of the strip shows nothing: the move
+    // stops at the page's edge. A page smaller than the strip is centred.
+    const fit = (centred, size, pageSize) =>
+      pageSize <= size ? (size - pageSize) / 2 : Math.min(0, Math.max(size - pageSize, centred));
+    const x = fit(box.width / 2 - (rect[0] + rect[2] / 2) * scale, box.width, 1280 * scale);
+    const y = fit(box.height / 2 - (rect[1] + rect[3] / 2) * scale, box.height, 800 * scale);
+    frame.style.transform = `translate(${x}px, ${y}px)`;
+    mark.hidden = !place;
+    Object.assign(mark.style, {
+      left: `${x + rect[0] * scale}px`,
+      top: `${y + rect[1] * scale}px`,
+      width: `${rect[2] * scale}px`,
+      height: `${rect[3] * scale}px`,
+    });
   }
 
   _hitButton(source, rect, scale, n, count, headingText) {
@@ -1625,9 +2918,236 @@ export class ApolloTabDesigner extends HTMLElement {
     button.setAttribute("aria-label", this._itemLabel(source, n, count, headingText));
     // Pressing the selected card again lets it go, which brings back the
     // page and dashboard settings.
-    button.addEventListener("click", () => this._select(sameSource(source, this._selected) ? null : source));
+    button.addEventListener("click", () => this._select(sameSource(source, this._selected) ? null : source, "hit"));
     button.addEventListener("keydown", (event) => this._itemKeys(event, source, "hit"));
+    if (!this._readOnly) {
+      button.addEventListener("pointerdown", (event) => this._startDrag(event, source, "move", button));
+    }
     this._els.hits.append(button);
+  }
+
+  // ---- free placement: drag, the size handle and the arrow keys
+  // (placement.js holds the rules, drag.js the pointer).
+
+  // Whether the picture is the preview of the draft as it is now. A freeze
+  // reads its rectangles, so a stale one must not be used.
+  _previewCurrent() {
+    return Boolean(this._preview) && this._previewOf === this._draft && !this._previewTimer;
+  }
+
+  // The config to place in and where the card is in it. A placed page is
+  // the draft itself; a flowing page is first frozen from the picture, and
+  // the freeze and the move are one commit, so one Undo brings back the
+  // flowing page. Null when that cannot be done now.
+  _placeBase(source) {
+    const draft = this._draft;
+    if (isPlaced(draft, this._view)) {
+      return { config: draft, source: [...source], sources: null };
+    }
+    if (!this._previewCurrent()) {
+      return null;
+    }
+    const frozen = freezePage(draft, this._view, this._preview);
+    const moved = frozen.sources[sourceKey(source)];
+    return moved ? { config: frozen.config, source: moved, sources: frozen.sources } : null;
+  }
+
+  // Commits a placement made on `base`. Beside the inspector the placed
+  // card is selected; in the compact layout the selection only follows.
+  _commitPlace(base, next, { key = null, continuous = false } = {}) {
+    if (next === base.config) {
+      return false;
+    }
+    if (!this._compact) {
+      this._selected = [...base.source];
+      this._selectedFrom = "hit";
+    } else if (this._selected && base.sources) {
+      this._selected = base.sources[sourceKey(this._selected)] || null;
+    }
+    this._pendingFocus = `hit:${sourceKey(base.source)}`;
+    return this._commit(next, { key, continuous });
+  }
+
+  _announce(text) {
+    if (this._els.placeLive) {
+      this._els.placeLive.textContent = text;
+    }
+  }
+
+  // A press on a card (mode "move") or on the size handle ("resize").
+  _startDrag(event, source, mode, target) {
+    if (this._readOnly || this._drag || this._status !== "ready" || (mode === "resize" && this._compact)) {
+      return;
+    }
+    const cancel = followPress(target, event, {
+      start: () => this._dragStart(source, mode),
+      move: (dx, dy, moveEvent) => this._dragMove(dx, dy, moveEvent),
+      end: () => this._dragEnd(),
+      cancel: () => this._dragStop(),
+    });
+    if (cancel) {
+      this._dragCancel = cancel;
+    }
+  }
+
+  _dragStart(source, mode) {
+    const base = this._placeBase(source);
+    const card = base ? getCard(base.config, base.source) : null;
+    const at = readPosition(card);
+    const width = this._els.stage?.getBoundingClientRect().width;
+    if (!at || !width) {
+      return false;
+    }
+    const size = cardCells(card);
+    const grid = el("div", "place-grid");
+    const ghost = el("div", "place-ghost");
+    ghost.dataset.test = "place-ghost";
+    this._els.overlay.append(grid, ghost);
+    this._drag = {
+      mode,
+      base,
+      at,
+      size,
+      heading: card.type === "heading",
+      scale: width / 1280,
+      taken: occupied(base.config, this._view, at.page, base.source),
+      grid,
+      ghost,
+      to: null,
+      ok: true,
+    };
+    this._els.stage.classList.add("placing");
+    this._showGhost(at, size, true);
+    return true;
+  }
+
+  _dragMove(dx, dy, event) {
+    const drag = this._drag;
+    if (!drag) {
+      return;
+    }
+    // Leaving the picture cancels.
+    const box = this._els.stage.getBoundingClientRect();
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) {
+      this._dragCancel?.();
+      return;
+    }
+    const { at, size, taken } = drag;
+    let place = at;
+    let cells = size;
+    if (drag.mode === "move") {
+      place = snapMove(at, size.cols, size.rows, dx / drag.scale, dy / drag.scale);
+    } else {
+      cells = snapSize(at, size.cols, size.rows, dx / drag.scale, dy / drag.scale, drag.heading);
+    }
+    const ok = canPlace(taken, at.page, place.col, place.row, cells.cols, cells.rows);
+    if (!ok && drag.ok) {
+      this._announce(t("place.no_room"));
+    }
+    drag.ok = ok;
+    drag.to = drag.mode === "move" ? place : cells;
+    this._showGhost(place, cells, ok);
+  }
+
+  // The outline of where the card lands, on the faint grid; red where it
+  // cannot go.
+  _showGhost(place, cells, ok) {
+    const { ghost, scale, mode } = this._drag;
+    const [x, y, w, h] = rectOfCell(place.col, place.row, cells.cols, cells.rows);
+    Object.assign(ghost.style, {
+      left: `${x * scale}px`,
+      top: `${y * scale}px`,
+      width: `${w * scale}px`,
+      height: `${h * scale}px`,
+    });
+    ghost.classList.toggle("bad", !ok);
+    ghost.textContent = mode === "resize" ? t("place.sized", { cols: cells.cols, rows: cells.rows }) : "";
+    this._els.stage.classList.toggle("no-room", !ok);
+  }
+
+  _dragEnd() {
+    const drag = this._drag;
+    this._dragStop();
+    if (!drag?.ok || !drag.to) {
+      return;
+    }
+    const { base } = drag;
+    const next =
+      drag.mode === "move"
+        ? placeCard(base.config, base.source, drag.to)
+        : sizeCard(base.config, base.source, drag.to.cols, drag.to.rows);
+    if (this._commitPlace(base, next)) {
+      const to = drag.to;
+      this._announce(
+        drag.mode === "move" ? t("place.moved", { col: to.col + 1, row: to.row + 1 }) : t("place.sized", to),
+      );
+    }
+  }
+
+  // Ends a drag without a change, or after the drop.
+  _dragStop() {
+    const drag = this._drag;
+    this._drag = null;
+    this._dragCancel = null;
+    if (!drag) {
+      return;
+    }
+    drag.grid.remove();
+    drag.ghost.remove();
+    this._els.stage?.classList.remove("placing", "no-room");
+    if (this._drawOwed) {
+      this._drawOwed = false;
+      this._drawCanvas();
+    }
+  }
+
+  // The size handle at the selected card's bottom right corner. Not in the
+  // compact layout; the keyboard has Shift + arrows.
+  _placeHandle() {
+    const hits = this._els.hits;
+    hits?.querySelector(".resize-handle")?.remove();
+    if (!hits || this._readOnly || this._compact || !this._selected) {
+      return;
+    }
+    const button = [...hits.querySelectorAll(".hit")].find((hit) => hit.dataset.source === this._selectedKey());
+    if (!button) {
+      return;
+    }
+    const source = [...this._selected];
+    const handle = el("div", "resize-handle");
+    handle.dataset.test = "resize-handle";
+    handle.title = t("place.resize");
+    handle.setAttribute("aria-hidden", "true");
+    handle.style.left = `${parseFloat(button.style.left) + parseFloat(button.style.width)}px`;
+    handle.style.top = `${parseFloat(button.style.top) + parseFloat(button.style.height)}px`;
+    handle.addEventListener("pointerdown", (event) => this._startDrag(event, source, "resize", handle));
+    hits.append(handle);
+  }
+
+  // Arrow keys on a card of the picture move it one step; Shift + arrows
+  // change its size (right and down grow, left and up shrink).
+  _placeKey(source, [dx, dy], resize) {
+    const base = this._placeBase(source);
+    const card = base ? getCard(base.config, base.source) : null;
+    const at = readPosition(card);
+    if (!at) {
+      return;
+    }
+    const { cols, rows } = cardCells(card);
+    const next = resize
+      ? sizeCard(base.config, base.source, cols + dx * SNAP_COLS, rows + dy * SNAP_ROWS)
+      : placeCard(base.config, base.source, { page: at.page, col: at.col + dx * SNAP_COLS, row: at.row + dy * SNAP_ROWS });
+    if (next === base.config) {
+      this._announce(t("place.no_room"));
+      return;
+    }
+    this._commitPlace(base, next, { key: `place:${sourceKey(base.source)}`, continuous: true });
+    const now = getCard(next, base.source);
+    const place = readPosition(now);
+    const size = cardCells(now);
+    this._announce(
+      resize ? t("place.sized", size) : t("place.moved", { col: place.col + 1, row: place.row + 1 }),
+    );
   }
 
   _itemLabel(source, n, count, headingText) {
@@ -1646,6 +3166,7 @@ export class ApolloTabDesigner extends HTMLElement {
     for (const button of this._els.hits?.querySelectorAll(".hit") || []) {
       button.setAttribute("aria-pressed", String(button.dataset.source === this._selectedKey()));
     }
+    this._placeHandle();
     this._queuePlaceToast();
   }
 
@@ -1653,6 +3174,9 @@ export class ApolloTabDesigner extends HTMLElement {
     return this._selected ? sourceKey(this._selected) : null;
   }
 
+  // "Screen 1 of 2" with its arrows. In the status strip and in the short
+  // layout its note is the tooltip and is read out; under the picture in
+  // the compact layout it is a line of its own.
   _renderScreens() {
     const box = this._els.screens;
     if (!box) {
@@ -1687,12 +3211,18 @@ export class ApolloTabDesigner extends HTMLElement {
         onClick: () => go(1),
       });
       next.append(icon("mdi:chevron-right"));
-      box.append(
-        el("span", null, t("editor.screens", { n: this._screen + 1, count })),
-        previous,
-        next,
-        el("p", "small", t("editor.screens_note", { count })),
-      );
+      const note = t("editor.screens_note", { count });
+      const words = el("span", "screens-words", t("editor.screens", { n: this._screen + 1, count }));
+      // While a failure shows in the status strip the pager reads "1 / 2",
+      // so the failure keeps its room; the words are still read out.
+      const brief = el("span", "screens-brief", `${this._screen + 1} / ${count}`);
+      brief.setAttribute("aria-hidden", "true");
+      const short = this._hasStatusStrip() || this._band === "short";
+      if (short) {
+        words.title = note;
+        brief.title = note;
+      }
+      box.append(words, brief, previous, next, el("p", short ? "small sr-only" : "small", note));
     });
   }
 
@@ -1705,8 +3235,14 @@ export class ApolloTabDesigner extends HTMLElement {
     if (!this._previewError) {
       return;
     }
-    const line = el("p", "alert", t("editor.preview_failed", { message: errorMessage(this._previewError) }));
+    const text = t("editor.preview_failed", { message: errorMessage(this._previewError) });
+    const line = el("p", "alert");
     line.setAttribute("role", "alert");
+    // One line in the status strip, cut with "…"; the whole text is the
+    // tooltip.
+    const words = el("span", null, text);
+    line.title = text;
+    line.append(words);
     box.append(line, makeButton(t("editor.preview_retry"), { onClick: () => this._requestPreview() }));
   }
 
@@ -1755,7 +3291,9 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   _showMoveToPage(source) {
-    this._select(source, { sheet: true });
+    // Move to page is in Size and place, which opens for it.
+    showPart("place");
+    this._select(source, "row");
     const field = this._els.side?.querySelector('[data-test="move-page"]');
     if (field) {
       field.focus({ preventScroll: true });
@@ -1802,7 +3340,7 @@ export class ApolloTabDesigner extends HTMLElement {
             el("span", "row-reason", t(`warn.${row.reason}`, { detail: row.detail || "" })),
           );
         }
-        button.addEventListener("click", () => this._select(row.source, { sheet: true }));
+        button.addEventListener("click", () => this._select(row.source, "row"));
         button.addEventListener("keydown", (event) => this._itemKeys(event, row.source, "row"));
         item.append(button);
         // The row's buttons stay together, so on a narrow screen they move
@@ -1824,9 +3362,10 @@ export class ApolloTabDesigner extends HTMLElement {
           actions.append(
             makeButton(t("list.remove"), {
               className: "row-remove",
+              kind: "danger",
               test: "row-remove",
               focus: `remove:${row.key}`,
-              onClick: () => this._removeItem(row.source),
+              onClick: () => this._removeItem(row.source, "row"),
             }),
           );
         }
@@ -1841,118 +3380,508 @@ export class ApolloTabDesigner extends HTMLElement {
     this._queuePlaceToast();
   }
 
-  // Above the picture: "1 card on this page is not shown on the tablet.",
-  // with a button down to that card in the list, which says why and offers
-  // Remove. The picture alone cannot show a card it leaves out.
+  // "1 card on this page is not shown on the tablet." is one of the page
+  // notices now (see _pageNotices).
   _renderHint() {
-    const box = this._els.hint;
-    if (!box) {
-      return;
-    }
-    const hidden = this._preview ? this._rows.filter((row) => !row.shown).length : 0;
-    this._keepFocus(
-      box,
-      () => {
-        box.replaceChildren();
-        if (!hidden) {
-          return;
-        }
-        const line = el("p", "note-line not-shown-hint");
-        line.dataset.test = "not-shown-hint";
-        const words = el(
-          "span",
-          null,
-          hidden === 1 ? t("editor.not_shown_one") : t("editor.not_shown_many", { count: hidden }),
-        );
-        words.id = uid("not-shown");
-        const go = makeButton(t("editor.not_shown_go"), {
-          className: "link",
-          test: "not-shown-go",
-          focus: "not-shown-go",
-          onClick: () => this._goToHidden(),
-        });
-        go.setAttribute("aria-describedby", words.id);
-        line.append(words, go);
-        box.append(line);
-      },
-      "add-card",
-    );
+    this._renderAdvice();
   }
 
   // Brings the first card the tablet leaves out into view in the list and
-  // gives it focus.
+  // gives it focus. The list is in the inspector while no card is selected
+  // (in the medium layout, in the drawer).
   _goToHidden() {
+    if (!this._compact && (this._selected || (this._band === "medium" && !this._drawerOpen))) {
+      this._drawerOpen = this._band === "medium";
+      this._select(null);
+    }
     const row = this._els.list?.querySelector('[data-test="list-row"][data-shown="false"]');
-    if (row) {
+    if (row?.isConnected) {
       row.scrollIntoView({ block: "center" });
       row.focus({ preventScroll: true });
     }
   }
 
+  // Medium layout: "Cards" opens the drawer with the card list, its close
+  // button or Escape shuts it.
+  _openDrawer() {
+    this._drawerOpen = true;
+    this._renderSide();
+    this._focus("close-cards");
+  }
+
+  _closeDrawer() {
+    this._drawerOpen = false;
+    this._renderSide();
+    this._focus("open-cards");
+  }
+
+  // The inspector. Nothing selected: the idle holder (the card list, the
+  // notes, the page and dashboard settings), which in the compact layout is
+  // the end of the page column instead. A card selected: its form; in the
+  // compact layout that is the edit mode, a layer over the page strip and
+  // the page column with a strip of the picture above the form. In the
+  // medium layout the inspector is a drawer, closed while it has nothing to
+  // do.
   _renderSide() {
-    const side = this._els.side;
+    const { side, root, tabs, page, idle } = this._els;
     if (!side || this._status !== "ready") {
       return;
     }
-    const draft = this._draft;
     const source = this._selected;
-    const card = source ? getCard(draft, source) : null;
-    const sheet = Boolean(this._compact && card);
-    side.classList.toggle("sheet", sheet);
-    this._els.root.classList.toggle("sheet-open", sheet);
+    const card = source ? getCard(this._draft, source) : null;
+    const edit = Boolean(this._compact && card);
+    side.classList.toggle("sheet", edit);
+    if (edit) {
+      // Opening: what was pressed ("hit" or "row"; null for Add card and
+      // the like), where the page column was, and the page. Leaving the edit
+      // mode puts the person back there (see _backToPage).
+      if (side.dataset.mode !== "edit") {
+        this._editFrom = {
+          from: this._opener?.from || null,
+          scroll: this._opener?.scroll ?? page.scrollTop,
+          view: this._view,
+        };
+      }
+      side.dataset.mode = "edit";
+      // A press on the layer outside its controls keeps focus in the editor,
+      // so Escape still reaches it.
+      side.tabIndex = -1;
+    } else {
+      delete side.dataset.mode;
+      side.removeAttribute("tabindex");
+      this._editFrom = null;
+    }
+    root.classList.toggle("editing", edit);
+    // The layer's siblings behind it; the layer itself stays live.
+    tabs.inert = edit;
+    page.inert = edit;
+    const drawer = this._band === "medium" && Boolean(card || this._drawerOpen);
+    root.classList.toggle("drawer-open", drawer);
+    side.inert = this._band === "medium" && !drawer;
+    this._els.openCards?.setAttribute("aria-expanded", String(drawer));
     this._els.sideNotes = null;
-    this._els.shownOn = null;
+    // The same card drawn again keeps where its form was scrolled to.
+    const formScroll = this._els.editForm?.scrollTop || 0;
+    this._els.previewHost?.__atCleanup?.();
+    Object.assign(this._els, { editPreview: null, previewHost: null, previewFrame: null, previewMark: null, editForm: null });
 
+    const fill = () => this._fillIdle(Boolean(card));
+    if (this._compact) {
+      this._keepFocus(idle, fill);
+    }
     this._keepFocus(side, () => {
       side.replaceChildren();
+      side.classList.toggle("inspecting", Boolean(card));
       if (card) {
-        // Every new card is selected, which hides "This page" and "This
-        // dashboard" (the dashboard's theme). Both buttons bring them back;
-        // the first says so and moves to them.
-        const top = el("div", "side-top");
-        const settings = makeButton(null, {
-          className: "link side-back",
-          test: "to-settings",
-          focus: "to-settings",
-          onClick: () => this._toSettings(),
-        });
-        settings.append(icon("mdi:arrow-left"), el("span", null, t("editor.to_settings")));
-        const close = makeButton(null, {
-          className: "sheet-close",
-          test: "close-panel",
-          focus: "close-panel",
-          onClick: () => this._closeForm(),
-        });
-        close.append(icon("mdi:close"), el("span", null, t("editor.close_panel")));
-        top.append(settings, close);
-        side.append(top);
+        // The inspector: its header stays in view (in the edit mode it is
+        // the first row, above the strip of the picture) and the parts under
+        // it scroll. "Done" in the header lets the card go.
         const form = this._itemForm(source, card);
-        side.append(form);
-        this._els.sideNotes = form.querySelector(".item-notes");
+        const head = form.querySelector(".inspector-head");
+        const body = form.querySelector(".inspector-body");
+        side.append(head);
+        if (edit) {
+          side.append(this._editPreviewStrip());
+        }
+        const scroller = el("div", "edit-form");
+        scroller.append(body);
+        side.append(scroller);
+        this._els.editForm = scroller;
+        if (sourceKey(source) === this._sideKey) {
+          scroller.scrollTop = formScroll;
+        }
+        this._els.sideNotes = body.querySelector(".item-notes");
         this._fillSideNotes();
         this._sideToTop(sourceKey(source));
         return;
       }
-      this._sideToTop(`page:${this._view}`);
-
-      const views = Array.isArray(draft?.views) ? draft.views : [];
-      const view = views[this._view];
-      // A page the tablet does not show has no picture and no cards to press.
-      if (view && pageKind(view) !== "page") {
-        const line = el("p", null, t("editor.page_not_shown"));
-        line.dataset.test = "side-intro";
-        side.append(line);
-      } else if (!this._readOnly) {
-        const line = el("p", null, t("editor.nothing_selected"));
-        line.dataset.test = "side-intro";
-        side.append(line);
+      if (this._compact) {
+        return;
       }
-      if (!this._readOnly && pageKind(view) === "page") {
-        const vi = this._view;
-        side.append(
+      fill();
+      this._sideToTop(`page:${this._view}`);
+      // In the drawer the close button sits at the end of the list's
+      // heading row.
+      const { listBlock } = this._els;
+      listBlock?.querySelector(".drawer-close")?.remove();
+      if (this._band === "medium" && listBlock) {
+        const close = this._iconButton("mdi:close", t("editor.close_panel"), {
+          className: "drawer-close",
+          test: "close-cards",
+          focus: "close-cards",
+          onClick: () => this._closeDrawer(),
+        });
+        listBlock.querySelector("h2").after(close);
+      }
+      side.append(idle);
+    });
+    this._drawEditPreview();
+    this._applyDrawerShift();
+    this._queuePlaceToast();
+  }
+
+  // The edit mode's strip of the picture; _drawEditPreview fills it.
+  _editPreviewStrip() {
+    const strip = el("div", "edit-preview tablet-pic");
+    strip.dataset.test = "edit-preview";
+    strip.setAttribute("aria-hidden", "true");
+    const frame = el("div", "edit-frame");
+    frame.inert = true;
+    const shadow = frame.attachShadow({ mode: "open" });
+    const style = el("style");
+    style.textContent = rendererStyles + canvasStyles;
+    const host = el("div");
+    shadow.append(style, host);
+    const mark = el("div", "edit-selected");
+    mark.dataset.selected = "";
+    mark.hidden = true;
+    strip.append(frame, mark);
+    Object.assign(this._els, { editPreview: strip, previewHost: host, previewFrame: frame, previewMark: mark });
+    return strip;
+  }
+
+  // The idle holder's words. The page's and the dashboard's settings are
+  // in their pop-ups (the page strip's settings button and the top bar).
+  _fillIdle(selected) {
+    const { idleIntro } = this._els;
+    idleIntro.replaceChildren();
+    if (selected) {
+      return;
+    }
+    const views = Array.isArray(this._draft?.views) ? this._draft.views : [];
+    const view = views[this._view];
+    // A page the tablet does not show has no picture and no cards to press.
+    if (view && pageKind(view) !== "page") {
+      const line = el("p", null, t("editor.page_not_shown"));
+      line.dataset.test = "side-intro";
+      idleIntro.append(line);
+    } else if (!this._readOnly) {
+      const line = el("p", null, t("editor.nothing_selected"));
+      line.dataset.test = "side-intro";
+      idleIntro.append(line);
+    }
+  }
+
+  // ---- Pop-ups ----
+
+  // Opens one of the pop-ups; the one open before closes. In the compact
+  // and the short layouts it is a sheet from the bottom.
+  _openPop(kind, options) {
+    this._popover = openPopover({
+      root: this.shadowRoot,
+      sheet: this._compact || this._band === "short",
+      ...options,
+      onClose: () => {
+        if (this._popKind === kind) {
+          this._popover = null;
+          this._popKind = null;
+          this._popAnchor = null;
+        }
+        options.onClose?.();
+      },
+    });
+    this._popKind = kind;
+    this._popAnchor = options.anchorKey;
+    return this._popover;
+  }
+
+  // The Tablets pop-up: which tablets show this dashboard, Show here for
+  // the others, a new tablet with its way to be set up, and the way to
+  // the start screen's Tablets list. Nothing here turns a tablet on or
+  // changes one without a press on Show here.
+  _openTablets() {
+    if (this._status !== "ready") {
+      return;
+    }
+    this._openPop("tablets", {
+      anchorKey: "tablet-chip",
+      test: "tablets-pop",
+      label: t("editor.on_tablet_heading"),
+      first: "pop-title",
+      build: (body) => body.append(this._tabletsBody()),
+    });
+  }
+
+  _tabletsBody() {
+    const box = el("div", "shown-on");
+    box.dataset.test = "shown-on";
+    const heading = el("h2", "pop-title", t("editor.on_tablet_heading"));
+    heading.tabIndex = -1;
+    heading.dataset.focus = "pop-title";
+    heading.dataset.test = "shown-on-heading";
+    box.append(heading);
+    const failure = this._tabletsError ? errorMessage(this._tabletsError) : "";
+    if (failure) {
+      box.append(alertLine(t("tablets.load_failed", { message: failure })));
+    }
+    const tablets = Array.isArray(this._tablets) && !failure ? this._tablets : null;
+    if (tablets === null) {
+      if (!failure) {
+        box.append(el("p", "small", t("tablets.loading")));
+      }
+    } else {
+      // "Changes show on the tablet as you make them." while one does.
+      if (!this._readOnly && tabletsShowing(tablets, this._urlPath).length) {
+        box.append(el("p", "helper", t("editor.on_tablet_helper")));
+      }
+      const lines = el("ul", "tablet-lines");
+      lines.dataset.test = "tablet-lines";
+      const status = new Map();
+      for (const line of captionLines(tablets, this._urlPath, t, Infinity)) {
+        // With no tablet at all, "No tablets yet." below says it alone.
+        if (line.kind === "nowhere" && tablets.length) {
+          const nowhere = el("li", "tablet-line nowhere", line.text);
+          nowhere.dataset.test = "tablet-line";
+          nowhere.dataset.kind = line.kind;
+          lines.append(nowhere);
+        } else if (line.mac) {
+          status.set(line.mac, line);
+        }
+      }
+      // A row per tablet that is on: its name, what it shows, and for one
+      // that shows this dashboard what is going on with it, in full.
+      for (const row of shownOnRows(tablets, this._urlPath, this._tabRows || [], t)) {
+        const item = el("li", "shown-on-row");
+        item.dataset.test = "shown-on-row";
+        item.dataset.mac = row.mac;
+        item.dataset.here = String(row.here);
+        const words = el("div", "shown-on-text");
+        words.append(el("span", "shown-on-name", row.name), el("span", "small", row.text));
+        item.append(words);
+        const line = row.here ? status.get(row.mac) : null;
+        if (line) {
+          const text = el("p", "small tablet-line", line.text);
+          text.dataset.test = "tablet-line";
+          text.dataset.kind = line.kind;
+          text.dataset.mac = row.mac;
+          // The dot has the chip's tone, so the two agree.
+          text.dataset.tone = chipTone(tablets.find((tablet) => tablet.mac === row.mac));
+          item.append(text);
+        }
+        // A tablet always shows one dashboard, so there is nothing to untick
+        // here; another tablet can be moved to this one.
+        // Read-only dashboards keep it: showing one changes nothing in it.
+        if (!row.here) {
+          const button = makeButton(t("editor.on_tablet_show"), {
+            test: "show-here",
+            focus: `show-here:${row.mac}`,
+            disabled: this._assigning.has(row.mac),
+            onClick: () => this._showHere(row.mac),
+          });
+          button.dataset.mac = row.mac;
+          button.setAttribute("aria-label", `${t("editor.on_tablet_show")}: ${row.name}`);
+          item.append(button);
+        }
+        lines.append(item);
+      }
+      box.append(lines);
+      // A tablet that came up and waits to be turned on is set up on the
+      // start screen; the editor sends nothing for it.
+      for (const tablet of newTablets(tablets)) {
+        const item = el("div", "shown-on-new");
+        item.dataset.test = "shown-on-new";
+        item.append(el("p", null, t("editor.on_tablet_new", { tablet: tabletName(tablet) })));
+        const go = makeButton(t("editor.on_tablet_set_up"), {
+          test: "set-up-tablet",
+          focus: `set-up:${tablet.mac}`,
+          onClick: () => this._leaveFor({ tablet: tablet.mac, dashboard: this._urlPath }),
+        });
+        go.dataset.mac = tablet.mac;
+        // Two new tablets give two such buttons: each names its tablet.
+        go.setAttribute("aria-label", `${t("editor.on_tablet_set_up")}: ${tabletName(tablet)}`);
+        item.append(go);
+        box.append(item);
+      }
+      if (!tablets.length) {
+        const none = el("p", "small", t("editor.on_tablet_none"));
+        none.dataset.test = "shown-on-none";
+        box.append(
+          none,
+          makeButton(t("editor.on_tablet_how"), {
+            className: "text",
+            test: "how-to-add",
+            focus: "how-to-add",
+            onClick: () => this._leaveFor({}),
+          }),
+        );
+      }
+    }
+    if (this._shownOnError) {
+      const alert = alertLine(this._shownOnError);
+      alert.dataset.test = "shown-on-error";
+      box.append(alert);
+    }
+    // With no tablet, "How to add a tablet" already goes there.
+    if (!(Array.isArray(this._tablets) && !failure && !this._tablets.length)) {
+      box.append(
+        makeButton(t("editor.on_tablet_manage"), {
+          className: "text",
+          test: "manage-tablets",
+          focus: "manage-tablets",
+          onClick: () => this._leaveFor({}),
+        }),
+      );
+    }
+    return box;
+  }
+
+  // To the start screen, with what it should show first: { tablet,
+  // dashboard } for a tablet to set up, {} for the Tablets list. Kept in
+  // memory by the panel only; nothing is sent.
+  _leaveFor(handover) {
+    this._popover?.close({ refocus: false });
+    this.onExit?.(handover);
+  }
+
+  // The theme gallery. Every theme tried while it is open is one step for
+  // Undo, however long it stays open.
+  _openTheme() {
+    if (this._status !== "ready") {
+      return;
+    }
+    this._themeGroup = {};
+    this._openPop("theme", {
+      anchorKey: this._compact ? "dash-menu" : "theme-button",
+      test: "theme-gallery",
+      label: t("settings.theme"),
+      first: `theme:${this._themeId()}`,
+      // Short: over the inspector, so the picture beside it stays in view.
+      cover: this._band === "short" ? () => this._els.side?.getBoundingClientRect() : null,
+      build: (body) =>
+        body.append(
+          buildThemeGallery({
+            themes: this._library?.themes || [],
+            themeId: this._themeId(),
+            readOnly: Boolean(this._readOnly),
+            preview: PREVIEW_THEMES,
+            onTheme: (themeId) => {
+              if (themeId !== this._themeId()) {
+                this._commit(setTheme(this._draft, themeId), { side: false, group: this._themeGroup });
+              }
+            },
+          }),
+        ),
+      onClose: () => {
+        this._themeGroup = null;
+        this._history = historyCloseGroup(this._history);
+      },
+    });
+  }
+
+  // The menu of the top bar. On a phone it also has Rename and Theme.
+  _openMenu() {
+    if (this._status !== "ready") {
+      return;
+    }
+    this._openPop("menu", {
+      anchorKey: "dash-menu",
+      test: "dash-menu-pop",
+      label: t("editor.menu"),
+      first: "pop-title",
+      build: (body) => body.append(this._menuBody()),
+    });
+  }
+
+  _menuBody() {
+    const extra = [];
+    if (this._tight && !this._readOnly) {
+      // The bar has no room for it. The menu closes, so the change shows.
+      const redo = makeButton(null, {
+        className: "menu-item",
+        test: "redo",
+        focus: "menu-redo",
+        disabled: !canRedo(this._history),
+        onClick: () => {
+          this._popover?.close();
+          this._redo();
+        },
+      });
+      redo.append(icon("mdi:redo"), el("span", null, t("undo.redo")));
+      extra.push(redo);
+    }
+    if (this._compact && !this._readOnly) {
+      const rename = makeButton(null, {
+        className: "menu-item",
+        test: "menu-rename",
+        focus: "menu-rename",
+        onClick: () => {
+          this._popover?.close({ refocus: false });
+          this._startRename();
+        },
+      });
+      rename.append(icon("mdi:pencil"), el("span", null, t("editor.rename")));
+      extra.push(rename);
+    }
+    if (!this._readOnly && olderCards(this._draft, this._library).length) {
+      // Swaps every older card that has a newer one, as one undo step.
+      const newer = makeButton(null, {
+        className: "menu-item",
+        test: "use-newer-everywhere",
+        focus: "use-newer-everywhere",
+        onClick: () => {
+          this._popover?.close();
+          this._commit(swapAllOlder(this._draft, this._library));
+        },
+      });
+      newer.append(icon("mdi:swap-horizontal"), el("span", null, t("editor.use_newer")));
+      extra.push(newer);
+    }
+    if (this._compact) {
+      const theme = makeButton(null, {
+        className: "menu-item",
+        test: "menu-theme",
+        focus: "menu-theme",
+        onClick: () => this._openTheme(),
+      });
+      theme.append(icon("mdi:palette-outline"), el("span", null, t("editor.theme_button")));
+      extra.push(theme);
+    }
+    return buildDashboardSettings({
+      readOnly: Boolean(this._readOnly),
+      showInSidebar: this._dashboard?.show_in_sidebar === true,
+      urlPath: this._urlPath,
+      extra,
+      onSidebar: async (show) => {
+        // Ticking the box is already the answer the sidebar notice asks for.
+        if (show) {
+          this._sidebarDismissed = true;
+          keepInSidebar(this._urlPath);
+        }
+        await this._updateDashboard({ show_in_sidebar: show });
+      },
+      onDelete: () => {
+        this._popover?.close({ refocus: false });
+        return this._deleteDashboard();
+      },
+    });
+  }
+
+  // The page pop-up of the selected page: its name, its icon, its moves and
+  // Delete. It closes when the page is gone.
+  _openPageMenu() {
+    if (this._status !== "ready" || this._readOnly) {
+      return;
+    }
+    const view = this._draft?.views?.[this._view];
+    if (pageKind(view) !== "page") {
+      return;
+    }
+    // The page is followed by its place, which a move changes (see onMove).
+    const page = { view: this._view };
+    this._openPop("page", {
+      anchorKey: "page-settings",
+      test: "page-menu",
+      label: t("page.heading"),
+      first: "page-name",
+      alive: () => pageKind(this._draft?.views?.[page.view]) === "page" && page.view === this._view,
+      build: (body) => {
+        const views = this._draft.views;
+        const vi = page.view;
+        const current = views[vi];
+        body.append(
           buildPageSettings({
-            title: typeof view.title === "string" ? view.title : "",
-            icon: view.icon,
+            title: typeof current.title === "string" ? current.title : "",
+            icon: current.icon,
             index: vi,
             count: views.length,
             onRename: (text) =>
@@ -1961,39 +3890,21 @@ export class ApolloTabDesigner extends HTMLElement {
                 continuous: true,
                 side: false,
               }),
-            onIcon: (name) => this._commit(setPageIcon(this._draft, vi, name)),
+            onIcon: (name) => this._commit(setPageIcon(this._draft, vi, name), { side: false }),
             onMove: (delta) => {
               const result = movePage(this._draft, vi, delta);
               this._view = result.view;
+              page.view = result.view;
               this._commit(result.config);
             },
-            onDelete: () => this._removePage(vi, true),
+            onDelete: () => {
+              this._popover?.close({ refocus: false });
+              this._removePage(vi, true);
+            },
           }),
         );
-      }
-      side.append(
-        buildDashboardSettings({
-          readOnly: Boolean(this._readOnly),
-          title: this._dashboard?.title || "",
-          themes: this._library?.themes || [],
-          themeId: this._themeId(),
-          shownOn: this._shownOnBlock(),
-          showInSidebar: this._dashboard?.show_in_sidebar === true,
-          onRename: (title) => this._updateDashboard({ title }),
-          onTheme: (themeId) => this._commit(setTheme(this._draft, themeId), { side: false }),
-          onSidebar: async (show) => {
-            // Ticking the box is already the answer the sidebar notice asks for.
-            if (show) {
-              this._sidebarDismissed = true;
-              keepInSidebar(this._urlPath);
-            }
-            await this._updateDashboard({ show_in_sidebar: show });
-          },
-          onDelete: () => this._deleteDashboard(),
-        }),
-      );
+      },
     });
-    this._queuePlaceToast();
   }
 
   // A different item starts at the top of the side panel; the same item
@@ -2001,8 +3912,9 @@ export class ApolloTabDesigner extends HTMLElement {
   _sideToTop(key) {
     if (key !== this._sideKey) {
       this._sideKey = key;
-      if (this._els.side) {
-        this._els.side.scrollTop = 0;
+      const scroller = this._els.editForm || this._els.side;
+      if (scroller) {
+        scroller.scrollTop = 0;
       }
     }
   }
@@ -2016,16 +3928,59 @@ export class ApolloTabDesigner extends HTMLElement {
 
     if (kind === "tab") {
       const component = componentOf(card, this._library);
+      const newer = newerCard(this._library, component);
+      const facts = component.schema === 2 ? this._factsFor(component, card) : null;
+      // An option change can show or hide other rows, so the form is drawn
+      // again; typing and dragging keep it as it is. A change also takes
+      // out leftovers the card's file does not have.
+      const option = (changeConfig, name, continuous) =>
+        this._commit(pruneOptions(changeConfig, source, component, facts), {
+          key: continuous ? `${key}:option:${name}` : null,
+          continuous,
+          side: !continuous,
+        });
       return buildCardForm({
         hass: this._hass,
         config: this._draft,
         card,
         component,
         readOnly,
+        facts,
+        newer,
+        onSwap: () => {
+          if (newer) {
+            this._commit(swapCard(this._draft, source, newer));
+          }
+        },
+        onOption: (name, value, fallback, continuous) =>
+          option(setOption(this._draft, source, name, value, fallback), name, continuous),
+        // The standard options: a tap, its page, a hold and the icon.
+        onStandard: (name, value) => {
+          let next = this._draft;
+          if (name === "tap") {
+            next = setOption(next, source, "tap", value, component.tap?.default);
+            if (value !== "page") {
+              next = setOption(next, source, "tap_page", undefined, undefined);
+            }
+          } else {
+            next = setOption(next, source, name, value, undefined);
+          }
+          option(next, name, false);
+        },
+        onVariant: (id) => this._commit(setVariant(this._draft, source, component, id)),
+        onLook: (look, value) => this._commit(setStyleKey(this._draft, source, look, value)),
+        onStyleReset: () => this._commit(updateCard(this._draft, source, { style: undefined })),
+        onDuplicate: () => this._duplicate(source),
+        onDone: () => this._closeForm(),
+        place: cardPlace(this._draft, source),
+        // Tablets that show this dashboard with older software, which draw
+        // the newer cards simpler (A16).
+        olderTablets: this._olderTablets(),
         compact: this._compact,
         themes: this._library?.themes || [],
         dashboardTheme: this._themeId(),
         maxWide: maxUnitsWide(this._draft, source),
+        placed: isPlaced(this._draft, source[0]),
         canEarlier: canMove(this._draft, source, -1),
         canLater: canMove(this._draft, source, 1),
         // The other pages the tablet shows, which a card can move to.
@@ -2042,7 +3997,8 @@ export class ApolloTabDesigner extends HTMLElement {
           this._commit(updateCard(this._draft, source, { params }), {
             key: continuous ? `${key}:param:${name}` : null,
             continuous,
-            side: false,
+            // A new device renames the header; a typed number keeps the form.
+            side: !continuous,
           });
         },
         onTitle: (text) =>
@@ -2051,12 +4007,20 @@ export class ApolloTabDesigner extends HTMLElement {
             continuous: true,
             side: false,
           }),
-        onResize: (w, h) => this._commit(resizeCard(this._draft, source, w, h), { side: false }),
+        // On a card with named sizes the steps drop the picked one, so the
+        // card shows the largest of its sizes that fits, as on the tablet.
+        onResize: (w, h) => {
+          const resized = resizeCard(this._draft, source, w, h);
+          const next = component.schema === 2 ? updateCard(resized, source, { variant: undefined }) : resized;
+          this._commit(next, { side: false });
+        },
         onStyle: (style, field, continuous) =>
-          this._commit(updateCard(this._draft, source, { style }), {
+          this._commit(updateCard(this._draft, source, { style: mergeStyle(getCard(this._draft, source)?.style, style) }), {
             key: continuous ? `${key}:${field}` : null,
             continuous,
-            side: false,
+            // A swatch or choice draws the form again (its tick, Fade to,
+            // Reset look); dragging and typing keep the form as it is.
+            side: !continuous,
           }),
         onMove: move,
         onRemove: remove,
@@ -2068,7 +4032,11 @@ export class ApolloTabDesigner extends HTMLElement {
       return buildHeadingForm({
         readOnly,
         isCard,
+        compact: this._compact,
+        onDone: () => this._closeForm(),
+        place: isCard ? cardPlace(this._draft, source) : null,
         text: String(card.heading ?? ""),
+        placed: isPlaced(this._draft, source[0]),
         canEarlier: isCard && canMove(this._draft, source, -1),
         canLater: isCard && canMove(this._draft, source, 1),
         onText: (text) =>
@@ -2084,10 +4052,86 @@ export class ApolloTabDesigner extends HTMLElement {
     const row = this._rows.find((entry) => entry.key === key);
     return buildOtherForm({
       readOnly,
+      compact: this._compact,
+      onDone: () => this._closeForm(),
       name: row ? this._rowName(row) : "",
       device: row ? deviceText(this._hass, row.entities) : "",
       onRemove: remove,
     });
+  }
+
+  // What a schema 2 card's devices can do (card/facts), for its form. The
+  // answer is kept per card and devices; until it is in, the form greys
+  // nothing, and it is drawn again when the answer comes for the card that
+  // is still selected. Asked again whenever the devices change.
+  _factsFor(component, card) {
+    const params = card?.params && typeof card.params === "object" ? card.params : {};
+    const factsKey = `${component.id}|${stableStringify(params)}`;
+    this._facts ||= new Map();
+    if (this._facts.has(factsKey)) {
+      return this._facts.get(factsKey);
+    }
+    if (!this._conn) {
+      return null;
+    }
+    this._facts.set(factsKey, null);
+    const run = this._run;
+    cardFacts(this._conn, component.id, params).then((facts) => {
+      if (run !== this._run) {
+        return;
+      }
+      // A failed call is not kept: the next drawing of the form asks again.
+      if (!facts) {
+        this._facts.delete(factsKey);
+        return;
+      }
+      this._facts.set(factsKey, facts);
+      const selected = this._selected ? getCard(this._draft, this._selected) : null;
+      const now = selected ? componentOf(selected, this._library) : null;
+      if (now?.id === component.id && stableStringify(selected.params || {}) === stableStringify(params)) {
+        this._renderSide();
+      }
+    });
+    return null;
+  }
+
+  // A copy of the card right after it, selected; one step for Undo.
+  _duplicate(source) {
+    const result = duplicateCard(this._draft, source);
+    if (!result.source) {
+      return;
+    }
+    this._selected = result.source;
+    this._screenFor = sourceKey(result.source);
+    if (this._commit(result.config)) {
+      this._showToast(t("toast.card_copied"));
+      this._els.side?.querySelector(".side-title")?.focus({ preventScroll: true });
+    }
+  }
+
+  // The next larger named size of the card, or one step taller.
+  _bigger(source) {
+    const card = source ? getCard(this._draft, source) : null;
+    const component = card ? componentOf(card, this._library) : null;
+    if (!component) {
+      return;
+    }
+    const next = biggerSize(card, component);
+    if (next.variant) {
+      this._commit(setVariant(this._draft, source, component, next.variant));
+    } else if (next.h) {
+      const resized = resizeCard(this._draft, source, next.w, next.h);
+      this._commit(component.schema === 2 ? updateCard(resized, source, { variant: undefined }) : resized);
+    }
+  }
+
+  // The names of the tablets that show this dashboard and draw some of its
+  // cards simpler, because their software is older.
+  _olderTablets() {
+    const tablets = Array.isArray(this._tablets) ? this._tablets : [];
+    return tabletsShowing(tablets, this._urlPath)
+      .filter((tablet) => Number(tablet.simpler) > 0)
+      .map((tablet) => tabletName(tablet));
   }
 
   _fillSideNotes() {
@@ -2096,15 +4140,19 @@ export class ApolloTabDesigner extends HTMLElement {
       return;
     }
     const row = this._rows.find((entry) => entry.key === this._selectedKey());
+    const source = this._selected;
     fillItemNotes(container, this._preview ? row : null, {
       onOpenAdvanced: this._readOnly ? null : () => this._openAdvanced(),
+      // "Make the card bigger": the next larger named size, or one step
+      // taller when the card has none.
+      onBigger: this._readOnly ? null : () => this._bigger(source),
     });
   }
 
   // A toast redrawn or taken away while one of its buttons has focus hands
-  // focus on to Add card or the tab of the page shown, never to a button
-  // that removes something. refocus: false when the toast's own button
-  // moves focus itself.
+  // focus on to Add card or the tab of the page shown (the card's form when
+  // the edit mode covers both), never to a button that removes something.
+  // refocus: false when the toast's own button moves focus itself.
   _renderToast({ refocus = true } = {}) {
     const region = this._els.toasts;
     if (!region) {
@@ -2113,7 +4161,7 @@ export class ApolloTabDesigner extends HTMLElement {
     const hadFocus = region.contains(this.shadowRoot.activeElement);
     this._drawToast(region);
     if (refocus && hadFocus && !this.shadowRoot.activeElement) {
-      this._focus("add-card") || this._focus(`tab:${this._view}`);
+      this._focus("add-card") || this._focus(`tab:${this._view}`) || this._focusForm();
     }
   }
 
@@ -2178,17 +4226,18 @@ export class ApolloTabDesigner extends HTMLElement {
     this._placeToast();
   }
 
-  // Puts the toast where it covers nothing the person is working with: the
-  // card sheet or side panel, the control that has focus (the field being
-  // typed in, the button just pressed) and the selected card, on the
-  // picture and in the list. It sits at the bottom of the screen, above the
-  // card sheet when that is open. When that would cover one of them it
-  // moves over the page's own column, to the top of the screen, or into a
-  // gap between them.
+  // The toast has one of three homes inside the editor: centred over the
+  // stage column 16 px above the status strip (or the column's bottom), in
+  // the compact layout centred above the floating "Add card", and in the
+  // edit mode inside the layer, 16 px above its bottom and the safe area.
+  // Over the stage it never lies across the tablet frame's edge: when the
+  // grey under the frame has no room for it, it lies over the status strip
+  // instead, 4 px above the column's bottom.
   _placeToast() {
     const region = this._els.toasts;
     const toast = region?.firstElementChild;
-    if (!toast || !region.isConnected) {
+    const { root, side, page, addCard, statusStrip, device } = this._els;
+    if (!toast || !region.isConnected || !root) {
       return;
     }
     // A toast under the pointer or with focus stays put, so its button is
@@ -2196,84 +4245,79 @@ export class ApolloTabDesigner extends HTMLElement {
     if (toast.matches(":hover") || toast.contains(this.shadowRoot.activeElement)) {
       return;
     }
-    const rectOf = (node) => (node?.isConnected ? node.getBoundingClientRect() : null);
-    const { side, hits, list, page, header } = this._els;
-    const sheet = side?.classList.contains("sheet") ? rectOf(side) : null;
-    const active = this.shadowRoot.activeElement;
-    const keep = [
-      sheet || (this._compact ? null : rectOf(side)),
-      active && !region.contains(active) ? rectOf(active) : null,
-      rectOf(hits?.querySelector('.hit[aria-pressed="true"]')),
-      rectOf(list?.querySelector('[aria-current="true"]')),
-    ].filter((rect) => rect && rect.width && rect.height);
-
-    // On a phone the on-screen keyboard shrinks the visible part of the
-    // page, not the window: the toast stays inside the visible part.
-    const view = window.visualViewport;
-    const viewTop = view ? view.offsetTop : 0;
-    const width = document.documentElement.clientWidth || innerWidth;
-    const height = view ? view.offsetTop + view.height : innerHeight;
-    // Sideways the toast stays inside the editor itself, 16 px from its
-    // edges, never under Home Assistant's sidebar docked beside it.
-    const rect = this.getBoundingClientRect();
-    const own = rect.width > 64 ? rect : { left: 0, right: width };
-    const minLeft = Math.max(0, own.left) + 16;
-    const maxRight = Math.min(width, own.right) - 16;
-    region.style.maxWidth = `${Math.max(0, maxRight - minLeft)}px`;
+    const box = root.getBoundingClientRect();
+    const safe = parseFloat(getComputedStyle(root).getPropertyValue("--safe-bottom")) || 0;
+    let area = page?.isConnected ? page.getBoundingClientRect() : box;
+    let bottom;
+    let place;
+    if (side?.dataset.mode === "edit") {
+      area = side.getBoundingClientRect();
+      bottom = area.bottom - 16 - safe;
+      place = "edit";
+    } else if (this._compact) {
+      area = box;
+      const fab = addCard?.isConnected ? addCard.getBoundingClientRect() : null;
+      bottom = fab && fab.height ? fab.top - 16 : box.bottom - 16 - safe;
+      place = "fab";
+    } else {
+      const strip = statusStrip?.isConnected ? statusStrip.getBoundingClientRect() : null;
+      bottom = (strip && strip.height ? strip.top : area.bottom) - 16;
+      place = "stage";
+    }
+    region.style.maxWidth = `${Math.max(0, area.width - 32)}px`;
     const { width: w, height: h } = toast.getBoundingClientRect();
-    const headerBox = rectOf(header);
-    const bottom = (sheet ? Math.min(height, sheet.top) - 12 : height - 16) - h;
-    const top = Math.max(viewTop + 12, headerBox && headerBox.bottom > 0 ? headerBox.bottom + 8 : 0);
-    const middles = [(minLeft + maxRight) / 2];
-    const column = this._compact ? null : rectOf(page);
-    if (column) {
-      middles.push((column.left + column.right) / 2);
-    }
-    // When the bottom and the top both cover something, as on a phone with
-    // the new card at the top of the picture and its row just above the
-    // sheet, the toast can sit just above or below each of those instead.
-    const heights = [
-      ["bottom", bottom],
-      ["top", top],
-    ];
-    for (const rect of keep) {
-      heights.push(["between", rect.bottom + 8], ["between", rect.top - 8 - h]);
-    }
-    const spots = [];
-    for (const [place, y] of heights) {
-      if (place === "between" && (y < top || y > bottom)) {
-        continue;
+    let left = area.left + (area.width - w) / 2;
+    if (place === "stage") {
+      const strip = statusStrip?.isConnected ? statusStrip.getBoundingClientRect() : null;
+      const frame = device?.isConnected ? device.getBoundingClientRect() : null;
+      if (strip?.height && frame?.height && bottom - h < frame.bottom + 8) {
+        bottom = strip.bottom - 4;
+        place = "strip";
+        // On the strip it keeps off the strip's words ("Screen 2 of 2").
+        left = this._stripGap(statusStrip, w) ?? left;
       }
-      for (const middle of middles) {
-        spots.push({ place, top: y, left: Math.max(minLeft, Math.min(middle - w / 2, maxRight - w)) });
+    } else if (place === "fab") {
+      // On a phone it sits beside the floating button when it fits there, so
+      // it covers no more of the list than the button does.
+      const fab = addCard?.isConnected ? addCard.getBoundingClientRect() : null;
+      if (fab?.height && fab.left - 8 - (box.left + 16) >= w) {
+        left = box.left + 16 + (fab.left - 8 - (box.left + 16) - w) / 2;
+        bottom = fab.bottom - (fab.height - h) / 2;
+        place = "fab-side";
       }
     }
-    // How much of what must stay in view a spot would cover.
-    const covered = (spot) =>
-      keep.reduce((sum, rect) => {
-        const x = Math.min(spot.left + w, rect.right) - Math.max(spot.left, rect.left);
-        const y = Math.min(spot.top + h, rect.bottom, height) - Math.max(spot.top, rect.top, viewTop);
-        return sum + Math.max(0, x) * Math.max(0, y);
-      }, 0);
-    let best = spots[0];
-    let least = covered(best);
-    for (const spot of spots.slice(1)) {
-      const area = least ? covered(spot) : Infinity;
-      if (area < least) {
-        best = spot;
-        least = area;
-      }
-    }
+    Object.assign(region.style, {
+      left: `${left - box.left}px`,
+      top: `${bottom - h - box.top}px`,
+    });
+    region.dataset.place = place;
+  }
 
-    Object.assign(region.style, { transform: "none", bottom: "auto", left: `${best.left}px`, top: `${best.top}px` });
-    // Inside a transformed parent "fixed" is measured from that parent, so
-    // the region is moved by however far it ended up from the spot.
-    const landed = region.getBoundingClientRect();
-    if (Math.abs(landed.left - best.left) > 1 || Math.abs(landed.top - best.top) > 1) {
-      region.style.left = `${2 * best.left - landed.left}px`;
-      region.style.top = `${2 * best.top - landed.top}px`;
+  // The left edge for a toast w px wide in the widest free stretch of the
+  // status strip, between the things shown on it; null when none is wide
+  // enough.
+  _stripGap(stripNode, w) {
+    const strip = stripNode.getBoundingClientRect();
+    const taken = [];
+    for (const part of stripNode.children) {
+      for (const child of part.children) {
+        const rect = child.getBoundingClientRect();
+        if (rect.width > 1 && rect.height > 1) {
+          taken.push([rect.left, rect.right]);
+        }
+      }
     }
-    region.dataset.place = best.place;
+    taken.sort((a, b) => a[0] - b[0]);
+    let from = strip.left + 8;
+    let best = null;
+    for (const [start, end] of [...taken, [strip.right - 8, strip.right - 8]]) {
+      const room = start - 8 - from;
+      if (room >= w && (!best || room > best.room)) {
+        best = { from, room };
+      }
+      from = Math.max(from, end + 8);
+    }
+    return best ? best.from + (best.room - w) / 2 : null;
   }
 
   // Places the toast again once the page has settled, after a scroll, a
@@ -2309,25 +4353,46 @@ export class ApolloTabDesigner extends HTMLElement {
     }
   }
 
-  // After Undo in a toast, focus goes to the card that came back (its row in
-  // the card list, scrolled into view), or to the tab of the page shown. In
-  // the phone layout an open card sheet covers the list, so the sheet's
-  // title takes focus then.
-  _focusAfterUndo(key) {
+  // After Undo in a toast, focus goes to the card that came back. `restore`
+  // ({ key, from, drawn }) says where it was: removed or chosen on the
+  // picture ("hit") and drawn there, it gets focus on the picture and the
+  // page column stays where it is; else its row in the card list, scrolled
+  // into view, or the card on the picture when the list is out of reach
+  // (in the closed drawer), or else the tab of the page shown. In the
+  // compact layout an open edit mode covers both, so its title takes focus
+  // then.
+  _focusAfterUndo(restore) {
     const side = this._els.side;
     if (side?.classList.contains("sheet")) {
       side.querySelector(".side-title")?.focus({ preventScroll: true });
       return;
     }
-    const nodes = [...this.shadowRoot.querySelectorAll("[data-focus]")];
-    for (const name of [key, `tab:${this._view}`]) {
-      const target = name ? nodes.find((node) => node.dataset.focus === name && !node.disabled) : null;
-      if (target) {
-        target.focus({ preventScroll: true });
-        target.scrollIntoView({ block: "nearest" });
-        return;
-      }
+    if (!restore) {
+      this._focusFirstOf([`tab:${this._view}`]);
+      return;
     }
+    const hit = `hit:${restore.key}`;
+    if (restore.drawn && restore.from === "hit") {
+      this._focusHitWhenDrawn(hit);
+      return;
+    }
+    const row = this._focusFirstOf([`row:${restore.key}`]);
+    if (row) {
+      row.scrollIntoView({ block: "nearest" });
+    } else if (restore.drawn) {
+      this._focusHitWhenDrawn(hit);
+    } else {
+      this._focusFirstOf([hit, `tab:${this._view}`]);
+    }
+  }
+
+  // The picture is drawn again once the new preview is in, with the card
+  // that came back under `key`. Until then the card with that key is the one
+  // that had taken its place, or there is none and Add card holds focus;
+  // either way the new drawing hands focus on to the card (see _drawCanvas).
+  _focusHitWhenDrawn(key) {
+    this._pendingFocus = key;
+    this._focusFirstOf([key, "add-card", "add-first-card", `tab:${this._view}`]);
   }
 
   _hideToastLater() {
@@ -2349,13 +4414,14 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   // Records a new draft. side: false keeps the side panel as it is, so
-  // typing into it is never interrupted.
-  _commit(config, { key = null, continuous = false, side = true } = {}) {
+  // typing into it is never interrupted. group: changes with the same
+  // group are one step for Undo (the theme gallery).
+  _commit(config, { key = null, continuous = false, side = true, group = null } = {}) {
     if (this._readOnly) {
       return false;
     }
     const before = this._history;
-    this._history = historyPush(this._history, config, { key, now: Date.now() });
+    this._history = historyPush(this._history, config, { key, now: Date.now(), group });
     if (this._history === before) {
       return false;
     }
@@ -2399,6 +4465,8 @@ export class ApolloTabDesigner extends HTMLElement {
     }
     // Last, so focus that was in the toast has somewhere to go.
     this._dropStaleToast();
+    this._fillThemeButton();
+    this._popover?.update();
   }
 
   async _requestPreview() {
@@ -2409,12 +4477,15 @@ export class ApolloTabDesigner extends HTMLElement {
     }
     const seq = ++this._previewSeq;
     const run = this._run;
+    const draft = this._draft;
     try {
-      const preview = await previewLayout(this._conn, this._draft);
+      const preview = await previewLayout(this._conn, draft);
       if (seq !== this._previewSeq || run !== this._run || this._status !== "ready") {
         return;
       }
       this._preview = preview;
+      // Which draft the picture shows; a freeze needs it to be this one.
+      this._previewOf = draft;
       this._previewError = null;
       const screens = pageScreens(preview, this._view);
       if (this._screenFor) {
@@ -2438,10 +4509,6 @@ export class ApolloTabDesigner extends HTMLElement {
       this._renderNotes();
       this._renderPreviewError();
       this._fillSideNotes();
-      if (this._revealOnPreview) {
-        this._revealOnPreview = false;
-        this._revealSelection();
-      }
     } catch (error) {
       if (seq !== this._previewSeq || run !== this._run) {
         return;
@@ -2455,7 +4522,14 @@ export class ApolloTabDesigner extends HTMLElement {
     }
   }
 
-  _select(source, { sheet = false } = {}) {
+  // from: "hit" or "row", what was pressed to choose the card.
+  _select(source, from = null) {
+    // For the compact edit mode, which remembers what opened it (see
+    // _renderSide).
+    this._opener = source ? { from, scroll: this._els.page?.scrollTop || 0 } : null;
+    // Kept while the card is selected: Undo after its form's Remove brings
+    // focus back where it was chosen (see _focusAfterUndo).
+    this._selectedFrom = source ? from : null;
     this._selected = source ? [...source] : null;
     // A card chosen in the list may be drawn on another screen of the page,
     // or left out there; show that screen, so the card, or its hatched box,
@@ -2473,65 +4547,13 @@ export class ApolloTabDesigner extends HTMLElement {
     }
     this._renderList();
     this._renderSide();
-    if (source && sheet && this._compact) {
-      this._els.side?.querySelector(".side-title")?.focus({ preventScroll: true });
+    this._opener = null;
+    // The form took the place of what was pressed: the edit mode covers the
+    // page, and beside the picture the form replaces the list. Its title
+    // takes focus then, so the keyboard goes on in the form.
+    if (source && (this._compact || !this.shadowRoot.activeElement)) {
+      this._focusForm();
     }
-    this._revealSelection();
-  }
-
-  // In the one-column layout the open card sheet covers the bottom of the
-  // screen, and the browser scrolls a control that gets focus into view
-  // without minding it. A control outside the sheet that would end up under
-  // it is scrolled up to just above it, so focus is always seen. Checked
-  // again a frame later, after any scrolling of the browser's own.
-  _clearOfSheet(target, again = true) {
-    const side = this._els.side;
-    if (
-      !this._compact ||
-      !side?.classList.contains("sheet") ||
-      !(target instanceof Element) ||
-      side.contains(target) ||
-      target.closest("dialog") ||
-      this._els.toasts?.contains(target)
-    ) {
-      return;
-    }
-    const sheet = side.getBoundingClientRect();
-    const rect = target.getBoundingClientRect();
-    // Up far enough for its bottom to clear the sheet, but never so far
-    // that its top leaves the screen.
-    const delta = Math.min(rect.bottom - sheet.top + 16, rect.top - 8);
-    if (rect.height && rect.bottom > sheet.top && delta > 0) {
-      this._scrollerOf(target).scrollBy(0, delta);
-    }
-    if (again) {
-      requestAnimationFrame(() => {
-        if (this.shadowRoot.activeElement === target) {
-          this._clearOfSheet(target, false);
-        }
-      });
-    }
-  }
-
-  // The nearest box around `node` that scrolls up and down, crossing out of
-  // shadow roots; the window when there is none.
-  _scrollerOf(node) {
-    let box = node.parentNode;
-    while (box) {
-      if (box instanceof ShadowRoot) {
-        box = box.host;
-        continue;
-      }
-      if (box === document.body || box === document.documentElement || !(box instanceof Element)) {
-        break;
-      }
-      const overflow = getComputedStyle(box).overflowY;
-      if (/(auto|scroll)/.test(overflow) && box.scrollHeight > box.clientHeight + 1) {
-        return box;
-      }
-      box = box.parentNode;
-    }
-    return window;
   }
 
   // Which of the page's screens holds the item at `source` (its list row
@@ -2553,46 +4575,62 @@ export class ApolloTabDesigner extends HTMLElement {
     return screens.findIndex((index) => pages[index]?.id === box.page);
   }
 
-  // In the one-column layout the card sheet covers the lower part of the
-  // screen. Scroll the tablet picture (or, when it is taller than the space
-  // left, the selected card) into the band above the sheet, so every change
-  // made in the sheet can be seen on the picture.
-  _revealSelection() {
-    const { stage, side, hits } = this._els;
-    if (!this._compact || !this._selected || !stage || !side?.classList.contains("sheet")) {
-      return;
-    }
-    const band = side.getBoundingClientRect().top;
-    const hit = hits?.querySelector('.hit[aria-pressed="true"]');
-    const fits = stage.getBoundingClientRect().height <= band - 16;
-    const target = fits || !hit ? stage : hit;
-    const rect = target.getBoundingClientRect();
-    if (rect.top >= 0 && rect.bottom <= band) {
-      return;
-    }
-    target.scrollIntoView({ block: "start", inline: "nearest" });
-  }
-
   _closeForm() {
     const key = this._selectedKey();
+    if (this._compact) {
+      this._leaveEdit(key);
+      return;
+    }
     this._select(null);
+    // The card's row in the list, or the card on the picture when the list
+    // is in the closed drawer.
     if (key) {
       this._focus(`row:${key}`) || this._focus(`hit:${key}`);
     }
   }
 
-  // Lets the card go and moves to "This page" and "This dashboard". In the
-  // phone layout they are below the card list, so they are scrolled to.
-  _toSettings() {
+  // Compact: Done or Escape closes the edit mode, and the person is back on
+  // the page as they left it (see _backToPage).
+  _leaveEdit(key) {
+    const from = this._editFrom;
     this._select(null);
-    const heading = this._els.side?.querySelector('[data-test="settings-heading"]');
-    if (!heading) {
-      return;
+    this._backToPage(from, key ? [`hit:${key}`] : [], key ? [`row:${key}`] : []);
+  }
+
+  // Compact: back on the page column after the edit mode, or after a card
+  // was removed there. The column is put where it was (`from.scroll`) and
+  // nothing is scrolled to, so the picture stays where the person left it.
+  // Focus goes to the first control that takes it: one of `rows` when the
+  // person was in the list (`from.from` is "row"; a row that the changed
+  // list has moved out of view is brought back the nearest way), else one
+  // of `hits` that shows on the picture, else Add card.
+  _backToPage(from, hits, rows) {
+    const here = this._columnBack(from);
+    if (here && from.from === "row") {
+      const row = this._focusFirstOf(rows);
+      if (row) {
+        if (!this._shows(row)) {
+          row.scrollIntoView({ block: "nearest" });
+        }
+        return;
+      }
     }
-    heading.focus({ preventScroll: true });
-    if (this._compact) {
-      heading.scrollIntoView({ block: "start" });
+    this._focusFirstOf(hits, { inView: true }) ||
+      this._focusFirstOf(["add-card"]) ||
+      this._focusFirstOf(rows, { inView: true }) ||
+      this._focusFirstOf([...hits, ...rows, `tab:${this._view}`]);
+  }
+
+  // Compact: puts the page column where it was scrolled when the edit mode
+  // opened. The column is shorter while the edit mode is open (the settings
+  // are left out), which can move it. False when that was on another page.
+  _columnBack(from) {
+    const page = this._els.page;
+    const here = Boolean(from) && from.view === this._view;
+    if (here && page && this._compact) {
+      page.scrollTop = from.scroll;
     }
+    return here;
   }
 
   // "Use the whole screen" from a card's form: the card stays selected at
@@ -2611,9 +4649,17 @@ export class ApolloTabDesigner extends HTMLElement {
     if (this._readOnly) {
       return;
     }
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    // On a flowing page Shift + Left and Right still reorder.
+    const reorder = event.shiftKey && step && step[0] !== 0 && !isPlaced(this._draft, this._view);
+    if (where === "hit" && step && !reorder && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      this._placeKey(source, step, event.shiftKey);
+      return;
+    }
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
-      this._removeItem(source);
+      this._removeItem(source, where);
     } else if (event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
       this._move(source, event.key === "ArrowLeft" ? -1 : 1, where);
@@ -2656,7 +4702,9 @@ export class ApolloTabDesigner extends HTMLElement {
     }
   }
 
-  _removeItem(source) {
+  // where: "form" (the card's own Remove button), or "hit" or "row" when
+  // it was removed on the picture or in the list.
+  _removeItem(source, where = "form") {
     const card = getCard(this._draft, source);
     if (!card) {
       return;
@@ -2668,29 +4716,48 @@ export class ApolloTabDesigner extends HTMLElement {
     // card; the toast names them and offers a TAB-1 card for them.
     const entities = row && row.kind !== "tab" && row.kind !== "heading" ? row.entities : [];
     const devices = entities.length ? { entities: [...entities], name: deviceText(this._hass, entities) } : null;
+    // Compact: where the person was. The edit mode knows what opened it;
+    // without it, the picture or the list as it is scrolled now.
+    const from =
+      where === "form"
+        ? this._editFrom
+        : { from: where, scroll: this._els.page?.scrollTop || 0, view: this._view };
+    // Undo puts the card back where it was, so its row and its card on the
+    // picture have this key again. It also goes back to where the person
+    // was: the picture when the card was removed or chosen there.
+    const key = sourceKey(source);
+    const restore = {
+      key,
+      from: where === "form" ? (this._compact ? this._editFrom?.from : this._selectedFrom) || null : where,
+      drawn: Boolean(this._els.hits?.querySelector(`[data-focus="hit:${key}"]`)),
+    };
     this._selected = null;
     if (!this._commit(removeItem(this._draft, source))) {
       return;
     }
-    // Undo puts the card back where it was, so its row has this key again.
-    const restore = `row:${sourceKey(source)}`;
     if (devices) {
       this._showToast(t("toast.card_removed_for", { device: devices.name }), { undo: true, devices, restore });
       // The next step is in the toast, which stays while it has focus.
       if (this._focusIn(this._els.toasts, "toast-replace")) {
+        this._columnBack(from);
         return;
       }
     } else {
       this._showToast(t(heading ? "toast.heading_removed" : "toast.card_removed"), { undo: true, restore });
     }
-    // The pressed control went with its card. Focus goes on in the card
-    // list: to the card that took its place, or to Add card.
-    const rows = [...(this._els.list?.querySelectorAll('[data-test="list-row"]') || [])];
-    const next = rows[index];
-    if (next) {
-      next.focus();
+    // The pressed control went with its card. Focus goes on to the card
+    // that took its place: its row in the list, or the card on the picture
+    // when the list is out of reach (in the closed drawer), or else Add
+    // card. In the compact layout a card removed on the picture, or in an
+    // edit mode opened there, is followed by the next card on the picture,
+    // and the page column stays where it was (see _backToPage).
+    const next = this._rows[index];
+    const rows = next ? [`row:${next.key}`] : [];
+    const hits = next ? [`hit:${next.key}`] : [];
+    if (this._compact) {
+      this._backToPage(from, hits, rows);
     } else {
-      this._els.addCard?.focus();
+      this._focusFirstOf([...rows, ...hits, "add-card", `tab:${this._view}`], { scroll: true });
     }
   }
 
@@ -2704,9 +4771,18 @@ export class ApolloTabDesigner extends HTMLElement {
     if (!canMove(this._draft, source, delta)) {
       return;
     }
-    const result = moveItem(this._draft, source, delta);
+    const before = this._draft;
+    const result = moveItem(before, source, delta);
     const key = sourceKey(result.source);
-    this._selected = result.source;
+    // Moved from its form, or on the picture beside the inspector, the card
+    // is selected. Moved from the keyboard in the list, or on the picture
+    // in the compact layout, it is not: its form would take the list's
+    // place or cover the page, and the next press would move nothing.
+    if (where === "form" || (where === "hit" && !this._compact)) {
+      this._selected = result.source;
+    } else if (this._selected) {
+      this._selected = followItem(before, result.config, this._selected);
+    }
     // The canvas is redrawn when the new preview arrives, so focus for a
     // canvas item waits for that; the list and the form are redrawn now.
     this._pendingFocus = where === "hit" ? `hit:${key}` : null;
@@ -2744,8 +4820,6 @@ export class ApolloTabDesigner extends HTMLElement {
     this._showToast(t("toast.moved_to_page", { page: name }));
     if (this._compact) {
       this._els.side?.querySelector(".side-title")?.focus({ preventScroll: true });
-      this._revealOnPreview = true;
-      this._revealSelection();
     } else {
       this._pendingFocus = `hit:${key}`;
     }
@@ -2757,11 +4831,9 @@ export class ApolloTabDesigner extends HTMLElement {
     this._view = result.view;
     this._screen = 0;
     this._selected = null;
-    this._commit(result.config);
-    const input = this._els.side?.querySelector('[data-test="page-name"]');
-    if (input) {
-      input.focus();
-      input.select();
+    // The new page opens with its pop-up, its name ready to be typed over.
+    if (this._commit(result.config)) {
+      this._openPageMenu();
     }
   }
 
@@ -2813,6 +4885,8 @@ export class ApolloTabDesigner extends HTMLElement {
     this._picking = token;
     const vi = this._view;
     const run = this._run;
+    // The new card goes after the card selected when the picker opened.
+    const selected = this._selected;
     let result = null;
     try {
       result = await openCardPicker({
@@ -2821,7 +4895,8 @@ export class ApolloTabDesigner extends HTMLElement {
         library: this._library,
         config: this._draft,
         themeId: this._themeId(),
-        compact: this._compact,
+        // A phone on its side gets the full-screen picker too.
+        compact: this._compact || this._band === "short",
         devices,
       });
     } finally {
@@ -2833,10 +4908,31 @@ export class ApolloTabDesigner extends HTMLElement {
       opener?.isConnected && opener.focus();
       return;
     }
-    const added = addCard(this._draft, vi, result.component, result.params);
+    // The first card of a dashboard no tablet shows: a notice says where
+    // it goes once it is saved (see _saveStateChanged).
+    const first =
+      dashboardCards(this._draft) === 0 &&
+      Array.isArray(this._tablets) &&
+      !tabletsShowing(this._tablets, this._urlPath).length &&
+      !firstCardSeen().includes(this._urlPath);
+    const added = addCard(this._draft, vi, result.component, result.params, selected);
     if (!added.source) {
       return;
     }
+    // A size chosen in the picker's second step.
+    if (result.variant) {
+      added.config = setVariant(added.config, added.source, result.component, result.variant);
+      // On a placed page it takes the first free slot of its new size.
+      const card = getCard(added.config, added.source);
+      if (card?.apollo_tab) {
+        const size = cardCells(card);
+        const slot = firstFree(added.config, vi, size.cols, size.rows, added.source);
+        if (slot) {
+          added.config = updateCard(added.config, added.source, { apollo_tab: slot });
+        }
+      }
+    }
+    this._firstCardDue = first;
     const key = sourceKey(added.source);
     this._view = vi;
     this._selected = added.source;
@@ -2852,11 +4948,8 @@ export class ApolloTabDesigner extends HTMLElement {
       this._showToast(t("toast.card_added"));
     }
     if (this._compact) {
-      // The new card is drawn when its preview arrives; the picture is
-      // brought into view now and again then.
+      // The edit mode opens with the new card in its strip of the picture.
       this._els.side?.querySelector(".side-title")?.focus({ preventScroll: true });
-      this._revealOnPreview = true;
-      this._revealSelection();
     } else {
       this._pendingFocus = `hit:${key}`;
     }
@@ -2890,11 +4983,14 @@ export class ApolloTabDesigner extends HTMLElement {
     if (dashboard !== this._dashboard) {
       return;
     }
-    if (typeof changes.title === "string" && this._els.title) {
-      this._els.title.textContent = changes.title;
+    if (typeof changes.title === "string" && !this._renaming) {
+      this._fillTitle();
     }
     if (typeof changes.show_in_sidebar === "boolean") {
       this._renderBanners();
+    }
+    if (this._popKind === "menu") {
+      this._popover?.update();
     }
   }
 
@@ -2917,16 +5013,25 @@ export class ApolloTabDesigner extends HTMLElement {
   _tabletsChanged(tablets) {
     this._tablets = tablets;
     this._tabletsError = null;
-    this._fillTabletLines();
-    this._fillShownOn();
+    this._tabletsShown();
+  }
+
+  // The tablets changed: the chip says so, the Tablets pop-up too.
+  _tabletsShown() {
+    this._fillChip();
+    this._refreshFirstCard();
+    if (this._popKind === "tablets") {
+      this._popover?.update();
+    }
   }
 
   // Reads the TAB-1 dashboards with their titles, in the one order, for the
-  // "Shown on" block and the delete question. Kept as it was when Home
-  // Assistant cannot be reached.
+  // Tablets pop-up and the delete question. Kept as it was when Home
+  // Assistant cannot be reached. Resolves to the rows this call read, or to
+  // null when it read none.
   async _loadTabRows() {
     if (!this._hass || this._status !== "ready") {
-      return;
+      return null;
     }
     const seq = ++this._tabRowsSeq;
     let rows;
@@ -2937,13 +5042,15 @@ export class ApolloTabDesigner extends HTMLElement {
       ]);
       rows = mergeDashboards(Array.isArray(tab?.dashboards) ? tab.dashboards : [], Array.isArray(list) ? list : []);
     } catch {
-      return;
+      return null;
     }
     if (seq !== this._tabRowsSeq) {
-      return;
+      // A newer read fills the block.
+      return rows;
     }
     this._tabRows = rows;
-    this._fillShownOn();
+    this._tabletsShown();
+    return rows;
   }
 
   // Several saves in a row are read once, after the last.
@@ -2955,131 +5062,6 @@ export class ApolloTabDesigner extends HTMLElement {
     }, 300);
   }
 
-  // The lines under "What the tablet will show": a line per tablet that
-  // shows this dashboard, or "Not shown on a tablet yet". Nothing while the
-  // tablets are not known.
-  _fillTabletLines() {
-    const box = this._els.tabletLines;
-    if (!box) {
-      return;
-    }
-    if (!Array.isArray(this._tablets) || this._tabletsError) {
-      box.replaceChildren();
-      return;
-    }
-    const lines = captionLines(this._tablets, this._urlPath, t);
-    box.replaceChildren(
-      ...lines.map((line) => {
-        const node = el("p", "small tablet-line", line.text);
-        node.dataset.test = "tablet-line";
-        node.dataset.kind = line.kind;
-        if (line.mac) {
-          node.dataset.mac = line.mac;
-        }
-        if (line.tone) {
-          node.dataset.tone = line.tone;
-        }
-        return node;
-      }),
-    );
-  }
-
-  // The "Shown on" block under the dashboard's theme. It is made with the
-  // side panel and filled again when the tablets change.
-  _shownOnBlock() {
-    const block = el("div", "shown-on");
-    block.dataset.test = "shown-on";
-    this._els.shownOn = block;
-    this._shownOnKey = null;
-    this._fillShownOn();
-    return block;
-  }
-
-  _fillShownOn() {
-    const block = this._els.shownOn;
-    if (!block) {
-      return;
-    }
-    const rows = Array.isArray(this._tablets)
-      ? shownOnRows(this._tablets, this._urlPath, this._tabRows || [], t)
-      : null;
-    // New tablets are not listed: an admin turns one on from Home.
-    const waiting = Array.isArray(this._tablets) ? newTabletCount(this._tablets) > 0 : false;
-    const failure = this._tabletsError ? errorMessage(this._tabletsError) : null;
-    // Drawn again only when something it says changed, so a status change
-    // on a tablet does not take focus from its button.
-    const key = JSON.stringify([rows, waiting, failure, this._shownOnError, [...this._assigning], this._urlPath]);
-    if (key === this._shownOnKey) {
-      return;
-    }
-    this._shownOnKey = key;
-    const active = this.shadowRoot.activeElement;
-    const focusKey = active && block.contains(active) ? active.dataset.focus || "shown-on-heading" : null;
-
-    const heading = el("h4", "shown-on-heading", t("editor.on_tablet_heading"));
-    heading.tabIndex = -1;
-    heading.dataset.focus = "shown-on-heading";
-    const children = [heading];
-    if (failure !== null) {
-      children.push(alertLine(t("tablets.load_failed", { message: failure })));
-    } else if (rows === null) {
-      children.push(el("p", "small", t("tablets.loading")));
-    } else if (!rows.length) {
-      if (!waiting) {
-        const none = el("p", "small", t("editor.on_tablet_none"));
-        none.dataset.test = "shown-on-none";
-        children.push(none);
-      }
-    } else {
-      const list = el("ul", "shown-on-list");
-      for (const row of rows) {
-        const item = el("li", "shown-on-row");
-        item.dataset.test = "shown-on-row";
-        item.dataset.mac = row.mac;
-        item.dataset.here = String(row.here);
-        const words = el("div", "shown-on-text");
-        words.append(el("span", "shown-on-name", row.name), el("span", "small", row.text));
-        item.append(words);
-        // A tablet always shows one dashboard, so there is nothing to untick
-        // here; another tablet can be moved to this one.
-        if (!row.here) {
-          const button = makeButton(t("editor.on_tablet_show"), {
-            test: "show-here",
-            focus: `show-here:${row.mac}`,
-            disabled: this._assigning.has(row.mac),
-            onClick: () => this._showHere(row.mac),
-          });
-          button.dataset.mac = row.mac;
-          item.append(button);
-        }
-        list.append(item);
-      }
-      children.push(list, el("p", "helper", t("editor.on_tablet_helper")));
-    }
-    if (failure === null && waiting) {
-      const note = el("p", "small", t("editor.on_tablet_new"));
-      note.dataset.test = "shown-on-new";
-      children.push(note);
-    }
-    if (this._shownOnError) {
-      const alert = alertLine(this._shownOnError);
-      alert.dataset.test = "shown-on-error";
-      children.push(alert);
-    }
-    // The address, for the show_dashboard action in automations.
-    const name = el("p", "automation-name");
-    name.dataset.test = "automation-name";
-    name.append(el("span", "field-label", t("editor.on_tablet_name")), el("code", null, this._urlPath || ""));
-    children.push(name);
-    block.replaceChildren(...children);
-
-    if (focusKey) {
-      const target = [...block.querySelectorAll("[data-focus]")].find((node) => node.dataset.focus === focusKey);
-      // The button is gone once its tablet shows this dashboard.
-      (target && !target.disabled ? target : heading).focus({ preventScroll: true });
-    }
-  }
-
   async _showHere(mac) {
     if (this._assigning.has(mac) || !this._conn) {
       return;
@@ -3088,7 +5070,7 @@ export class ApolloTabDesigner extends HTMLElement {
     const urlPath = this._urlPath;
     this._assigning.add(mac);
     this._shownOnError = "";
-    this._fillShownOn();
+    this._tabletsShown();
     try {
       // The answer reaches every listener of the tablet list, this one too.
       await assignTablet(this._conn, mac, urlPath);
@@ -3099,7 +5081,7 @@ export class ApolloTabDesigner extends HTMLElement {
     } finally {
       if (run === this._run) {
         this._assigning.delete(mac);
-        this._fillShownOn();
+        this._tabletsShown();
       }
     }
   }
@@ -3111,13 +5093,13 @@ export class ApolloTabDesigner extends HTMLElement {
     if (!Array.isArray(this._tablets) || !tabletsShowing(this._tablets, this._urlPath).length) {
       return "";
     }
-    await this._loadTabRows();
-    // Without the dashboards it cannot tell where the tablets go, and it
-    // does not guess.
-    if (!this._tabRows || !Array.isArray(this._tablets)) {
+    const rows = await this._loadTabRows();
+    // Without the dashboards as they are now it cannot tell where the
+    // tablets go, and it does not guess from an older list.
+    if (!rows || !Array.isArray(this._tablets)) {
       return "";
     }
-    return deleteNote(this._tablets, this._urlPath, this._tabRows, t);
+    return deleteNote(this._tablets, this._urlPath, rows, t);
   }
 
   async _deleteDashboard() {
@@ -3296,7 +5278,6 @@ export class ApolloTabDesigner extends HTMLElement {
     this._toast = null;
     this._renderToast();
     this._renderBanners();
-    this._revealBanners();
   }
 
   // Saves the editor's draft over the version that arrived. The other
@@ -3377,14 +5358,34 @@ export class ApolloTabDesigner extends HTMLElement {
     }
   }
 
+  // Escape lets the selected card go (in the compact layout it closes the
+  // edit mode, as Done does), or shuts a drawer that
+  // "Cards" opened.
   _handleEscape(event) {
-    if (event.key !== "Escape" || this._dialogOpen() || !this._selected) {
+    if (event.key !== "Escape" || this._dialogOpen()) {
+      return;
+    }
+    // Escape during a drag puts the card back and changes nothing.
+    if (this._drag) {
+      event.preventDefault();
+      this._dragCancel?.();
+      return;
+    }
+    if (!this._selected) {
+      if (this._band === "medium" && this._drawerOpen) {
+        event.preventDefault();
+        this._closeDrawer();
+      }
       return;
     }
     event.preventDefault();
     const key = this._selectedKey();
     const active = this.shadowRoot.activeElement;
     const fromSide = active && this._els.side?.contains(active);
+    if (this._compact) {
+      this._leaveEdit(key);
+      return;
+    }
     this._select(null);
     if (fromSide || !this.shadowRoot.activeElement) {
       this._focus(`hit:${key}`) || this._focus(`row:${key}`);

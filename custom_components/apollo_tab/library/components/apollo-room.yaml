@@ -1,0 +1,118 @@
+schema: 2
+id: apollo/room
+version: 2.0.0
+name: Room
+description: A room at a glance, its warmth and its lights, with a tap to its page.
+icon: mdi:sofa
+group: home
+replaces: [community/room-summary]
+
+# The sensors are not named temperature and humidity: those are names of
+# facts (can.temperature), which a device param may not take.
+params:
+  page:               {type: page, optional: true, label: Room page}
+  temperature_sensor: {domain: sensor, optional: true, label: Temperature}
+  humidity_sensor:    {domain: sensor, optional: true, label: Humidity}
+  lights:             {domain: light, multiple: true, max: 16, optional: true, label: Lights}
+  extra:              {domain: any, optional: true, label: One more reading}
+
+options:
+  show_count:       {type: toggle, section: shows, label: Lights on, default: true}
+  show_temperature: {type: toggle, section: shows, label: Temperature, default: true}
+  show_extra:       {type: toggle, section: shows, label: The extra reading, default: true}
+
+inputs:
+  temp: >-
+    {{ (states(temperature_sensor) ~ ' ' ~ (state_attr(temperature_sensor, 'unit_of_measurement') or '')) | trim if temperature_sensor else '' }}
+  # The large temperature: a dash while the sensor has no number.
+  big_temp: >-
+    {{ temp if states(temperature_sensor) | float(none) is number else '—' }}
+  # The humidity only when it is a number: never "unavailable%".
+  humid: >-
+    {{ (states(humidity_sensor) ~ '%') if humidity_sensor and states(humidity_sensor) | float(none) is number else '' }}
+  on_count:   "{{ lights | select('is_state', 'on') | list | count }}"
+  any_on:     "{{ on_count > 0 }}"
+  # Every light gone: no count and no button, not "0 of 3 on".
+  lights_gone: "{{ lights | reject('has_value') | list | count == lights | count }}"
+  count:      "{{ on_count }} of {{ lights | count }} lights on"
+  # A dash while the extra device is gone: never "unavailable W".
+  extra_line: >-
+    {{ ((state_attr(extra, 'friendly_name') or extra) ~ ': ' ~ ('—' if states(extra) in ['unavailable', 'unknown'] else (states(extra) ~ ' ' ~ (state_attr(extra, 'unit_of_measurement') or '')) | trim)) if extra else '' }}
+  # The row is there only with an extra device: its name is cut in the
+  # middle, as every device's name (L4).
+  extra_name: "{{ state_attr(extra, 'friendly_name') or extra }}"
+  extra_value: >-
+    {{ ('—' if states(extra) in ['unavailable', 'unknown'] else (states(extra) ~ ' ' ~ (state_attr(extra, 'unit_of_measurement') or '')) | trim) if extra else '' }}
+  line:       "{{ [temp, humid] | select | join(' · ') }}"
+  # The header's line: what the large temperature does not say already.
+  others: >-
+    {{ [temp if not show_temperature and states(temperature_sensor) | float(none) is number else '', humid, (on_count ~ ' of ' ~ (lights | count) ~ ' on') if lights and show_count and not lights_gone else ''] | select | join(' · ') }}
+  # The room's name: the area of its sensor or its first light.
+  room_name: >-
+    {% set first = temperature_sensor or humidity_sensor or (lights[0] if lights else none) or extra %}{{ (area_name(first) if first else none) or 'Room' }}
+
+outputs:
+  lights_on:  {action: light.turn_on, data: {entity_id: "{{ lights }}"}, feedback: optimistic}
+  lights_off: {action: light.turn_off, data: {entity_id: "{{ lights }}"}, feedback: optimistic}
+  go:         {local: go_to_page, page: "{{ page }}"}
+
+on: any_on
+state: others
+title: room_name
+lit: icon
+tap:
+  default: go
+  choices:
+    go:   {label: Goes to the room's page, output: go}
+    none: {label: Does nothing}
+
+parts:
+  temp:   {type: label, text: "{{ big_temp }}", size: l, when: [has.temperature_sensor, show_temperature]}
+  count:  {type: label, text: "{{ count }}", size: s, when: [has.lights, show_count]}
+  # The extra reading as its name, which is cut when it is long, and its
+  # value at the right, which is never cut (LOOK-NOTES decision 14).
+  extra:
+    type: row
+    when: [has.extra, show_extra]
+    items:
+      - {type: label, text: "{{ extra_name }}", size: s}
+      - {type: label, text: "{{ extra_value }}", size: s, align: right, width: 112}
+  lights:
+    type: swap
+    when: [has.lights, tablet.v2]
+    items:
+      - {type: button, text: Turn all off, icon: "mdi:lightbulb", on_tap: lights_off, visible: any_on}
+      - {type: button, text: Turn all on, icon: "mdi:lightbulb-on", on_tap: lights_on,
+         visible: "{{ not any_on and not lights_gone }}"}
+  # What a tablet with older software shows: one line and a button to the page.
+  old_line: {type: label, size: s, when: ["!tablet.v2"],
+             text: "{{ [temp, humid, count if lights else ''] | select | join(' · ') }}"}
+  old_go:   {type: button, text: View room, on_tap: go, when: ["!tablet.v2", has.page]}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    # The name across the whole tile, the temperature under it.
+    header: tile_v
+    layout: [{use: temp, size: ml, when: [tablet.v2]}, {use: old_line}, {use: old_go}]
+  room:
+    name: Room
+    # Four rows hold the header, the temperature, the extra reading and the
+    # button exactly: five left an empty foot (LOOK-NOTES decision 5).
+    grid: [9, 4]
+    header: tile
+    # From the header down: the temperature, the extra reading, the lights
+    # button right under them, so no band opens between them.
+    align: top
+    layout:
+      - {use: temp, size: xl, when: [tablet.v2]}
+      - {use: extra, when: [tablet.v2]}
+      - {use: lights, height: 64}
+      - {use: old_line}
+      - {use: old_go}
+
+preview:
+  params: {page: home}
+  inputs: {temp: "21.5 °C", big_temp: "21.5 °C", lights_gone: false, humid: "46%", on_count: 2, any_on: true, count: "2 of 4 lights on",
+           extra_line: "", extra_name: "", extra_value: "", line: "21.5 °C · 46%", others: "46% · 2 of 4 on", room_name: Living room}

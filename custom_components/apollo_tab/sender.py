@@ -43,10 +43,12 @@ from .live import (
     CallError,
     SlotTracker,
     async_run_output,
+    cover_questions,
     jsonable,
-    output_confirm_text,
 )
+from .maker import outputs as out2
 from .maker.device import (
+    CAPS_DEFAULTS,
     CHUNK_BYTES,
     ContractError,
     bindings_digest,
@@ -54,6 +56,7 @@ from .maker.device import (
     compile_device_layout,
     icon_level,
 )
+from .sources import TIMED_KINDS, source_value
 from .tablet_link import (
     LINK_CHECKING,
     LINK_NO_ENGINE,
@@ -102,7 +105,9 @@ NO_RETRY = tp.DETERMINISTIC_ERRORS | {"unreadable"}
 DEBOUNCE_S = 0.7
 DEBOUNCE_MAX_S = 2.0
 STATUS_POLL_S = (0.15, 0.3, 0.5)
-STATUS_POLL_LIMIT_S = 20.0
+# How long HA asks tab_status after a commit (contract.json
+# timing.status_poll_limit_s): a large build plus a finger on the glass.
+STATUS_POLL_LIMIT_S = 60.0
 VALUE_BATCH_S = 0.1
 # A tab_set that timed out or failed is sent again after this wait.
 SET_RETRY_S = 1.0
@@ -186,9 +191,17 @@ class Compiled:
     data: bytes
     plan: list[dict]
     bindings: dict
+    # The hash of every Component as it was when the layout was made.
+    revisions: dict[str, Any]
     layout: dict
     digest: str
     level: int
+    # Cards shown in a version 1 form or as the update note (C.5), widgets
+    # left out because the tablet cannot draw their kind, and whether the
+    # layout is too big to be kept across a restart (caps.max_stored).
+    simpler: int = 0
+    dropped: int = 0
+    not_kept: bool = False
 
 
 def _find_widget(layout: dict, widget_id: int) -> dict | None:
@@ -203,6 +216,23 @@ def _find_widget(layout: dict, widget_id: int) -> dict | None:
     return None
 
 
+def _rate_pairs(layout: dict) -> list[tuple[int, int]]:
+    """Return (value slot, rate slot) of every widget with both, as source slots."""
+    pairs = []
+    for page in layout.get("pages", []):
+        for item in page.get("w", []):
+            for widget in [item, *item.get("w", [])]:
+                value, rate = widget.get("value"), widget.get("rate")
+                if (
+                    isinstance(value, dict)
+                    and isinstance(rate, dict)
+                    and "s" in value
+                    and "s" in rate
+                ):
+                    pairs.append((value["s"], rate["s"]))
+    return pairs
+
+
 class _Live:
     """The live values of one layout on one tablet."""
 
@@ -212,11 +242,9 @@ class _Live:
         self.hash = compiled.hash
         self.digest = compiled.digest
         self.level = compiled.level
-        self.by_source: dict[int, list[tuple[int, str]]] = {}
+        self.by_source: dict[int, list[dict]] = {}
         for entry in compiled.plan:
-            self.by_source.setdefault(entry["src"], []).append(
-                (entry["d"], entry["type"])
-            )
+            self.by_source.setdefault(entry["src"], []).append(entry)
         self.wire: dict[int, Any] = {entry["d"]: None for entry in compiled.plan}
         # What the tablet holds; None until the first snapshot went out.
         self.sent: dict[int, Any] | None = None
@@ -225,31 +253,99 @@ class _Live:
             for slot in compiled.bindings.get("slots", [])
             if slot.get("n") in self.by_source
         ]
+        # Device slots of a clock or a position: worked out at the moment
+        # of each send, and sent when HA works them out again, also when
+        # the value is the same (C.5, contract 8).
+        self.timed: dict[int, dict] = {}
+        for slot in slots:
+            if slot.get("kind") in TIMED_KINDS:
+                for entry in self.by_source[slot["n"]]:
+                    self.timed[entry["d"]] = slot
+        self.due: set[int] = set()
+        # A new rate travels with a fresh value of its widget (contract 8).
+        self.rate_of_value: dict[int, int] = {}
+        self.value_of_rate: dict[int, int] = {}
+        for value_src, rate_src in _rate_pairs(compiled.layout):
+            value_d, rate_d = self.number_slot(value_src), self.number_slot(rate_src)
+            if value_d is not None and rate_d is not None:
+                self.rate_of_value[value_d] = rate_d
+                self.value_of_rate[rate_d] = value_d
         sender = session.sender
         self.tracker = SlotTracker(sender.hass, sender.slot_hub, slots, self._on_result)
 
-    @callback
-    def _on_result(self, slot: dict, result: Any) -> None:
-        """Convert one fresh source value for each device slot it feeds."""
+    def number_slot(self, source: Any) -> int | None:
+        """Return the device slot that holds a source slot as a plain number."""
+        for entry in self.by_source.get(source, []) if isinstance(source, int) else []:
+            if entry["type"] == "n" and not entry.get("coerce"):
+                return entry["d"]
+        return None
+
+    def _set(self, slot: dict, result: Any) -> None:
+        """Convert one source value for each device slot it feeds."""
         value = None if isinstance(result, Exception) else jsonable(result)
         icons = self.session.sender.icons
-        for number, kind in self.by_source.get(slot["n"], []):
+        for entry in self.by_source.get(slot["n"], []):
             try:
-                self.wire[number] = coerce(kind, value, icons, self.level)
+                self.wire[entry["d"]] = coerce(
+                    entry["type"],
+                    value,
+                    icons,
+                    self.level,
+                    entry.get("coerce"),
+                    entry.get("roles"),
+                )
             except ContractError:
-                self.wire[number] = None
+                self.wire[entry["d"]] = None
+
+    @callback
+    def _on_result(self, slot: dict, result: Any) -> None:
+        """Take one fresh source value; a clock or a position is due again."""
+        self._set(slot, result)
+        if slot.get("kind") in TIMED_KINDS:
+            self.due.update(entry["d"] for entry in self.by_source.get(slot["n"], []))
         self.session.values_changed(self)
 
+    def _fresh(self, numbers: set[int]) -> None:
+        """Work out the clock and position slots among numbers, now."""
+        hass = self.session.hass
+        for slot in {
+            id(self.timed[n]): self.timed[n] for n in numbers if n in self.timed
+        }.values():
+            self._set(slot, source_value(hass, slot))
+
+    def snapshot(self) -> dict[int, Any]:
+        """Return every device slot's value, clocks and positions worked out now."""
+        self._fresh(set(self.timed))
+        return dict(self.wire)
+
     def changes(self) -> dict[int, Any]:
-        """Return the device slots whose value the tablet does not have."""
+        """Return the device slots the tablet must get now.
+
+        A slot whose wire value differs from the one sent; a clock or a
+        position that HA worked out again, also when equal; and with a new
+        rate, a fresh value of its widget.
+        """
         if self.sent is None:
             return {}
         missing = object()
-        return {
-            number: value
+        numbers = {
+            number
             for number, value in self.wire.items()
-            if self.sent.get(number, missing) != value
+            if number not in self.timed and self.sent.get(number, missing) != value
         }
+        numbers |= self.due
+        numbers |= {
+            self.value_of_rate[number]
+            for number in list(numbers)
+            if number in self.value_of_rate
+        }
+        self._fresh(numbers)
+        return {number: self.wire[number] for number in sorted(numbers)}
+
+    def together(self) -> dict[str, list[tuple[int, int]]]:
+        """Return encode_set's keyword for the (value, rate) pairs, if any."""
+        pairs = list(self.rate_of_value.items())
+        return {"together": pairs} if pairs else {}
 
 
 class TabletSession:
@@ -286,6 +382,9 @@ class TabletSession:
         self.boot: int | None = None
         self.last_counter = 0
         self.caps: dict[str, Any] = {}
+        # The device layout version this tablet gets: 2 when its proto
+        # includes 2 (contract section 3).
+        self.dl = 1
         self.shown: str | None = None
         # A hash HA committed that the tablet may still be building: neither
         # confirmed on screen nor reported as ended. Kept across connections,
@@ -395,6 +494,24 @@ class TabletSession:
     def running(self) -> bool:
         """Return whether a run is going on."""
         return self._task is not None and not self._task.done()
+
+    # What the layout HA last made for this tablet leaves out or keeps
+    # (C.5). Nothing while HA has made none for it.
+
+    @property
+    def simpler(self) -> int:
+        """Return how many cards it shows in a version 1 form or as the note."""
+        return self.want.simpler if self.want is not None else 0
+
+    @property
+    def dropped_widgets(self) -> int:
+        """Return how many widgets are left out because it cannot draw them."""
+        return self.want.dropped if self.want is not None else 0
+
+    @property
+    def not_kept(self) -> bool:
+        """Return whether its layout is too big to be kept across a restart."""
+        return self.want.not_kept if self.want is not None else False
 
     def drop_session(self) -> None:
         """Forget the session and the value trackers (the connection ended)."""
@@ -659,8 +776,11 @@ class TabletSession:
             self._set_status(STATUS_OFFLINE)
 
     def _compile(self, url_path: str) -> Compiled:
-        """Compile the dashboard for this tablet's caps; cached per layout."""
-        stored = self.sender.manager.layouts[url_path]
+        """Compile the dashboard for this tablet's caps; cached per layout.
+
+        The layout is of the version the tablet takes (C.5).
+        """
+        stored = self.sender.manager.layout_for(url_path, self.dl, self.caps)
         layout = stored["layout"]
         caps_key = repr(sorted(self.caps.items()))
         confirm = self._cover_questions(stored["bindings"])
@@ -676,54 +796,35 @@ class TabletSession:
             return cache[3]
         icons = self.sender.icons
         result = compile_device_layout(layout, icons, self.caps, confirm=confirm)
+        caps = {**CAPS_DEFAULTS, **self.caps}
         compiled = Compiled(
             url_path=url_path,
             hash=result["hash"],
             data=result["bytes"],
             plan=result["slots"],
             bindings=stored["bindings"],
+            revisions=stored.get("revisions", {}),
             layout=layout,
             digest=bindings_digest(stored["bindings"], result["slots"]),
             level=icon_level(icons, self.caps),
+            simpler=int(stored.get("simpler", 0) or 0),
+            dropped=len(result["dropped"]),
+            not_kept=result["size"] > int(caps["max_stored"]),
         )
         self._compile_cache = (layout, caps_key, confirm, compiled)
         return compiled
 
     def _cover_questions(self, bindings: dict) -> dict[int, str]:
-        """Questions for widgets that move a garage, gate or door cover.
-
-        The tablet asks them before it sends (cf), so a tap needs no round
-        trip for HA's confirm answer. HA still checks every call.
-        """
-        questions: dict[int, str] = {}
-        actions = bindings.get("actions") if isinstance(bindings, dict) else None
-        if not isinstance(actions, dict):
-            return questions
-        components = self.sender.library.components
-        for key, action in actions.items():
-            if not isinstance(action, dict) or action.get("demo"):
-                continue
-            component_id = action.get("component")
-            component = (
-                components.get(component_id) if isinstance(component_id, str) else None
-            )
-            widget_id, _, _event = str(key).partition(":")
-            if component is None or not widget_id.isdigit():
-                continue
-            text = output_confirm_text(
-                self.hass,
-                component,
-                action,
-                action.get("params") or {},
-                action.get("entities") or [],
-            )
-            if text:
-                questions.setdefault(int(widget_id), text)
-        return questions
+        """Questions for widgets that move a garage, gate or door cover."""
+        return cover_questions(self.hass, self.sender.library.components, bindings)
 
     def _set_want(self, compiled: Compiled) -> None:
         """Keep bindings for the wanted layout and for the one on screen."""
+        before = (self.simpler, self.dropped_widgets, self.not_kept)
         self.want = compiled
+        if (compiled.simpler, compiled.dropped, compiled.not_kept) != before:
+            # The tablets list shows them (C.5).
+            self.sender.notify()
         kept = {compiled.hash: compiled}
         if self.shown and self.shown != compiled.hash and self.shown in self.kept:
             kept[self.shown] = self.kept[self.shown]
@@ -895,6 +996,7 @@ class TabletSession:
         boot = response.get("boot")
         self.boot = boot if isinstance(boot, int) else None
         self.caps = tp.caps_of(response)
+        self.dl = 2 if tp.layout_version(response) == 2 else 1
         layout = response.get("layout")
         self.shown = layout if isinstance(layout, str) else ""
         if self.staged is not None and self.staged == self.shown:
@@ -1003,9 +1105,16 @@ class TabletSession:
             if err.code == "needs_encryption":
                 self.input = INPUT_NEEDS_ENCRYPTION
                 return False
+            # Refused or lost on the way: pair again when the limit allows.
+            self._schedule_pair()
             if err.code == "bad_key":
                 _LOGGER.warning("A TAB-1 tablet refused its new pairing key")
                 return False
+            # Otherwise the tablet may hold the new secret or the old one,
+            # and a pairing ends its session. It counts as not paired until
+            # the next tab_hello says which secret it holds.
+            self.drop_session()
+            self.input = INPUT_NOT_PAIRED
             raise
         self.sender.assignments.async_set_secret(self.mac, secret, key_id)
         self._force_pair = False
@@ -1161,8 +1270,9 @@ class TabletSession:
 
     async def _async_snapshot(self, live: _Live) -> None:
         """Send every slot value, split when larger than one call allows."""
-        values = dict(live.wire)
-        for payload in tp.encode_set(live.hash, values, full=True):
+        values = live.snapshot()
+        live.due.clear()
+        for payload in tp.encode_set(live.hash, values, full=True, **live.together()):
             await self._call("tab_set", {"data": payload}, body=payload)
         if self.live is live:
             live.sent = values
@@ -1200,8 +1310,12 @@ class TabletSession:
             return
         self._flushing = True
         failed = False
+        due = live.due & set(changes)
+        live.due -= due
         try:
-            for payload in tp.encode_set(live.hash, changes, full=False):
+            for payload in tp.encode_set(
+                live.hash, changes, full=False, **live.together()
+            ):
                 await self._call(
                     "tab_set",
                     {"data": payload},
@@ -1209,6 +1323,7 @@ class TabletSession:
                     still=lambda: self.live is live,
                 )
             live.sent.update(changes)
+            due = set()
         except LinkError as err:
             if err.code in ("hash", "auth"):
                 self._link_error(err)
@@ -1224,6 +1339,8 @@ class TabletSession:
             failed = True
         finally:
             self._flushing = False
+            # A clock or a position that did not go out is still owed.
+            live.due |= due
         if self.live is live and live.changes():
             self._schedule_flush(SET_RETRY_S if failed else None)
 
@@ -1239,11 +1356,15 @@ class TabletSession:
         # Input counts only from a tablet whose last handshake confirmed
         # encryption and pairing (contract 6.1, 7.3): otherwise not_paired.
         secret = assignments.secret(self.mac) if self.input == INPUT_OK else None
+        # The session this input belongs to; its answer goes to no other.
+        # None without a session: then no input belongs to one, whatever
+        # nonce it names, an empty one too.
+        nonce = self.nonce
         verdict, parsed = tp.verify_input(
             data,
             mac=self.hex,
             secret=secret,
-            nonce=self.nonce or "",
+            nonce=nonce,
             last_counter=self.last_counter,
             layouts=tuple(self.kept),
         )
@@ -1256,11 +1377,11 @@ class TabletSession:
         while self._inputs and now - self._inputs[0] >= 1.0:
             self._inputs.popleft()
         if len(self._inputs) >= INPUTS_PER_SECOND:
-            await self._async_ack(counter, tp.ACK_BUSY)
+            await self._async_ack(counter, tp.ACK_BUSY, nonce)
             return
         self._inputs.append(now)
         if verdict == "stale_layout":
-            await self._async_ack(counter, tp.ACK_STALE)
+            await self._async_ack(counter, tp.ACK_STALE, nonce)
             # The tablet shows a layout HA keeps no bindings for: read what it
             # really shows before trusting `shown` again.
             self._check_shown = True
@@ -1268,7 +1389,7 @@ class TabletSession:
                 self.kick()
             return
         code = await self._async_run_input(parsed)
-        await self._async_ack(counter, code)
+        await self._async_ack(counter, code, nonce)
 
     def _drop_input(self, verdict: str) -> None:
         """Count a dropped input; no ack, so a stranger learns nothing."""
@@ -1306,6 +1427,16 @@ class TabletSession:
             return tp.ACK_DENIED
         if action.get("demo"):
             return tp.ACK_DENIED
+        made_from = compiled.revisions.get(component_id)
+        if made_from is None or made_from != component.get("hash"):
+            # The Component changed after this layout was made: its outputs
+            # may do something else than this screen shows. Without a hash
+            # to compare, it counts as changed.
+            return tp.ACK_STALE
+        if parsed["event"] == "change" and not self._change_allowed(
+            compiled, widget, action, parsed["value"]
+        ):
+            return tp.ACK_FAILED
         try:
             await async_run_output(
                 self.hass,
@@ -1319,19 +1450,53 @@ class TabletSession:
                 confirmed=parsed["confirmed"],
                 # A tablet has no user: a fresh context without one.
                 context=Context(),
+                slot_hub=self.sender.slot_hub,
             )
         except CallError as err:
             return ACK_FOR_ERROR.get(err.code, tp.ACK_FAILED)
         return tp.ACK_DONE
 
-    async def _async_ack(self, counter: int, code: str) -> None:
-        """Answer one input."""
+    def _change_allowed(
+        self, compiled: Compiled, widget: dict, action: dict, value: Any
+    ) -> bool:
+        """Check a change against contract 7.3: range, step, or a choice's options.
+
+        Live limits and a live step count as the values last sent to this
+        tablet; when none was sent, the change is refused.
+        """
+        if widget.get("t") == "choice":
+            options = action.get("options")
+            return out2.check_choice(
+                value, len(options) if isinstance(options, list) else 0
+            )
+        live = self.live
+        if live is None or live.hash != compiled.hash or live.sent is None:
+            live = None
+
+        def sent(source: Any) -> Any:
+            """Return the value last sent for a source slot, or None."""
+            if live is None or live.sent is None:
+                return None
+            number = live.number_slot(source)
+            return None if number is None else live.sent.get(number)
+
+        return out2.check_change(widget, value, sent)
+
+    async def _async_ack(self, counter: int, code: str, nonce: str) -> None:
+        """Answer one input, in the session it came in.
+
+        An input of a session that has ended gets no answer: the tablet
+        forgot it with the session, and puts its control back by itself.
+        """
         ok = code == tp.ACK_DONE
         try:
             await self._call(
                 "tab_ack",
                 {"n": counter, "ok": ok, "code": code},
                 body=tp.ack_body(counter, ok, code),
+                # Counters start again in every session (contract 7.1), so in
+                # a later one this answer would be taken for another input's.
+                still=lambda: self.nonce == nonce,
             )
         except LinkError:
             return
@@ -1742,6 +1907,7 @@ class TabletSender:
         approved = session.approved
         device = dr.async_get(self.hass).async_get(session.device_id)
         reauth, reauth_name = self._reauth(session, name)
+        shows = approved and session.dashboard is not None
         return {
             "mac": session.mac,
             "device_id": session.device_id,
@@ -1766,6 +1932,13 @@ class TabletSender:
             # connects to the tablet again, and the name Repairs gives it.
             "reauth": reauth,
             "reauth_name": reauth_name,
+            # What the layout HA made for it leaves out or keeps (C.5): cards
+            # shown simpler because its software is older, widgets it cannot
+            # draw, and whether the layout is too big to be kept across a
+            # restart. Nothing for a tablet that shows nothing.
+            "simpler": session.simpler if shows else 0,
+            "dropped": session.dropped_widgets if shows else 0,
+            "not_kept": session.not_kept if shows else False,
         }
 
     def _reauth(

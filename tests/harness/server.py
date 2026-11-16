@@ -7,7 +7,11 @@ converter is imported from the integration package:
 
 GET serves files from the repository. POST /api/preview with {"config": {...}}
 answers with what apollo_tab/layout/preview would send, using the bundled
-cards, no approved cards and stand-in values instead of real states.
+cards and one card as from the user's folder (FIVE_GRAPHS), no approved cards
+and stand-in values instead of real states. POST /api/facts with
+{"component", "params"} answers as apollo_tab/card/facts would. Both take
+"states", the stand-in Home Assistant's states, and read what each device
+can do from them as the integration reads it from Home Assistant.
 
 --port 0 lets the system choose a free port; the first line printed names
 it. With --token, every answer carries it in an X-Harness-Token header, so
@@ -34,7 +38,17 @@ sys.dont_write_bytecode = True
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from custom_components.apollo_tab.facts import _feature_names  # noqa: E402
+from custom_components.apollo_tab.library import _read_status  # noqa: E402
 from custom_components.apollo_tab.maker.convert import convert_dashboard  # noqa: E402
+from custom_components.apollo_tab.maker.features import (  # noqa: E402
+    card_facts,
+    entities_of,
+    facts_of,
+    param_entities,
+)
+from custom_components.apollo_tab.maker.schema import validate_component  # noqa: E402
+from custom_components.apollo_tab.protocol import load_contract  # noqa: E402
 from tests.harness.build_fixtures import (  # noqa: E402
     load_components,
     load_theme_entries,
@@ -44,22 +58,92 @@ from tests.harness.build_fixtures import (  # noqa: E402
 
 MAX_BODY = 1024 * 1024
 PREVIEW_PATH = "/api/preview"
+FACTS_PATH = "/api/facts"
 TOKEN_HEADER = "X-Harness-Token"
 TOO_LARGE = "The request is larger than 1 MB"
+
+# A card as from the user's folder with five graphs, one more than a screen
+# takes: the tablet leaves it out even when it is alone on its page. The
+# stand-in Home Assistant lists it with graphs=1 (tests/harness/mock-hass.js).
+FIVE_GRAPHS = {
+    "id": "me/five-graphs",
+    "name": "Five graphs",
+    "description": "One sensor as five lines.",
+    "icon": "mdi:chart-line",
+    "version": "1.0.0",
+    "size": "2x2",
+    "params": {"entity": {"domain": "sensor"}},
+    "inputs": {
+        "history": {"source": "recorder", "entity": "{{ entity }}", "hours": 24}
+    },
+    "layout": [{"type": "chart", "value": "history"} for _ in range(5)],
+}
 
 
 @functools.cache
 def _library() -> tuple[dict, dict]:
-    """Return the bundled cards and themes by id, loaded once."""
+    """Return the cards and themes by id, loaded once."""
     themes = {entry["id"]: entry for entry in load_theme_entries()}
-    return load_components(), themes
+    components = load_components()
+    five = validate_component(FIVE_GRAPHS)
+    five["source"] = "user"
+    components[five["id"]] = five
+    return components, themes
 
 
-def preview_response(config: dict) -> dict:
-    """Convert a dashboard config and return the preview command's answer."""
+@functools.cache
+def _icons_and_status() -> tuple[dict, dict]:
+    """Return the contract's icons and the status colours, loaded once."""
+    return load_contract()[1], _read_status()
+
+
+def harness_facts(entity_ids, states: dict | None) -> dict:
+    """Return the facts of each device the stand-in states know.
+
+    A state is read as facts.py::raw_of reads Home Assistant's: its
+    attributes, and its supported_features as the names of the flags. A
+    device without a state is left out, so it gets the least.
+    """
+    out = {}
+    for entity_id in entity_ids:
+        state = (states or {}).get(entity_id)
+        if not isinstance(state, dict) or "." not in entity_id:
+            continue
+        attributes = state.get("attributes")
+        attributes = attributes if isinstance(attributes, dict) else {}
+        domain = entity_id.split(".", 1)[0]
+        out[entity_id] = facts_of(
+            {
+                "domain": domain,
+                "registry": None,
+                "state": {
+                    "attributes": attributes,
+                    "features": _feature_names(
+                        domain, attributes.get("supported_features")
+                    ),
+                },
+            }
+        )
+    return out
+
+
+def preview_response(config: dict, dl: int = 1, states: dict | None = None) -> dict:
+    """Convert a dashboard config and return the preview command's answer.
+
+    dl is the layout version to make, as apollo_tab/layout/preview takes it.
+    states are the stand-in states the devices' facts are read from.
+    """
     components, themes = _library()
+    icons, status = _icons_and_status()
     result = convert_dashboard(
-        config, components=components, themes=themes, approved=set()
+        config,
+        components=components,
+        themes=themes,
+        approved=set(),
+        facts=harness_facts(entities_of(config, components), states),
+        dl=dl,
+        icons=icons,
+        status=status,
     )
     return {
         "layout": result["layout"],
@@ -69,18 +153,60 @@ def preview_response(config: dict) -> dict:
     }
 
 
-def handle_preview_body(body: bytes) -> tuple[int, dict]:
-    """Return the HTTP status and JSON answer for one preview request body."""
+def facts_response(component_id: str, params: dict, states: dict | None) -> dict:
+    """Return what apollo_tab/card/facts answers for one card."""
+    components, _themes = _library()
+    component = components[component_id]
+    entities = param_entities(component, params)
+    entity_ids = list(dict.fromkeys(e for ids in entities.values() for e in ids))
+    return card_facts(component, params, harness_facts(entity_ids, states))
+
+
+def _read_body(body: bytes) -> tuple[int, dict] | dict:
+    """Return the request's JSON object, or the error answer."""
     if len(body) > MAX_BODY:
         return HTTPStatus.BAD_REQUEST, {"error": TOO_LARGE}
     try:
         data = json.loads(body)
     except ValueError, RecursionError:
         return HTTPStatus.BAD_REQUEST, {"error": "The request is not valid JSON"}
-    if not isinstance(data, dict) or not isinstance(data.get("config"), dict):
+    if not isinstance(data, dict):
+        return HTTPStatus.BAD_REQUEST, {"error": "The request must be a JSON object"}
+    states = data.get("states")
+    if states is not None and not isinstance(states, dict):
+        return HTTPStatus.BAD_REQUEST, {"error": "states must be a JSON object"}
+    return data
+
+
+def handle_facts_body(body: bytes) -> tuple[int, dict]:
+    """Return the HTTP status and JSON answer for one facts request body."""
+    data = _read_body(body)
+    if isinstance(data, tuple):
+        return data
+    components, _themes = _library()
+    component_id = data.get("component")
+    params = data.get("params", {})
+    if not isinstance(component_id, str) or component_id not in components:
+        return HTTPStatus.BAD_REQUEST, {"error": "Unknown card"}
+    if not isinstance(params, dict) or any(
+        name not in components[component_id]["params"] for name in params
+    ):
+        return HTTPStatus.BAD_REQUEST, {"error": "Unknown param"}
+    return HTTPStatus.OK, facts_response(component_id, params, data.get("states"))
+
+
+def handle_preview_body(body: bytes) -> tuple[int, dict]:
+    """Return the HTTP status and JSON answer for one preview request body."""
+    data = _read_body(body)
+    if isinstance(data, tuple):
+        return data
+    if not isinstance(data.get("config"), dict):
         return HTTPStatus.BAD_REQUEST, {"error": "config must be a JSON object"}
+    dl = data.get("dl", 1)
+    if dl not in (1, 2) or isinstance(dl, bool):
+        return HTTPStatus.BAD_REQUEST, {"error": "dl must be 1 or 2"}
     try:
-        return HTTPStatus.OK, preview_response(data["config"])
+        return HTTPStatus.OK, preview_response(data["config"], dl, data.get("states"))
     except Exception:
         # The converter never raises for bad dashboards, so this is a bug;
         # print it and answer the way the integration would.
@@ -122,8 +248,10 @@ class HarnessHandler(SimpleHTTPRequestHandler):
         """Stay quiet for answered requests; errors are still printed."""
 
     def do_POST(self) -> None:
-        """Answer POST /api/preview; every other path is not found."""
-        if urllib.parse.urlsplit(self.path).path != PREVIEW_PATH:
+        """Answer POST /api/preview and /api/facts; others are not found."""
+        handlers = {PREVIEW_PATH: handle_preview_body, FACTS_PATH: handle_facts_body}
+        handle = handlers.get(urllib.parse.urlsplit(self.path).path)
+        if handle is None:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
             return
         try:
@@ -141,7 +269,7 @@ class HarnessHandler(SimpleHTTPRequestHandler):
             self.close_connection = True
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": TOO_LARGE})
             return
-        status, payload = handle_preview_body(self.rfile.read(length))
+        status, payload = handle(self.rfile.read(length))
         self._send_json(status, payload)
 
     def _send_json(self, status: int, payload: dict) -> None:

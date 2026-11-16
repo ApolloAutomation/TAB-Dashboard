@@ -8,12 +8,14 @@ import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fillWords } from "../../custom_components/apollo_tab/frontend/logic.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const CONTRACT = path.join(root, "tests/contract");
 const SCREENS = JSON.parse(fs.readFileSync(path.join(CONTRACT, "screens.json"), "utf8"));
-const STRINGS = JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8"));
+// As the panel loads them: with the word for turning a tablet on put in.
+const STRINGS = fillWords(JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8")));
 
 // TAB-1's copy of the contract: TAB1_DIR names the TAB-1 repository, else
 // it is looked for next to this one (both in one ApolloAutomation folder).
@@ -93,7 +95,7 @@ test("the contract has the screens the panel's lines check", () => {
   const headlines = Object.values(SCREENS.waiting).map((screen) => screen.headline);
   assert.equal(new Set(headlines).size, headlines.length);
   // The panel names the hotspot as the tablet does.
-  for (const key of ["tablets.none", "tablets.add_another", "tablets.offline_help"]) {
+  for (const key of ["tablets.add_another", "tablets.offline_help"]) {
     assert.ok(STRINGS[key].includes(`"${SCREENS.hotspot}"`), key);
   }
 });
@@ -110,7 +112,7 @@ test(
       fs
         .readdirSync(dir, { withFileTypes: true })
         .flatMap((entry) => (entry.isDirectory() ? list(path.join(dir, entry.name), base) : [path.relative(base, path.join(dir, entry.name))]))
-        .filter((file) => file !== "ruff.toml" && !file.split(path.sep).includes("__pycache__"))
+        .filter((file) => file !== "ruff.toml" && !file.split(path.sep).some((part) => part === "__pycache__" || part === ".ruff_cache"))
         .sort();
     const ours = list(CONTRACT);
     assert.deepEqual(ours, list(TAB1_CONTRACT));
@@ -192,5 +194,22 @@ test("a stale quote of the tablet is found", () => {
   ];
   for (const [text, quote] of wrong) {
     assert.deepEqual(wrongQuotes(text, texts), [quote], text);
+  }
+});
+
+// The panel's "What does the tablet's screen say?" names each screen by its
+// own headline, so a person can match the words they see.
+test("the panel's screen headlines are the tablet's", () => {
+  const keys = Object.keys(STRINGS).filter((key) => key.startsWith("tablets.screen."));
+  assert.ok(keys.length >= 10, `only ${keys.length} headlines`);
+  for (const key of keys) {
+    const state = key.slice("tablets.screen.".length);
+    assert.ok(SCREENS.waiting[state], `no screen ${state} in screens.json`);
+    assert.equal(STRINGS[key], SCREENS.waiting[state].headline, key);
+  }
+  // Every screen with something to do has its row and its help.
+  for (const state of ["hotspot", "add", "erased", "turn_on", "wait_ha", "pick", "closed", "no_wifi"]) {
+    assert.ok(Object.hasOwn(STRINGS, `tablets.screen.${state}`), state);
+    assert.ok(Object.hasOwn(STRINGS, `tablets.screen_help.${state}`), state);
   }
 });

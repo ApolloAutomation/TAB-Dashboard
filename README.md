@@ -12,9 +12,15 @@ its dashboard once its software has the dashboard engine.
   dashboards, and it works with no tablet connected.
 - The panel's editor shows the tablet's screen (1280x800) while you work,
   drawn from the same layout a tablet would receive.
-- "Add card" offers only cards the tablet can show: 16 built-in cards, plus
+- "Add card" offers only cards the tablet can show: 26 built-in cards, plus
   any community cards you have installed. You pick a card, then the device it
-  controls.
+  controls. Fifteen older built-in cards are no longer offered, because newer
+  cards take their place; dashboards that have them keep them.
+- A tablet with older software still gets every dashboard. Cards made for
+  the newer software are drawn simpler on it, a card it cannot draw at all
+  says "Update this tablet to show this card", and the tablets list counts
+  them. See
+  [docs/tablets.md](docs/tablets.md#tablets-with-older-software).
 - Changes are saved automatically. Undo and redo work while the editor is
   open.
 - Cards and pages the tablet cannot show (for example cards added in Home
@@ -126,7 +132,7 @@ pages do not scroll; a screen can show at most 4 graphs, 4 dials and 4
 left-to-right colour fades.
 
 To choose which dashboard a tablet shows, pick it under "Shows" next to the
-tablet on the panel's Home screen. For a new tablet, pick its first
+tablet under Tablets on the panel's start screen. For a new tablet, pick its first
 dashboard and then press "Turn on with this dashboard". See
 [docs/tablets.md](docs/tablets.md) for automations and the status words.
 
@@ -145,7 +151,14 @@ A TAB-1 dashboard is any dashboard whose configuration has a top-level
 apollo_tab:
   version: 1
   theme: midnight
+  accent: "#2F7FD0"            # optional: an accent colour of your own
 ```
+
+There are 15 themes: `midnight` (the default), `daylight`, `warm`, `soft`,
+`mono`, `glass`, `graphite`, `nord`, `forest`, `ocean`, `night`, `paper`,
+`sand`, `rose` and `contrast`. A view can carry its own theme with
+`apollo_tab: {theme: night}`; tablets with the newer software show that page
+in it, older ones in the dashboard's theme.
 
 A card looks like this:
 
@@ -161,6 +174,9 @@ style:                         # optional
   gradient: {to: "#101820", direction: vertical}
   transparency: 20
   accent: "#FFB300"
+  surface: outline
+  corners: soft
+  border: thin
 grid_options: {columns: 12, rows: 3}   # Home Assistant's own key
 ```
 
@@ -168,11 +184,19 @@ All style keys are optional, and any other key is an error:
 
 | Key | Value | Meaning |
 |---|---|---|
-| `theme` | `midnight`, `daylight`, `warm`, `soft`, `mono` or `glass` | use this theme for this card |
+| `theme` | one of the 15 themes | use this theme for this card |
 | `color` | `#RRGGBB` | card fill |
 | `gradient` | `{to: "#RRGGBB", direction: "vertical" or "horizontal"}` | fill runs from the card fill to `to`; `direction` defaults to `vertical` |
 | `transparency` | integer 0 to 100 | 0 is solid; 100 is the page background |
 | `accent` | `#RRGGBB` | accent colour |
+| `surface` | `card`, `outline` or `plain` | `outline` and `plain` put the card on the page background, with a 2 px border or none; they take the place of `color`, `gradient` and `transparency` |
+| `corners` | `theme`, `square`, `round` or `soft` | corner radius 4, 16 or 28 |
+| `border` | `theme`, `none`, `thin` or `bold` | border width 0, 1 or 2 |
+| `lit` | `fill`, `icon`, `outline` or `none` | how a newer card looks while it is on |
+| `tint` | `true` or `false` | `false`: a newer card does not show the device's colour |
+
+`lit`, `tint` and page themes need the newer tablet software; older tablets
+leave them out.
 
 Size in the TAB-1 panel sets `grid_options`: one unit wide is 6 columns and
 one unit high is 3 rows.
@@ -291,7 +315,7 @@ has one for every status),
 `route=/edit/tab-1` (which screen opens) and `community=1` (adds a card from
 "your folder").
 The older views `cards`, `states` and `preview` still work and take a
-`theme`: `midnight`, `daylight`, `warm`, `soft`, `mono` or `glass`.
+`theme`: one of the 15 themes above.
 
 A scripted run of the whole editor in headless Chrome, with screenshots:
 

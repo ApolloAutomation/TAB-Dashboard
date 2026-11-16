@@ -87,11 +87,31 @@ const STATES = [
   ["alarm_control_panel.home", "disarmed", "House alarm"],
 ];
 
+// What three lamps can do, as Home Assistant reports it: the kitchen lamp
+// shows colours and whites and has effects, the bedroom lamp only dims and
+// the living room lamp only turns on and off. The harness server reads what
+// a card can do from these (card/facts and the picture).
+const LAMP_ATTRIBUTES = {
+  "light.kitchen": {
+    supported_color_modes: ["hs", "color_temp"],
+    color_mode: "hs",
+    brightness: 173,
+    hs_color: [30, 58],
+    rgb_color: [255, 177, 107],
+    min_color_temp_kelvin: 2000,
+    max_color_temp_kelvin: 6535,
+    effect_list: ["Rainbow", "Candle", "Fire", "Party", "Storm"],
+    supported_features: 4,
+  },
+  "light.bedroom": { supported_color_modes: ["brightness"], color_mode: "brightness", brightness: 128 },
+  "light.living_room": { supported_color_modes: ["onoff"] },
+};
+
 function sampleStates() {
   return Object.fromEntries(
     STATES.map(([entityId, state, name]) => [
       entityId,
-      { entity_id: entityId, state, attributes: { friendly_name: name } },
+      { entity_id: entityId, state, attributes: { friendly_name: name, ...LAMP_ATTRIBUTES[entityId] } },
     ]),
   );
 }
@@ -122,6 +142,24 @@ const DOOR_LOCK = {
   sensitive: true,
   approved: false,
   params: { entity: { kind: "entity", domain: "lock", multiple: false } },
+};
+
+// A card from the user's folder with five graphs, one more than a screen
+// takes, so the tablet leaves it out even when it is alone on its page. The
+// harness server converts it (FIVE_GRAPHS in tests/harness/server.py).
+const FIVE_GRAPHS = {
+  id: "me/five-graphs",
+  tag: "apollo-tab-el-me-five-graphs",
+  name: "Five graphs",
+  description: "One sensor as five lines.",
+  icon: "mdi:chart-line",
+  version: "1.0.0",
+  size: [2, 2],
+  grid: { columns: 12, rows: 6 },
+  source: "user",
+  sensitive: false,
+  approved: true,
+  params: { entity: { kind: "entity", domain: "sensor", multiple: false } },
 };
 
 // The tokens the integration sends for a card with no style of its own.
@@ -213,6 +251,51 @@ function scenarioEvents(fixture, card, themes) {
   ];
 }
 
+// A schema 2 card as the integration sends it to a browser: its variant (or
+// the detail copy, which is its "full" variant here) without "call". The
+// picker's example, asked for with the card's example settings and no
+// variant, is the one made with those settings (`example`).
+function cardEvents2(fixture, card, themes, detail) {
+  const variants = fixture.variants || {};
+  const name = detail ? "full" : card.variant || Object.keys(variants)[0];
+  const example = fixture.example;
+  const asExample = Boolean(
+    example && !detail && !card.variant && !hasParams(card)
+      && JSON.stringify(card.options ?? null) === JSON.stringify(example.card.options),
+  );
+  const variant = asExample ? example : variants[name];
+  if (!variant || (detail && !fixture.form?.has_detail)) {
+    return [{ type: "error", code: "invalid_card", message: "This card has no detail page" }];
+  }
+  const init = structuredClone(variant.init);
+  delete init.call;
+  if (detail) {
+    delete init.hold;
+    delete init.tap;
+  }
+  if (hasParams(card)) {
+    init.demo = false;
+  } else if (typeof card.title === "string") {
+    // An example with a title of its own (the picker's EXAMPLE_TITLES): the
+    // title stands where the card's name, whole or cut, stood.
+    const ownName = (text) => {
+      if (text === fixture.name) return true;
+      const [start, end] = String(text).split("\u2026");
+      return end !== undefined && fixture.name.startsWith(start) && fixture.name.endsWith(end);
+    };
+    if (init.header && ownName(init.header.title)) init.header.title = card.title;
+    for (const widget of init.widgets || []) {
+      if (typeof widget.text === "string" && ownName(widget.text)) widget.text = card.title;
+    }
+  }
+  const query = new URLSearchParams(location.search);
+  const theme = themes.find((entry) => entry.id === query.get("theme")) || themes[0] || {};
+  return [
+    { type: "init", card: init, theme, style: plainStyle(theme) },
+    { type: "values", values: structuredClone(variant.values || {}), errors: {} },
+  ];
+}
+
 function fail(code, message = code) {
   return Object.assign(new Error(message), { code });
 }
@@ -220,7 +303,7 @@ function fail(code, message = code) {
 // The integration's answer to a change for a tablet no admin turned on
 // (tests/harness/tablet-shapes.json).
 const NOT_APPROVED =
-  'This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard".';
+  'This tablet is new. Pick a dashboard for it under Tablets, then press "Turn on with this dashboard".';
 
 // A second dashboard for the tablet steps: "Night", with one empty page.
 const NIGHT_CONFIG = {
@@ -249,7 +332,9 @@ const NIGHT_CONFIG = {
 // again. Until it is approved it shows nothing and is not paired.
 // `reauth` ("erased" or "key") is what Home Assistant waits for from an
 // admin in Repairs before it connects again, under `reauth_name` (the
-// tablet's name there, its own name when not given).
+// tablet's name there, its own name when not given). `simpler`, `dropped`
+// and `not_kept` are what its layout leaves out or keeps, as the integration
+// reports them while it has a dashboard.
 function tabletEntry(n, name, changes = {}) {
   const mac = `aa:bb:cc:dd:ee:${n.toString(16).padStart(2, "0")}`;
   return {
@@ -269,6 +354,9 @@ function tabletEntry(n, name, changes = {}) {
     suggested: null,
     reauth: null,
     reauth_name: null,
+    simpler: 0,
+    dropped: 0,
+    not_kept: false,
     ...changes,
   };
 }
@@ -312,7 +400,8 @@ const TABLET_SETS = {
   // One tablet for every status and reason, both notes about taps, and an
   // erased tablet that Home Assistant waits for an admin's answer about.
   all: () => [
-    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"] }),
+    // Older tablet software: cards shown simpler, a layout not kept.
+    tabletEntry(1, "Kitchen tablet", { prefer: ["tab-1"], simpler: 3, not_kept: true }),
     tabletEntry(2, "Hallway tablet", { prefer: ["tab-1"], online: false }),
     tabletEntry(3, "Bedroom tablet", BEDROOM_NO_ENGINE),
     tabletEntry(4, "Office tablet", { forced: { status: "unsupported", reason: "tablet_old", retry: false } }),
@@ -335,11 +424,28 @@ const TABLET_SETS = {
   ],
 };
 
+// Copies of offered bundled cards under ids many/01, many/02, ... and
+// other names, so the picker offers 32 cards. No step adds one.
+// The card each copy draws as: {copy id: bundled id}.
+const MANY_SOURCES = new Map();
+function manyCards(components) {
+  const offered = components.filter((component) => !component.legacy);
+  return Array.from({ length: Math.max(1, 32 - offered.length) }, (_, index) => {
+    const copy = structuredClone(offered[index % offered.length]);
+    const number = String(index + 1).padStart(2, "0");
+    copy.id = `many/${number}`;
+    MANY_SOURCES.set(copy.id, offered[index % offered.length].id);
+    copy.name = `${copy.name} ${number}`;
+    return copy;
+  });
+}
+
 // options.seed: "none", "sample" (default) or "real" (uses options.realConfig).
-// options.community adds a lock card from the user's folder to the library.
-// options.night adds the "Night" dashboard. options.tablets: "none"
-// (default), "three", "no-engine", "new", "two-new" or "all" (see
-// TABLET_SETS).
+// options.community adds a lock card from the user's folder to the library,
+// options.graphs a card with five graphs, options.many more cards (32 in all).
+// options.night adds the "Night"
+// dashboard. options.tablets: "none" (default), "three", "no-engine", "new",
+// "two-new" or "all" (see TABLET_SETS).
 export function createMockHass(fixtures, options = {}) {
   defineStandIns();
 
@@ -348,6 +454,12 @@ export function createMockHass(fixtures, options = {}) {
   const library = structuredClone(fixtures.library);
   if (options.community) {
     library.components.push(structuredClone(DOOR_LOCK));
+  }
+  if (options.graphs) {
+    library.components.push(structuredClone(FIVE_GRAPHS));
+  }
+  if (options.many) {
+    library.components.push(...manyCards(library.components));
   }
 
   // A small in-memory stand-in for Home Assistant's storage dashboards.
@@ -362,6 +474,10 @@ export function createMockHass(fixtures, options = {}) {
   // down: the connection is lost. waiting: commands sent meanwhile.
   // underWay: commands sent and not answered yet.
   const connection = { down: false, waiting: [], underWay: new Set() };
+  // Home Assistant does not know the commands whose type starts with this;
+  // null: it knows them all (see unknownCommands).
+  let unknownPrefix = null;
+  const isUnknown = (type) => unknownPrefix !== null && String(type).startsWith(unknownPrefix);
 
   const addDashboard = (urlPath, title, config, showInSidebar) => {
     dashboards.set(urlPath, {
@@ -460,6 +576,9 @@ export function createMockHass(fixtures, options = {}) {
     suggested: !tablet.approved && isTab(tablet.suggested) ? tablet.suggested : null,
     reauth: tablet.reauth || null,
     reauth_name: tablet.reauth ? tablet.reauth_name || tablet.name : null,
+    simpler: tablet.approved && tablet.dashboard ? tablet.simpler : 0,
+    dropped: tablet.approved && tablet.dashboard ? tablet.dropped : 0,
+    not_kept: Boolean(tablet.approved && tablet.dashboard && tablet.not_kept),
   });
 
   // The tablets an admin turned on; only they show and count.
@@ -476,6 +595,7 @@ export function createMockHass(fixtures, options = {}) {
 
   const finishSend = (tablet) => {
     tablet.sending = false;
+    clearTimeout(tablet.timer);
     tablet.timer = null;
     emitTablets();
   };
@@ -503,8 +623,9 @@ export function createMockHass(fixtures, options = {}) {
   };
 
   // The first TAB-1 dashboard made goes to every approved tablet that has
-  // none. A new tablet waits for an admin.
-  const giveToOrphans = () => {
+  // none. A new tablet waits for an admin. announce: false gives it without
+  // a send and without an event, as for a browser whose connection is down.
+  const giveToOrphans = (announce = true) => {
     const first = tabOrder()[0]?.url_path || null;
     if (!first) {
       return;
@@ -513,18 +634,22 @@ export function createMockHass(fixtures, options = {}) {
     for (const tablet of approvedTablets()) {
       if (!tablet.dashboard && !tablet.forced) {
         tablet.dashboard = first;
-        send(tablet);
+        if (announce) {
+          send(tablet);
+        }
         changed = true;
       }
     }
-    if (changed) {
+    if (changed && announce) {
       emitTablets();
     }
   };
 
   // A deleted dashboard's approved tablets move to the first one left, or
-  // to none. A new tablet loses it as its suggestion.
-  const moveFrom = (urlPath) => {
+  // to none. A new tablet loses it as its suggestion. announce: false moves
+  // them without a send and without an event, as for a browser whose
+  // connection is down.
+  const moveFrom = (urlPath, announce = true) => {
     const next = tabOrder().find((dashboard) => dashboard.url_path !== urlPath)?.url_path || null;
     let changed = false;
     for (const tablet of tablets) {
@@ -536,11 +661,13 @@ export function createMockHass(fixtures, options = {}) {
     for (const tablet of approvedTablets()) {
       if (tablet.dashboard === urlPath) {
         tablet.dashboard = next;
-        send(tablet);
+        if (announce) {
+          send(tablet);
+        }
         changed = true;
       }
     }
-    if (changed) {
+    if (changed && announce) {
       emitTablets();
     }
   };
@@ -558,7 +685,12 @@ export function createMockHass(fixtures, options = {}) {
     const dashboard = dashboards.get(urlPath);
     const wasTab = isTabConfig(dashboard.config);
     dashboard.config = structuredClone(config);
+    const becameTab = !wasTab && isTabConfig(dashboard.config);
     if (!announce) {
+      // The tablets get it all the same; only this browser hears nothing.
+      if (becameTab) {
+        giveToOrphans(false);
+      }
       return;
     }
     queueMicrotask(() =>
@@ -572,7 +704,7 @@ export function createMockHass(fixtures, options = {}) {
     if (showing.length) {
       emitTablets();
     }
-    if (!wasTab && isTabConfig(dashboard.config)) {
+    if (becameTab) {
       giveToOrphans();
     }
   };
@@ -614,14 +746,28 @@ export function createMockHass(fixtures, options = {}) {
     };
   };
 
-  const preview = async (config) => {
+  const preview = async (config, dl = 1) => {
     const response = await fetch(`${location.origin}/api/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config }),
+      body: JSON.stringify({ config, dl, states: hass.states }),
     });
     if (!response.ok) {
       throw fail("conversion_failed", "The dashboard could not be converted");
+    }
+    return response.json();
+  };
+
+  // Like card/facts: what a card's devices can do, read by the harness
+  // server from the stand-in states.
+  const cardFacts = async (component, params) => {
+    const response = await fetch(`${location.origin}/api/facts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ component, params, states: hass.states }),
+    });
+    if (!response.ok) {
+      throw fail("not_found", "Unknown card");
     }
     return response.json();
   };
@@ -661,6 +807,9 @@ export function createMockHass(fixtures, options = {}) {
     },
     async answerWS(message) {
       calls.push(structuredClone(message));
+      if (isUnknown(message.type)) {
+        throw fail("unknown_command", "Unknown command.");
+      }
       const failures = failing.get(message.type) || 0;
       if (failures > 0) {
         failing.set(message.type, failures - 1);
@@ -693,9 +842,11 @@ export function createMockHass(fixtures, options = {}) {
           }
           return fixtures.layout;
         case "apollo_tab/layout/preview":
-          return preview(message.config);
+          return preview(message.config, message.dl ?? 1);
         case "apollo_tab/card/call":
           return { ok: true };
+        case "apollo_tab/card/facts":
+          return cardFacts(message.component, message.params || {});
         case "apollo_tab/tablets":
           return { tablets: tabletList() };
         case "apollo_tab/tablet/assign": {
@@ -794,8 +945,11 @@ export function createMockHass(fixtures, options = {}) {
       }
     },
     connection: {
-      async subscribeMessage(callback, message) {
-        const record = { callback, message };
+      async subscribeMessage(callback, message, options) {
+        if (isUnknown(message.type)) {
+          throw fail("unknown_command", "Unknown command.");
+        }
+        const record = { callback, message, resubscribe: options?.resubscribe !== false };
         listeners.add(record);
 
         if (message.type === "apollo_tab/tablets/subscribe") {
@@ -808,8 +962,16 @@ export function createMockHass(fixtures, options = {}) {
 
         if (message.type === "apollo_tab/card/subscribe") {
           queueMicrotask(() => {
+            const drawn = MANY_SOURCES.get(message.card.component) || message.card.component;
+            const second = (fixtures.cards_v2 || []).find((entry) => entry.id === drawn);
+            if (second) {
+              for (const event of cardEvents2(second, message.card, fixtures.themes || [], message.detail)) {
+                callback(event);
+              }
+              return;
+            }
             const fixture =
-              fixtures.cards.find((entry) => entry.id === message.card.component) ||
+              fixtures.cards.find((entry) => entry.id === drawn) ||
               fixtures.cards[0];
             if (!fixture) {
               callback({
@@ -857,11 +1019,13 @@ export function createMockHass(fixtures, options = {}) {
       store(urlPath, config, false);
     },
     // Another browser deletes a dashboard while this one's connection is
-    // down: no "removed" event reaches this browser.
+    // down: no "removed" event reaches this browser. The tablets that
+    // showed it move all the same.
     deleteWhileOffline(urlPath) {
       if (!dashboards.delete(urlPath)) {
         throw fail("not_found", "Dashboard not found");
       }
+      moveFrom(urlPath, false);
     },
     // The connection drops: every command under way is answered with
     // "Connection lost" (a save among them may still be stored, for
@@ -875,9 +1039,17 @@ export function createMockHass(fixtures, options = {}) {
     },
     // The connection comes back. Home Assistant's own connection then opens
     // its subscriptions again and fires "ready"; nothing tells what changed.
-    // Commands that waited go out after that.
+    // A subscription made with resubscribe: false went with the old
+    // connection. So did one Home Assistant does not take again (see
+    // unknownCommands), and nobody is told of that. Commands that waited go
+    // out after that.
     reconnect() {
       connection.down = false;
+      for (const record of [...listeners]) {
+        if (!record.resubscribe || isUnknown(record.message.type)) {
+          listeners.delete(record);
+        }
+      }
       for (const callback of [...(connectionListeners.get("ready") || [])]) {
         callback(hass.connection);
       }
@@ -896,6 +1068,17 @@ export function createMockHass(fixtures, options = {}) {
     // How many listeners wait for the connection's "ready" event.
     readyListeners() {
       return connectionListeners.get("ready")?.size || 0;
+    },
+    // How many subscriptions of one type are open.
+    subscriptions(type) {
+      return [...listeners].filter((record) => record.message.type === type).length;
+    },
+    // Home Assistant does not know the commands whose type starts with
+    // `prefix`, because it is still starting or its integration is an older
+    // one: they are answered unknown_command, as commands and as
+    // subscribes. null: it knows them all again.
+    unknownCommands(prefix) {
+      unknownPrefix = prefix ?? null;
     },
     failSaves(count) {
       failingSaves = Math.max(0, Number(count) || 0);
@@ -945,6 +1128,12 @@ export function createMockHass(fixtures, options = {}) {
         return;
       }
       send(tablet);
+      emitTablets();
+    },
+    // A tablet that shows up while the panel is open: number n gives its
+    // address (aa:bb:cc:dd:ee:<n>), as in the sets above.
+    addTablet(n, name, changes = {}) {
+      tablets.push(tabletEntry(n, name, changes));
       emitTablets();
     },
     // Sends the tablet list to the panel, as Home Assistant does on a change.

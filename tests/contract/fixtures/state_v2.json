@@ -1,0 +1,1011 @@
+{
+ "colours": [
+  [
+   [
+    255,
+    0,
+    0
+   ],
+   null,
+   16711680
+  ],
+  [
+   [
+    255.4,
+    0,
+    0
+   ],
+   null,
+   16711680
+  ],
+  [
+   [
+    255.5,
+    0,
+    0
+   ],
+   null,
+   null
+  ],
+  [
+   [
+    -0.4,
+    0,
+    0
+   ],
+   null,
+   0
+  ],
+  [
+   [
+    -0.6,
+    0,
+    0
+   ],
+   null,
+   null
+  ],
+  [
+   [
+    0,
+    127.5,
+    0
+   ],
+   null,
+   32768
+  ],
+  [
+   [
+    255,
+    0
+   ],
+   null,
+   null
+  ],
+  [
+   [
+    255,
+    0,
+    0,
+    0
+   ],
+   null,
+   null
+  ],
+  [
+   [
+    true,
+    0,
+    0
+   ],
+   null,
+   null
+  ],
+  [
+   [
+    "255",
+    0,
+    0
+   ],
+   null,
+   null
+  ],
+  [
+   "#ff8800",
+   null,
+   16746496
+  ],
+  [
+   "#FF8800",
+   null,
+   16746496
+  ],
+  [
+   "#FFF",
+   null,
+   null
+  ],
+  [
+   "FF8800",
+   null,
+   null
+  ],
+  [
+   "#FF880",
+   null,
+   null
+  ],
+  [
+   "#GG8800",
+   null,
+   null
+  ],
+  [
+   16711680,
+   null,
+   16711680
+  ],
+  [
+   16711680.0,
+   null,
+   16711680
+  ],
+  [
+   16711680.5,
+   null,
+   null
+  ],
+  [
+   0,
+   null,
+   0
+  ],
+  [
+   16777215,
+   null,
+   16777215
+  ],
+  [
+   16777216,
+   null,
+   null
+  ],
+  [
+   -1,
+   null,
+   null
+  ],
+  [
+   "16711680",
+   null,
+   null
+  ],
+  [
+   true,
+   null,
+   null
+  ],
+  [
+   null,
+   null,
+   null
+  ],
+  [
+   "good",
+   {
+    "bad": "#FF6B5E",
+    "good": "#4CC38A",
+    "info": "#6CB4FF",
+    "warn": "#F5B547"
+   },
+   5030794
+  ],
+  [
+   "good",
+   {
+    "bad": "#C6392C",
+    "good": "#1E8E5A",
+    "info": "#1F6FD1",
+    "warn": "#B86E00"
+   },
+   2002522
+  ],
+  [
+   "warn",
+   {
+    "bad": "#C6392C",
+    "good": "#1E8E5A",
+    "info": "#1F6FD1",
+    "warn": "#B86E00"
+   },
+   12086784
+  ],
+  [
+   "unknown",
+   {
+    "bad": "#FF6B5E",
+    "good": "#4CC38A",
+    "info": "#6CB4FF",
+    "warn": "#F5B547"
+   },
+   null
+  ],
+  [
+   "good",
+   null,
+   null
+  ]
+ ],
+ "hash": "ef98088e1fda910d",
+ "layout": "layout_v2_kit",
+ "note": "A tab_set stream for layout_v2_kit on a tablet that speaks version 2. Each step arrives at 'at_ms' (the tablet's clock, from the first step; a step without payloads only lets time pass) and must answer ok. 'show' is what a widget must show after the step, written by hand from contract 4.4 and 4.7: 'text' of a label; 'value' a slider shows (with rate: clamp(value + rate * age, min, max); null: no value); 'faded' 1 when drawn at 40%; 'vis' 0 when not drawn; 'tint' of a card and 'colour' (the c of a widget) as the colour in force, null when there is none and the part keeps its usual colour; 'un' of a card; 'selected' option of a choice (null: none); 'mark' of a thermostat (the value drawn as a dot, null: no mark) or of a bar chart (the index of the bar in acc, null: no mark). 'colours': [value as HA finds it, the roles HA knows for the card or null, the wire value or null] (contract 4.4, colour conversion).",
+ "slots": {
+  "arm": 31,
+  "bar_mark": 27,
+  "clock": 28,
+  "disarm": 32,
+  "mark": 24,
+  "pos": 13,
+  "rate": 14,
+  "speed": 15,
+  "status": 33,
+  "target": 23,
+  "tint": 4,
+  "un": 8
+ },
+ "steps": [
+  {
+   "at_ms": 0,
+   "note": "Full snapshot of every slot.",
+   "payloads": [
+    "{\"f\":1,\"h\":\"ef98088e1fda910d\",\"v\":[[1,\"Living room\"],[2,1],[3,984808],[4,16754519],[5,\"On\"],[6,\"80%\"],[7,80],[8,0],[9,30],[10,2700],[11,100],[12,60],[13,30],[14,1],[15,1],[16,0],[17,0],[18,985117],[19,16729402],[20,1],[21,1],[22,5030794],[23,21.5],[24,20.8],[25,[19.2,19.4,20.1,20.9,21.3,21.1]],[26,[3,5,2,6,4,1,0]],[27,4],[28,615],[29,1],[30,0],[31,1],[32,0],[33,2002522],[34,40],[35,1],[36,0],[37,2000],[38,6535]]}"
+   ],
+   "show": [
+    {
+     "id": 39,
+     "text": "10:15"
+    },
+    {
+     "id": 40,
+     "text": "10:15"
+    },
+    {
+     "faded": 0,
+     "id": 17,
+     "value": 30
+    },
+    {
+     "id": 2,
+     "tint": 16754519
+    },
+    {
+     "colour": 16754519,
+     "id": 6
+    },
+    {
+     "id": 7,
+     "tint": 16754519,
+     "un": 0
+    },
+    {
+     "id": 19,
+     "selected": 1
+    },
+    {
+     "id": 20,
+     "selected": 0
+    },
+    {
+     "id": 21,
+     "selected": null
+    },
+    {
+     "id": 48,
+     "vis": 1
+    },
+    {
+     "id": 49,
+     "vis": 0
+    },
+    {
+     "faded": 0,
+     "id": 32,
+     "mark": 20.8
+    },
+    {
+     "id": 35,
+     "mark": 4
+    },
+    {
+     "colour": 2002522,
+     "id": 50
+    },
+    {
+     "colour": 5030794,
+     "id": 28
+    }
+   ]
+  },
+  {
+   "at_ms": 60000,
+   "note": "A minute later, with no call: the clock and the progress count on.",
+   "payloads": [],
+   "show": [
+    {
+     "id": 39,
+     "text": "10:16"
+    },
+    {
+     "id": 40,
+     "text": "10:16"
+    },
+    {
+     "id": 17,
+     "value": 90
+    }
+   ]
+  },
+  {
+   "at_ms": 61000,
+   "note": "The clock gets the same value again: its age starts again.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[28,615]]}"
+   ],
+   "show": [
+    {
+     "id": 39,
+     "text": "10:15"
+    },
+    {
+     "id": 40,
+     "text": "10:15"
+    },
+    {
+     "id": 17,
+     "value": 91
+    }
+   ]
+  },
+  {
+   "at_ms": 70000,
+   "note": "A new rate without a value: the count goes on from the value's last write.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[14,2]]}"
+   ],
+   "show": [
+    {
+     "id": 17,
+     "value": 170
+    },
+    {
+     "id": 39,
+     "text": "10:15"
+    }
+   ]
+  },
+  {
+   "at_ms": 80000,
+   "note": "A new rate with a value, in one call.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[13,100],[14,0.5]]}"
+   ],
+   "show": [
+    {
+     "id": 17,
+     "value": 100
+    }
+   ]
+  },
+  {
+   "at_ms": 90000,
+   "note": "Ten seconds later.",
+   "payloads": [],
+   "show": [
+    {
+     "id": 17,
+     "value": 105
+    },
+    {
+     "id": 39,
+     "text": "10:15"
+    }
+   ]
+  },
+  {
+   "at_ms": 91000,
+   "note": "A rate without a value counts as 0.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[14,null]]}"
+   ],
+   "show": [
+    {
+     "id": 17,
+     "value": 100
+    }
+   ]
+  },
+  {
+   "at_ms": 92000,
+   "note": "Progress past the end is held to max.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[13,299],[14,1]]}"
+   ],
+   "show": [
+    {
+     "id": 17,
+     "value": 299
+    }
+   ]
+  },
+  {
+   "at_ms": 95000,
+   "note": "Three seconds later.",
+   "payloads": [],
+   "show": [
+    {
+     "id": 17,
+     "value": 300
+    }
+   ]
+  },
+  {
+   "at_ms": 100000,
+   "note": "A colour of 1e9 is out of range: no colour.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[4,1000000000.0]]}"
+   ],
+   "show": [
+    {
+     "id": 2,
+     "tint": null
+    },
+    {
+     "colour": null,
+     "id": 6
+    },
+    {
+     "id": 7,
+     "tint": null
+    }
+   ]
+  },
+  {
+   "at_ms": 101000,
+   "note": "-1: no colour.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[4,-1]]}"
+   ],
+   "show": [
+    {
+     "id": 2,
+     "tint": null
+    },
+    {
+     "colour": null,
+     "id": 6
+    },
+    {
+     "id": 7,
+     "tint": null
+    }
+   ]
+  },
+  {
+   "at_ms": 102000,
+   "note": "0.5: no colour.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[4,0.5]]}"
+   ],
+   "show": [
+    {
+     "id": 2,
+     "tint": null
+    },
+    {
+     "colour": null,
+     "id": 6
+    },
+    {
+     "id": 7,
+     "tint": null
+    }
+   ]
+  },
+  {
+   "at_ms": 103000,
+   "note": "16777215 is the largest colour.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[4,16777215]]}"
+   ],
+   "show": [
+    {
+     "id": 2,
+     "tint": 16777215
+    },
+    {
+     "colour": 16777215,
+     "id": 6
+    },
+    {
+     "id": 7,
+     "tint": 16777215
+    }
+   ]
+  },
+  {
+   "at_ms": 104000,
+   "note": "16777216: no colour.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[4,16777216]]}"
+   ],
+   "show": [
+    {
+     "id": 2,
+     "tint": null
+    },
+    {
+     "colour": null,
+     "id": 6
+    },
+    {
+     "id": 7,
+     "tint": null
+    }
+   ]
+  },
+  {
+   "at_ms": 105000,
+   "note": "Red.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[4,16711680]]}"
+   ],
+   "show": [
+    {
+     "id": 2,
+     "tint": 16711680
+    },
+    {
+     "colour": 16711680,
+     "id": 6
+    },
+    {
+     "id": 7,
+     "tint": 16711680
+    }
+   ]
+  },
+  {
+   "at_ms": 110000,
+   "note": "The swap: Arm hidden, Disarm shown.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[31,0],[32,1]]}"
+   ],
+   "show": [
+    {
+     "id": 48,
+     "vis": 0
+    },
+    {
+     "id": 49,
+     "vis": 1
+    }
+   ]
+  },
+  {
+   "at_ms": 111000,
+   "note": "vis without a value hides both.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[31,null],[32,null]]}"
+   ],
+   "show": [
+    {
+     "id": 48,
+     "vis": 0
+    },
+    {
+     "id": 49,
+     "vis": 0
+    }
+   ]
+  },
+  {
+   "at_ms": 112000,
+   "note": "Card 2 becomes unavailable: header and widgets at 40%.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[8,1]]}"
+   ],
+   "show": [
+    {
+     "id": 7,
+     "un": 1
+    },
+    {
+     "faded": 1,
+     "id": 8
+    },
+    {
+     "faded": 1,
+     "id": 9
+    },
+    {
+     "faded": 1,
+     "id": 10
+    },
+    {
+     "faded": 1,
+     "id": 11
+    },
+    {
+     "id": 2,
+     "un": 0
+    },
+    {
+     "faded": 0,
+     "id": 6
+    }
+   ]
+  },
+  {
+   "at_ms": 113000,
+   "note": "un without a value counts as 0.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[8,null]]}"
+   ],
+   "show": [
+    {
+     "id": 7,
+     "un": 0
+    },
+    {
+     "faded": 0,
+     "id": 8
+    },
+    {
+     "faded": 0,
+     "id": 11
+    }
+   ]
+  },
+  {
+   "at_ms": 114000,
+   "note": "The first choice gets 1000000000.0.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[15,1000000000.0]]}"
+   ],
+   "show": [
+    {
+     "id": 19,
+     "selected": null
+    }
+   ]
+  },
+  {
+   "at_ms": 115000,
+   "note": "The first choice gets -1.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[15,-1]]}"
+   ],
+   "show": [
+    {
+     "id": 19,
+     "selected": null
+    }
+   ]
+  },
+  {
+   "at_ms": 116000,
+   "note": "The first choice gets 0.5.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[15,0.5]]}"
+   ],
+   "show": [
+    {
+     "id": 19,
+     "selected": null
+    }
+   ]
+  },
+  {
+   "at_ms": 117000,
+   "note": "The first choice gets 3.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[15,3]]}"
+   ],
+   "show": [
+    {
+     "id": 19,
+     "selected": 3
+    }
+   ]
+  },
+  {
+   "at_ms": 118000,
+   "note": "The first choice gets 4.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[15,4]]}"
+   ],
+   "show": [
+    {
+     "id": 19,
+     "selected": null
+    }
+   ]
+  },
+  {
+   "at_ms": 120000,
+   "note": "The thermostat has no target but a temperature: the mark is drawn, faded.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[23,null],[24,21.5]]}"
+   ],
+   "show": [
+    {
+     "faded": 1,
+     "id": 32,
+     "mark": 21.5
+    },
+    {
+     "faded": 1,
+     "id": 47
+    }
+   ]
+  },
+  {
+   "at_ms": 121000,
+   "note": "The thermostat's mark gets 1000000000.0 (min 7, max 35).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[24,1000000000.0]]}"
+   ],
+   "show": [
+    {
+     "id": 32,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 122000,
+   "note": "The thermostat's mark gets -1 (min 7, max 35).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[24,-1]]}"
+   ],
+   "show": [
+    {
+     "id": 32,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 123000,
+   "note": "The thermostat's mark gets 0.5 (min 7, max 35).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[24,0.5]]}"
+   ],
+   "show": [
+    {
+     "id": 32,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 124000,
+   "note": "The thermostat's mark gets 7 (min 7, max 35).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[24,7]]}"
+   ],
+   "show": [
+    {
+     "id": 32,
+     "mark": 7
+    }
+   ]
+  },
+  {
+   "at_ms": 125000,
+   "note": "The thermostat's mark gets 35 (min 7, max 35).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[24,35]]}"
+   ],
+   "show": [
+    {
+     "id": 32,
+     "mark": 35
+    }
+   ]
+  },
+  {
+   "at_ms": 126000,
+   "note": "The thermostat's mark gets 35.5 (min 7, max 35).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[24,35.5]]}"
+   ],
+   "show": [
+    {
+     "id": 32,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 130000,
+   "note": "The bar chart's mark gets -1 (7 bars).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[27,-1]]}"
+   ],
+   "show": [
+    {
+     "id": 35,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 131000,
+   "note": "The bar chart's mark gets 7 (7 bars).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[27,7]]}"
+   ],
+   "show": [
+    {
+     "id": 35,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 132000,
+   "note": "The bar chart's mark gets 6 (7 bars).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[27,6]]}"
+   ],
+   "show": [
+    {
+     "id": 35,
+     "mark": 6
+    }
+   ]
+  },
+  {
+   "at_ms": 133000,
+   "note": "The bar chart's mark gets 0.5 (7 bars).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[27,0.5]]}"
+   ],
+   "show": [
+    {
+     "id": 35,
+     "mark": 1
+    }
+   ]
+  },
+  {
+   "at_ms": 134000,
+   "note": "The bar chart's mark gets 1000000000.0 (7 bars).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[27,1000000000.0]]}"
+   ],
+   "show": [
+    {
+     "id": 35,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 135000,
+   "note": "The bar chart's mark gets None (7 bars).",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[27,null]]}"
+   ],
+   "show": [
+    {
+     "id": 35,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 140000,
+   "note": "The label's colour slot gets 1193046.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[33,1193046]]}"
+   ],
+   "show": [
+    {
+     "colour": 1193046,
+     "id": 50
+    }
+   ]
+  },
+  {
+   "at_ms": 141000,
+   "note": "The label's colour slot gets None.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[33,null]]}"
+   ],
+   "show": [
+    {
+     "colour": null,
+     "id": 50
+    }
+   ]
+  },
+  {
+   "at_ms": 142000,
+   "note": "The label's colour slot gets 0.5.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[33,0.5]]}"
+   ],
+   "show": [
+    {
+     "colour": null,
+     "id": 50
+    }
+   ]
+  },
+  {
+   "at_ms": 150000,
+   "note": "A full snapshot with the clock only: every other slot has no value.",
+   "payloads": [
+    "{\"f\":1,\"h\":\"ef98088e1fda910d\",\"v\":[[28,900]]}"
+   ],
+   "show": [
+    {
+     "id": 39,
+     "text": "15:00"
+    },
+    {
+     "id": 40,
+     "text": "3:00"
+    },
+    {
+     "faded": 1,
+     "id": 17,
+     "value": null
+    },
+    {
+     "faded": 0,
+     "id": 13
+    },
+    {
+     "faded": 1,
+     "id": 14
+    },
+    {
+     "id": 19,
+     "selected": null
+    },
+    {
+     "id": 48,
+     "vis": 0
+    },
+    {
+     "id": 49,
+     "vis": 0
+    },
+    {
+     "id": 2,
+     "tint": null
+    },
+    {
+     "faded": 1,
+     "id": 32,
+     "mark": null
+    }
+   ]
+  },
+  {
+   "at_ms": 450000,
+   "note": "Five minutes later.",
+   "payloads": [],
+   "show": [
+    {
+     "id": 39,
+     "text": "15:05"
+    },
+    {
+     "id": 40,
+     "text": "3:05"
+    }
+   ]
+  },
+  {
+   "at_ms": 451000,
+   "note": "No value for the clock.",
+   "payloads": [
+    "{\"h\":\"ef98088e1fda910d\",\"v\":[[28,null]]}"
+   ],
+   "show": [
+    {
+     "id": 39,
+     "text": "--:--"
+    },
+    {
+     "id": 40,
+     "text": "--:--"
+    }
+   ]
+  }
+ ]
+}

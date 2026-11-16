@@ -8,7 +8,16 @@ from pathlib import Path
 import yaml
 from jinja2.sandbox import SandboxedEnvironment
 
+from custom_components.apollo_tab.library import (
+    form_entry,
+    picker_fields,
+    read_picker,
+)
 from custom_components.apollo_tab.maker.compile import compile_card, public_card
+from custom_components.apollo_tab.maker.compile2 import (
+    compile_card2,
+    validate_card_config2,
+)
 from custom_components.apollo_tab.maker.convert import alias_tag, convert_dashboard
 from custom_components.apollo_tab.maker.schema import (
     validate_card_config,
@@ -20,6 +29,12 @@ LIBRARY_DIR = (
 )
 COMPONENTS_DIR = LIBRARY_DIR / "components"
 FIXTURES_FILE = Path(__file__).with_name("fixtures.json")
+
+# The settings the picker gives a card's example (EXAMPLE_OPTIONS in
+# frontend/model.js; tests/frontend/model.test.mjs checks the two agree).
+EXAMPLE_OPTIONS = {
+    "apollo/scenes": {"show_names": False},
+}
 
 ERROR_SAMPLE = {
     "file": "my-card.yaml",
@@ -42,8 +57,32 @@ def load_components():
     return components
 
 
+def _schema1(components):
+    """Return the schema 1 cards, whose example cards are in `cards`."""
+    return {
+        component_id: component
+        for component_id, component in components.items()
+        if component.get("schema", 1) == 1
+    }
+
+
+def _replaced(components):
+    """Return the ids of the cards a built-in card replaces (`legacy`)."""
+    return {
+        replaced_id
+        for component in components.values()
+        for replaced_id in component.get("replaces", [])
+    }
+
+
 def _library(components, theme_entries):
-    """Build the library object the panel would receive."""
+    """Build the library object the panel would receive.
+
+    Every bundled card, as Library.as_dict gives it: the form data of C.7
+    and the picker's group and search words.
+    """
+    picker = read_picker()
+    replaced = _replaced(components)
     ordered = sorted(
         components.values(),
         key=lambda comp: (comp.get("source") != "builtin", comp.get("name", "")),
@@ -56,15 +95,11 @@ def _library(components, theme_entries):
             "description": component.get("description", ""),
             "icon": component.get("icon"),
             "version": component.get("version", "1.0.0"),
-            "size": list(component.get("size", [1, 1])),
-            "grid": {
-                "columns": component["size"][0] * 6,
-                "rows": component["size"][1] * 3,
-            },
             "source": "builtin",
             "sensitive": bool(component.get("sensitive")),
             "approved": True,
-            "params": component.get("params", {}),
+            **form_entry(component, component["id"] in replaced),
+            **picker_fields(component, picker),
         }
         for component in ordered
     ]
@@ -225,6 +260,79 @@ def _sample_dashboard():
     }
 
 
+def _cards_v2(components):
+    """Return each schema 2 card as the editor needs it (packages I7, I8).
+
+    Per card: its static form data (C.7) and, per variant, the example card
+    the stand-in Home Assistant answers card/subscribe with (the picker's
+    tiles, the browser card), compiled for layout v2, with the values of its
+    slots.
+    """
+    replaced = _replaced(components)
+    picker = read_picker()
+    env = renderer()
+    entries = []
+    for component_id in sorted(components):
+        component = components[component_id]
+        if component.get("schema") != 2:
+            continue
+        variants = {}
+        for name, variant in component["variants"].items():
+            columns, rows = variant["grid"]
+            card_config = {
+                "type": "custom:apollo-tab-card",
+                "component": component_id,
+                "variant": name,
+                "grid_options": {"columns": columns, "rows": rows},
+            }
+            card = validate_card_config2(component, card_config)
+            compiled = compile_card2(
+                component, card, {}, 2, detail=not variant["picker"]
+            )
+            variants[name] = {
+                "card": card_config,
+                "init": public_card(compiled),
+                "values": render_slots(compiled.get("slots") or [], env),
+            }
+        entry = {
+            "id": component_id,
+            "name": component["name"],
+            "icon": component["icon"],
+            # As the library answer gives it: the form data with the
+            # picker's group and search words.
+            "form": {
+                **form_entry(component, component_id in replaced),
+                **picker_fields(component, picker),
+            },
+            "variants": variants,
+        }
+        options = EXAMPLE_OPTIONS.get(component_id)
+        if options is not None:
+            entry["example"] = _example(component, options, env)
+        entries.append(entry)
+    return entries
+
+
+def _example(component, options, env):
+    """Return the picker's example of a card with its EXAMPLE_OPTIONS.
+
+    The picker asks for the card with these settings and no variant, so the
+    card gets its first size, as Home Assistant answers it.
+    """
+    card_config = {
+        "type": "custom:apollo-tab-card",
+        "component": component["id"],
+        "options": dict(options),
+    }
+    card = validate_card_config2(component, card_config)
+    compiled = compile_card2(component, card, {}, 2)
+    return {
+        "card": card_config,
+        "init": public_card(compiled),
+        "values": render_slots(compiled.get("slots") or [], env),
+    }
+
+
 def load_theme_entries():
     """Load the bundled themes in file order."""
     return json.loads((LIBRARY_DIR / "themes.json").read_text(encoding="utf-8"))
@@ -242,8 +350,8 @@ def build() -> dict:
     library = _library(components, theme_entries)
     env = renderer()
     cards = []
-    for entry in library["components"]:
-        component = components[entry["id"]]
+    for component in sorted(_schema1(components).values(), key=lambda c: c["name"]):
+        entry = {"id": component["id"]}
         card_config = {"type": "custom:apollo-tab-card", "component": entry["id"]}
         validated = validate_card_config(component, card_config)
         compiled = compile_card(component, validated)
@@ -286,6 +394,7 @@ def build() -> dict:
         "themes": theme_entries,
         "library": library,
         "cards": cards,
+        "cards_v2": _cards_v2(components),
         "sample_config": sample,
         "layout": layout_entry,
         "dashboards": dashboards,

@@ -1,3 +1,4 @@
+import { applyAccent } from "./card-form.js";
 import { confirmStyles } from "./styles.js";
 
 let openCount = 0;
@@ -44,6 +45,7 @@ export function openConfirm({ title, text, more = "", okLabel, cancelLabel, dang
 
     const cancel = document.createElement("button");
     cancel.type = "button";
+    cancel.className = "text";
     cancel.dataset.test = "confirm-cancel";
     cancel.textContent = cancelLabel;
 
@@ -54,7 +56,7 @@ export function openConfirm({ title, text, more = "", okLabel, cancelLabel, dang
     if (danger) {
       const mark = document.createElement("ha-icon");
       mark.setAttribute("aria-hidden", "true");
-      mark.icon = "mdi:delete-outline";
+      mark.icon = "mdi:trash-can-outline";
       ok.append(mark);
     }
     const label = document.createElement("span");
@@ -93,6 +95,8 @@ export function openConfirm({ title, text, more = "", okLabel, cancelLabel, dang
       { once: true },
     );
 
+    // The dialog is outside the panel, so it works out its own accent.
+    applyAccent(host);
     dialog.showModal();
     cancel.focus();
   });

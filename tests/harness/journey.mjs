@@ -21,10 +21,12 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PREPICK_ONLY_DASHBOARD } from "../../custom_components/apollo_tab/frontend/tablets.js";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const GROUP_ORDER = ["lights", "climate", "media", "security", "sensors", "rooms", "more"];
-const NOT_SHOWN = "Not shown on the tablet";
+const GROUP_ORDER = ["lights", "climate", "covers", "security", "media", "sensors", "home", "more"];
+const NOT_SHOWN = "Left out";
 // The tablet's own words, from the shared contract (CONTRACT.md section 11).
 const SCREENS = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/contract/screens.json"), "utf8"));
 
@@ -161,6 +163,11 @@ window.__j = {
     walk(root);
     return found;
   },
+  // The drawn pages of the tablet pictures in these holders; each picture
+  // has its own shadow root.
+  pics(selector) {
+    return this.all(selector).map((holder) => holder.shadowRoot?.querySelector(".at-page")).filter(Boolean);
+  },
   visible(element) {
     if (!element || !element.isConnected || !element.getClientRects().length) return false;
     return getComputedStyle(element).visibility !== "hidden";
@@ -240,8 +247,23 @@ window.__j = {
     return { error: selector + " is covered by " + this.describe(hit) + " at " + x + "," + y };
   },
   // "" when the selected card on the tablet picture is on screen and nothing
-  // covers its centre, else what is wrong.
+  // covers its centre, else what is wrong. While the phone layout's edit
+  // mode is open the page behind it is covered: then the card is looked for
+  // in the edit mode's strip of the picture, wholly inside it.
   selectedCardProblem() {
+    if (this.find('[data-test="side"][data-mode="edit"]')) {
+      const strip = this.find('[data-test="edit-preview"]');
+      const mark = strip && this.all("[data-selected]", strip).find((node) => this.visible(node));
+      if (!mark) return "no card is selected in the edit mode's picture";
+      const box = strip.getBoundingClientRect();
+      const rect = mark.getBoundingClientRect();
+      if (rect.left < box.left - 0.5 || rect.top < box.top - 0.5 || rect.right > box.right + 0.5 || rect.bottom > box.bottom + 0.5) {
+        return "the selected card is not wholly inside the edit mode's picture";
+      }
+      if (rect.bottom > innerHeight || rect.top < 0) return "the edit mode's picture is off screen";
+      const top = this.at(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
+      return this.inside(strip, top) ? "" : "the selected card is covered by " + this.describe(top);
+    }
     const hit = this.find('[data-test="hit"][aria-pressed="true"]');
     if (!hit) return "no card is selected on the tablet picture";
     const rect = hit.getBoundingClientRect();
@@ -684,13 +706,47 @@ export class Run {
     await sleep(60);
   }
 
+  // A real double click at one place: two presses, the second with
+  // clickCount 2, as a mouse makes them.
+  async doubleClickAt(x, y) {
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    for (const clickCount of [1, 2]) {
+      await this.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount });
+      await this.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount });
+    }
+    await sleep(60);
+  }
+
+  // Only the second click of a double click, at a place.
+  async secondClickAt(x, y) {
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 2 });
+    await this.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 2 });
+    await sleep(60);
+  }
+
+  // One key event: "keyDown" or "keyUp" of Enter or Space, maybe flagged
+  // as a key held down.
+  async keyEvent(type, key, { repeat = false } = {}) {
+    const keys = {
+      Enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" },
+      " ": { key: " ", code: "Space", windowsVirtualKeyCode: 32, text: " " },
+    };
+    const { text, ...event } = keys[key];
+    await this.browser.send("Input.dispatchKeyEvent", {
+      type,
+      ...event,
+      ...(type === "keyDown" ? { text, autoRepeat: repeat } : {}),
+    });
+  }
+
   async type(text) {
     await this.browser.send("Input.insertText", { text });
     await sleep(60);
   }
 
   async key(key) {
-    const codes = { Tab: 9, Enter: 13, Escape: 27, Delete: 46, Backspace: 8, ArrowUp: 38, ArrowDown: 40 };
+    const codes = { Tab: 9, Enter: 13, Escape: 27, Delete: 46, Backspace: 8, ArrowUp: 38, ArrowDown: 40, ContextMenu: 93 };
     const event = { key, code: key, windowsVirtualKeyCode: codes[key] || 0 };
     await this.browser.send("Input.dispatchKeyEvent", {
       type: "keyDown",
@@ -761,6 +817,7 @@ export class Run {
   }
 
   async clearSelection() {
+    await leaveEditMode(this);
     if (await this.count('[data-test="close-panel"]')) {
       await this.click('[data-test="close-panel"]');
     } else if (await this.count('[data-test="hit"][aria-pressed="true"]')) {
@@ -775,8 +832,34 @@ export class Run {
   }
 }
 
-function step(n, name, run, { desktopOnly = false } = {}) {
-  return { n, name, run, desktopOnly };
+function step(n, name, run, { desktopOnly = false, phoneOnly = false } = {}) {
+  return { n, name, run, desktopOnly, phoneOnly };
+}
+
+// Whether the phone layout's edit mode (the layer with a card's form) is open.
+function inEditMode(r) {
+  return r.count('[data-test="side"][data-mode="edit"]');
+}
+
+// Closes the phone layout's edit mode with Done, as a person would before
+// pressing something under it.
+async function leaveEditMode(r) {
+  if (await inEditMode(r)) {
+    await r.click('[data-test="close-panel"]');
+    await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode to close");
+  }
+}
+
+// Shows every page notice: "+N more" when it shows and is closed. On a phone
+// every notice shows already.
+async function openNotices(r) {
+  if (await r.count('[data-test="notices-more"][aria-expanded="false"]')) {
+    await r.click('[data-test="notices-more"]');
+    await r.waitFor(`__j.find('[data-test="notices-more"][aria-expanded="true"]')`, "every page notice to show");
+    // The pointer leaves the notices, so no button there is left hovered.
+    await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: r.setup.height - 1 });
+    await sleep(200);
+  }
 }
 
 // The stand-in tablets of mock-hass.js ("three", "no-engine", "new" and
@@ -791,7 +874,7 @@ const LOFT = "aa:bb:cc:dd:ee:0c";
 // The second new tablet of the "two-new" set, listed above the porch one.
 const PATIO = "aa:bb:cc:dd:ee:0f";
 // The status of a new tablet while there are dashboards to pick.
-const NEW_STATUS = 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".';
+const NEW_STATUS = "Ready to turn on";
 // For how long Turn on ignores presses after the rows moved (tablets.js).
 const TURN_ON_SETTLE_MS = 700;
 const tabletRow = (mac) => `[data-test="tablet-row"][data-mac="${mac}"]`;
@@ -840,13 +923,176 @@ async function checkRingClear(r, before, link) {
   return ring;
 }
 
-// The lines that say which tablets show the dashboard, as on screen.
-function captionTexts(r) {
+// The editor's pop-ups. Each helper opens its pop-up when it is not open
+// yet, by pressing its opener as a person would.
+const popOpen = (test) => `__j.find('dialog[data-test="${test}"][open]')`;
+
+async function openPop(r, opener, test) {
+  if (await r.eval(`Boolean(${popOpen(test)})`)) return;
+  await closePops(r);
+  await leaveEditMode(r);
+  // The editor draws its bars again when its layout settles just after it
+  // opens; a press on a button that was replaced meanwhile reaches nothing.
+  // Only then is it pressed once more: a press on a button that stayed and
+  // opens nothing fails.
+  const mark = `__j.find('[data-test="${opener}"]')`;
+  await r.eval(`(() => { ${mark}.__pressed = true; return true; })()`);
+  await r.click(`[data-test="${opener}"]`);
+  try {
+    await r.waitFor(popOpen(test), `the ${test} pop-up`, 2000);
+  } catch (error) {
+    if (await r.eval(`Boolean(${mark}?.__pressed)`)) throw error;
+    await r.click(`[data-test="${opener}"]`);
+    await r.waitFor(popOpen(test), `the ${test} pop-up`);
+  }
+}
+
+// The theme gallery: from the Theme button, or on a phone from the menu.
+async function openTheme(r) {
+  if (await r.eval(`Boolean(${popOpen("theme-gallery")})`)) return;
+  if (await r.count('[data-test="theme-button"]')) {
+    await openPop(r, "theme-button", "theme-gallery");
+    return;
+  }
+  await openDashMenu(r);
+  await r.click('[data-test="menu-theme"]');
+  await r.waitFor(popOpen("theme-gallery"), "the theme gallery");
+}
+
+function openPageMenu(r) {
+  return openPop(r, "page-settings", "page-menu");
+}
+
+function openDashMenu(r) {
+  return openPop(r, "dash-menu", "dash-menu-pop");
+}
+
+// The Tablets pop-up; nothing to open where the editor has no chip (the
+// preview set-ups without a dashboard).
+async function openTablets(r) {
+  if (!(await r.count('[data-test="tablet-chip"]'))) return;
+  await openPop(r, "tablet-chip", "tablets-pop");
+}
+
+// Presses Redo. A phone's bar under 400 px has no room for it: there it
+// is in the menu, which closes when it is pressed. The edit mode is left
+// as it is, so a selected card stays selected.
+async function pressRedo(r) {
+  if (await r.count('[data-test="redo"]')) {
+    await r.click('[data-test="redo"]');
+    return;
+  }
+  await r.click('[data-test="dash-menu"]');
+  await r.waitFor(popOpen("dash-menu-pop"), "the menu with Redo");
+  await r.click('[data-test="redo"]');
+  await r.waitFor(`!__j.find("dialog.popover")`, "the menu to close after Redo");
+}
+
+// A phone's top bar always shows which dashboard is open. With a long
+// name, at 320, 360 and 390 px: the bar shows at least its first six
+// letters before the "…", the name's button is at least 72 px wide (120 px
+// from 360 px up), and a new dashboard's own name, "TAB-1 dashboard", is
+// whole from 360 px up. Under 400 px Redo is in the menu and Undo in the
+// bar; from 400 px up both are in the bar.
+async function phoneBarKeepsTheName(r) {
+  const rename = async (name) => {
+    await r.click('[data-test="title-button"]');
+    await r.waitFor(`__j.active()?.dataset?.test === "dashboard-name"`, "the name field");
+    await r.eval(`__j.active().select(); true`);
+    await r.type(name);
+    await r.key("Enter");
+    await r.waitFor(`__j.text('[data-test="title-button"]').includes(${JSON.stringify(name)})`, `the name ${name} in the bar`);
+  };
+  const look = () => r.eval(`(() => {
+    const button = __j.find('[data-test="title-button"]');
+    const words = button.querySelector(".title-text");
+    const range = document.createRange();
+    range.setStart(words.firstChild, 0);
+    range.setEnd(words.firstChild, Math.min(6, words.textContent.length));
+    const all = document.createRange();
+    all.selectNodeContents(words);
+    const style = getComputedStyle(words);
+    const pen = document.createElement("canvas").getContext("2d");
+    pen.font = style.fontStyle + " " + style.fontWeight + " " + style.fontSize + " " + style.fontFamily;
+    return {
+      button: Math.round(button.getBoundingClientRect().width),
+      room: words.clientWidth,
+      whole: all.getBoundingClientRect().width <= words.getBoundingClientRect().width + 0.5,
+      six: Math.ceil(range.getBoundingClientRect().width + pen.measureText("…").width),
+      undo: __j.count('.ed-header [data-test="undo"]'),
+      redo: __j.count('.ed-header [data-test="redo"]'),
+    };
+  })()`);
+  try {
+    for (const name of ["Downstairs hallway and stairs", "TAB-1 dashboard"]) {
+      await r.viewport();
+      await rename(name);
+      for (const width of [320, 360, 390, 412]) {
+        await r.browser.send("Emulation.setDeviceMetricsOverride", { width, height: 740, deviceScaleFactor: 1, mobile: true });
+        await r.waitFor(`__j.count('.ed-header [data-test="redo"]') === ${width < 400 ? 0 : 1}`, `the bar at ${width} px to ${width < 400 ? "drop" : "hold"} Redo`);
+        await sleep(150);
+        const bar = await look();
+        check(bar.undo === 1, `at ${width} px the bar has no Undo`);
+        check(bar.whole || bar.room >= bar.six, `at ${width} px the bar shows less than six letters of "${name}": ${JSON.stringify(bar)}`);
+        check(bar.whole || bar.button >= (width >= 360 ? 120 : 72), `at ${width} px the name has ${bar.button} px in the bar`);
+        if (name === "TAB-1 dashboard" && width >= 360) {
+          check(bar.whole, `at ${width} px "TAB-1 dashboard" is cut in the bar: ${JSON.stringify(bar)}`);
+        }
+        await checkNoSidewaysScroll(r, width);
+        if (width < 400) {
+          await r.click('[data-test="dash-menu"]');
+          await r.waitFor(popOpen("dash-menu-pop"), `the menu at ${width} px`);
+          check((await r.count('dialog[data-test="dash-menu-pop"] [data-test="redo"]')) === 1, `at ${width} px the menu has no Redo`);
+          await closePops(r);
+        }
+      }
+    }
+  } finally {
+    await r.viewport();
+  }
+}
+
+// Closes an open pop-up with Escape.
+async function closePops(r) {
+  if (await r.eval(`Boolean(__j.find("dialog.popover[open]"))`)) {
+    await r.key("Escape");
+    await r.waitFor(`!__j.find("dialog.popover")`, "the pop-up to close");
+  }
+}
+
+// Picks a theme in the gallery by pressing its tile.
+async function pickTheme(r, id) {
+  await openTheme(r);
+  await r.click(`[data-test="theme-tile"][data-theme="${id}"]`);
+  await r.waitFor(`__j.find('[data-test="theme"]')?.dataset.value === ${JSON.stringify(id)}`, `the ${id} theme to be chosen`);
+}
+
+// The page pop-up opened for a page, ready for its name: on a desktop the
+// field has focus with its words selected; on a phone nothing brings the
+// keyboard up unasked, so the field is pressed and its words selected.
+async function pageNameReady(r) {
+  await r.waitFor(popOpen("page-menu"), "the page pop-up");
+  if (r.setup.device === "phone") {
+    const typing = await r.eval(`["INPUT", "TEXTAREA"].includes(__j.active()?.tagName)`);
+    check(!typing, "on a phone the page pop-up gave focus to a text field");
+    await r.tap('[data-test="page-name"]');
+    await r.eval(`(() => { __j.find('[data-test="page-name"]').select(); return true; })()`);
+  }
+  await r.waitFor(`__j.active()?.dataset?.test === "page-name"`, "the page name field to get focus");
+  const selected = await r.eval(`(() => { const input = __j.active(); return input.selectionStart === 0 && input.selectionEnd === input.value.length && input.value.length > 0; })()`);
+  check(selected, "the page name text is not selected");
+}
+
+// The lines that say which tablets show the dashboard, in the Tablets
+// pop-up.
+async function captionTexts(r) {
+  await openTablets(r);
   return r.eval(`__j.all('[data-test="tablet-line"]').filter((line) => __j.visible(line)).map((line) => line.textContent)`);
 }
 
 async function waitCaption(r, lines, what) {
   const expected = JSON.stringify(lines);
+  await openTablets(r);
   try {
     await r.waitFor(
       `JSON.stringify(__j.all('[data-test="tablet-line"]').filter((line) => __j.visible(line)).map((line) => line.textContent)) === ${JSON.stringify(expected)}`,
@@ -857,11 +1103,18 @@ async function waitCaption(r, lines, what) {
   }
 }
 
+// The cards the picker offers: the 41 bundled cards but the 15 older ones
+// a newer card replaces. Of the older cards only the camera snapshot is
+// still offered.
+const OFFERED_CARDS = 26;
+
 const CREATED_CARD = {
   type: "custom:apollo-tab-card",
-  component: "apollo/light-tile",
+  component: "apollo/light",
   params: { entity: "light.kitchen" },
   grid_options: { columns: 6, rows: 3 },
+  // A new page is placed from its first card.
+  apollo_tab: { page: 0, col: 0, row: 0 },
 };
 
 // A second dashboard for the steps that move between dashboards.
@@ -963,6 +1216,26 @@ const tabCards = (count, component, entity) =>
 // Five dials on one screen, one more than a screen can show.
 const DIALS_CONFIG = twoPages(tabCards(5, "apollo/thermostat", "climate.hall"));
 
+// One card with five graphs, one more than a screen can show: it is left
+// out, and its page has nothing else. The card is the stand-in's and the
+// harness server's own (FIVE_GRAPHS).
+const GRAPHS_CONFIG = twoPages(tabCards(1, "me/five-graphs", "sensor.energy"));
+
+// One page that uses the whole screen with a full row of lights and more.
+const ROW_CONFIG = {
+  apollo_tab: { version: 1, theme: "midnight" },
+  views: [
+    {
+      type: "sections",
+      title: "Home",
+      path: "home",
+      icon: "mdi:home",
+      max_columns: 3,
+      sections: [{ type: "grid", column_span: 3, cards: tabCards(6, "apollo/light-tile", "light.kitchen") }],
+    },
+  ],
+};
+
 // So many cards that the page needs two screens; the last of five dials is
 // left out on the second screen.
 const SPILL_CONFIG = twoPages([
@@ -1017,9 +1290,8 @@ export async function checkTextContrast(r, selectors, timeout = 3000) {
 // Nothing is wider than the screen the set-up asked for. The window's own
 // width is no measure on a phone: with mobile emulation it grows with
 // content that is too wide, so the page and the window are both compared
-// with the set-up's width.
-export async function checkNoSidewaysScroll(r) {
-  const limit = r.setup.width;
+// with the set-up's width, or with the width a step set for itself.
+export async function checkNoSidewaysScroll(r, limit = r.setup.width) {
   const widths = await r.eval(`({
     page: document.documentElement.scrollWidth,
     body: document.body.scrollWidth,
@@ -1059,12 +1331,30 @@ async function canvasAccessibilityProblems(r) {
 // one save is under way and one waits behind it. Returns the editor's draft.
 async function editWithSlowSaves(r) {
   await r.click('[data-test="list-row"][data-source="0.1.0"]');
+  await openPart(r, "place");
   await r.waitFor(`__j.find('[data-test="wider"]')`, "the card form");
   await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+  await openPart(r, "place");
   await r.click('[data-test="wider"]');
   await r.waitFor(`${SAVES}.length === 1`, "the first save to be sent", 3000);
+  await openPart(r, "place");
   await r.click('[data-test="taller"]');
   return r.draft();
+}
+
+// Opens a part of the card's inspector when it is closed: "device",
+// "shows", "controls", "look" (with its Colours) or "place". Waits for the
+// inspector first.
+async function openPart(r, name) {
+  const part = `[data-test="part-${name}"]`;
+  await r.waitFor(`__j.find('${part}')`, `the ${name} part`);
+  const ids = name === "look" ? ["look", "colours"] : [name];
+  for (const id of ids) {
+    const sel = `[data-test="part-${id}"]`;
+    if (await r.eval(`__j.find('${sel}').open`)) continue;
+    await r.click(`${sel} > summary`);
+    await r.waitFor(`__j.find('${sel}')?.open`, `the ${id} part to open`);
+  }
 }
 
 // Opens the editor on the sample dashboard.
@@ -1076,9 +1366,11 @@ async function openSample(r, params = {}) {
   await r.waitFor(`__j.count('[data-test="hit"]') > 3`, "cards on the canvas");
 }
 
-// Chooses a card in the list. On a phone the open card sheet is closed
-// first, as a person would, since it covers the list.
+// Chooses a card in the list. On a phone the edit mode is closed first, as
+// a person would, since it covers the list; on a wide screen the list shows
+// only while no card is selected.
 async function selectRow(r, key) {
+  await leaveEditMode(r);
   if (await r.count('[data-test="hit"][aria-pressed="true"]')) {
     await r.clearSelection();
   }
@@ -1094,11 +1386,15 @@ async function expectSelected(r, name, key, when) {
   while (Date.now() < end) {
     last = await r.eval(`(() => {
       const selected = __j.designer()._selected;
-      const row = __j.find('[data-test="list-row"][aria-current="true"]');
+      // While a card is selected the list is not on screen (its form is in
+      // its place), so its row is read from the list itself.
+      const list = __j.designer()._els.list;
+      const row = list && list.querySelector('[data-test="list-row"][aria-current="true"]');
       return {
         selected: selected ? selected.join(".") : null,
         row: row ? row.dataset.source : null,
-        title: __j.text('[data-test="side-title"]').trim(),
+        // The header names the card by its device; its kind is under it.
+        title: __j.text('[data-test="side-type"]').trim(),
       };
     })()`);
     if (last.selected === key && last.row === key && last.title === name) return;
@@ -1152,11 +1448,13 @@ async function leaveAfterOwnSaveLanded(r) {
   await openSample(r);
   await selectRow(r, "0.1.0");
   await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+  await openPart(r, "place");
   await r.click('[data-test="wider"]');
   await r.waitFor(`${SAVES}.length === 1`, "the save to be sent", 3000);
   const theirs = await saveElsewhere(r, `(config) => { config.views[1].title = "Elsewhere"; }`);
   await r.waitFor(`__j.find('[data-test="conflict-theirs"]')`, "the conflict banner");
   await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[1].title === "Climate"`, "the slow save to land");
+  await openPart(r, "place");
   await r.click('[data-test="taller"]');
   const mine = await r.draft();
   const landed = await r.config();
@@ -1189,6 +1487,9 @@ async function shortcut(r, key) {
 // Presses a control with Enter until it stops taking the press, and checks
 // focus moves to `then` rather than falling to the page.
 async function pressToLimit(r, test, then) {
+  if (["wider", "taller", "narrower", "shorter", "move-earlier", "move-later"].includes(test)) {
+    await openPart(r, "place");
+  }
   await r.eval(`__j.find('[data-test="${test}"]').focus(); true`);
   check((await focused(r)) === test, `${test} cannot take focus`);
   for (let press = 0; press < 8; press += 1) {
@@ -1260,6 +1561,7 @@ async function keepChange(r, { offline }) {
   const original = await r.config();
   await selectRow(r, "0.1.0");
   await r.eval(`__apolloMockHass.failSaves(${offline ? 1 : 100}); true`);
+  await openPart(r, "place");
   await r.click('[data-test="wider"]');
   await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
   if (offline) {
@@ -1271,8 +1573,130 @@ async function keepChange(r, { offline }) {
   return original;
 }
 
+// Page-side checks of the panel's visual system (steps 111 to 118). The
+// tablet pictures (also the start screen's sample) and the example cards in
+// the picker are left out: they are drawn as the tablet draws them.
+const UI = `window.__ui = {
+  inPicture(node) {
+    for (let at = node; at && at.nodeType === 1; at = __j.up(at)) {
+      if (
+        at.classList.contains("page-host") ||
+        at.classList.contains("tile-preview") ||
+        at.classList.contains("tablet-pic") ||
+        at.classList.contains("guide-sample") ||
+        at.localName === "apollo-tab-card"
+      ) {
+        return true;
+      }
+    }
+    return false;
+  },
+  ownText(node) {
+    return [...node.childNodes].some((child) => child.nodeType === 3 && child.textContent.trim());
+  },
+  // Home Assistant's own sidebar button, drawn by Home Assistant.
+  inMenuButton(node) {
+    for (let at = node; at && at.nodeType === 1; at = __j.up(at)) {
+      if (at.localName === "ha-menu-button") return true;
+    }
+    return false;
+  },
+  // [element, font size] of everything with words of its own.
+  textSizes() {
+    return __j.all("*")
+      .filter((node) => __j.visible(node) && !this.inPicture(node) && !this.inMenuButton(node) && this.ownText(node))
+      .filter((node) => !["STYLE", "SCRIPT", "OPTION", "TITLE"].includes(node.tagName))
+      .map((node) => [__j.describe(node) + " " + node.textContent.trim().slice(0, 24), parseFloat(getComputedStyle(node).fontSize)]);
+  },
+  // Everything that can be pressed, with its height. A switch is measured
+  // by its row, which takes the press; a link inside a sentence is a line
+  // high, as the words are, and is left out.
+  controls() {
+    const found = [];
+    for (const node of __j.all("button, a, input, select, textarea, label.check")) {
+      if (!__j.visible(node) || this.inPicture(node) || node.matches(".hit")) continue;
+      if (node.matches("input[type=checkbox], input[type=radio]")) continue;
+      if (node.matches("a:not(.button-link)") && getComputedStyle(node).display === "inline") continue;
+      let kind = "other";
+      if (node.matches(".tab")) kind = "tab";
+      // The start screen's Advanced row is a row too: 56 px, two lines.
+      else if (node.matches(".list-row, .entity-option, .tile, .settings-row")) kind = "row";
+      else if (node.matches("select, textarea, input:not([type=range]):not([type=color])")) kind = "field";
+      else if (node.matches("button, a.button-link")) kind = "plain";
+      const rect = node.getBoundingClientRect();
+      found.push({ kind, test: node.dataset.test || null, what: __j.describe(node),
+        height: Math.round(rect.height * 10) / 10, minHeight: getComputedStyle(node).minHeight });
+    }
+    return found;
+  },
+  // The filled buttons on screen, by their data-test.
+  filled() {
+    return __j.all("button.primary").filter((node) => __j.visible(node) && !this.inPicture(node))
+      .map((node) => node.dataset.test || __j.describe(node));
+  },
+  // What in a bar cannot be read: words under 4.5:1, icons under 3:1.
+  barProblems(selector) {
+    const problems = [];
+    for (const bar of __j.all(selector).filter((node) => __j.visible(node))) {
+      for (const node of [bar, ...bar.querySelectorAll("*")]) {
+        if (!__j.visible(node) || node.closest("button:disabled")) continue;
+        if (node.localName === "ha-icon") {
+          // The stand-in icon fills itself with its colour, so it is
+          // measured against what is behind it.
+          const ratio = __j.contrast(__j.paint(node, __j.rgba(getComputedStyle(node).color)), __j.backdrop(__j.up(node)));
+          if (ratio < 3) problems.push([__j.describe(node), ratio]);
+        } else if (this.ownText(node)) {
+          const ratio = __j.textContrast(node);
+          if (ratio < 4.5) problems.push([__j.describe(node), node.textContent.trim().slice(0, 30), ratio]);
+        }
+      }
+    }
+    return problems;
+  },
+}; true`;
+
 // Steps that share state are in one chain; a failed step skips the rest of
 // its chain, since they would only fail for the same reason.
+// A real mouse drag: press at `from`, move in steps with the button held,
+// release at `to`. `beforeRelease` runs while the button is still down.
+async function drag(r, from, to, { steps = 8, beforeRelease = null } = {}) {
+  const send = (event) => r.browser.send("Input.dispatchMouseEvent", event);
+  await send({ type: "mouseMoved", x: from.x, y: from.y });
+  await send({ type: "mousePressed", x: from.x, y: from.y, button: "left", buttons: 1, clickCount: 1 });
+  for (let i = 1; i <= steps; i += 1) {
+    const x = Math.round(from.x + ((to.x - from.x) * i) / steps);
+    const y = Math.round(from.y + ((to.y - from.y) * i) / steps);
+    await send({ type: "mouseMoved", x, y, button: "left", buttons: 1 });
+    await sleep(16);
+  }
+  if (beforeRelease) await beforeRelease();
+  await send({ type: "mouseReleased", x: to.x, y: to.y, button: "left", buttons: 0, clickCount: 1 });
+  await sleep(120);
+}
+
+// An arrow key on what has focus, with Shift when `shift` is true.
+async function arrow(r, key, shift = false) {
+  const codes = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
+  const event = { key, code: key, windowsVirtualKeyCode: codes[key], modifiers: shift ? 8 : 0 };
+  await r.browser.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...event });
+  await r.browser.send("Input.dispatchKeyEvent", { type: "keyUp", ...event });
+  await sleep(80);
+}
+
+// The centre of a card on the picture, and the picture's scale.
+async function hitBox(r, source) {
+  return r.eval(`(() => { const hit = __j.find('[data-test="hit"][data-source="${source}"]');
+    if (!hit) return null;
+    hit.scrollIntoView({ block: "center" });
+    const box = hit.getBoundingClientRect();
+    const stage = __j.find('[data-test="canvas"]').getBoundingClientRect();
+    return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2),
+      left: box.left - stage.left, top: box.top - stage.top, right: box.right, bottom: box.bottom, scale: stage.width / 1280 }; })()`);
+}
+
+// Every card of the saved dashboard's first page.
+const SAVED_CARDS = `__apolloMockHass.getConfig("tab-1").views[0].sections.flatMap((section) => section.cards || [])`;
+
 function chains(realConfig) {
   const home = `__j.find('[data-test="home"]')`;
   const editorReady = `__j.find('[data-test="canvas"]') || __j.find('[data-test="page-box"]')`;
@@ -1302,7 +1726,10 @@ function chains(realConfig) {
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
       const tiles = await r.eval(`__j.all('[data-test="tile"]').map((tile) => tile.dataset.component)`);
       const library = await r.eval(`__apolloFixtures.library.components.map((component) => component.id)`);
-      check(tiles.length === 16, `${tiles.length} tiles`);
+      // Every card but the older ones a newer card replaces (I8).
+      const offered = await r.eval(`__apolloFixtures.library.components.filter((component) => !component.legacy).map((component) => component.id)`);
+      check(tiles.length === OFFERED_CARDS && offered.length === OFFERED_CARDS, `${tiles.length} tiles`);
+      check(stable([...tiles].sort()) === stable([...offered].sort()), `the picker offers ${tiles}`);
       check(tiles.every((id) => library.includes(id)), "a tile that is not a TAB-1 card");
       const groups = await r.eval(`__j.all('[data-test="picker-group"]').map((heading) => heading.dataset.group)`);
       const order = groups.map((id) => GROUP_ORDER.indexOf(id));
@@ -1325,36 +1752,38 @@ function chains(realConfig) {
       await r.click('[data-test="picker-search"]');
       const tiles = await search("light");
       const named = await r.eval(`__apolloFixtures.library.components
-        .filter((component) => /\\blight/i.test(component.name + " " + (component.description || "")))
+        .filter((component) => !component.legacy && /\\blight/i.test(component.name + " " + (component.description || "")))
         .map((component) => component.id).sort()`);
       check(named.every((id) => tiles.includes(id)), `"light" finds ${tiles}, not every card named for lights (${named})`);
-      check(tiles.includes("apollo/scene-row"), `"light" does not find the cards in "Lights and scenes": ${tiles}`);
-      check(!tiles.includes("apollo/thermostat"), `"light" finds the thermostat: ${tiles}`);
+      check(tiles.includes("apollo/switch"), `"light" does not find the cards in "Lights and switches": ${tiles}`);
+      check(!tiles.includes("apollo/climate"), `"light" finds the thermostat: ${tiles}`);
       const shot = await r.shot("04-picker-search");
       for (const [word, card] of [
-        ["tv", "apollo/media-player"],
-        ["speaker", "apollo/media-player"],
-        ["music", "apollo/media-player"],
-        ["climate", "apollo/thermostat"],
-        ["curtain", "apollo/blinds"],
+        ["tv", "apollo/media"],
+        ["speaker", "apollo/media"],
+        ["music", "apollo/media"],
+        ["climate", "apollo/climate"],
+        ["curtain", "apollo/cover"],
+        // A card's own search words.
+        ["laundry", "apollo/appliance"],
       ]) {
         const found = await search(word);
         check(found.includes(card), `"${word}" finds ${JSON.stringify(found)}, not ${card}`);
       }
       // Not inside words: "each" does not hold "ac".
       const short = await search("ac");
-      check(!short.some((id) => ["apollo/scene-row", "community/presence-chips"].includes(id)), `"ac" finds ${short}`);
+      check(!short.some((id) => ["apollo/scenes", "apollo/people"].includes(id)), `"ac" finds ${short}`);
       check((await search("spotify")).length === 0, "a card matches spotify");
       const none = await r.text('[data-test="picker-none"]');
-      check(none.includes('No card matches "spotify".') && none.includes("Try the name of a card or a kind of device"), `the picker says "${none}"`);
+      check(none.includes('No card matches "spotify".') && none.includes("Try the name of a card, a device or a room."), `the picker says "${none}"`);
       await r.shot("04-picker-search-none");
       await r.click('[data-test="picker-clear-search"]');
-      await r.waitFor(`__j.count('[data-test="tile"]') === 16`, "every card after Show all cards");
+      await r.waitFor(`__j.count('[data-test="tile"]') === ${OFFERED_CARDS}`, "every card after Show all cards");
       check((await r.eval(`__j.find('[data-test="picker-search"]').value`)) === "", "the search is not cleared");
       return shot;
     }),
     step("05", "device-step", async (r) => {
-      await r.click('[data-test="tile"][data-component="apollo/light-tile"]');
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
       await r.waitFor(`__j.find('[data-test="entity"]')`, "the device step");
       const options = await r.eval(`__j.all('[data-test="entity"]').map((option) => option.dataset.entity).sort()`);
       const expected = await r.eval(`Object.keys(__apolloMockHass.states)
@@ -1369,8 +1798,8 @@ function chains(realConfig) {
       await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "one card on the canvas");
       await r.waitFor(`__j.find('[data-test="hit"][aria-pressed="true"]')`, "the card to be selected");
-      const title = await r.text('[data-test="side-title"]');
-      check(title.includes("Light tile"), `side panel shows ${title}`);
+      const title = await r.text('[data-test="side-type"]');
+      check(title.includes("Light"), `side panel shows ${title}`);
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1")?.views?.[0]?.sections?.[0]?.cards?.length === 1`,
         "the card to be saved",
@@ -1383,7 +1812,10 @@ function chains(realConfig) {
       return r.shot("06-card-added");
     }),
     step("07", "card-styled", async (r) => {
-      // Pressed where it is, so the check below sees what the person sees.
+      // Width and Height are in Size and place. Pressed where they are, so
+      // the check below sees what the person sees.
+      await openPart(r, "place");
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       await r.tap('[data-test="wider"]');
       await r.waitFor(
         `(() => { const width = __j.find('[data-test="hit"]').getBoundingClientRect().width;
@@ -1391,7 +1823,9 @@ function chains(realConfig) {
         "the card on the canvas to be twice as wide",
       );
       await checkSelectedCardVisible(r, "after Wider");
-      await r.click('input[data-focus="look-use-color"]');
+      // A background colour: a swatch under Look, Colours.
+      await openPart(r, "look");
+      await r.click('[data-test="look-background"] [data-test="swatch-choice"]:not([data-value=""])');
       await r.waitFor(
         `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
           return card.grid_options?.columns === 12 && /^#[0-9A-Fa-f]{6}$/.test(card.style?.color || ""); })()`,
@@ -1401,10 +1835,9 @@ function chains(realConfig) {
       return r.shot("07-card-styled");
     }),
     step("08", "page-added", async (r) => {
+      await leaveEditMode(r);
       await r.click('[data-test="add-page"]');
-      await r.waitFor(`__j.active()?.dataset?.test === "page-name"`, "the page name field to get focus");
-      const selected = await r.eval(`(() => { const input = __j.active(); return input.selectionStart === 0 && input.selectionEnd === input.value.length && input.value.length > 0; })()`);
-      check(selected, "the page name text is not selected");
+      await pageNameReady(r);
       await r.type("Bedroom");
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1").views.length === 2 && __apolloMockHass.getConfig("tab-1").views[1].title === "Bedroom"`,
@@ -1417,13 +1850,17 @@ function chains(realConfig) {
       const tabs = await r.eval(`__j.all('[data-test="page-tab"]').map((tab) => tab.getAttribute("aria-selected"))`);
       check(stable(tabs) === stable(["false", "true"]), `tab selection ${tabs}`);
       check((await r.count('[data-test="add-first-card"]')) === 1, "the new page is not empty");
-      return r.shot("08-page-added");
+      const shot = await r.shot("08-page-added");
+      await r.key("Escape");
+      await r.waitFor(`!${popOpen("page-menu")}`, "the page pop-up to close");
+      await r.waitFor(`__j.active()?.dataset?.test === "page-settings"`, "focus back on the page settings button");
+      return shot;
     }),
     step("09", "page-two", async (r) => {
-      await r.addCard("add-card", "apollo/fan", "fan.bedroom_main_bedroom_fan");
+      await r.addCard("add-card", "apollo/fan-speed", "fan.bedroom_main_bedroom_fan");
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the fan on the canvas of page 2");
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan"`,
+        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan-speed"`,
         "the fan to be saved on page 2",
       );
       await r.waitSaved("fan added");
@@ -1437,17 +1874,27 @@ function chains(realConfig) {
         "the undo to be saved",
       );
       await r.waitSaved("undo");
-      await r.click('[data-test="redo"]');
+      await pressRedo(r);
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the card to come back after redo");
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan"`,
+        `__apolloMockHass.getConfig("tab-1").views[1].sections[0].cards[0]?.component === "apollo/fan-speed"`,
         "the redo to be saved",
       );
       await r.waitSaved("redo");
       return null;
     }),
     step("11", "undo-toast", async (r) => {
-      await r.click('[data-test="hit"]');
+      if (r.setup.device === "phone") {
+        // On a phone a press opens the edit mode over the picture, so the
+        // card is reached from the keyboard with the edit mode closed.
+        await leaveEditMode(r);
+        await r.click('[data-test="hit"]');
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]') && __j.find('[data-test="hit"][aria-pressed="true"]')`, "a press to open the edit mode");
+        await leaveEditMode(r);
+        await r.eval(`__j.find('[data-test="hit"]').focus(); true`);
+      } else {
+        await r.click('[data-test="hit"]');
+      }
       await r.waitFor(`__j.active()?.dataset?.test === "hit"`, "the card to have focus");
       await r.key("Delete");
       await r.waitFor(`__j.count('[data-test="hit"]') === 0`, "the card to be removed");
@@ -1471,7 +1918,7 @@ function chains(realConfig) {
       await r.waitFor(`${home} && __j.find('[data-test="dashboard-row"]')`, "Home with the dashboard");
       check((await r.count('[data-test="dashboard-row"]')) === 1, "not exactly one dashboard row");
       const row = await r.text('[data-test="dashboard-row"]');
-      check(row.includes("Pages: 2"), `row reads ${row}`);
+      check(row.includes("2 pages, "), `row reads ${row}`);
       check((await r.count('[data-test="edit"]')) === 1, "no Edit button");
       await checkTextContrast(r, ['[data-test="edit"]', '[data-test="create"]']);
       return r.shot("12-home-list");
@@ -1489,8 +1936,8 @@ function chains(realConfig) {
         .then((result) => result.dashboards.find((entry) => entry.url_path === "tab-1-2").pages)`);
       check(screens === 1, `the stand-in reports ${screens} tablet screens for one empty page`);
       const text = await r.text(row);
-      check(text.includes("Pages: 1"), `the new dashboard's row reads ${text}`);
-      check((await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]')).includes("Pages: 2"), "first row changed");
+      check(text.includes("1 page, no cards"), `the new dashboard's row reads ${text}`);
+      check((await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]')).includes("2 pages, "), "first row changed");
       return r.shot("28-new-dashboard-pages");
     }),
   ];
@@ -1500,6 +1947,8 @@ function chains(realConfig) {
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
       await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the heading on the canvas");
       await r.waitFor(`__j.find('[data-test="list-row"][data-shown="false"]')`, "the list to know what is shown");
+      // One page notice shows; the other two are behind "+2 more".
+      await openNotices(r);
       check((await r.count('[data-test="sidebar-notice"]')) === 1, "no sidebar notice");
       check((await r.count('[data-test="columns-notice"]')) === 1, "no columns notice");
       const row = await r.text('[data-test="list-row"][data-shown="false"]');
@@ -1554,6 +2003,7 @@ function chains(realConfig) {
       return shot;
     }),
     step("16", "hide-from-sidebar", async (r) => {
+      await openNotices(r);
       await r.click('[data-test="sidebar-hide"]');
       await r.waitFor(`!__j.find('[data-test="sidebar-notice"]')`, "the sidebar notice to go");
       const updates = await r.calls("lovelace/dashboards/update");
@@ -1562,6 +2012,7 @@ function chains(realConfig) {
       return null;
     }),
     step("17", "real-after", async (r) => {
+      await openNotices(r);
       await r.click('[data-test="use-whole-screen"]');
       await r.waitFor(
         `(() => { const sections = __apolloMockHass.getConfig("tab-1").views[0].sections;
@@ -1569,13 +2020,13 @@ function chains(realConfig) {
         "the page to use the whole screen",
       );
       await r.waitFor(`!__j.find('[data-test="columns-notice"]')`, "the columns notice to go");
-      await r.addCard("add-card", "apollo/thermostat", "climate.hall");
+      await r.addCard("add-card", "apollo/climate", "climate.hall");
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/thermostat")`,
+        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/climate")`,
         "the thermostat to be saved",
       );
       const index = (await r.config()).views[0].sections[0].cards.findIndex(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       );
       await r.waitFor(`__j.find('[data-test="hit"][data-source="0.0.${index}"]')`, "the thermostat on the canvas");
       await r.waitSaved("thermostat added");
@@ -1583,8 +2034,10 @@ function chains(realConfig) {
     }),
     step("18", "save-error", async (r) => {
       const before = (await r.config()).views[0].sections[0].cards.find(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       ).grid_options.columns;
+      await openPart(r, "place");
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       await r.eval(`__apolloMockHass.failSaves(1)`);
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save state to read error");
@@ -1593,7 +2046,7 @@ function chains(realConfig) {
       await r.click('[data-test="save-retry"]');
       await r.waitSaved("after retry");
       const after = (await r.config()).views[0].sections[0].cards.find(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       ).grid_options.columns;
       check(after === before + 6, `width ${before} became ${after}`);
       return shot;
@@ -1603,9 +2056,11 @@ function chains(realConfig) {
       await r.eval(`(() => { const config = __apolloMockHass.getConfig("tab-1");
         config.apollo_tab = { ...config.apollo_tab, theme: "daylight" };
         __apolloMockHass.externalSave("tab-1", config); })()`);
-      await r.waitFor(`__j.find('[data-test="theme"]')?.value === "daylight"`, "the theme select to show Daylight");
       await r.waitFor(`__j.find('[data-test="toast"]')`, "a toast");
+      await openTheme(r);
+      await r.waitFor(`__j.find('[data-test="theme"]')?.dataset.value === "daylight"`, "the theme gallery to show Daylight");
       const shot = await r.shot("19-changed-elsewhere");
+      await closePops(r);
       await r.click('[data-test="undo"]');
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1").apollo_tab.theme === "midnight"`,
@@ -1616,9 +2071,10 @@ function chains(realConfig) {
     }),
     step("20", "conflict", async (r) => {
       const index = (await r.config()).views[0].sections[0].cards.findIndex(
-        (card) => card.component === "apollo/thermostat",
+        (card) => card.component === "apollo/climate",
       );
       await r.click(`[data-test="hit"][data-source="0.0.${index}"]`);
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="wider"]')`, "the card form");
       await r.eval(`__apolloMockHass.failSaves(1)`);
       await r.click('[data-test="wider"]');
@@ -1640,7 +2096,7 @@ function chains(realConfig) {
       await r.waitFor(`__j.designer()._history.present.apollo_tab.theme === "warm"`, "Undo to show the other version");
       await r.waitFor(`__apolloMockHass.getConfig("tab-1").apollo_tab.theme === "warm"`, "the other version to be saved");
       await r.waitSaved("other version back");
-      await r.click('[data-test="redo"]');
+      await pressRedo(r);
       await r.waitFor(`__apolloMockHass.getConfig("tab-1").apollo_tab.theme === "midnight"`, "Redo to save mine again");
       await r.waitSaved("my version back");
       check(stable(await r.config()) === stable(draft), "Redo did not bring back my version");
@@ -1656,7 +2112,8 @@ function chains(realConfig) {
         { seed: "sample", route: "/advanced", community: "1" },
         `__j.find('[data-test="advanced"] .code-line') && __j.find('[data-test="lock-row"][data-component="me/door-lock"]')`,
       );
-      const folder = await r.text('[data-test="advanced"] .code-line');
+      // The folder is a field to read and copy.
+      const folder = await r.eval(`__j.find('[data-test="advanced"] .code-line').value`);
       check(folder.includes("/config/apollo_tab/components"), `folder line ${folder}`);
       const row = await r.text('[data-test="lock-row"][data-component="me/door-lock"]');
       check(row.includes("Door lock") && row.includes("Switched off"), `lock row ${row}`);
@@ -1769,7 +2226,8 @@ function chains(realConfig) {
 
   const selection = [
     step("25", "close-card-form", async (r) => {
-      const theme = '[data-test="theme"]';
+      // The card list's words, which show once no card is selected.
+      const theme = '[data-test="side-intro"]';
       await r.open({ seed: "sample", route: "/edit/tab-1" }, editorReady);
       await r.waitFor(`__j.count('[data-test="hit"]') > 3`, "cards on the canvas");
       const source = await r.eval(`__j.all('[data-test="hit"]').map((hit) => hit.dataset.source).find((key) => !key.endsWith(".t"))`);
@@ -1781,22 +2239,43 @@ function chains(realConfig) {
       await checkSelectedCardVisible(r, "after pressing the card on the picture");
       const shot = await r.shot("25-close-card-form");
       await r.click('[data-test="close-panel"]');
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "the dashboard theme after Close");
+      await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "the card list after Close");
 
-      await r.click(card);
-      await r.waitFor(`__j.find('${pressed}')`, "the card to be selected again");
-      await r.click(card);
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "the card to let go when pressed again");
+      if (r.setup.device === "desktop") {
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}')`, "the card to be selected again");
+        await r.click(card);
+        await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "the card to let go when pressed again");
 
-      await r.click(card);
-      await r.waitFor(`__j.find('${pressed}')`, "the card to be selected once more");
-      const point = await r.eval(`__j.emptyCanvasPoint()`);
-      check(point && !point.error, point?.error || "no free point on the picture");
-      await r.clickAt(point.x, point.y);
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "a press beside the cards to clear the selection");
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}')`, "the card to be selected once more");
+        const point = await r.eval(`__j.emptyCanvasPoint()`);
+        check(point && !point.error, point?.error || "no free point on the picture");
+        await r.clickAt(point.x, point.y);
+        await r.waitFor(`!__j.find('${pressed}') && __j.find('${theme}')`, "a press beside the cards to clear the selection");
+      } else {
+        // On a phone the card and the picture around it are under the edit
+        // mode: a press where the card is changes nothing, and Done and
+        // Escape are the ways out.
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}') && __j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode");
+        const place = await r.eval(`(() => { const rect = __j.find('${card}').getBoundingClientRect();
+          return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`);
+        const before = stable(await r.draft());
+        await r.clickAt(place.x, place.y);
+        await sleep(300);
+        check((await r.count(pressed)) === 1 && (await inEditMode(r)), "a press at the card's place under the edit mode let the card go");
+        check(stable(await r.draft()) === before, "a press at the card's place under the edit mode changed the dashboard");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('${pressed}') && !__j.find('[data-test="side"][data-mode="edit"]') && __j.find('${theme}')`, "Escape to close the edit mode");
+        await r.click(card);
+        await r.waitFor(`__j.find('${pressed}') && __j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode again");
+        await r.click('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('${pressed}') && !__j.find('[data-test="side"][data-mode="edit"]')`, "Done to close the edit mode");
+      }
 
       // On a phone the list is below the picture; choosing a card there
-      // brings the picture back into view above the card's sheet.
+      // opens the edit mode with the card in its strip of the picture.
       await r.click(`[data-test="list-row"][data-source="${source}"]`);
       await r.waitFor(`__j.find('${pressed}')`, "the card to be selected from the list");
       if (r.setup.device === "phone") {
@@ -1871,7 +2350,7 @@ function chains(realConfig) {
             `__j.all('[data-test="hit"]').map((hit) => hit.dataset.source).find((key) => !key.endsWith(".t"))`,
           );
           await r.click(`[data-test="list-row"][data-source="${source}"]`);
-          await r.waitFor(`__j.find(".side.sheet")`, "the card sheet");
+          await r.waitFor(`__j.find('.side.sheet[data-mode="edit"]')`, "the edit mode");
           const box = await r.eval(`(() => {
             const sheet = __j.find(".side.sheet").getBoundingClientRect();
             const panel = __apolloPanel.getBoundingClientRect();
@@ -1885,13 +2364,11 @@ function chains(realConfig) {
           check(box.at === "docked-sidebar", `the sidebar is covered by ${box.at}`);
           await checkSelectedCardVisible(r, "with the sidebar docked");
           const shot = await r.shot("31-mid-width-sheet");
+          await checkNoSidewaysScroll(r, 1100);
           // The sample's light tile is drawn on the page's second screen;
-          // choosing it in the list shows that screen.
-          await r.click('[data-test="list-row"][data-source="0.1.0"]');
-          await r.waitFor(
-            `__j.find('[data-test="hit"][data-source="0.1.0"][aria-pressed="true"]')`,
-            "the screen with the chosen card",
-          );
+          // choosing it in the list (the edit mode closed first) shows that
+          // screen.
+          await selectRow(r, "0.1.0");
           await checkSelectedCardVisible(r, "after choosing a card drawn on another screen");
           return shot;
         } finally {
@@ -1906,9 +2383,10 @@ function chains(realConfig) {
     step("26", "confirm-dialog", async (r) => {
       const open = `__j.find('dialog[data-test="confirm"][open]')`;
       await r.open({ seed: "sample", route: "/edit/tab-1" }, editorReady);
-      await r.waitFor(`__j.find('[data-test="page-delete"]')`, "the page settings");
+      await openPageMenu(r);
       await r.click('[data-test="page-delete"]');
       await r.waitFor(open, "the question");
+      check(!(await r.eval(`Boolean(__j.find("dialog.popover[open]"))`)), "the page pop-up stays open under the question");
       const look = await r.eval(`(() => {
         const dialog = __j.find('dialog[data-test="confirm"]');
         const cancel = __j.find('[data-test="confirm-cancel"]');
@@ -1918,7 +2396,9 @@ function chains(realConfig) {
         const box = dialog.getBoundingClientRect();
         return {
           background: getComputedStyle(dialog).backgroundColor,
-          card: getComputedStyle(__j.find('[data-test="side"]')).backgroundColor,
+          // The inspector's surface; on a phone it is drawn only as the
+          // edit mode, so its colour is read from the element itself.
+          card: getComputedStyle(__j.designer().shadowRoot.querySelector('[data-test="side"]')).backgroundColor,
           heights: [a.height, b.height],
           gap: Math.max(b.left - a.right, b.top - a.bottom),
           fits: box.left >= 0 && box.right <= innerWidth,
@@ -1929,7 +2409,10 @@ function chains(realConfig) {
         };
       })()`);
       check(look.background === look.card, `the question is drawn in ${look.background}, not the card colour ${look.card}`);
-      check(look.heights.every((height) => height >= 44), `its buttons are ${look.heights.join(" and ")} px high`);
+      // 40 px with a mouse, 44 on a phone: the dialog is centred on the
+      // window, so the window's width decides.
+      const tall = r.setup.device === "phone" ? 44 : 40;
+      check(look.heights.every((height) => height >= tall), `its buttons are ${look.heights.join(" and ")} px high`);
       check(look.gap >= 8, `its buttons are ${look.gap} px apart`);
       check(look.fits, "the question does not fit the screen");
       check(look.focus === "confirm-cancel", `focus starts on ${look.focus}`);
@@ -1939,6 +2422,7 @@ function chains(realConfig) {
       await r.key("Escape");
       await r.waitFor(`!__j.find('dialog[data-test="confirm"]')`, "Escape to close the question");
       check((await r.config()).views.length === 2, "Escape deleted the page");
+      await openPageMenu(r);
       await r.click('[data-test="page-delete"]');
       await r.waitFor(open, "the question again");
       await r.click('[data-test="confirm-ok"]');
@@ -1951,9 +2435,31 @@ function chains(realConfig) {
   const contrast = [
     step("27", "error-text-contrast", async (r) => {
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
-      await r.waitFor(`__j.find('[data-test="page-name"]') && __j.find('[data-test="sidebar-notice"]')`, "the editor");
-      const edges = await r.eval(`['[data-test="page-name"]', '[data-test="dashboard-name"]', '[data-test="theme"]']
-        .map((selector) => [selector, __j.edgeContrast(__j.find(selector))])`);
+      await r.waitFor(
+        `__j.find('[data-test="page-settings"]') && (__j.find('[data-test="sidebar-notice"]') || __j.find('[data-test="notices-more"]'))`,
+        "the editor",
+      );
+      await openNotices(r);
+      await r.waitFor(`__j.find('[data-test="sidebar-notice"]')`, "the sidebar notice");
+      // The fields, each where it lives now: the page's name in the page
+      // pop-up, the dashboard's name once its title is pressed. (The theme
+      // is no field any more but a group of tiles, told apart by their
+      // swatches; step 129 checks the chosen one.)
+      // A border still fading (the pop-up opening, focus arriving) reads as a
+      // colour on its way, so each edge is read once it has settled.
+      const edge = async (selector) => {
+        await r.waitFor(`!__j.animating(__j.find(${JSON.stringify(selector)}))`, `${selector} to settle`);
+        return r.eval(`[${JSON.stringify(selector)}, __j.edgeContrast(__j.find(${JSON.stringify(selector)}))]`);
+      };
+      const edges = [];
+      await openPageMenu(r);
+      edges.push(await edge('[data-test="page-name"]'));
+      await closePops(r);
+      await r.click('[data-test="title-button"]');
+      await r.waitFor(`__j.active()?.dataset?.test === "dashboard-name"`, "the name field");
+      edges.push(await edge('[data-test="dashboard-name"]'));
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('[data-test="dashboard-name"]')`, "Escape to end the rename");
       for (const [selector, ratio] of edges) {
         check(ratio >= 3, `the edge of ${selector} has contrast ${ratio}`);
       }
@@ -1964,10 +2470,12 @@ function chains(realConfig) {
       const alert = await r.eval(`__j.textContrast(__j.find('${failure}'))`);
       check(alert >= 4.5, `the failure line has contrast ${alert}`);
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPageMenu(r);
       await r.click('[data-test="page-name"]');
       await r.type("!");
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       await r.waitFor(`__j.find('.banner.error p')`, "the save error banner");
+      await closePops(r);
       const state = await r.eval(`__j.textContrast(__j.find('[data-test="save-state"]'))`);
       const banner = await r.eval(`__j.textContrast(__j.find('.banner.error p'))`);
       check(state >= 4.5, `"Not saved" has contrast ${state}`);
@@ -1986,8 +2494,10 @@ function chains(realConfig) {
     await r.open({ seed: "sample", route: "/edit/tab-1" }, editorReady);
     await r.waitFor(`__j.count('[data-test="hit"]') > 3`, "cards on the canvas");
     await r.click('[data-test="list-row"][data-source="0.1.0"]');
+    await openPart(r, "place");
     await r.waitFor(`__j.find('[data-test="wider"]')`, "the card form");
     await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+    await openPart(r, "place");
     await r.click('[data-test="wider"]');
     await r.waitFor(`${SAVES}.length === 1`, "the first save to be sent", 3000);
     await r.eval(`(() => { const config = __apolloMockHass.getConfig("tab-1");
@@ -2028,6 +2538,7 @@ function chains(realConfig) {
     }),
     step("34", "mine-while-saving", async (r) => {
       await startRace(r);
+      await openPart(r, "place");
       await r.click('[data-test="taller"]');
       await r.click('[data-test="conflict-mine"]');
       const draft = await endRace(r, "midnight");
@@ -2044,7 +2555,7 @@ function chains(realConfig) {
   // A dashboard kept in a YAML file opens read-only in the panel itself.
   const yaml = [
     step("35", "yaml-dashboard", async (r) => {
-      await r.open({ seed: "sample" }, home);
+      await r.open({ seed: "sample", tablets: "three" }, home);
       await r.eval(`(async () => {
         __apolloMockHass.addYamlDashboard("yaml-tab", "From a file", __apolloMockHass.getConfig("tab-1"));
         await __apolloPanel._refresh();
@@ -2060,11 +2571,25 @@ function chains(realConfig) {
       check(where.endsWith("/edit/yaml-tab"), `"Look at it" went to ${where}`);
       const banner = await r.text(".banner");
       check(banner.includes("YAML file"), `the banner reads "${banner}"`);
-      for (const control of ["add-card", "add-page", "undo", "theme"]) {
+      for (const control of ["add-card", "add-page", "undo", "page-settings", "title-button"]) {
         check((await r.count(`[data-test="${control}"]`)) === 0, `a YAML dashboard shows ${control}`);
       }
       check((await r.calls("lovelace/config/save")).length === 0, "looking at a YAML dashboard saved something");
-      return r.shot("35-yaml-dashboard");
+      const shot = await r.shot("35-yaml-dashboard");
+      // Show here stays on a read-only dashboard, since showing it changes
+      // nothing in it, and sends one plain assign.
+      await openTablets(r);
+      await r.waitFor(`__j.find('[data-test="show-here"][data-mac="${KITCHEN}"]')`, "Show here for the kitchen tablet");
+      await r.click(`[data-test="show-here"][data-mac="${KITCHEN}"]`);
+      await r.waitFor(`__j.find('[data-test="shown-on-row"][data-mac="${KITCHEN}"]')?.dataset.here === "true"`, "the kitchen tablet to show it");
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(
+        calls.length === 1 && calls[0].mac === KITCHEN && calls[0].url_path === "yaml-tab" && !Object.hasOwn(calls[0], "approve"),
+        `Show here on a YAML dashboard sent ${JSON.stringify(calls)}`,
+      );
+      check((await r.calls("lovelace/config/save")).length === 0, "Show here saved the YAML dashboard");
+      await closePops(r);
+      return shot;
     }),
   ];
 
@@ -2149,7 +2674,7 @@ function chains(realConfig) {
       await r.open({ seed: "sample", route: "/edit/tab-1" }, editorReady);
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"] [data-param="temperature_sensor"]')`, "the device step");
       const inPicker = await labels('dialog[data-test="picker"]');
       distinct(inPicker.map((field) => field.label), "label");
@@ -2183,12 +2708,13 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await expectSelected(r, "Light tile", "0.1.0", "after choosing the light tile");
+      await openPart(r, "place");
       await r.click('[data-test="move-later"]');
       await expectSelected(r, "Light tile", "0.1.1", "after Move later");
       await r.click('[data-test="undo"]');
       await expectSelected(r, "Light tile", "0.1.0", "after Undo");
       const shot = await r.shot("38-selection-after-undo");
-      await r.click('[data-test="redo"]');
+      await pressRedo(r);
       await expectSelected(r, "Light tile", "0.1.1", "after Redo");
       await r.waitSaved("after Redo");
       return shot;
@@ -2226,7 +2752,7 @@ function chains(realConfig) {
       const shot = await r.shot("40-selection-after-other-browser");
       await saveElsewhere(r, `(config) => config.views[0].sections[1].cards.splice(1, 1)`);
       await r.waitFor(
-        `!__j.designer()._selected && !__j.find('${pressed}') && __j.find('[data-test="theme"]')`,
+        `!__j.designer()._selected && !__j.find('${pressed}') && __j.find('[data-test="side-intro"]')`,
         "the selection to clear once another browser removed the fan",
       );
       check((await r.count('[data-test="side-title"]')) === 0, `the form shows ${await r.text('[data-test="side-title"]')}`);
@@ -2236,6 +2762,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       await selectRow(r, "0.1.2");
@@ -2307,7 +2834,7 @@ function chains(realConfig) {
 
       await r.click('[data-test="add-card"]');
       await r.waitFor(`window.__watching.size > 0`, "example cards in the picker again");
-      await r.click('[data-test="tile"][data-component="apollo/light-tile"]');
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
       await r.waitFor(`__j.find('[data-test="entity-search"]')`, "the device step");
       await sleep(200);
       check((await watching()) === 0, `${await watching()} example cards are still watched on the device step`);
@@ -2337,17 +2864,21 @@ function chains(realConfig) {
         await pressToLimit(r, "wider", "narrower");
         await pressToLimit(r, "taller", "shorter");
         await r.clearSelection();
+        await openPageMenu(r);
         await pressToLimit(r, "page-right", "page-left");
         check((await r.draft()).views[1].title === "Home", "Move page right did not move the page");
+        await closePops(r);
         check(await r.count('[data-test="screen-next"]'), "the page has no second screen");
         await pressToLimit(r, "screen-next", "screen-prev");
         await pressToLimit(r, "undo", "redo");
         await r.waitSaved("after undoing everything");
         // An answered banner is gone; focus goes on to the page tabs.
         await r.eval(`__apolloMockHass.failSaves(1); true`);
+        await openPageMenu(r);
         await r.click('[data-test="page-name"]');
         await r.type("!");
         await r.waitFor(`__j.find('[data-test="save-retry"]')`, "the save to fail");
+        await closePops(r);
         await r.eval(`__j.find('[data-test="save-retry"]').focus(); true`);
         await r.key("Enter");
         await r.waitSaved("after Retry");
@@ -2427,6 +2958,7 @@ function chains(realConfig) {
       const before = await r.config();
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -2446,6 +2978,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -2472,6 +3005,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -2540,17 +3074,38 @@ function chains(realConfig) {
           }
           return result;
         };
-        mock.addDashboard("rooms-1", "Rooms", ${JSON.stringify(LONG_NAMES_CONFIG)});
+        mock.addDashboard("rooms-1", "Rooms upstairs and downstairs, the guest wing, the garden house, the garage and the cellar under the old barn", ${JSON.stringify(LONG_NAMES_CONFIG)});
         await __apolloPanel._refresh();
         return true; })()`);
       await r.click('[data-test="dashboard-row"][data-url-path="rooms-1"] [data-test="edit"]');
-      await r.waitFor(`__j.find('[data-test="list-row"][data-source="0.0.0"]') && __j.find('[data-test="theme"]')`, "the editor");
-      const theme = await r.eval(`__j.find('[data-test="theme"]').selectedOptions[0].textContent`);
-      check(theme === LONG_THEME, `the dashboard theme reads "${theme}"`);
-      await r.eval(`__j.find('[data-test="theme"]').scrollIntoView({ block: "center" }); true`);
-      const settings = await r.eval(`__j.overflowProblems(__j.find('[data-test="side"]'))`);
-      check(settings.length === 0, `page and dashboard settings: ${settings.join("; ")}`);
+      await r.waitFor(`__j.find('[data-test="list-row"][data-source="0.0.0"]') && __j.find('[data-test="tablet-chip"]')`, "the editor");
+      // A long dashboard name gives way first in the top bar: it is cut,
+      // and the Tablets chip keeps its words whole.
+      const bar = await r.eval(`(() => { const d = __j.designer().shadowRoot; const title = d.querySelector(".ed-header h1 .title-text");
+        const words = d.querySelector('[data-test="tablet-chip"] .chip-words');
+        return { cut: title.scrollWidth > title.clientWidth, chipCut: words.scrollWidth > words.clientWidth + 1,
+          chip: words.textContent }; })()`);
+      check(bar.cut, `the long dashboard name is not cut in the top bar: ${JSON.stringify(bar)}`);
+      check(!bar.chipCut, `the Tablets chip is squeezed by the long name: ${JSON.stringify(bar)}`);
+      // The gallery: the long theme name stays inside its tile, and the
+      // pop-up inside the window.
+      await openTheme(r);
+      const theme = await r.text('[data-test="theme-tile"][data-theme="warm"] .theme-name');
+      check(theme === LONG_THEME, `the theme's tile reads "${theme}"`);
+      const gallery = await r.eval(`(() => { const dialog = __j.find('dialog[data-test="theme-gallery"]');
+        const rect = dialog.getBoundingClientRect();
+        return { problems: __j.overflowProblems(dialog), left: rect.left, right: rect.right, width: rect.width }; })()`);
+      check(gallery.problems.length === 0, `the theme gallery: ${gallery.problems.join("; ")}`);
+      check(gallery.left >= 0 && gallery.right <= r.setup.width, `the theme gallery does not fit the window: ${JSON.stringify(gallery)}`);
       const shot = await r.shot("50-long-names");
+      await closePops(r);
+      // The page pop-up and the menu with the long names.
+      for (const [open, test] of [[openPageMenu, "page-menu"], [openDashMenu, "dash-menu-pop"]]) {
+        await open(r);
+        const problems = await r.eval(`__j.overflowProblems(__j.find('dialog[data-test="${test}"]'))`);
+        check(problems.length === 0, `the ${test} pop-up: ${problems.join("; ")}`);
+        await closePops(r);
+      }
 
       // The long page's tab is cut short, and keeps its whole name for
       // screen readers and in its tooltip.
@@ -2571,6 +3126,7 @@ function chains(realConfig) {
 
       // The room card's form has the page list and the card's own theme.
       await r.click('[data-test="list-row"][data-source="0.0.0"]');
+      await openPart(r, "look");
       await r.waitFor(`__j.find('[data-param="page"] select') && __j.find('[data-test="card-theme"]')`, "the room card's form");
       const pages = await r.eval(`[...__j.find('[data-param="page"] select').options].map((option) => option.textContent)`);
       check(pages.includes(LONG_PAGE), `the page list holds ${JSON.stringify(pages)}`);
@@ -2585,7 +3141,7 @@ function chains(realConfig) {
       await r.clearSelection();
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-      await r.click('[data-test="tile"][data-component="community/room-summary"]');
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"] [data-param="page"] select')`, "the device step");
       await r.eval(`__j.find('dialog[data-test="picker"] [data-param="page"] select').scrollIntoView({ block: "center" }); true`);
       const picker = await r.eval(`["dialog[data-test=picker]", "dialog[data-test=picker] .picker-body"]
@@ -2605,7 +3161,7 @@ function chains(realConfig) {
       await openSample(r);
       await r.click('[data-test="add-card"]');
       await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
-      await r.click('[data-test="tile"][data-component="apollo/light-tile"]');
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
       await r.waitFor(`__j.find('[data-test="entity-search"]')`, "the device step");
       const inPicker = await r.eval(`(() => { const input = __j.find('[data-test="entity-search"]');
         return [input.placeholder, __j.placeholderContrast(input)]; })()`);
@@ -2690,53 +3246,58 @@ function chains(realConfig) {
     // "Use the whole screen" keeps the card selected so Wider works again.
     step("55", "narrow-columns-wider", async (r) => {
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
-      await r.addCard("add-card", "apollo/light-tile", "light.kitchen");
-      await r.waitFor(`__j.find('[data-test="wider"]')`, "the new card's form");
+      await r.addCard("add-card", "apollo/light", "light.kitchen");
+      await openPart(r, "place");
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
       check((await r.count('[data-test="size-columns"]')) === 0, "the narrow-columns note shows before Wider stops");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.find('[data-test="wider"]')?.disabled && __j.find('[data-test="size-columns"]')`, "Wider to stop with a reason");
       const note = await r.text('[data-test="size-columns"]');
       check(note.includes("narrow columns") && note.includes("Use the whole screen"), `the note reads "${note}"`);
       const shot = await r.shot("55-narrow-columns-wider");
+      await openPart(r, "place");
       await r.click('[data-test="card-whole-screen"]');
       await r.waitFor(
         `(() => { const sections = __apolloMockHass.getConfig("tab-1").views[0].sections;
           return sections.length === 1 && sections[0].column_span === 3; })()`,
         "the page to use the whole screen",
       );
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="wider"]') && !__j.find('[data-test="wider"]').disabled`, "Wider to work again");
-      check((await r.text('[data-test="side-title"]')).includes("Light tile"), "the card is no longer selected");
+      check((await r.text('[data-test="side-type"]')).includes("Light"), "the card is no longer selected");
       check((await focused(r)) === "wider", `focus went to ${await focused(r)}, not Wider`);
       check((await r.count('[data-test="size-columns"]')) === 0, "the narrow-columns note stayed");
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(
-        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/light-tile" && card.grid_options?.columns === 18)`,
+        `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) => card.component === "apollo/light" && card.grid_options?.columns === 18)`,
         "the card to be saved 3 wide",
       );
       await r.waitSaved("wider after using the whole screen");
       return shot;
     }),
-    // With a card selected, the page and dashboard settings are one press
-    // away, and the card's own theme says it is for that card only.
+    // The right panel is about the selected card only: Done and Escape let
+    // the card go and the card list shows. The card's own theme says where
+    // the dashboard's theme is.
     step("56", "to-settings", async (r) => {
       await openSample(r);
       await selectRow(r, "0.1.0");
-      check((await r.count('[data-test="theme"]')) === 0, "the dashboard theme shows while a card is selected");
+      check((await r.count('[data-test="theme"]')) === 0, "a dashboard theme shows while a card is selected");
+      check((await r.count('[data-test="to-settings"]')) === 0, "the card form still has a way to the settings");
+      await openPart(r, "look");
       const helper = await r.eval(`__j.find('[data-test="card-theme"]').closest(".field").querySelector(".helper").textContent`);
-      check(helper.includes("Page and dashboard settings"), `the card theme's helper reads "${helper}"`);
+      check(helper.includes('"Theme" at the top'), `the card theme's helper reads "${helper}"`);
+      const done = await r.text('[data-test="close-panel"]');
+      check(done.trim() === "Done", `the close button reads "${done}"`);
       const shot = await r.shot("56-to-settings");
-      await r.tap('[data-test="to-settings"]');
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('[data-test="theme"]')`, "the dashboard settings");
-      const where = await r.eval(`(() => { const element = __j.active();
-        const rect = element.getBoundingClientRect();
-        return { test: element.dataset.test, text: element.textContent, top: rect.top, bottom: rect.bottom, height: innerHeight }; })()`);
-      check(where.test === "settings-heading" && where.text === "This page", `focus went to ${JSON.stringify(where)}`);
-      check(where.top >= -1 && where.bottom <= where.height + 1, `the settings are off screen (${where.top}..${where.bottom})`);
+      await r.tap('[data-test="close-panel"]');
+      await r.waitFor(`!__j.find('${pressed}') && __j.find('[data-test="side-intro"]') && __j.find('[data-test="list-row"]')`, "Done to bring back the card list");
+      check((await r.count('[data-test="page-name"]')) === 0, "the page's settings show in the right panel");
       // Escape from inside the form does the same.
       await selectRow(r, "0.1.0");
       await r.eval(`__j.find('[data-test="form-name"]').focus(); true`);
       await r.key("Escape");
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('[data-test="theme"]')`, "Escape to bring back the settings");
+      await r.waitFor(`!__j.find('${pressed}') && __j.find('[data-test="side-intro"]') && __j.find('[data-test="list-row"]')`, "Escape to bring back the card list");
       return shot;
     }),
   ];
@@ -2754,6 +3315,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -2781,6 +3343,7 @@ function chains(realConfig) {
       await openSample(r);
       const theirs = await saveOffline(r, PHONE_CHANGE);
       await selectRow(r, "0.1.0");
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.find('[data-test="conflict-theirs"]')`, "the conflict banner after the next change");
       check((await r.calls("lovelace/config/save")).length === 0, "the next change was saved");
@@ -2806,6 +3369,7 @@ function chains(realConfig) {
       // next change made while offline and asks.
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const second = await saveOffline(r, `(config) => { config.apollo_tab = { ...config.apollo_tab, theme: "warm" }; }`);
@@ -2831,6 +3395,7 @@ function chains(realConfig) {
       const original = await r.config();
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       const mine = await r.draft();
@@ -2871,6 +3436,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.slowSaves(1500); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`${SAVES}.length === 1`, "the save to be sent", 3000);
       await r.eval(`__apolloMockHass.reconnect(); true`);
@@ -2879,12 +3445,14 @@ function chains(realConfig) {
 
       // The save is stored, but its answer is lost with the connection.
       await r.eval(`__apolloMockHass.slowSaves(0); __apolloMockHass.loseSaveAnswers(1); true`);
+      await openPart(r, "place");
       await r.click('[data-test="taller"]');
       await savedWithoutAsking("a save whose answer was lost");
 
       // Stored after the connection dropped, then the connection comes back.
       const sent = (await r.calls("lovelace/config/save")).length;
       await r.eval(`__apolloMockHass.slowSaves(600); true`);
+      await openPart(r, "place");
       await r.click('[data-test="narrower"]');
       await r.waitFor(`${SAVES}.length === ${sent + 1}`, "the next save to be sent", 3000);
       await r.eval(`__apolloMockHass.dropConnection(); true`);
@@ -2894,6 +3462,7 @@ function chains(realConfig) {
 
       // A change made while the connection is down.
       await r.eval(`__apolloMockHass.dropConnection(); true`);
+      await openPart(r, "place");
       await r.click('[data-test="shorter"]');
       await sleep(1000);
       check((await r.eval(BANNER)) === 0, "a change made while the connection is down asks which version to keep");
@@ -2909,6 +3478,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       check(await leavingAsks(r), "closing the browser page would not ask about the unsaved change");
@@ -2933,11 +3503,16 @@ function chains(realConfig) {
       for (const count of [2, 3]) {
         await r.click('[data-test="add-page"]');
         await r.waitFor(`__j.count('[data-test="page-tab"]') === ${count}`, `page ${count}`);
+        // Each new page opens with its pop-up, which is closed here.
+        await r.waitFor(popOpen("page-menu"), `the pop-up of page ${count}`);
+        await closePops(r);
       }
       await r.click('[data-test="page-tab"][data-view="0"]');
       await r.waitFor(`__j.find('[data-test="page-tab"][data-view="0"][aria-selected="true"]')`, "the first page");
       // An empty page goes without a question.
+      await openPageMenu(r);
       await pressRemoving(r, '[data-test="page-delete"]', "page-tab", "deleting an empty page");
+      check(!(await r.eval(`Boolean(__j.find("dialog.popover[open]"))`)), "the page pop-up stayed open after its page was deleted");
       check(await r.eval(`__j.active().getAttribute("aria-selected") === "true"`), "focus is not on the page shown");
       await r.key("Enter");
       await sleep(300);
@@ -2945,7 +3520,9 @@ function chains(realConfig) {
 
       // The old dashboard: a card the tablet cannot show, then the old page.
       await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
-      await r.waitFor(`__j.find('[data-test="list-row"][data-shown="false"]')`, "the list to know what is shown");
+      // The list can be drawn again once the preview is in; its Remove
+      // button is pressed only when it is there.
+      await r.waitFor(`__j.find('[data-test="list-row"][data-shown="false"]') && __j.find('[data-test="row-remove"]')`, "the list to know what is shown");
       await pressRemoving(r, '[data-test="row-remove"]', "toast-replace", "removing a card the tablet cannot show");
       await r.click('[data-test="page-tab"][data-view="1"]');
       await r.waitFor(`__j.find('[data-test="page-remove"]')`, "the old page's box");
@@ -2956,6 +3533,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await pressRemoving(r, '[data-test="remove-card"]', "list-row", "removing a card from its form");
+      await openPageMenu(r);
       await r.eval(`__j.find('[data-test="page-delete"]').focus(); true`);
       await r.key("Enter");
       await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question");
@@ -2965,37 +3543,57 @@ function chains(realConfig) {
     }),
   ];
 
-  // With a card selected, pressing the tab of the page shown lets the card
-  // go and moves to that page's settings, where it is renamed.
+  // A page's settings are in its pop-up, opened by the settings button
+  // after its tab, by mouse and by keyboard (Enter on the button, F2 on the
+  // tab). A press on the tab of the page shown changes nothing.
   const pageTab = [
     step("62", "page-tab-to-settings", async (r) => {
-      const where = () =>
-        r.eval(`(() => { const element = __j.active(); const rect = element.getBoundingClientRect();
-          return { test: element.dataset.test, text: element.textContent, top: rect.top, bottom: rect.bottom,
-            height: innerHeight, ring: getComputedStyle(element).outlineStyle }; })()`);
       await openSample(r);
       await selectRow(r, "0.1.0");
-      await r.click('[data-test="page-tab"][aria-selected="true"]');
-      await r.waitFor(`!__j.find('${pressed}') && __j.find('[data-test="page-name"]')`, "the page's settings");
-      const mouse = await where();
-      check(mouse.test === "settings-heading" && mouse.text === "This page", `focus went to ${JSON.stringify(mouse)}`);
-      check(mouse.top >= -1 && mouse.bottom <= mouse.height + 1, `the page's settings are off screen (${mouse.top}..${mouse.bottom})`);
-      const name = await r.eval(`__j.find('[data-test="page-name"]').value`);
-      check(name === "Home", `the page name field holds "${name}"`);
-      const shot = await r.shot("62-page-tab-to-settings");
-
-      // From the keyboard too, where the heading shows that it has focus.
-      await selectRow(r, "0.1.0");
-      await r.eval(`__j.find('[data-test="page-tab"][aria-selected="true"]').focus(); true`);
-      await r.key("Enter");
-      await r.waitFor(`!__j.find('${pressed}') && __j.active()?.dataset?.test === "settings-heading"`, "Enter to show the settings");
-      const keyboard = await where();
-      check(keyboard.ring !== "none", "the settings heading shows no focus ring after Enter");
+      let shot;
+      if (r.setup.device === "desktop") {
+        await r.click('[data-test="page-tab"][aria-selected="true"]');
+        await sleep(300);
+        check((await r.count(pressed)) === 1, "a press on the tab of the page shown let the card go");
+        check(!(await r.eval(`Boolean(${popOpen("page-menu")})`)), "a press on the tab of the page shown opened its settings");
+        await r.click('[data-test="page-settings"]');
+        await r.waitFor(popOpen("page-menu"), "the page pop-up");
+        await r.waitFor(`__j.active()?.dataset?.test === "page-name"`, "focus on the page's name");
+        const name = await r.eval(`__j.find('[data-test="page-name"]').value`);
+        check(name === "Home", `the page name field holds "${name}"`);
+        shot = await r.shot("62-page-tab-to-settings");
+        await r.key("Escape");
+        await r.waitFor(`!${popOpen("page-menu")} && __j.active()?.dataset?.test === "page-settings"`, "Escape to give focus back to the settings button");
+        // From the keyboard: Enter on the button, and F2 on the tab.
+        await r.key("Enter");
+        await r.waitFor(`${popOpen("page-menu")} && __j.active()?.dataset?.test === "page-name"`, "Enter to open the page pop-up");
+        await closePops(r);
+        await r.eval(`__j.find('[data-test="page-tab"][aria-selected="true"]').focus(); true`);
+        await r.browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "F2", code: "F2", windowsVirtualKeyCode: 113 });
+        await r.browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "F2", code: "F2", windowsVirtualKeyCode: 113 });
+        await r.waitFor(popOpen("page-menu"), "F2 on the tab to open the page pop-up");
+        await closePops(r);
+      } else {
+        // On a phone the page strip is under the edit mode and takes no
+        // press or focus; Done is the way out.
+        const inert = await r.eval(`Boolean(__j.find('[data-test="page-tab"][aria-selected="true"]').closest("[inert]"))`);
+        check(inert, "the page's tab can be reached under the edit mode");
+        shot = await r.shot("62-page-tab-to-settings");
+        await r.click('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('${pressed}') && !__j.find('[data-test="side"][data-mode="edit"]')`, "Done to close the edit mode");
+        await r.click('[data-test="page-settings"]');
+        await r.waitFor(popOpen("page-menu"), "the page pop-up");
+        const typing = await r.eval(`["INPUT", "TEXTAREA"].includes(__j.active()?.tagName)`);
+        check(!typing, "on a phone the page pop-up gave focus to a text field");
+        await closePops(r);
+      }
       // Without a selected card a press on the page's own tab changes nothing.
+      await r.clearSelection();
       await r.eval(`__j.find('[data-test="page-tab"][aria-selected="true"]').focus(); true`);
       await r.key("Enter");
       await sleep(200);
       check((await focused(r)) === "page-tab", `pressing the page's tab again moved focus to ${await focused(r)}`);
+      check(!(await r.eval(`Boolean(${popOpen("page-menu")})`)), "pressing the page's tab opened its settings");
       check((await r.draft()).views.length === 2 && (await r.calls("lovelace/config/save")).length === 0, "pressing tabs changed the dashboard");
       return shot;
     }),
@@ -3027,17 +3625,18 @@ function chains(realConfig) {
       const title = await r.text('dialog[data-test="picker"] h2');
       check(title === "Add a card for Bedroom fan", `the picker is titled "${title}"`);
       const tiles = await r.eval(`__j.all('[data-test="tile"]').map((tile) => tile.dataset.component)`);
-      check(stable(tiles) === stable(["apollo/fan"]), `the picker offers ${tiles.join(", ")}`);
+      // The fan card, and the switch card, which turns a fan on and off too.
+      check(stable([...tiles].sort()) === stable(["apollo/fan-speed", "apollo/switch"]), `the picker offers ${tiles.join(", ")}`);
       await sleep(500);
       await r.shot("63-replace-other-card-picker");
       await r.click('[data-test="picker-show-all"]');
-      await r.waitFor(`__j.count('[data-test="tile"]') === 16`, "every card after Show all cards");
+      await r.waitFor(`__j.count('[data-test="tile"]') === ${OFFERED_CARDS}`, "every card after Show all cards");
       // The fan's card gets the fan without asking for it again.
-      await r.click('[data-test="tile"][data-component="apollo/fan"]');
+      await r.click('[data-test="tile"][data-component="apollo/fan-speed"]');
       await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
       await r.waitFor(
         `__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards.some((card) =>
-          card.component === "apollo/fan" && card.params?.entity === "fan.bedroom_main_bedroom_fan")`,
+          card.component === "apollo/fan-speed" && card.params?.entity === "fan.bedroom_main_bedroom_fan")`,
         "the fan card for the bedroom fan to be saved",
       );
       await r.waitSaved("fan card added");
@@ -3185,6 +3784,7 @@ function chains(realConfig) {
         await openSample(r);
         await selectRow(r, "0.1.0");
         await r.eval(`__apolloMockHass.failSaves(1); true`);
+        await openPart(r, "place");
         await r.click('[data-test="wider"]');
         await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
         await saveElsewhere(r, `(config) => { config.views[1].title = "Elsewhere"; }`);
@@ -3253,22 +3853,87 @@ function chains(realConfig) {
     }
   }
 
+  // The toast is in its home (build plan 2.11): "stage", centred on the
+  // stage column with its bottom 16 px above the status strip (or the
+  // column's bottom); "fab", centred above the floating Add card; "edit",
+  // inside the edit mode, 16 px above its bottom.
+  async function checkToastHome(r, when, home) {
+    const places = await r.eval(`({
+      toast: ${edgesOf(`__j.find('[data-test="toast"]')`)},
+      main: ${edgesOf(`__j.designer().shadowRoot.querySelector(".main")`)},
+      strip: ${edgesOf(`__j.find(".status-strip")`)},
+      root: ${edgesOf(`__j.designer().shadowRoot.querySelector(".root")`)},
+      fab: ${edgesOf(`__j.find('.fab[data-test="add-card"]')`)},
+      edit: ${edgesOf(`__j.find('[data-test="side"][data-mode="edit"]')`)},
+      frame: ${edgesOf(`__j.designer().shadowRoot.querySelector(".device")`)},
+      // What the status strip shows, which a toast on it must keep clear of.
+      stripItems: __j.all(".status-strip > * > *").filter((node) => __j.visible(node))
+        .map((node) => node.getBoundingClientRect()).filter((rect) => rect.width > 1 && rect.height > 1)
+        .map((rect) => ({ left: rect.left, right: rect.right })),
+      height: innerHeight,
+      width: innerWidth,
+    })`);
+    const { toast } = places;
+    check(toast, `${when}: no toast`);
+    check(
+      toast.top >= 0 && toast.bottom <= places.height && toast.left >= 0 && toast.right <= places.width,
+      `${when}: the toast is not wholly on screen (${JSON.stringify(places)})`,
+    );
+    const middle = (box) => (box.left + box.right) / 2;
+    const near = (a, b) => Math.abs(a - b) <= 2;
+    let ok = false;
+    if (home === "stage") {
+      // 16 px above the status strip when that leaves it wholly on the grey
+      // under the tablet frame (8 px clear of it); else over the strip, 4 px
+      // above the column's bottom. Never across the frame's edge.
+      const bottom = places.strip ? places.strip.top : places.main.bottom;
+      const { frame, strip } = places;
+      const room = !strip || !frame || bottom - 16 - (toast.bottom - toast.top) >= frame.bottom + 8;
+      if (room) {
+        ok = near(middle(toast), middle(places.main)) && near(toast.bottom, bottom - 16);
+      } else {
+        // On the strip it keeps off what the strip shows ("Screen 2 of 2"),
+        // centred in the widest free stretch, or centred when none is free.
+        const clear = places.stripItems.every((item) => toast.right <= item.left || toast.left >= item.right);
+        ok = near(toast.bottom, strip.bottom - 4) && toast.left >= places.main.left && toast.right <= places.main.right
+          && (clear || near(middle(toast), middle(places.main)));
+      }
+      check(!frame || toast.top >= frame.bottom || toast.bottom <= frame.top,
+        `${when}: the toast lies across the tablet frame's edge: ${JSON.stringify(places)}`);
+    } else if (home === "fab") {
+      // Beside the floating button when it fits there, else above it.
+      const beside = Boolean(places.fab) && toast.right <= places.fab.left - 8 + 1 && toast.left >= places.root.left + 16 - 1
+        && near((toast.top + toast.bottom) / 2, (places.fab.top + places.fab.bottom) / 2);
+      ok = Boolean(places.fab) && (beside || (near(middle(toast), middle(places.root)) && near(toast.bottom, places.fab.top - 16)));
+    } else {
+      ok = Boolean(places.edit) && near(toast.bottom, places.edit.bottom - 16) &&
+        toast.left >= places.edit.left && toast.right <= places.edit.right && toast.top >= places.edit.top;
+    }
+    check(ok, `${when}: the toast is not in its place (${home}): ${JSON.stringify(places)}`);
+  }
+
   // Keyboard focus is always shown, legible words, Home's numbers, the
   // first screen of the old dashboard, plain names and toasts that keep out
   // of the way.
   const clearer = [
-    // Focus moved to the settings heading from the keyboard shows its ring.
+    // The page pop-up opened from the keyboard shows where focus is: the
+    // name field on a desktop, the pop-up's title in a phone's sheet.
     step("68", "settings-heading-ring", async (r) => {
       const ring = () =>
         r.eval(`(() => { const element = __j.active(); const style = getComputedStyle(element);
-          return { test: element.dataset.test, style: style.outlineStyle, width: parseFloat(style.outlineWidth) }; })()`);
+          return { test: element.dataset.test, focus: element.dataset.focus, style: style.outlineStyle, width: parseFloat(style.outlineWidth),
+            shadow: style.boxShadow }; })()`);
       await openSample(r);
-      await selectRow(r, "0.1.0");
-      await r.eval(`__j.find('[data-test="to-settings"]').focus(); true`);
+      await r.eval(`__j.find('[data-test="page-settings"]').focus(); true`);
       await r.key("Enter");
-      await r.waitFor(`__j.active()?.dataset?.test === "settings-heading"`, "Enter to move to the settings");
+      await r.waitFor(popOpen("page-menu"), "Enter to open the page pop-up");
+      const wanted = r.setup.device === "phone" ? "pop-title" : "page-name";
+      await r.waitFor(`__j.active()?.dataset?.focus === "${wanted}"`, `focus on ${wanted}`);
       const enter = await ring();
-      check(enter.style !== "none" && enter.width >= 2, `after Enter the settings heading shows ${JSON.stringify(enter)}`);
+      // A text field shows focus as Home Assistant's fields do: its 2 px
+      // accent edge drawn inside; anything else has the ring.
+      const shown = wanted === "page-name" ? enter.shadow !== "none" : enter.style !== "none" && enter.width >= 2;
+      check(shown, `after Enter the ${wanted} shows ${JSON.stringify(enter)}`);
       return r.screen("68-settings-heading-ring");
     }),
     // The words saying why a card is switched off stay legible, while the
@@ -3300,7 +3965,7 @@ function chains(realConfig) {
     step("70", "home-pages-agree", async (r) => {
       await r.open({ seed: "real" }, `${home} && __j.find('[data-test="row-not-shown"]')`);
       const row = await r.text('[data-test="dashboard-row"][data-url-path="tab-1"]');
-      const pages = Number(/Pages: (\d+)/.exec(row)?.[1]);
+      const pages = Number(/(\d+) pages?, /.exec(row)?.[1]);
       check(pages === 2, `the row reads ${row}`);
       check(row.includes("1 card and 1 page are left out on tablets."), `the row reads ${row}`);
       const shot = await r.shot("70-home-pages-agree");
@@ -3318,17 +3983,39 @@ function chains(realConfig) {
       await r.waitFor(`__j.find('[data-test="not-shown-hint"]')`, "the not-shown hint");
       await r.eval(`scrollTo(0, 0); true`);
       const hint = await r.text('[data-test="not-shown-hint"]');
-      check(hint.startsWith("1 card on this page is not shown on the tablet."), `the hint reads "${hint}"`);
+      check(hint.startsWith("1 card on this page is left out on the tablet."), `the hint reads "${hint}"`);
       const first = await r.eval(`({ hint: ${edgesOf(`__j.find('[data-test="not-shown-hint"]')`)},
         stage: ${edgesOf(`__j.find('[data-test="canvas"]')`)}, height: innerHeight })`);
       check(first.hint.bottom <= first.height, `the hint is below the first screen (${first.hint.bottom} > ${first.height})`);
       const seen = Math.min(first.stage.bottom, first.height) - first.stage.top;
       check(seen >= (first.stage.bottom - first.stage.top) / 2, `less than half the picture is on the first screen (${JSON.stringify(first)})`);
+      // One notice line shows above the picture, the other two behind "+2
+      // more"; the picture is fitted to what is left each time.
+      const pictureWidth = (width, when) =>
+        r.waitFor(
+          `Math.abs(__j.find('[data-test="canvas"]').getBoundingClientRect().width - ${width}) <= 1`,
+          `the picture to be ${width} px wide ${when}`,
+          3000,
+        );
+      if (r.setup.device === "desktop") {
+        check((await r.count(".page-notice")) === 1, `${await r.count(".page-notice")} notice lines show`);
+        const more = await r.text('[data-test="notices-more"]');
+        check(more === "+2 more", `the notices button reads "${more}"`);
+        await pictureWidth(864, "with one notice line");
+        await openNotices(r);
+        check((await r.text('[data-test="notices-more"]')) === "Show fewer", "the notices button does not read Show fewer");
+        await pictureWidth(723, "with all three notices");
+      }
       for (const choice of ["sidebar-hide", "sidebar-keep", "use-whole-screen"]) {
         check((await r.count(`[data-test="${choice}"]`)) === 1, `the choice ${choice} is gone`);
       }
       await checkTextContrast(r, ['[data-test="not-shown-hint"] span', '[data-test="not-shown-go"]']);
       const shot = await r.screen("71-first-screen-hint");
+      if (r.setup.device === "desktop") {
+        await r.click('[data-test="notices-more"]');
+        await r.waitFor(`__j.find('[data-test="notices-more"][aria-expanded="false"]')`, "Show fewer to close the list");
+        await pictureWidth(864, "after Show fewer");
+      }
       await r.click('[data-test="not-shown-go"]');
       await sleep(200);
       const row = await r.eval(`(() => { const element = __j.active(); const rect = element.getBoundingClientRect();
@@ -3344,6 +4031,7 @@ function chains(realConfig) {
     // Every page icon has a plain name, read out and shown as a tooltip.
     step("72", "page-icon-names", async (r) => {
       await openSample(r);
+      await openPageMenu(r);
       await r.waitFor(`__j.find('[data-test="page-icon"]')`, "the page icons");
       const icons = await r.eval(`__j.all('[data-test="page-icon"]').map((button) =>
         ({ icon: button.dataset.icon, label: button.getAttribute("aria-label"), title: button.title }))`);
@@ -3359,8 +4047,12 @@ function chains(realConfig) {
       const { nodes } = await r.browser.send("Accessibility.getFullAXTree");
       await r.browser.send("Accessibility.disable");
       const named = (role, name) => nodes.some((node) => !node.ignored && node.role?.value === role && node.name?.value === name);
-      check(named("group", "Icon on the tablet's side bar"), "the icons are not a group named after their label");
-      check(named("button", "Cameras") && !named("button", "cctv"), "a screen reader does not hear the plain names");
+      check(named("radiogroup", "Icon for this page's button on the tablet"), "the icons are not a radio group named after their label");
+      check(named("radio", "Cameras") && !named("radio", "cctv"), "a screen reader does not hear the plain names");
+      // "Icon: Security" under the grid names the icon in focus.
+      await r.eval(`__j.find('[data-test="page-icon"][data-icon="mdi:cctv"]').focus(); true`);
+      const line = await r.text('[data-test="page-icon-line"]');
+      check(line === "Icon: Cameras", `the line under the icons reads "${line}"`);
       await r.eval(`__j.find('[data-test="page-icon"][data-icon="mdi:cctv"]').scrollIntoView({ block: "center" }); true`);
       return r.screen("72-page-icon-names");
     }),
@@ -3368,58 +4060,52 @@ function chains(realConfig) {
     // says what it changes.
     step("73", "settings-words", async (r) => {
       await openSample(r);
+      await openDashMenu(r);
       const sidebar = await r.eval(`__j.find('[data-test="sidebar-checkbox"]').closest(".check").nextElementSibling.textContent`);
-      check(!sidebar.includes("in a browser") && sidebar.startsWith("Turn this on only if"), `the sidebar helper reads "${sidebar}"`);
+      check(!sidebar.includes("in a browser") && sidebar.startsWith("Switch this on only if"), `the sidebar helper reads "${sidebar}"`);
+      await closePops(r);
       await selectRow(r, "0.1.0");
-      const accent = await r.eval(`(() => { const box = __j.find('input[data-focus="look-use-accent"]');
+      await openPart(r, "look");
+      const accent = await r.eval(`(() => { const group = __j.find('[data-test="look-accent"]');
         const helper = __j.find('[data-test="accent-helper"]');
-        return { text: helper?.textContent, described: box?.getAttribute("aria-describedby") === helper?.id,
-          next: box?.closest(".check").nextElementSibling === helper }; })()`);
+        return { text: helper?.textContent, described: Boolean(helper?.id) && group?.getAttribute("aria-describedby") === helper?.id,
+          next: group?.nextElementSibling === helper }; })()`);
       check(accent.text?.includes("switches, sliders and buttons") && accent.described && accent.next, `the highlight colour's helper: ${JSON.stringify(accent)}`);
       await r.eval(`__j.find('[data-test="accent-helper"]').scrollIntoView({ block: "center" }); true`);
       await checkTextContrast(r, ['[data-test="accent-helper"]']);
       return r.screen("73-settings-words");
     }),
-    // A toast keeps clear of the card sheet, the control with focus and the
-    // selected card, and moves out of the way when they come under it.
+    // A toast has one home in each layout (build plan 2.11): over the stage
+    // column above the status strip, above the floating Add card on a
+    // phone, and inside the phone's edit mode while that is open.
     step("74", "toast-placement", async (r) => {
+      const phone = r.setup.device === "phone";
       await openSample(r);
       await selectRow(r, "0.1.0");
+      await openPart(r, "place");
       await r.waitFor(`__j.find('[data-test="move-later"]')`, "the card form");
+      await openPart(r, "place");
       await r.tap('[data-test="move-later"]');
       await r.waitFor(`__j.find('[data-test="toast"]')`, "the toast");
       await sleep(300);
-      await checkToastClear(r, "after Move later");
+      await checkToastHome(r, "after Move later", phone ? "edit" : "stage");
       // Typing into the form while the toast shows.
       await r.tap('[data-test="form-name"]');
       await r.type("Hall");
       await sleep(200);
-      await checkToastClear(r, "while typing the card's name");
+      await checkToastHome(r, "while typing the card's name", phone ? "edit" : "stage");
       const shot = await r.screen("74-toast-placement");
       await r.clearSelection();
       // A card removed from the keyboard: focus goes to the next card in the
-      // list. Scrolled to the bottom of the screen, where a toast starts, it
-      // is still not covered.
+      // list, and the toast is in the home of the layout without the form.
       await r.eval(`__j.find('[data-test="list-row"][data-source="0.1.1"]').focus(); true`);
       await r.key("Delete");
       await r.waitFor(`__j.find('[data-test="toast-undo"]')`, "the removal's toast");
       check((await focused(r)) === "list-row", `after removing, focus went to ${await focused(r)}`);
-      await r.eval(`(() => { const rect = __j.active().getBoundingClientRect(); scrollBy(0, rect.bottom - (innerHeight - 20)); return true; })()`);
       await sleep(400);
-      await checkToastClear(r, "with the focused card at the bottom of the screen");
+      await checkToastHome(r, "after removing a card from the list", phone ? "fab" : "stage");
       await r.screen("74-toast-out-of-the-way");
-      if (r.setup.mobile) {
-        // Zoomed in, only the top half of the screen is visible, as with the
-        // phone's keyboard open: the toast stays inside that part.
-        await r.eval(`(() => { scrollBy(0, __j.active().getBoundingClientRect().top - 150); return true; })()`);
-        await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
-        try {
-          await sleep(400);
-          await checkToastClear(r, "with only part of the page visible");
-        } finally {
-          await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
-        }
-      } else {
+      if (!phone) {
         await checkToastBesideSidebar(r);
       }
       return shot;
@@ -3474,6 +4160,7 @@ function chains(realConfig) {
         `beside the docked sidebar the toast spans ${Math.round(toast.left)}..${Math.round(toast.right)}, ` +
           `the panel ${Math.round(panel.left)}..${Math.round(panel.right)}`,
       );
+      await checkToastHome(r, "beside the docked sidebar", "fab");
       await r.screen("74-toast-beside-sidebar");
     } finally {
       await r.viewport();
@@ -3504,22 +4191,23 @@ function chains(realConfig) {
       await onHeading("TAB-1", "after Edit");
       const shot = await r.screen("77-focus-after-screen-change");
       await press("back");
-      await onHeading("TAB-1 dashboards", "after Back from the editor");
+      await onHeading("TAB-1", "after Back from the editor");
       await press("open-advanced");
       await onHeading("Advanced", "after Advanced");
       await press("back");
-      await onHeading("TAB-1 dashboards", "after Back from Advanced");
+      await onHeading("TAB-1", "after Back from Advanced");
       await press("edit");
       await onHeading("TAB-1", "after Edit again");
       await r.eval(`history.back(); true`);
-      await onHeading("TAB-1 dashboards", "after the browser's Back");
+      await onHeading("TAB-1", "after the browser's Back");
       // Deleting the dashboard leaves the editor for Home.
       await press("edit");
       await onHeading("TAB-1", "after Edit once more");
+      await openDashMenu(r);
       await press("dashboard-delete");
       await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question");
       await press("confirm-ok");
-      await onHeading("TAB-1 dashboards", "after deleting the dashboard");
+      await onHeading("TAB-1", "after deleting the dashboard");
       check((await r.count('[data-test="dashboard-row"]')) === 0, "the deleted dashboard is still listed");
       await r.screen("77-focus-after-delete");
       return shot;
@@ -3527,31 +4215,45 @@ function chains(realConfig) {
   ];
 
   // Undo in a toast puts focus on the card that came back, in view, rather
-  // than on the header's Redo button far above.
+  // than on the header's Redo button far above: on its row after a removal
+  // in the list, on the picture after a removal there (polish decision 13),
+  // where on a phone the page column stays put (decision 10).
   const undoFocus = [
     step("78", "focus-after-toast-undo", async (r) => {
       const count = (section) => `__j.designer()._history.present.views[0].sections[${section}].cards.length`;
+      const pictureTop = `__j.find('[data-test="canvas"]').getBoundingClientRect().top`;
       // Removes the card at 0.<section>.1 with Delete on `where` (a list row
       // or the card on the tablet picture), then presses the toast's Undo.
+      // Focus goes back to the same kind of control for the card.
       const removeThenUndo = async (where, section, when) => {
         const key = `0.${section}.1`;
         const before = await r.eval(count(section));
         await r.waitFor(`__j.find('[data-test="${where}"][data-source="${key}"]')`, `card ${key} ${when}`);
         await r.eval(`__j.find('[data-test="${where}"][data-source="${key}"]').focus(); true`);
+        const top = await r.eval(pictureTop);
         await r.key("Delete");
         await r.waitFor(`${count(section)} === ${before - 1}`, `the card to be removed ${when}`);
         await r.waitFor(`__j.find('[data-test="toast-undo"]')`, `the toast ${when}`);
         await r.eval(`__j.find('[data-test="toast-undo"]').focus(); true`);
         await r.key("Enter");
         await r.waitFor(`${count(section)} === ${before}`, `Undo to bring the card back ${when}`);
+        // The picture is drawn again with the card once the preview is in.
+        if (where === "hit") {
+          await r.waitSaved(when);
+          await sleep(500);
+        }
         const found = await r.eval(`(() => { const element = __j.active();
           if (!element || element === document.body) return null;
           const rect = element.getBoundingClientRect();
           return { test: element.dataset.test, source: element.dataset.source, top: rect.top, bottom: rect.bottom,
             height: innerHeight, visible: element.matches(":focus-visible"), ring: getComputedStyle(element).outlineStyle }; })()`);
-        check(found?.test === "list-row" && found.source === key, `${when}, Undo in the toast moved focus to ${JSON.stringify(found)}`);
-        check(found.top >= 0 && found.bottom <= found.height, `${when}, the card's row is off screen: ${JSON.stringify(found)}`);
-        check(found.visible && found.ring !== "none", `${when}, the card's row shows no focus ring: ${JSON.stringify(found)}`);
+        check(found?.test === where && found.source === key, `${when}, Undo in the toast moved focus to ${JSON.stringify(found)}`);
+        check(found.top >= 0 && found.bottom <= found.height, `${when}, the card is off screen: ${JSON.stringify(found)}`);
+        check(found.visible && found.ring !== "none", `${when}, the card shows no focus ring: ${JSON.stringify(found)}`);
+        if (where === "hit") {
+          const after = await r.eval(pictureTop);
+          check(Math.abs(after - top) <= 1, `${when}, Undo moved the picture's top from ${top} to ${after}`);
+        }
       };
       await openSample(r);
       // A light in the list, then a graph on the tablet picture's first screen.
@@ -3589,7 +4291,7 @@ function chains(realConfig) {
       await r.waitFor(`__j.find('[data-test="toast-replace"]')`, "the removal's toast");
       check((await toastText()) === "Card removed. Add a TAB-1 card for Kitchen, Bedroom lamp, Bedroom fan.", `the toast reads "${await toastText()}"`);
 
-      const first = await pick("apollo/light-tile");
+      const first = await pick("apollo/light");
       check(first.title === "Add a card for Kitchen, Bedroom lamp, Bedroom fan", `the picker is titled "${first.title}"`);
       check(
         first.intro ===
@@ -3602,13 +4304,18 @@ function chains(realConfig) {
       // The new card is selected; the toast keeps clear of it, of its row
       // and of the card sheet.
       await sleep(400);
-      await checkToastClear(r, "after adding a card for one of several devices");
+      if (r.setup.device === "phone") {
+        // The new card's form is the edit mode, which holds the toast.
+        await checkToastHome(r, "after adding a card for one of several devices", "edit");
+      } else {
+        await checkToastClear(r, "after adding a card for one of several devices");
+      }
       const shot = await r.shot("79-card-for-several-devices");
 
-      const second = await pick("apollo/fan");
+      const second = await pick("apollo/fan-speed");
       check(second.title === "Add a card for Bedroom lamp, Bedroom fan", `the picker is titled "${second.title}"`);
       await r.waitFor(`__j.text('[data-test="toast"] span') === "Card added. Add a TAB-1 card for Bedroom lamp."`, "the toast for the last device");
-      const third = await pick("apollo/light-tile");
+      const third = await pick("apollo/light");
       check(third.intro === "These cards can control Bedroom lamp. The card you pick gets Bedroom lamp straight away.", `the picker says "${third.intro}"`);
       await r.waitFor(`__j.text('[data-test="toast"] span') === "Card added"`, "the toast once every device has a card");
       check((await r.count('[data-test="toast-replace"]')) === 0, "a card is still offered once every device has one");
@@ -3617,9 +4324,9 @@ function chains(realConfig) {
       check(
         stable(saved) ===
           stable([
-            ["apollo/light-tile", "light.kitchen"],
-            ["apollo/fan", "fan.bedroom_main_bedroom_fan"],
-            ["apollo/light-tile", "light.bedroom"],
+            ["apollo/light", "light.kitchen"],
+            ["apollo/fan-speed", "fan.bedroom_main_bedroom_fan"],
+            ["apollo/light", "light.bedroom"],
           ]),
         `the dashboard holds ${JSON.stringify(saved)}`,
       );
@@ -3640,8 +4347,11 @@ function chains(realConfig) {
       await selectRow(r, "0.1.1");
       await r.click('[data-test="remove-card"]');
       await r.waitFor(`__j.find('[data-test="toast-undo"]')`, "the removal's toast");
+      await sleep(300);
+      await checkToastHome(r, "after Remove in the card's form", r.setup.device === "phone" ? "fab" : "stage");
       await selectRow(r, "0.1.0");
       check((await r.count('[data-test="toast-undo"]')) === 1, "choosing another card took the toast away");
+      await openPart(r, "place");
       await r.click('[data-test="taller"]');
       await r.waitFor(`!__j.find('[data-test="toast-undo"]')`, "the toast to go once another card changed", 2000);
       check((await r.eval(cards)) === all - 1, "the removed card came back");
@@ -3697,7 +4407,10 @@ function chains(realConfig) {
     step("83", "focus-clear-of-sheet", async (r) => {
       // Tabs through every control from Back round to Back: the centre of
       // each one is on screen and not under anything else.
-      const walk = async (when) => {
+      // With the edit mode open (on a phone, or beside the docked sidebar) the
+      // page behind is inert: the walk goes through the top bar and the
+      // edit mode only.
+      const walk = async (when, least = 21) => {
         await r.eval(`scrollTo(0, 0); __j.find('[data-test="back"]').focus(); true`);
         let stops = 0;
         for (let press = 0; press < 160; press += 1) {
@@ -3723,11 +4436,11 @@ function chains(realConfig) {
           check(stop.on, `${when}: ${stop.name} has focus off screen at ${stop.x},${stop.y}`);
           check(!stop.covered, `${when}: ${stop.name} has focus under ${stop.by} at ${stop.x},${stop.y}`);
         }
-        check(stops > 20, `${when}: only ${stops} controls took focus`);
+        check(stops >= least, `${when}: only ${stops} controls took focus`);
       };
       await openSample(r);
       await selectRow(r, "0.1.0");
-      await walk("with a card selected");
+      await walk("with a card selected", (await inEditMode(r)) ? 12 : 21);
       const shot = await r.screen("83-focus-clear-of-sheet");
       if (!r.setup.mobile) {
         // Beside Home Assistant's docked sidebar the panel uses the
@@ -3743,7 +4456,7 @@ function chains(realConfig) {
           await dockSidebar(r);
           await r.waitFor(`__j.designer().getBoundingClientRect().left === 256 && __j.find('.root.compact')`, "the one-column layout");
           await selectRow(r, "0.1.0");
-          await walk("beside the docked sidebar with a card selected");
+          await walk("beside the docked sidebar with a card selected", (await inEditMode(r)) ? 12 : 21);
           await r.screen("83-focus-clear-of-sheet-docked");
         } finally {
           await r.viewport();
@@ -3754,9 +4467,32 @@ function chains(realConfig) {
     step("84", "whole-screen-by-keyboard", async (r) => {
       for (const selected of [null, "0.1.1"]) {
         await openSample(r);
+        if (selected && r.setup.device === "phone") {
+          // On a phone the notice is under the edit mode. The card's form
+          // has the same button once the card is as wide as the columns
+          // allow, so it is pressed there, with the card still selected.
+          await selectRow(r, selected);
+          for (let press = 0; press < 6 && !(await r.count('[data-test="card-whole-screen"]')); press += 1) {
+            await openPart(r, "place");
+            await r.tap('[data-test="wider"]');
+            await sleep(200);
+          }
+          check((await r.count('[data-test="card-whole-screen"]')) === 1, "the card's form offers no Use the whole screen");
+          await openPart(r, "place");
+          await r.eval(`__j.find('[data-test="card-whole-screen"]').focus(); true`);
+          await r.key("Enter");
+          await r.waitFor(`!__j.find('[data-test="card-whole-screen"]') && !__j.find('[data-test="use-whole-screen"]')`, "the advice to go from the card's form");
+          await sleep(300);
+          const now = await focused(r);
+          check(now, "after Use the whole screen in the card's form, focus fell to the page");
+          check(!REMOVING.includes(now), `after Use the whole screen in the card's form, focus went to ${now}`);
+          check(await r.count('[data-test="side"][data-mode="edit"]'), "after Use the whole screen in the card's form the card is no longer selected");
+          continue;
+        }
         if (selected) {
           await selectRow(r, selected);
         }
+        await openNotices(r);
         await r.eval(`__j.find('[data-test="use-whole-screen"]').focus(); true`);
         await r.key("Enter");
         await r.waitFor(`!__j.find('[data-test="use-whole-screen"]')`, "the advice to go");
@@ -3792,6 +4528,7 @@ function chains(realConfig) {
       await openSample(r);
       await selectRow(r, "0.1.0");
       await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await openPart(r, "place");
       await r.click('[data-test="wider"]');
       await r.waitFor(`__j.saveState() === "error"`, "the save to fail");
       await r.eval(`__j.find('[data-test="back"]').focus(); true`);
@@ -3816,8 +4553,9 @@ function chains(realConfig) {
     }),
   ];
 
-  // A dial or graph over a screen's limit is moved to another page, and a
-  // card left out on a later screen is shown on that screen.
+  // A dial or graph over a screen's limit is moved to another page, a card
+  // left out on a later screen is shown on that screen, and a page whose
+  // only card is left out is not taken for an empty one.
   const moving = [
     step("86", "move-to-page", async (r) => {
       const onPage = (view) => `__j.designer()._history.present.views[${view}].sections[0].cards.length`;
@@ -3835,6 +4573,7 @@ function chains(realConfig) {
       const options = await r.eval(`[...__j.find('[data-test="move-page"]').options].map((option) => option.textContent)`);
       check(stable(options) === stable(["Climate", "New page"]), `Move to page offers ${options.join(", ")}`);
       const shot = await r.shot("86-move-to-page");
+      await openPart(r, "place");
       await r.click('[data-test="move-page-go"]');
       await r.waitFor(`__j.find('[data-test="page-tab"][data-view="1"][aria-selected="true"]')`, "the page the dial moved to");
       await r.waitFor(`__j.text('[data-test="toast"] span') === "Moved to Climate"`, "the toast saying where it went");
@@ -3845,6 +4584,7 @@ function chains(realConfig) {
         saved.views[0].sections[0].cards.length === 4 && saved.views[1].sections[0].cards.length === 1,
         `after the move the pages hold ${saved.views[0].sections[0].cards.length} and ${saved.views[1].sections[0].cards.length} dials`,
       );
+      await leaveEditMode(r);
       await r.click('[data-test="page-tab"][data-view="0"]');
       await r.waitFor(
         `__j.count('[data-test="list-row"][data-shown="true"]') === 4 && !__j.find('[data-test="list-row"][data-shown="false"]')`,
@@ -3855,10 +4595,12 @@ function chains(realConfig) {
       await r.click('[data-test="undo"]');
       await r.waitFor(`${onPage(0)} === 5 && ${onPage(1)} === 0`, "Undo to bring the dial back");
       await r.waitFor(`__j.find('[data-test="row-move"]')`, "the dial left out again");
+      await leaveEditMode(r);
       await r.click('[data-test="row-move"]');
       await r.waitFor(`__j.active()?.dataset?.test === "move-page"`, "focus on Move to page again");
       await r.eval(`(() => { const field = __j.find('[data-test="move-page"]'); field.value = "new";
         field.dispatchEvent(new Event("change")); return true; })()`);
+      await openPart(r, "place");
       await r.click('[data-test="move-page-go"]');
       await r.waitFor(`__j.find('[data-test="page-tab"][data-view="2"][aria-selected="true"]')`, "the new page");
       await r.waitSaved("after the move to a new page");
@@ -3885,6 +4627,41 @@ function chains(realConfig) {
       await checkSelectedCardVisible(r, "after choosing the dial left out");
       return r.shot("87-left-out-card-screen");
     }),
+    step("201", "left-out-only-card", async (r) => {
+      const hit = '[data-test="hit"][data-source="0.0.0"]';
+      await r.open({ seed: "none", graphs: "1" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.eval(`__apolloMockHass.addDashboard("graphs-1", "Graphs", ${JSON.stringify(GRAPHS_CONFIG)});
+        __apolloOpenPanel("/edit/graphs-1"); true`);
+      await r.waitFor(`__j.designer()?._preview?.layout`, "what the tablet will show");
+      await r.waitFor(`__j.find('[data-test="list-row"][data-source="0.0.0"][data-shown="false"]')`, "the card left out");
+      // The tablet's page has no card at all, only the note about this one.
+      const converted = await r.eval(`(() => { const preview = __j.designer()._preview;
+        return { cards: preview.layout.pages[0].w.length, notes: preview.warnings.map((warning) => warning.code) }; })()`);
+      check(
+        converted.cards === 0 && stable(converted.notes) === stable(["over_budget_charts"]),
+        `the page was converted to ${JSON.stringify(converted)}`,
+      );
+      await r.waitFor(`__j.find(".warning-box") || __j.find('[data-test="add-first-card"]')`, "the picture of the page");
+      check((await r.count('[data-test="add-first-card"]')) === 0, "the picture offers a first card on a page that has a card");
+      check((await r.count(".empty-page")) === 0, "the picture calls a page with a card empty");
+      check((await r.count(".warning-box")) === 1, "the picture has no box for the card left out");
+      const words = await r.text(".warning-box");
+      check(words === (await uiString(r, "preview.omitted")), `the box reads "${words}"`);
+      check((await r.count('[data-test="hit"]')) === 1, "the card left out cannot be chosen on the picture");
+      const label = await r.eval(`__j.find('${hit}').getAttribute("aria-label")`);
+      check(label.startsWith("Five graphs, ") && label.endsWith("Item 1 of 1."), `the box is called "${label}"`);
+      // Its box on the picture chooses it, like any card's.
+      await r.click(hit);
+      await r.waitFor(`__j.find('${hit}[aria-pressed="true"]')`, "the card left out to be chosen");
+      await checkSelectedCardVisible(r, "after choosing the only card, which is left out");
+      const shot = await r.shot("201-left-out-only-card");
+      // The second page has no card: that one is empty.
+      await r.clearSelection();
+      await r.click('[data-test="page-tab"][data-view="1"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the help for a page without cards");
+      check((await r.count(".warning-box")) === 0, "the empty page shows a box for a card left out");
+      return shot;
+    }),
   ];
 
   // The page tabs scroll on a narrow screen while Add page stays in view.
@@ -3902,6 +4679,8 @@ function chains(realConfig) {
       for (const count of [2, 3, 4]) {
         await r.click('[data-test="add-page"]');
         await r.waitFor(`__j.count('[data-test="page-tab"]') === ${count}`, `page ${count}`);
+        await r.waitFor(popOpen("page-menu"), `the pop-up of page ${count}`);
+        await closePops(r);
         await inView(`with ${count} pages`);
       }
       await r.click('[data-test="page-tab"][data-view="0"]');
@@ -3917,15 +4696,21 @@ function chains(realConfig) {
   // after it was used; only fields that take typing keep their own undo.
   const shortcuts = [
     step("90", "undo-from-a-list", async (r) => {
+      // A card's own theme list (the dashboard's theme is in a pop-up now,
+      // where the undo keys are off, as behind every dialog).
       await openSample(r);
-      const before = await r.eval(`__j.designer()._history.present.apollo_tab.theme`);
-      await r.eval(`(() => { const field = __j.find('[data-test="theme"]'); field.focus();
-        field.value = [...field.options].map((option) => option.value).find((value) => value !== field.value);
-        field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
-      await r.waitFor(`__j.designer()._history.present.apollo_tab.theme !== ${JSON.stringify(before)}`, "the new theme");
-      check((await focused(r)) === "theme", `after choosing a theme focus is on ${await focused(r)}`);
+      await selectRow(r, "0.1.0");
+      const before = stable(await r.draft());
+      const themeNow = `(__j.designer()._history.present.views[0].sections[1].cards[0].style?.theme ?? null)`;
+      const was = await r.eval(themeNow);
+      // The theme is chosen by its tile.
+      await openPart(r, "look");
+      await r.click(`[data-test="card-theme-tile"]:not([data-theme=""]):not([aria-checked="true"])`);
+      await r.waitFor(`${themeNow} !== ${JSON.stringify(was)}`, "the card's new theme");
+      check((await focused(r)) === "card-theme-tile", `after choosing a theme focus is on ${await focused(r)}`);
       await shortcut(r, "z");
-      await r.waitFor(`__j.designer()._history.present.apollo_tab.theme === ${JSON.stringify(before)}`, "Ctrl+Z to bring the theme back", 3000);
+      await r.waitFor(`${themeNow} === ${JSON.stringify(was)}`, "Ctrl+Z to bring the card's theme back", 3000);
+      check(stable(await r.draft()) === before, "Ctrl+Z did not bring the dashboard back as it was");
       return r.screen("90-undo-from-a-list");
     }),
   ];
@@ -3947,7 +4732,7 @@ function chains(realConfig) {
       await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
       check((await r.text(tabletStatus(HALLWAY))) === "Offline", `the hallway tablet reads "${await r.text(tabletStatus(HALLWAY))}"`);
       check(
-        (await r.text(tabletStatus(BEDROOM))) === "Waiting for tablet software",
+        (await r.text(tabletStatus(BEDROOM))) === "Needs a software update",
         `the bedroom tablet reads "${await r.text(tabletStatus(BEDROOM))}"`,
       );
       check(
@@ -3973,8 +4758,8 @@ function chains(realConfig) {
       check(JSON.stringify(choices) === JSON.stringify(["Night", "TAB-1"]), `the Shows list holds ${JSON.stringify(choices)}`);
       const rows = await r.eval(`__j.all('[data-test="dashboard-row"]').map((row) => row.dataset.urlPath)`);
       check(JSON.stringify(rows) === JSON.stringify(["night", "tab-1"]), `the dashboards are listed as ${JSON.stringify(rows)}`);
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom, Kitchen", "the Shown on line of TAB-1");
-      await waitText(r, shownOnLine("night"), "Shown on: Hallway", "the Shown on line of Night");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom, Kitchen", "the Shown on line of TAB-1");
+      await waitText(r, shownOnLine("night"), "On Hallway", "the Shown on line of Night");
       // The box sits above "Your dashboards" and has no tick boxes: locks,
       // alarms and garage doors need no switch per tablet.
       const above = await r.eval(`__j.find('[data-test="tablets"]').getBoundingClientRect().bottom <=
@@ -4008,8 +4793,8 @@ function chains(realConfig) {
       const same = await r.eval(`__j.find(${JSON.stringify(tabletShows(KITCHEN))}) === window.__shows && __j.active() === window.__shows
         && window.__shows.value === "night"`);
       check(same, "the Shows list was drawn again or lost focus");
-      await waitText(r, shownOnLine("night"), "Shown on: Hallway, Kitchen", "the Night row to name the kitchen tablet");
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom", "the TAB-1 row to drop the kitchen tablet");
+      await waitText(r, shownOnLine("night"), "On Hallway, Kitchen", "the Night row to name the kitchen tablet");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom", "the TAB-1 row to drop the kitchen tablet");
       const shot = await r.screen("93-tablet-sending");
       await r.eval(`__apolloMockHass.finishSends(); true`);
       await waitText(r, tabletStatus(KITCHEN), "On the tablet", "On the tablet once the tablet has it");
@@ -4020,7 +4805,7 @@ function chains(realConfig) {
 
       // An offline tablet keeps the choice and gets it when it is back.
       await pickShows(r, HALLWAY, "tab-1");
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom, Hallway", "the TAB-1 row to name the hallway tablet");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom, Hallway", "the TAB-1 row to name the hallway tablet");
       check((await r.text(tabletStatus(HALLWAY))) === "Offline", "the offline tablet no longer reads Offline");
       await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(HALLWAY)}, { online: true }); true`);
       await waitText(r, tabletStatus(HALLWAY), "Sending…", "Sending… once the hallway tablet is back");
@@ -4037,7 +4822,7 @@ function chains(realConfig) {
       // Trying again works and clears the line.
       await pickShows(r, BEDROOM, "night");
       await r.waitFor(`!__j.find('${tabletRow(BEDROOM)} [data-test="tablet-error"]')`, "the line about the failure to go");
-      await waitText(r, shownOnLine("night"), "Shown on: Bedroom, Kitchen", "the Night row to name the bedroom tablet");
+      await waitText(r, shownOnLine("night"), "On Bedroom, Kitchen", "the Night row to name the bedroom tablet");
       return shot;
     }),
   ];
@@ -4046,24 +4831,25 @@ function chains(realConfig) {
   // the dashboard's settings, and the delete question that names tablets.
   const tabletsEditor = [
     step("94", "editor-caption", async (r) => {
-      await r.open({ ...threeTablets, route: "/edit/tab-1" }, `(${editorReady}) && __j.count('[data-test="tablet-line"]') === 2`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "a line per tablet");
+      await r.open({ ...threeTablets, route: "/edit/tab-1" }, `(${editorReady}) && __j.find('[data-test="tablet-chip"]') && __j.find('[data-test="tablet-chip"]').title !== "Tablets"`);
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "a line per tablet");
       const words = await r.eval(`__j.designer().shadowRoot.textContent`);
       check(!/not sent to tablets/i.test(words), "the editor still says dashboards are not sent to tablets");
       // The lines follow the tablets as they change.
       await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(KITCHEN)}, { online: false }); true`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "Kitchen tablet is offline"], "the offline line");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "Kitchen tablet is offline"], "the offline line");
       await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(KITCHEN)}, { online: true }); true`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "Sending to Kitchen tablet…"], "the sending line");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "Sending to Kitchen tablet…"], "the sending line");
       await r.eval(`__j.find('[data-test="tablet-lines"]').scrollIntoView({ block: "center" }); true`);
       await checkTextContrast(r, ['[data-test="tablet-line"][data-kind="tablet"]']);
       const shot = await r.screen("94-editor-caption");
       await r.eval(`__apolloMockHass.finishSends(); true`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the line once sent");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "the line once sent");
       return shot;
     }),
     step("95", "settings-shown-on", async (r) => {
-      await r.waitFor(`__j.find('[data-test="shown-on"]') && __j.count('[data-test="shown-on-row"]') === 3`, "the Shown on block");
+      await openTablets(r);
+      await r.waitFor(`__j.find('[data-test="shown-on"]') && __j.count('[data-test="shown-on-row"]') === 3`, "the Tablets pop-up");
       await r.eval(`__j.find('[data-test="shown-on"]').scrollIntoView({ block: "center" }); true`);
       const rows = await r.eval(`__j.all('[data-test="shown-on-row"]').map((row) =>
         [row.dataset.here, row.querySelector(".shown-on-text").innerText.replace(/\\s+/g, " ").trim(), Boolean(row.querySelector('[data-test="show-here"]'))])`);
@@ -4072,22 +4858,25 @@ function chains(realConfig) {
         ["false", "Hallway tablet shows Night", true],
         ["true", "Kitchen tablet shows this dashboard", false],
       ];
-      check(JSON.stringify(rows) === JSON.stringify(expected), `the Shown on block reads ${JSON.stringify(rows)}`);
-      const name = await r.text('[data-test="automation-name"]');
-      check(/Name for automations/.test(name) && /tab-1/.test(name), `the name for automations reads "${name}"`);
+      check(JSON.stringify(rows) === JSON.stringify(expected), `the Tablets pop-up reads ${JSON.stringify(rows)}`);
       check(
         (await r.text('[data-test="shown-on"] .helper')) === (await uiString(r, "editor.on_tablet_helper")),
         "no helper line under the tablets",
       );
-      const problems = await r.eval(`__j.overflowProblems(__j.find('[data-test="side"]'))`);
-      check(problems.length === 0, `the settings: ${problems.join("; ")}`);
+      const problems = await r.eval(`__j.overflowProblems(__j.find('dialog[data-test="tablets-pop"]'))`);
+      check(problems.length === 0, `the Tablets pop-up: ${problems.join("; ")}`);
       await checkTextContrast(r, [
         `[data-test="show-here"][data-mac="${HALLWAY}"]`,
         '[data-test="shown-on-row"] .small',
-        '[data-test="automation-name"] code',
         '[data-test="shown-on"] .helper',
       ]);
       const before = await r.shot("95-settings-shown-on");
+      // The name for automations is in the menu.
+      await openDashMenu(r);
+      const name = await r.text('[data-test="automation-name"]');
+      check(/Name for automations/.test(name) && /tab-1/.test(name), `the name for automations reads "${name}"`);
+      await checkTextContrast(r, ['[data-test="automation-name"] code']);
+      await openTablets(r);
 
       await r.click(`[data-test="show-here"][data-mac="${HALLWAY}"]`);
       await r.waitFor(`__j.find('[data-test="shown-on-row"][data-mac="${HALLWAY}"]')?.dataset.here === "true"`, "the hallway tablet to show it");
@@ -4097,18 +4886,31 @@ function chains(realConfig) {
         `Show this dashboard sent ${JSON.stringify(calls)}`,
       );
       check((await r.count('[data-test="show-here"]')) === 0, "a Show this dashboard button is left");
-      // The pressed button is gone; focus waits on the block's heading.
-      const focus = await r.eval(`__j.active()?.dataset?.focus || __j.describe(__j.active())`);
-      check(focus === "shown-on-heading", `after Show this dashboard focus is on ${focus}`);
+      // The pressed button is gone; focus waits on the pop-up's title.
+      const focus = await r.eval(`__j.active()?.dataset?.test || __j.describe(__j.active())`);
+      check(focus === "shown-on-heading", `after Show here focus is on ${focus}`);
       await waitCaption(
         r,
-        ["Waiting for tablet software (Bedroom tablet)", "Hallway tablet is offline", "On Kitchen tablet"],
+        ["Bedroom tablet needs a software update", "Hallway tablet is offline", "On Kitchen tablet"],
         "the caption to add the hallway tablet",
       );
       await r.shot("95-settings-tablet-moved");
       return before;
     }),
     step("96", "delete-names-tablets", async (r) => {
+      // While the dashboards cannot be read, the question does not say where
+      // the tablets go: the list from before could name a deleted dashboard.
+      await r.eval(`__apolloMockHass.failCalls("apollo_tab/dashboards", 99); true`);
+      await openDashMenu(r);
+      await r.click('[data-test="dashboard-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question without the dashboards");
+      await r.eval(`__apolloMockHass.failCalls("apollo_tab/dashboards", 0); true`);
+      const guessed = await r.eval(`__j.find('[data-test="confirm-more"]')?.textContent ?? null`);
+      check(guessed === null, `without the dashboards the question says "${guessed}"`);
+      await r.click('[data-test="confirm-cancel"]');
+      await r.waitFor(`!__j.find('dialog[data-test="confirm"][open]')`, "the question to close");
+
+      await openDashMenu(r);
       await r.click('[data-test="dashboard-delete"]');
       await r.waitFor(`__j.find('dialog[data-test="confirm"][open]') && __j.find('[data-test="confirm-more"]')`, "the question");
       const more = await r.text('[data-test="confirm-more"]');
@@ -4127,13 +4929,14 @@ function chains(realConfig) {
           __j.find('[data-test="tablet-row"][data-mac="' + mac + '"] [data-test="tablet-shows"]')?.value === "night")`,
         "every tablet to show Night",
       );
-      await waitText(r, shownOnLine("night"), "Shown on: Bedroom, Hallway, Kitchen", "the Night row to name all three");
+      await waitText(r, shownOnLine("night"), "On Bedroom, Hallway, Kitchen", "the Night row to name all three");
       await r.shot("96-after-delete");
       return shot;
     }),
     step("97", "no-dashboards-then-first", async (r) => {
       await r.click('[data-test="dashboard-row"][data-url-path="night"] [data-test="edit"]');
       await r.waitFor(editorReady, "the Night editor");
+      await openDashMenu(r);
       await r.click('[data-test="dashboard-delete"]');
       await r.waitFor(`__j.find('[data-test="confirm-more"]')`, "the question");
       const more = await r.text('[data-test="confirm-more"]');
@@ -4157,7 +4960,7 @@ function chains(realConfig) {
       await r.waitSaved("the new dashboard");
       await waitCaption(
         r,
-        ["Waiting for tablet software (Bedroom tablet)", "Hallway tablet is offline", "On Kitchen tablet"],
+        ["Bedroom tablet needs a software update", "Hallway tablet is offline", "On Kitchen tablet"],
         "the new dashboard on the tablets",
       );
       await r.shot("97-first-dashboard-on-tablets");
@@ -4170,21 +4973,31 @@ function chains(realConfig) {
     step("98", "no-tablets", async (r) => {
       await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="tablets-none"]') && __j.find('[data-test="dashboard-row"]')`);
       check(
-        (await r.text('[data-test="tablets-none"]')) === "No TAB-1 tablet found in Home Assistant yet. Power the tablet on. If it asks for Wi-Fi, join \"Apollo TAB1 Hotspot\" from a phone and pick your Wi-Fi. Then add it in Settings > Devices & services, where it shows up by itself, and turn it on here. You can still build dashboards.",
+        (await r.text('[data-test="tablets-none"]')) === "No tablet found yet.",
         `the Tablets box says "${await r.text('[data-test="tablets-none"]')}"`,
       );
       check((await r.count('[data-test="row-shown-on"]')) === 0, "a dashboard says where it is shown");
-      check((await r.count('[data-test="tablets-add"]')) === 0, "a line about another tablet with none there");
-      await checkTextContrast(r, ['[data-test="tablets-none"]']);
+      // The way to add one is the link under the box.
+      check((await r.count('[data-test="tablets-add"]')) === 1, "no link about adding a tablet");
+      await checkTextContrast(r, ['[data-test="tablets-none"]', '[data-test="tablets-add"]']);
       const shot = await r.shot("98-no-tablets-home");
       await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
-      await r.waitFor(`(${editorReady}) && __j.find('[data-test="shown-on-none"]')`, "the editor");
-      await waitCaption(r, ["Not shown on a tablet yet"], "the caption");
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor");
+      const chip = await r.text('[data-test="tablet-chip"]');
+      check(chip.trim() === "No tablets yet", `the Tablets chip reads "${chip}"`);
+      await openTablets(r);
+      await r.waitFor(`__j.find('[data-test="shown-on-none"]')`, "No tablets yet in the Tablets pop-up");
+      // One status line only: "No tablets yet.", and one way to the start
+      // screen.
+      await waitCaption(r, [], "the caption");
       check((await r.text('[data-test="shown-on-none"]')) === "No tablets yet.", "no No tablets yet.");
-      check(/tab-1/.test(await r.text('[data-test="automation-name"]')), "no name for automations");
-      await r.eval(`__j.find('[data-test="shown-on"]').scrollIntoView({ block: "center" }); true`);
-      await checkTextContrast(r, ['[data-test="tablet-line"]', '[data-test="shown-on-none"]']);
+      check((await r.count('[data-test="how-to-add"]')) === 1, "no way to learn how to add a tablet");
+      check((await r.count('[data-test="manage-tablets"]')) === 0, "Manage tablets beside How to add a tablet");
+      await checkTextContrast(r, ['[data-test="shown-on-none"]', '[data-test="how-to-add"]']);
       await r.shot("98-no-tablets-editor");
+      await openDashMenu(r);
+      check(/tab-1/.test(await r.text('[data-test="automation-name"]')), "no name for automations");
+      await closePops(r);
       return shot;
     }),
   ];
@@ -4194,7 +5007,7 @@ function chains(realConfig) {
   const tabletsNoEngine = [
     step("99", "tablet-without-engine", async (r) => {
       await r.open({ seed: "sample", tablets: "no-engine" }, `${home} && __j.count('[data-test="tablet-row"]') === 1`);
-      await waitText(r, tabletStatus(BEDROOM), "Waiting for tablet software", "the status");
+      await waitText(r, tabletStatus(BEDROOM), "Needs a software update", "the status");
       const help = await uiString(r, "tablets.no_engine_help");
       check((await r.text(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === help, "no helper line");
       check(
@@ -4202,7 +5015,7 @@ function chains(realConfig) {
         "no line that the choice is kept",
       );
       check((await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-input"]`)) === 0, "a line about taps before the dashboard is there");
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Bedroom", "the Shown on line");
+      await waitText(r, shownOnLine("tab-1"), "On Bedroom", "the Shown on line");
       await checkTextContrast(r, [tabletStatus(BEDROOM), `${tabletRow(BEDROOM)} [data-test="tablet-help"]`]);
       const shot = await r.shot("99-tablet-without-engine");
       await r.eval(`__apolloMockHass.holdSends(); __apolloMockHass.setTablet(${JSON.stringify(BEDROOM)}, { engine: "0.1.0" }); true`);
@@ -4219,7 +5032,7 @@ function chains(realConfig) {
       await r.shot("99-tablet-software-arrived");
       // With no dashboard at all there is no choice to keep.
       await r.open({ seed: "none", tablets: "no-engine" }, `${home} && __j.count('[data-test="tablet-row"]') === 1`);
-      await waitText(r, tabletStatus(BEDROOM), "Waiting for tablet software", "the status without dashboards");
+      await waitText(r, tabletStatus(BEDROOM), "Needs a software update", "the status without dashboards");
       check((await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-help"]`)) === 1, "no helper line without dashboards");
       check(
         (await r.count(`${tabletRow(BEDROOM)} [data-test="tablet-help-saved"]`)) === 0,
@@ -4236,9 +5049,9 @@ function chains(realConfig) {
       await r.open({ seed: "sample", tablets: "all" }, `${home} && __j.count('[data-test="tablet-row"]') === 15`);
       // The new tablet comes first, then the others by name.
       const expected = {
-        "Shed tablet": 'New tablet. Pick a dashboard, then press "Turn on with this dashboard".',
+        "Shed tablet": NEW_STATUS,
         "Attic tablet": "This dashboard is too big for the tablet",
-        "Bedroom tablet": "Waiting for tablet software",
+        "Bedroom tablet": "Needs a software update",
         "Cellar tablet": "This dashboard cannot be read",
         "Den tablet": "On the tablet",
         "Garage tablet": "Update Apollo TAB Dashboard in Home Assistant",
@@ -4255,15 +5068,15 @@ function chains(realConfig) {
       const read = await r.eval(`Object.fromEntries(__j.all('[data-test="tablet-row"]').map((row) =>
         [row.querySelector(".tablet-name").textContent, row.querySelector('[data-test="tablet-status"]').innerText]))`);
       check(JSON.stringify(read) === JSON.stringify(expected), `the statuses read ${JSON.stringify(read)}`);
-      // "Shows" comes before the status: beside it on a wide screen, above it
-      // on a phone.
+      // The status chip comes before "Shows" (spec 4.2): under the name,
+      // beside "Shows" on a wide screen, above it on a phone.
       const order = await r.eval(`__j.all('[data-test="tablet-row"]').filter((row) =>
         row.querySelector(".tablet-shows") && row.querySelector('[data-test="tablet-status"]').textContent).map((row) => {
           const a = row.querySelector(".tablet-shows").getBoundingClientRect();
           const b = row.querySelector('[data-test="tablet-status"]').getBoundingClientRect();
-          return [row.querySelector(".tablet-name").textContent, a.bottom <= b.top + 1 || a.right <= b.left + 1];
+          return [row.querySelector(".tablet-name").textContent, b.bottom <= a.top + 1 || b.right <= a.left + 1];
         }).filter(([, first]) => !first).map(([name]) => name)`);
-      check(order.length === 0, `the status comes before "Shows" for ${JSON.stringify(order)}`);
+      check(order.length === 0, `"Shows" comes before the status for ${JSON.stringify(order)}`);
       const notes = await r.eval(`__j.all('[data-test="tablet-input"]').map((line) =>
         [line.closest('[data-test="tablet-row"]').querySelector(".tablet-name").textContent, line.textContent])`);
       check(
@@ -4323,7 +5136,7 @@ function chains(realConfig) {
           JSON.stringify({
             isNew: "true",
             mark: "New",
-            device: "Before you turn it on, check that the name on the tablet's screen ends in ddee0e. Open device page",
+            device: "Look at the tablet. The name on its screen ends in ddee0e. Open device page",
             before: "If it still shows TAB-1, its old dashboard, its name is not on its screen. Check that it shows TAB-1 and that its values no longer change.",
             value: "",
             options: ["Pick a dashboard", "TAB-1 (shown before)"],
@@ -4366,11 +5179,102 @@ function chains(realConfig) {
         preview.dashboard = "tab-1";
         document.body.append(preview);
         return true; })()`);
-      await waitCaption(r, ["Waiting for tablet software (Bedroom tablet)", "On Kitchen tablet"], "the preview's lines");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "the preview's lines");
       const words = await r.eval(`document.querySelector("apollo-tab-preview").shadowRoot.textContent`);
       check(!/not sent to tablets/i.test(words), "the preview still says dashboards are not sent to tablets");
       await checkTextContrast(r, ['[data-test="tablet-line"]']);
       return r.shot("101-preview-lines");
+    }),
+  ];
+
+  // Home Assistant's connection is back before the integration is set up,
+  // or the integration is an older one: its commands are not known. What is
+  // open keeps trying by itself and comes back without a reload.
+  const SUBSCRIBED = (type) => `__apolloMockHass.subscriptions(${JSON.stringify(type)})`;
+  const starting = [
+    step("202", "restart-with-cards-open", async (r) => {
+      const card = `document.querySelector("apollo-tab-card").shadowRoot`;
+      const status = `(${card}.querySelector(".status")?.textContent ?? null)`;
+      const alerts = `__j.count('[data-test="tablets"] .alert')`;
+      await r.open(threeTablets, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      const waiting = await uiString(r, "card.waiting");
+      await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
+      // A card on a dashboard and the preview card, open along with Home.
+      await r.eval(`(() => {
+        const card = document.createElement("apollo-tab-card");
+        card.style.width = "376px";
+        card.style.height = "184px";
+        card.setConfig({ component: "apollo/light-tile", params: { entity: "light.kitchen" } });
+        card.hass = __apolloMockHass;
+        const preview = document.createElement("apollo-tab-preview");
+        preview.hass = __apolloMockHass;
+        preview.dashboard = "tab-1";
+        document.body.append(card, preview);
+        return true; })()`);
+      await r.waitFor(`${card}.querySelector(".at-card") && ${status} === null`, "the card to be drawn");
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "the preview's lines");
+
+      // Home Assistant restarts. Its connection is back first; a tablet
+      // goes offline before the integration is set up.
+      await r.eval(`(() => { const mock = __apolloMockHass;
+        mock.dropConnection();
+        mock.unknownCommands("apollo_tab/");
+        mock.reconnect();
+        mock.setTablet(${JSON.stringify(KITCHEN)}, { online: false }, { quiet: true });
+        return true; })()`);
+      await r.waitFor(`${status} === ${JSON.stringify(waiting)}`, "the card to say it waits for Home Assistant");
+      // Home and the preview keep what they showed, with no error.
+      check((await r.count('[data-test="tablet-row"]')) === 3 && (await r.eval(alerts)) === 0, "Home lost its tablets while Home Assistant starts");
+      check((await r.text(tabletStatus(KITCHEN))) === "On the tablet", "Home heard of the tablet while nothing was subscribed");
+      for (const type of ["card", "tablets", "layout", "library"]) {
+        const open = await r.eval(SUBSCRIBED(`apollo_tab/${type}/subscribe`));
+        check(open === 0, `${open} ${type} subscriptions are open while Home Assistant does not know them`);
+      }
+      const shot = await r.shot("202-restart-with-cards-open");
+
+      // The integration is set up. Nobody presses anything.
+      await r.eval(`__apolloMockHass.unknownCommands(null); true`);
+      await r.waitFor(`${card}.querySelector(".at-card") && ${status} === null`, "the card to be drawn again", 20000);
+      await waitText(r, tabletStatus(KITCHEN), "Offline", "Home to show the tablet that went offline", 20000);
+      await waitCaption(r, ["Bedroom tablet needs a software update", "Kitchen tablet is offline"], "the preview's lines after the restart");
+      check((await r.eval(alerts)) === 0, "Home shows an error after Home Assistant has started");
+      check((await r.eval(SUBSCRIBED("apollo_tab/card/subscribe"))) === 1, "the card is not subscribed again");
+      check((await r.eval(SUBSCRIBED("apollo_tab/tablets/subscribe"))) === 1, "the tablets are not subscribed again once");
+      await r.shot("202-restart-over");
+      return shot;
+    }),
+    step("203", "tablets-known-later", async (r) => {
+      const homeAlert = '[data-test="tablets"] .alert';
+      const editorAlert = '[data-test="shown-on"] .alert';
+      await r.open(threeTablets, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      const failed = (await uiString(r, "tablets.load_failed")).replace("{message}", "Unknown command.");
+      // The panel is away long enough for its tablet subscription to end,
+      // and comes back to a Home Assistant that does not know the tablet
+      // commands: an older integration that was updated but not restarted.
+      await r.eval(`__apolloPanel.remove(); true`);
+      await r.waitFor(`${SUBSCRIBED("apollo_tab/tablets/subscribe")} === 0`, "the tablet subscription to end");
+      await r.eval(`__apolloMockHass.unknownCommands("apollo_tab/tablet"); __apolloOpenPanel(""); true`);
+      await waitText(r, homeAlert, failed, "Home to say the tablets cannot be loaded");
+      check((await r.count('[data-test="tablet-row"]')) === 0, "Home lists tablets it could not load");
+      const shot = await r.shot("203-tablets-not-known");
+      // The editor says the same in the Tablets pop-up, and draws no lines.
+      await r.eval(`__apolloOpenPanel("/edit/tab-1"); true`);
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor");
+      await openTablets(r);
+      await waitText(r, editorAlert, failed, "the editor to say the tablets cannot be loaded");
+      check((await r.count('[data-test="tablet-line"]')) === 0, "the editor shows tablet lines it could not load");
+
+      // Home Assistant is restarted with the new integration; the stand-in
+      // only learns the commands. Nobody presses anything.
+      await r.eval(`__apolloMockHass.unknownCommands(null); true`);
+      await r.waitFor(`__j.count('[data-test="shown-on-row"]') === 3 && !__j.find('${editorAlert}')`, "the editor to list the tablets", 20000);
+      await waitCaption(r, ["Bedroom tablet needs a software update", "On Kitchen tablet"], "the editor's lines");
+      await r.eval(`__apolloOpenPanel(""); true`);
+      await r.waitFor(`${home} && __j.count('[data-test="tablet-row"]') === 3 && !__j.find('${homeAlert}')`, "Home to list the tablets");
+      await waitText(r, tabletStatus(KITCHEN), "On the tablet", "the kitchen tablet's status");
+      check((await r.eval(SUBSCRIBED("apollo_tab/tablets/subscribe"))) === 1, "the tablets are not subscribed once");
+      await r.shot("203-tablets-known-later");
+      return shot;
     }),
   ];
 
@@ -4396,7 +5300,7 @@ function chains(realConfig) {
       const tone = await r.eval(`__j.find(${JSON.stringify(tabletStatus(PORCH))}).dataset.tone`);
       check(tone === "new", `the new tablet's tone is ${tone}`);
       check(
-        (await r.text(`${tabletRow(PORCH)} [data-test="tablet-approve-note"]`)) === "Only turn on tablets you own.",
+        (await r.text(`${tabletRow(PORCH)} [data-test="tablet-approve-note"]`)) === "If it shows another name, or this is not your tablet, do not turn it on.",
         "no line about turning on only tablets you own",
       );
       check((await r.count(`${tabletRow(PORCH)} [data-test="tablet-input"]`)) === 0, "a line about taps on a new tablet");
@@ -4405,7 +5309,7 @@ function chains(realConfig) {
       // textContent: on a phone the link has a line of its own.
       const device = await r.eval(`__j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-device"]`)}).textContent`);
       check(
-        device === "Before you turn it on, check that the name on the tablet's screen ends in ddee0e. Open device page",
+        device === "Look at the tablet. The name on its screen ends in ddee0e. Open device page",
         `the device line reads "${device}"`,
       );
       // It never showed a dashboard, so nothing says its screen hides its name.
@@ -4417,6 +5321,13 @@ function chains(realConfig) {
         link.href === "/config/devices/device/0000000000000000000000000000000e" && link.named === "Open device page Porch tablet",
         `the device page link: ${JSON.stringify(link)}`,
       );
+      // The link follows the tablet's device when Home Assistant has it
+      // under another id; then back, for the steps below.
+      const href = `__j.find(${JSON.stringify(`${tabletRow(PORCH)} [data-test="tablet-device-page"]`)})?.getAttribute("href")`;
+      for (const id of ["0000000000000000000000000000000f", "0000000000000000000000000000000e"]) {
+        await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, { device_id: ${JSON.stringify(id)} }); true`);
+        await r.waitFor(`${href} === "/config/devices/device/${id}"`, `the device page link to lead to device ${id}`);
+      }
       check((await r.count(`${tabletRow(KITCHEN)} [data-test="tablet-device"]`)) === 0, "the approved tablet has a device line");
       check(
         (await r.text(`${tabletRow(PORCH)} [data-test="tablet-waiting-note"]`)) === (await uiString(r, "tablets.waiting_note")),
@@ -4443,17 +5354,21 @@ function chains(realConfig) {
         `the new tablet's list: ${JSON.stringify(list)}`,
       );
       // It shows nothing, so the dashboards do not name it.
-      await waitText(r, shownOnLine("tab-1"), "Shown on: Kitchen", "the Shown on line of TAB-1");
+      await waitText(r, shownOnLine("tab-1"), "On Kitchen", "the Shown on line of TAB-1");
       check((await r.count(shownOnLine("night"))) === 0, "Night says it is shown somewhere");
       check((await r.calls("apollo_tab/tablet/assign")).length === 0, "something was assigned");
       check((await r.calls("apollo_tab/tablet/pair")).length === 0, "something was paired");
-      // With tablets there, a short line under them says how to add another.
+      // With tablets there, a link under them opens how to add another; the
+      // fold-out it opens is the box's last part and starts with the line.
       const add = await r.eval(`(() => { const line = __j.find('[data-test="tablets-add"]');
+        const fold = line.closest('[data-test="screen-says"]');
         const rows = __j.all('[data-test="tablet-row"]');
-        return line && { text: line.textContent, last: line.parentNode.lastElementChild === line,
-          below: line.getBoundingClientRect().top >= rows[rows.length - 1].getBoundingClientRect().bottom }; })()`);
+        return line && { text: line.textContent, last: fold.parentNode.lastElementChild === fold,
+          below: line.getBoundingClientRect().top >= rows[rows.length - 1].getBoundingClientRect().bottom,
+          first: fold.querySelector(".screen-says-body > p").textContent }; })()`);
       check(
-        JSON.stringify(add) === JSON.stringify({ text: await uiString(r, "tablets.add_another"), last: true, below: true }),
+        JSON.stringify(add) ===
+          JSON.stringify({ text: await uiString(r, "tablets.add_link"), last: true, below: true, first: await uiString(r, "tablets.add_another") }),
         `the line about another tablet: ${JSON.stringify(add)}`,
       );
       await checkTextContrast(r, [
@@ -4471,19 +5386,20 @@ function chains(realConfig) {
     }),
     step("103", "new-tablet-in-editor", async (r) => {
       await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
-      await r.waitFor(`(${editorReady}) && __j.find('[data-test="shown-on"]') && __j.find('[data-test="shown-on-new"]')`, "the editor");
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor");
+      await openTablets(r);
+      await r.waitFor(`__j.find('[data-test="shown-on"]') && __j.find('[data-test="shown-on-new"]')`, "the new tablet in the Tablets pop-up");
       await waitCaption(r, ["On Kitchen tablet"], "the caption without the new tablet");
       const rows = await r.eval(`__j.all('[data-test="shown-on-row"]').map((row) => row.dataset.mac)`);
-      check(JSON.stringify(rows) === JSON.stringify([KITCHEN]), `the Shown on block lists ${JSON.stringify(rows)}`);
+      check(JSON.stringify(rows) === JSON.stringify([KITCHEN]), `the Tablets pop-up lists ${JSON.stringify(rows)}`);
       check(
-        (await r.text('[data-test="shown-on-new"]')) ===
-          'A new tablet is waiting. On the Home screen, pick a dashboard for it, then press "Turn on with this dashboard".',
-        `the Shown on block says "${await r.text('[data-test="shown-on-new"]')}"`,
+        (await r.text('[data-test="shown-on-new"] p')) === "Porch tablet is new and ready to turn on.",
+        `the Tablets pop-up says "${await r.text('[data-test="shown-on-new"] p')}"`,
       );
+      check((await r.count(`[data-test="set-up-tablet"][data-mac="${PORCH}"]`)) === 1, "the new tablet has no Set it up");
       check((await r.count(`[data-test="show-here"][data-mac="${PORCH}"]`)) === 0, "the new tablet can be turned on from the editor");
       check((await r.count('[data-test="shown-on-none"]')) === 0, "the editor says there are no tablets");
-      await r.eval(`__j.find('[data-test="shown-on"]').scrollIntoView({ block: "center" }); true`);
-      await checkTextContrast(r, ['[data-test="shown-on-new"]']);
+      await checkTextContrast(r, ['[data-test="shown-on-new"] p', '[data-test="set-up-tablet"]']);
       return r.shot("103-new-tablet-in-editor");
     }),
     step("104", "approve-new-tablet", async (r) => {
@@ -4510,6 +5426,9 @@ function chains(realConfig) {
       await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, {}); true`);
       await sleep(100);
       check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "night", "the pick was lost");
+      // Every button waits at its first look (rule 4); the wait is over
+      // before its words are measured and before the first real press.
+      await r.waitFor(`!__j.find(${JSON.stringify(turnOn)}).hasAttribute("data-settling")`, "the button to stop waiting", 3000);
       await checkTextContrast(r, [turnOn]);
       await r.screen("104-new-tablet-picked");
       // The button turns it on, here pressed with the keyboard. It alone
@@ -4538,7 +5457,7 @@ function chains(realConfig) {
       check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "night", "an arrow key changed its list");
       const order = await r.eval(`__j.all('[data-test="tablet-row"]').map((row) => row.dataset.mac)`);
       check(JSON.stringify(order) === JSON.stringify([PORCH, KITCHEN]), `the tablets are in the order ${JSON.stringify(order)}`);
-      await waitText(r, shownOnLine("night"), "Shown on: Porch", "the Night row to name the porch tablet");
+      await waitText(r, shownOnLine("night"), "On Porch", "the Night row to name the porch tablet");
       const shot = await r.screen("104-new-tablet-sending");
       await r.eval(`__apolloMockHass.finishSends(); true`);
       await waitText(r, tabletStatus(PORCH), "On the tablet", "On the tablet");
@@ -4607,7 +5526,7 @@ function chains(realConfig) {
       await waitText(
         r,
         tabletStatus(PORCH),
-        'New tablet. Make a dashboard, then pick it and press "Turn on with this dashboard".',
+        NEW_STATUS,
         "the status with nothing to pick",
       );
       check(
@@ -4631,18 +5550,33 @@ function chains(realConfig) {
       await r.waitFor(enabled, "Turn on after the pick");
       await r.eval(`__apolloMockHass.answerWS({ type: "lovelace/dashboards/delete",
         dashboard_id: __apolloMockHass.getDashboard("night").id }); true`);
-      await r.waitFor(
-        `__j.count('[data-test="dashboard-row"]') === 1 &&
-          ![...__j.find(${JSON.stringify(tabletShows(PORCH))}).options].some((option) => option.value === "night")`,
-        "Night to leave the list",
-      );
-      await sleep(100);
-      const deleted = await row();
-      check(deleted.value === "" && deleted.disabled === true, `after the picked dashboard was deleted: ${JSON.stringify(deleted)}`);
+      if (PREPICK_ONLY_DASHBOARD) {
+        // One dashboard is left and the tablet was waiting: the button now
+        // names it, without a list, and waits again (rules 2 and 5).
+        await r.waitFor(
+          `__j.count('[data-test="dashboard-row"]') === 1 &&
+            __j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') === "TAB-1"`,
+          "the button to name the dashboard that is left",
+        );
+        const left = await r.eval(`(() => { const button = __j.find(${JSON.stringify(turnOn)});
+          return { list: !!__j.find(${JSON.stringify(tabletShows(PORCH))}), settling: button.hasAttribute("data-settling") }; })()`);
+        check(!left.list && left.settling, `after the picked dashboard was deleted: ${JSON.stringify(left)}`);
+      } else {
+        await r.waitFor(
+          `__j.count('[data-test="dashboard-row"]') === 1 &&
+            ![...__j.find(${JSON.stringify(tabletShows(PORCH))}).options].some((option) => option.value === "night")`,
+          "Night to leave the list",
+        );
+        await sleep(100);
+        const deleted = await row();
+        check(deleted.value === "" && deleted.disabled === true, `after the picked dashboard was deleted: ${JSON.stringify(deleted)}`);
+      }
 
       // Turned on somewhere else, then new again (added to ESPHome again):
       // the pick made before is not picked again.
-      await pickShows(r, PORCH, "tab-1");
+      if (!PREPICK_ONLY_DASHBOARD) {
+        await pickShows(r, PORCH, "tab-1");
+      }
       await r.waitFor(enabled, "Turn on after the pick");
       await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(PORCH)}, { approved: true, dashboard: "tab-1" }); true`);
       await r.waitFor(isNew("false"), "the tablet to be turned on somewhere else");
@@ -4713,7 +5647,14 @@ function chains(realConfig) {
         if (!button) return { gone: true };
         return { late: performance.now() - __apolloPanel._turnOnMovedAt.get(${JSON.stringify(mac)}),
           settling: button.hasAttribute("data-settling"), aria: button.getAttribute("aria-disabled"),
-          opacity: getComputedStyle(button).opacity, disabled: button.disabled }; })()`;
+          opacity: getComputedStyle(button).opacity, disabled: button.disabled,
+          look: getComputedStyle(button).backgroundColor + " " + getComputedStyle(button).color }; })()`;
+      // How a disabled filled button looks in the panel: a button that waits
+      // looks the same, so a press it ignores is seen to do nothing.
+      const disabledLook = await r.eval(`(() => { const probe = document.createElement("button");
+        probe.className = "primary"; probe.disabled = true; __apolloPanel.shadowRoot.append(probe);
+        const style = getComputedStyle(probe); const look = style.backgroundColor + " " + style.color;
+        probe.remove(); return look; })()`);
       // One press of a real double click: the first has clickCount 1, the
       // second clickCount 2.
       const press = async ({ x, y }, clickCount) => {
@@ -4726,6 +5667,13 @@ function chains(realConfig) {
       await r.waitFor(
         `__j.find(${JSON.stringify(turnOn(PATIO))})?.disabled === false && __j.find(${JSON.stringify(turnOn(PORCH))})?.disabled === false`,
         "both buttons after the picks",
+      );
+      // Every button waits at its first look (rule 4); the wait is over
+      // before the first real press.
+      await r.waitFor(
+        `[${JSON.stringify(turnOn(PATIO))}, ${JSON.stringify(turnOn(PORCH))}].every((selector) => !__j.find(selector).hasAttribute("data-settling"))`,
+        "both buttons to stop waiting after their first look",
+        3000,
       );
       // A pick moves no row, so the first press is taken at once.
       const first = await r.eval(`__j.target(${JSON.stringify(turnOn(PATIO))})`);
@@ -4744,7 +5692,8 @@ function chains(realConfig) {
         `the second press came ${Math.round(pressed.late)} ms after the porch button moved, too late to tell`,
       );
       check(
-        pressed.settling && pressed.aria === "true" && pressed.opacity === "0.55" && pressed.disabled === false,
+        pressed.settling && pressed.aria === "true" && pressed.look === disabledLook && pressed.opacity === "1" &&
+          pressed.disabled === false,
         `while it ignores presses the porch button is ${JSON.stringify(pressed)}`,
       );
       // A press without the mouse at that moment is ignored too.
@@ -4765,7 +5714,7 @@ function chains(realConfig) {
       await sleep(TURN_ON_SETTLE_MS + 100);
       const settled = await r.eval(lookOf(PORCH));
       check(
-        !settled.settling && settled.aria === null && settled.opacity === "1",
+        !settled.settling && settled.aria === null && settled.opacity === "1" && settled.look !== disabledLook,
         `a moment later the porch button is ${JSON.stringify(settled)}`,
       );
       // A line that comes in the patio tablet's row, above it, moves the
@@ -4775,7 +5724,7 @@ function chains(realConfig) {
       await r.click(turnOn(PORCH));
       const pushed = await r.eval(lookOf(PORCH));
       check(
-        pushed.late < TURN_ON_SETTLE_MS && pushed.settling && pushed.aria === "true" && pushed.opacity === "0.55",
+        pushed.late < TURN_ON_SETTLE_MS && pushed.settling && pushed.aria === "true" && pushed.look === disabledLook,
         `right after it moved the porch button is ${JSON.stringify(pushed)}`,
       );
       await sleep(200);
@@ -4848,7 +5797,7 @@ function chains(realConfig) {
       await waitText(
         r,
         error,
-        'That change could not be saved: This tablet is new. Pick a dashboard for it on the Home screen, then press "Turn on with this dashboard".',
+        'That change could not be saved: This tablet is new. Pick a dashboard for it under Tablets, then press "Turn on with this dashboard".',
         "the refusal",
       );
       const calls = await r.calls("apollo_tab/tablet/assign");
@@ -5015,6 +5964,2947 @@ function chains(realConfig) {
     }),
   ];
 
+  // The panel's visual system (build plan, package 1): one set of text
+  // sizes, control heights, one filled button per screen, states that show,
+  // bars in the sidebar's colours, a picture that scales and stays left to
+  // right in a right-to-left Home Assistant.
+  const foundation = [
+    step("111", "tokens-and-type", async (r) => {
+      const sizes = async (where) => {
+        const wrong = await r.eval(`__ui.textSizes().filter(([, size]) => ![12, 14, 16, 20].includes(size))`);
+        check(wrong.length === 0, `${where}: text at other sizes: ${JSON.stringify(wrong.slice(0, 6))}`);
+      };
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.eval(UI);
+      await sizes("the start screen");
+      await r.waitFor(`!__j.animating(__j.find('[data-test="create"]'))`, "the create button to settle");
+      const body = await r.eval(`getComputedStyle(__apolloPanel).fontSize`);
+      check(body === "14px", `body text is ${body}`);
+      const create = await r.eval(`(() => { const style = getComputedStyle(__j.find('[data-test="create"]'));
+        return [style.backgroundColor, style.color]; })()`);
+      check(
+        create[0] === "rgb(0, 123, 159)" && create[1] === "rgb(255, 255, 255)",
+        `"Create a dashboard" is ${create.join(" on ")}`,
+      );
+
+      await openSample(r);
+      await r.eval(UI);
+      await selectRow(r, "0.1.0");
+      await sizes("the editor with a card selected");
+      await leaveEditMode(r);
+      await r.click('[data-test="add-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      await sizes("the picker");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+
+      // Another accent reaches the editor and the picker, which inherit the
+      // values the panel works out for its own host.
+      const setAccent = (value) =>
+        r.eval(`(() => { const root = document.documentElement;
+          if (${JSON.stringify(value)}) root.style.setProperty("--primary-color", ${JSON.stringify(value)});
+          else root.style.removeProperty("--primary-color");
+          __apolloMockHass.themes = { theme: "default", accent: ${JSON.stringify(value)} };
+          __apolloPanel.hass = __apolloMockHass; return true; })()`);
+      const look = (selector) =>
+        `(() => { const node = __j.find('${selector}'); if (!node) return null;
+          const style = getComputedStyle(node); return [style.backgroundColor, style.color]; })()`;
+      try {
+        await setAccent("#f5b547");
+        await r.waitFor(`${look('[data-test="add-card"]')}?.[0] === "rgb(245, 181, 71)"`, "Add card in the new accent");
+        const add = await r.eval(look('[data-test="add-card"]'));
+        check(add[1] === "rgb(17, 17, 17)", `"Add card" has ${add[1]} words on ${add[0]}`);
+        const accentText = await r.eval(`getComputedStyle(__apolloPanel).getPropertyValue("--tab-accent-text").trim()`);
+        // On a phone Add card was read with the edit mode closed; the card's
+        // form opens again for "Change".
+        await selectRow(r, "0.1.0");
+        const change = await r.eval(`(() => { const node = __j.find('.side [data-test="change-device"]');
+          return node && [getComputedStyle(node).color, node.classList.contains("text"),
+            getComputedStyle(__j.find('.side .side-title')).color]; })()`);
+        check(change && change[1], `"Change" is not a text button: ${JSON.stringify(change)}`);
+        check(change[0] === accentText && change[0] !== change[2], `"Change" is ${change[0]}, the accent as text is ${accentText}`);
+        await leaveEditMode(r);
+        await r.click('[data-test="add-card"]');
+        await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+        await r.click('[data-test="tile"][data-component="apollo/room"]');
+        await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
+        // Read as it is once the card has its devices: enabled, with no
+        // fade in between.
+        const pick = await r.eval(`(() => { const node = __j.find('[data-test="pick-add"]');
+          node.style.transition = "none"; node.disabled = false; const style = getComputedStyle(node);
+          const result = [style.backgroundColor, style.color]; node.disabled = true; node.style.transition = "";
+          return result; })()`);
+        check(
+          pick[0] === "rgb(245, 181, 71)" && pick[1] === "rgb(17, 17, 17)",
+          `"Add" in the picker is ${pick.join(" on ")}`,
+        );
+        const shot = await r.shot("111-tokens-and-type");
+        // Escape goes back to the cards, a second one closes the picker.
+        await r.key("Escape");
+        await r.waitFor(`__j.find('[data-test="picker-rail"]')`, "the cards again");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+        return shot;
+      } finally {
+        await setAccent(null);
+      }
+    }),
+    step("112", "control-sizes", async (r) => {
+      const phone = r.setup.device === "phone";
+      const measure = async (where) => {
+        const found = await r.eval(`__ui.controls()`);
+        check(found.length > 0, `${where}: nothing to press`);
+        const problems = [];
+        for (const control of found) {
+          if (phone) {
+            if (control.height < 43.5) problems.push(control);
+            continue;
+          }
+          if (control.height < 31.5) problems.push(control);
+          if (control.kind === "plain" && (control.minHeight !== "40px" || control.height < 39.5)) problems.push(control);
+          if (control.kind === "field" && (control.minHeight !== "40px" || control.height < 39.5)) problems.push(control);
+          // Tabs are as high as "Add page" beside them (polish decision 3).
+          if (control.kind === "tab" && Math.abs(control.height - 40) > 0.5) problems.push(control);
+          if (control.kind === "row" && control.height <= 40) problems.push(control);
+        }
+        check(problems.length === 0, `${where}: ${JSON.stringify(problems.slice(0, 5))}`);
+      };
+      await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await r.eval(UI);
+      await measure("the start screen");
+      await openSample(r);
+      await r.eval(UI);
+      await selectRow(r, "0.1.0");
+      await measure("the editor with a card selected");
+      await leaveEditMode(r);
+      await r.click('[data-test="add-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      await measure("the picker");
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
+      await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
+      await measure("the picker's device step");
+      // Escape goes back to the cards, a second one closes the picker.
+      await r.key("Escape");
+      await r.waitFor(`__j.find('[data-test="picker-rail"]')`, "the cards again");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+      await r.clearSelection();
+      await openPageMenu(r);
+      await r.click('[data-test="page-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question");
+      const confirm = await r.eval(`__ui.controls().filter((control) => control.test && control.test.startsWith("confirm"))`);
+      check(confirm.length === 2, `the question has ${JSON.stringify(confirm)}`);
+      for (const control of confirm) {
+        check(control.height >= (phone ? 43.5 : 39.5), `${control.test} is ${control.height} px high`);
+      }
+      const shot = await r.shot("112-control-sizes");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="confirm"]')`, "the question to close");
+      return shot;
+    }),
+    step("113", "one-filled-button", async (r) => {
+      const filled = async (where, expected) => {
+        const found = await r.eval(`__ui.filled()`);
+        check(
+          JSON.stringify(found.sort()) === JSON.stringify([...expected].sort()),
+          `${where}: the filled buttons are ${JSON.stringify(found)}, not ${JSON.stringify(expected)}`,
+        );
+      };
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.eval(UI);
+      await filled("the empty start screen", ["create"]);
+      await r.open({ seed: "sample", night: "1", tablets: "two-new" }, `${home} && __j.count('[data-test="tablet-row"]') === 3`);
+      await r.eval(UI);
+      await filled("the start screen with two new tablets", ["tablet-turn-on", "tablet-turn-on"]);
+      const rows = await r.eval(`__j.all('[data-test="tablet-turn-on"].primary').filter((node) => __j.visible(node))
+        .map((node) => node.closest('[data-test="tablet-row"]')?.dataset.new)`);
+      check(JSON.stringify(rows) === JSON.stringify(["true", "true"]), `the filled buttons are in rows ${JSON.stringify(rows)}`);
+
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the empty editor");
+      await r.waitSaved("new dashboard");
+      await r.eval(UI);
+      await filled("the empty editor", ["add-first-card"]);
+
+      await openSample(r);
+      await r.eval(UI);
+      await filled("the editor with cards", ["add-card"]);
+      await openPageMenu(r);
+      await r.click('[data-test="page-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the question");
+      const inDialog = await r.eval(`__j.all('dialog[data-test="confirm"] button').filter((node) => __j.visible(node))
+        .filter((node) => node.classList.contains("primary") || node.classList.contains("danger")).map((node) => node.dataset.test)`);
+      check(JSON.stringify(inDialog) === JSON.stringify(["confirm-ok"]), `the question's next step is ${JSON.stringify(inDialog)}`);
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="confirm"]')`, "the question to close");
+
+      await r.eval(`__apolloMockHass.failSaves(100); true`);
+      await selectRow(r, "0.1.0");
+      await openPart(r, "place");
+      await r.click('[data-test="wider"]');
+      await r.waitFor(`__j.saveState() === "error" && __j.find('[data-test="save-retry"]')`, "the save to fail");
+      await filled("the editor after a failed save", ["save-retry"]);
+      await r.eval(`__apolloMockHass.failSaves(0); true`);
+      await r.click('[data-test="save-retry"]');
+      await r.waitSaved("after retry");
+      // On a phone Add card is hidden while the edit mode is open.
+      await leaveEditMode(r);
+      await filled("the editor after the retry", ["add-card"]);
+      await r.clearSelection();
+
+      await r.click('[data-test="add-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      await r.click('[data-test="tile"][data-component="apollo/room"]');
+      await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
+      const inPicker = await r.eval(`__j.all('dialog[data-test="picker"] button.primary').filter((node) => __j.visible(node))
+        .map((node) => node.dataset.test)`);
+      check(JSON.stringify(inPicker) === JSON.stringify(["pick-add"]), `the picker's filled buttons: ${JSON.stringify(inPicker)}`);
+      const shot = await r.shot("113-one-filled-button");
+      // Escape goes back to the cards, a second one closes the picker.
+      await r.key("Escape");
+      await r.waitFor(`__j.find('[data-test="picker-rail"]')`, "the cards again");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+      return shot;
+    }),
+    step(
+      "114",
+      "hover-and-focus",
+      async (r) => {
+        // What the pointer changes: the background (and its layer), the
+        // edge, the shadow.
+        const lookOf = (selector) => `(() => { const node = __j.find('${selector}'); const style = getComputedStyle(node);
+          return [style.backgroundColor, style.backgroundImage, style.borderTopColor, style.boxShadow, style.outlineStyle].join(" | "); })()`;
+        const away = async () => {
+          await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 799 });
+          await sleep(200);
+        };
+        const hover = async (selector) => {
+          await away();
+          const point = await r.eval(`__j.target('${selector}')`);
+          check(point && !point.error, point?.error || `cannot reach ${selector}`);
+          await away();
+          const before = await r.eval(lookOf(selector));
+          await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+          await sleep(250);
+          const after = await r.eval(lookOf(selector));
+          check(before !== after, `the pointer over ${selector} changes nothing (${after})`);
+        };
+        await openSample(r);
+        await hover('[data-test="page-tab"][aria-selected="false"]');
+        await hover('[data-test="list-row"][data-source="0.1.0"]');
+        await hover('[data-test="add-page"]');
+        const disabled = await r.eval(`(() => { const node = __j.find('[data-test="undo"]');
+          return [node.disabled, getComputedStyle(node).opacity]; })()`);
+        check(disabled[0] === true && disabled[1] === "1", `Undo while there is nothing to undo: ${JSON.stringify(disabled)}`);
+        await r.click('[data-test="add-card"]');
+        await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+        await sleep(300);
+        await hover('[data-test="tile"][data-component="apollo/fan-speed"]');
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+        // Focus from the keyboard: one ring, 2 px wide and 2 px away.
+        await r.eval(`__j.find('[data-test="add-page"]').focus(); true`);
+        await r.key("Tab");
+        const ring = await r.eval(`(() => { const node = __j.active(); const style = getComputedStyle(node);
+          return { tag: node.tagName, test: node.dataset.test, width: style.outlineWidth, style: style.outlineStyle,
+            offset: style.outlineOffset }; })()`);
+        check(
+          ring.tag === "BUTTON" && ring.width === "2px" && ring.style === "solid" && ring.offset === "2px",
+          `a focused button has the ring ${JSON.stringify(ring)}`,
+        );
+        return r.shot("114-hover-and-focus");
+      },
+      { desktopOnly: true },
+    ),
+    step("115", "bars-follow-sidebar", async (r) => {
+      // Every element of the bar with words of its own has 4.5:1 against
+      // the bar, every icon 3:1; disabled buttons are left out.
+      const readable = async (bar, where) => {
+        const problems = await r.eval(`__ui.barProblems('${bar}')`);
+        check(problems.length === 0, `${where}: ${JSON.stringify(problems.slice(0, 5))}`);
+        const kinds = await r.eval(`__j.all('${bar} .primary, ${bar} .text, ${bar} .link').filter((node) => __j.visible(node))
+          .map((node) => __j.describe(node))`);
+        check(kinds.length === 0, `${where}: the bar holds ${JSON.stringify(kinds)}`);
+      };
+      const sidebar = (on) =>
+        r.eval(`(() => { const style = document.documentElement.style;
+          if (${on}) { style.setProperty("--sidebar-background-color", "#123456"); style.setProperty("--sidebar-text-color", "#fedcba"); }
+          else { style.removeProperty("--sidebar-background-color"); style.removeProperty("--sidebar-text-color"); }
+          return true; })()`);
+      const appHeader = (on) =>
+        r.eval(`(() => { const style = document.documentElement.style;
+          if (${on}) { style.setProperty("--app-header-background-color", "#ff00ff"); style.setProperty("--app-header-text-color", "#00ff00"); }
+          else { style.removeProperty("--app-header-background-color"); style.removeProperty("--app-header-text-color"); }
+          return true; })()`);
+      const colours = (bar) => `__j.all('${bar}, ${bar} *').filter((node) => __j.visible(node)).map((node) => {
+          const style = getComputedStyle(node); return style.backgroundColor + " " + style.color; }).join(";")`;
+      const check3 = async (bar, where) => {
+        const title = await r.eval(`__j.textContrast(__j.find('${bar} h1'))`);
+        check(title >= 4.5, `${where}: the title has ${title}`);
+        await readable(bar, where);
+        try {
+          await sidebar(true);
+          await r.waitFor(`!__j.all('${bar} *').some((node) => __j.animating(node))`, "the bar to settle");
+          const look = await r.eval(`(() => { const style = getComputedStyle(__j.find('${bar}'));
+            return [style.backgroundColor, style.color]; })()`);
+          check(
+            look[0] === "rgb(18, 52, 86)" && look[1] === "rgb(254, 220, 186)",
+            `${where} with the sidebar's colours: ${look.join(", ")}`,
+          );
+          await readable(bar, `${where} with the sidebar's colours`);
+        } finally {
+          await sidebar(false);
+        }
+        const before = await r.eval(colours(bar));
+        try {
+          await appHeader(true);
+          const after = await r.eval(colours(bar));
+          check(before === after, `${where} changes with the app header's colours`);
+        } finally {
+          await appHeader(false);
+        }
+      };
+      // The left-out line comes after the first draw and moves Advanced
+      // down, so the click below waits for it.
+      await r.open({ seed: "sample", tablets: "three" }, `${home} && __j.find('[data-test="row-not-shown"]')`);
+      await r.eval(UI);
+      await check3(".panel-header", "the start screen's bar");
+      await r.click('[data-test="open-advanced"]');
+      await r.waitFor(`__j.find('[data-test="advanced"]')`, "Advanced");
+      await check3(".panel-header", "Advanced's bar");
+      await openSample(r, { tablets: "three" });
+      await r.eval(UI);
+      await selectRow(r, "0.1.0");
+      await openPart(r, "place");
+      await r.click('[data-test="wider"]');
+      await r.waitSaved("wider");
+      await check3(".ed-header", "the editor's bar");
+      return r.shot("115-bars-follow-sidebar");
+    }),
+    step(
+      "116",
+      "picture-scales",
+      async (r) => {
+        await openSample(r);
+        await pickTheme(r, "mono");
+        await closePops(r);
+        await r.waitSaved("theme");
+        const page = `__j.designer().shadowRoot.querySelector(".page-host").shadowRoot`;
+        await r.waitFor(
+          `(() => { const card = ${page}.querySelector(".at-card"); return card && getComputedStyle(card).getPropertyValue("--at-r").trim() === "8px"; })()`,
+          "the picture in the Mono theme",
+        );
+        const found = await r.eval(`(() => {
+          const stage = __j.find('[data-test="canvas"]').getBoundingClientRect();
+          const root = ${page};
+          const card = root.querySelector(".at-card");
+          // The sample's graphs have no values here, so a line is put into
+          // one of them for the moment it takes to read its width.
+          const chart = root.querySelector(".at-chart");
+          let stroke = null;
+          if (chart) {
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+            line.setAttribute("class", "at-chart-data at-chart-line");
+            line.setAttribute("points", "0,0 10,10");
+            chart.append(line);
+            stroke = parseFloat(getComputedStyle(line).strokeWidth);
+            line.remove();
+          }
+          const style = getComputedStyle(card);
+          return { scale: stage.width / 1280, radius: parseFloat(style.borderTopLeftRadius),
+            border: parseFloat(style.borderTopWidth), bw: style.getPropertyValue("--at-bw").trim(), stroke }; })()`);
+        check(found.bw === "2px", `the Mono theme's border is ${found.bw}`);
+        check(Math.abs(found.radius - 8 * found.scale) <= 0.5, `a card's corner is ${found.radius} px at scale ${found.scale}`);
+        check(Math.abs(found.border - 2 * found.scale) <= 1, `a card's border is ${found.border} px at scale ${found.scale}`);
+        check(found.stroke !== null, "no graph on the picture");
+        check(Math.abs(found.stroke - 3 * found.scale) <= 0.5, `the graph's line is ${found.stroke} px at scale ${found.scale}`);
+        await r.eval(`__j.find('[data-test="canvas"]').scrollIntoView({ block: "start" }); true`);
+        return r.shot("116-picture-scales");
+      },
+      { desktopOnly: true },
+    ),
+    step("117", "right-to-left", async (r) => {
+      const page = `__j.designer().shadowRoot.querySelector(".page-host").shadowRoot`;
+      const cards = () =>
+        r.eval(`(() => { const left = ${page}.querySelector(".at-page").getBoundingClientRect().left;
+          return [...${page}.querySelectorAll(".at-card")].map((card) =>
+            [card.innerText, Math.round(card.getBoundingClientRect().left - left)]); })()`);
+      const rtl = (on) => r.eval(`(() => { if (${on}) document.documentElement.setAttribute("dir", "rtl");
+        else document.documentElement.removeAttribute("dir"); return true; })()`);
+      try {
+        await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+        await rtl(true);
+        await sleep(200);
+        await checkNoSidewaysScroll(r);
+        await rtl(false);
+        await openSample(r);
+        const before = await cards();
+        check(before.length > 0, "no cards on the picture");
+        await rtl(true);
+        await sleep(300);
+        const after = await cards();
+        check(JSON.stringify(after) === JSON.stringify(before), `right to left the picture changes: ${JSON.stringify(after.slice(0, 3))} instead of ${JSON.stringify(before.slice(0, 3))}`);
+        await checkNoSidewaysScroll(r);
+        await r.click('[data-test="add-card"]');
+        await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+        await sleep(300);
+        await checkNoSidewaysScroll(r);
+        const shot = await r.shot("117-right-to-left");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+        return shot;
+      } finally {
+        await rtl(false);
+      }
+    }),
+    step(
+      "118",
+      "narrowest-phone",
+      async (r) => {
+        await r.browser.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 568, deviceScaleFactor: 1, mobile: true });
+        try {
+          const small = async (where) => {
+            await checkNoSidewaysScroll(r, 320);
+            const found = (await r.eval(`__ui.controls()`)).filter((control) => control.height < 43.5);
+            check(found.length === 0, `${where} at 320 px: ${JSON.stringify(found.slice(0, 5))}`);
+          };
+          await r.open({ seed: "sample" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+          await r.eval(UI);
+          await small("the start screen");
+          await openSample(r);
+          await r.eval(UI);
+          await selectRow(r, "0.1.0");
+          await small("the editor with a card selected");
+          await leaveEditMode(r);
+          await r.click('[data-test="add-card"]');
+          await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+          await sleep(300);
+          await small("the picker");
+          const shot = await r.shot("118-narrowest-phone");
+          await r.key("Escape");
+          await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+          return shot;
+        } finally {
+          await r.viewport();
+        }
+      },
+      { desktopOnly: true },
+    ),
+  ];
+
+  // The editor's workspace (build plan, package 2): a shell as tall as the
+  // window, the picture fitted to the free space, the drawer, the compact
+  // and short layouts, the edit mode, zoom and the toast's home.
+  const sizeTo = async (r, width, height, mobile = false) => {
+    await r.browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile });
+    await sleep(100);
+    await r.eval(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+  };
+  // The stand-in for Home Assistant's docked sidebar, 256 px, and its removal.
+  const dock = (r, on) =>
+    r.eval(`(() => { document.getElementById("ws-sidebar")?.remove();
+      __apolloPanel.style.marginLeft = ""; __apolloPanel.style.width = "";
+      if (${on}) { const bar = document.createElement("div"); bar.id = "ws-sidebar";
+        bar.style.cssText = "position:fixed;left:0;top:0;bottom:0;width:256px;background:#333;z-index:1";
+        document.body.prepend(bar); __apolloPanel.style.marginLeft = "256px"; __apolloPanel.style.width = "calc(100% - 256px)"; }
+      return true; })()`);
+  const shell = (r) =>
+    r.eval(`(() => { const d = __j.designer().shadowRoot; const box = (node) => {
+        if (!node || !node.getClientRects().length) return null; const rect = node.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }; };
+      const root = d.querySelector(".root");
+      return { band: ["wide", "medium", "compact", "short"].find((name) => root.classList.contains(name)) || null,
+        root: box(root), header: box(d.querySelector(".ed-header")), strip: box(d.querySelector(".tab-strip")),
+        main: box(d.querySelector(".main")), stage: box(d.querySelector('[data-test="canvas"]')),
+        area: box(d.querySelector(".stage-area")), side: box(d.querySelector('[data-test="side"]')),
+        blocking: box(d.querySelector(".root > .banners")), status: box(d.querySelector(".status-strip")),
+        doc: document.documentElement.scrollHeight, innerWidth, innerHeight }; })()`);
+  // The picture is `width` px wide (within 1 px) once the layout settled.
+  const pictureIs = async (r, width, when) => {
+    try {
+      await r.waitFor(
+        `(() => { const stage = __j.designer().shadowRoot.querySelector('[data-test="canvas"]');
+          return stage && Math.abs(stage.getBoundingClientRect().width - ${width}) <= 1; })()`,
+        `the picture to be ${width} px wide ${when}`,
+        4000,
+      );
+    } catch (error) {
+      throw new Error(`${error.message}; ${JSON.stringify((await shell(r)).stage)}`);
+    }
+  };
+  // A new dashboard with one light on it: no page notice above the picture.
+  const oneCard = async (r) => {
+    await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+    await r.click('[data-test="create"]');
+    await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's empty editor");
+    await r.addCard("add-first-card", "apollo/light", "light.kitchen");
+    await r.waitFor(`__j.count('[data-test="hit"]') === 1`, "the light on the picture");
+    await r.waitSaved("the light added");
+    await leaveEditMode(r);
+    if (await r.count(pressed)) {
+      await r.clearSelection();
+    }
+    check((await r.count(".page-notice")) === 0, "the new dashboard has a page notice");
+  };
+
+  // The only card of the real dashboard that the tablet can draw (its
+  // heading) removed with Delete on the picture: focus goes to Add card,
+  // and is still there once the picture is drawn again without it (polish
+  // decision 13). `layout` puts the editor in the band to check.
+  const lastDrawnCardGone = async (r, layout, when) => {
+    await r.open({ seed: "real", route: "/edit/tab-1" }, editorReady);
+    await layout();
+    await r.waitFor(`__j.count('[data-test="hit"]') === 1`, `the heading on the picture ${when}`);
+    await r.eval(`__j.find('[data-test="hit"]').focus(); true`);
+    await r.key("Delete");
+    await r.waitFor(`__j.find('[data-test="toast-undo"]')`, `the removal's toast ${when}`);
+    const isAdd = (focus) => focus === "add-card" || focus === "add-first-card";
+    const now = await focused(r);
+    check(isAdd(now), `${when}, after the last card on the picture was removed focus is on ${now}, not Add card`);
+    await r.waitSaved(`the heading removed ${when}`);
+    await r.waitFor(`__j.count('[data-test="hit"]') === 0`, `the picture without the heading ${when}`);
+    await sleep(500);
+    const later = await focused(r);
+    check(isAdd(later), `${when}, once the picture was drawn again focus is on ${later}, not Add card`);
+  };
+
+  const workspace = [
+    step("119", "shell-fits-window", async (r) => {
+      await openSample(r);
+      const fits = async (when) => {
+        const now = await shell(r);
+        check(now.doc <= now.innerHeight, `${when}: the document is ${now.doc} px tall in a ${now.innerHeight} px window`);
+        check(Math.abs(now.root.bottom - now.innerHeight) <= 1, `${when}: the editor ends at ${now.root.bottom}, the window at ${now.innerHeight}`);
+        check(!now.blocking, `${when}: a notice that blocks shows`);
+        check(Math.abs(now.main.top - now.strip.bottom) <= 1, `${when}: the stage column starts at ${now.main.top}, the page strip ends at ${now.strip.bottom}`);
+        return now;
+      };
+      const before = await fits("in the editor");
+      const shot = await r.shot("119-shell-fits-window");
+      if (r.setup.device === "desktop") {
+        check(before.side.bottom <= before.innerHeight + 1 && before.stage.bottom <= before.innerHeight, `the inspector or the picture ends below the window: ${JSON.stringify(before)}`);
+        await selectRow(r, "0.1.0");
+        // The form took the list's place, and the pressed row went with the
+        // list: the form's title has focus, not the page.
+        check((await focused(r)) === "side-title", `after a card was chosen in the list focus is on ${await focused(r)}, not the form's title`);
+        const selected = await fits("with a card selected");
+        check(selected.side.bottom <= selected.innerHeight + 1 && selected.stage.bottom <= selected.innerHeight, `with a card selected the inspector or the picture ends below the window: ${JSON.stringify(selected)}`);
+        // A pinch zoom changes neither the shell's height nor its layout.
+        await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
+        try {
+          await sleep(400);
+          const zoomed = await shell(r);
+          check(zoomed.root.height === selected.root.height && zoomed.band === selected.band,
+            `zoomed in, the editor is ${zoomed.root.height} px (${zoomed.band}), not ${selected.root.height} px (${selected.band})`);
+        } finally {
+          await r.browser.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+        }
+        // From the form, Escape reaches the editor and lets the card go.
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('${pressed}')`, "Escape to let the card go after it was chosen in the list");
+        check(await focused(r), "after Escape focus fell to the page");
+      } else {
+        // The page column scrolls under the bars; they stay where they are.
+        await r.eval(`(() => { const main = __j.designer().shadowRoot.querySelector(".main"); main.scrollTop = main.scrollHeight; return true; })()`);
+        await sleep(300);
+        const scrolled = await fits("with the page column scrolled to its end");
+        check(scrolled.header.top === before.header.top && scrolled.strip.top === before.strip.top,
+          `the bars moved when the page column scrolled: ${JSON.stringify([before.header, before.strip, scrolled.header, scrolled.strip])}`);
+      }
+      // Pages added until the tabs scroll: the new page's tab is whole in
+      // the tab list, not under Add page or Add card.
+      const tabs = await r.count('[data-test="page-tab"]');
+      for (let added = 1; added <= 8; added += 1) {
+        await r.click('[data-test="add-page"]');
+        await r.waitFor(`__j.count('[data-test="page-tab"]') === ${tabs + added}`, `page ${tabs + added}`);
+        await r.waitFor(popOpen("page-menu"), `the pop-up of page ${tabs + added}`);
+        await closePops(r);
+      }
+      await sleep(300);
+      const strip = await r.eval(`(() => { const edges = (node) => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right }; };
+        const list = __j.designer().shadowRoot.querySelector(".tabs");
+        return { tab: edges(__j.find('[data-test="page-tab"][aria-selected="true"]')), list: edges(list),
+          scrolls: list.scrollWidth > list.clientWidth, add: edges(__j.find('[data-test="add-page"]')) }; })()`);
+      check(strip.scrolls, `the tabs do not scroll with ${tabs + 8} pages, so the check below means nothing`);
+      check(strip.tab.left >= strip.list.left - 1 && strip.tab.right <= strip.list.right + 1 && strip.tab.right <= strip.add.left + 1,
+        `the new page's tab is not whole in the tab list: ${JSON.stringify(strip)}`);
+      await checkNoSidewaysScroll(r);
+      return shot;
+    }),
+    step(
+      "120",
+      "fit-table",
+      async (r) => {
+        const sizes = [
+          [1280, 800, false, 879],
+          [1440, 800, true, 796],
+          [1280, 800, true, 960],
+          [1920, 1080, false, 1280],
+          [2560, 1440, false, 1280],
+          [1280, 720, false, 806],
+          [1366, 768, false, 883],
+        ];
+        let shot = null;
+        try {
+          await oneCard(r);
+          for (const [width, height, docked, picture] of sizes) {
+            await sizeTo(r, width, height);
+            await dock(r, docked);
+            const when = `at ${width} x ${height}${docked ? " with the sidebar docked" : ""}`;
+            await pictureIs(r, picture, when);
+            const now = await shell(r);
+            check(now.stage.width <= 1280 && now.stage.bottom <= now.innerHeight, `${when} the picture is ${JSON.stringify(now.stage)}`);
+            await checkNoSidewaysScroll(r, width);
+            if (width === 1920) {
+              shot = await r.screen("120-fit-table-1920");
+            }
+          }
+        } finally {
+          await dock(r, false);
+          await r.viewport();
+        }
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "121",
+      "medium-drawer",
+      async (r) => {
+        let shot = null;
+        try {
+          // A full row of lights, so a card ends at the row's right end.
+          await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+          await r.eval(`__apolloMockHass.addDashboard("row-1", "Row", ${JSON.stringify(ROW_CONFIG)});
+            __apolloOpenPanel("/edit/row-1"); true`);
+          await r.waitFor(`__j.count('[data-test="hit"]') >= 3`, "the row of lights");
+          await sizeTo(r, 1280, 800);
+          await dock(r, true);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium")`, "the medium layout");
+          check((await r.count(".page-notice")) === 0, "the row of lights has a page notice");
+          await pictureIs(r, 960, "with nothing selected");
+          const closed = await shell(r);
+          check(!closed.side || closed.side.left >= closed.root.right - 1, `the closed drawer shows: ${JSON.stringify(closed.side)}`);
+          // The card at the right end of the first row.
+          const key = await r.eval(`(() => { const hits = __j.all('[data-test="hit"]').map((hit) => [hit, hit.getBoundingClientRect()]);
+            const top = Math.min(...hits.map(([, rect]) => rect.top));
+            const row = hits.filter(([, rect]) => Math.abs(rect.top - top) < 2).sort((a, b) => b[1].right - a[1].right);
+            return row[0][0].dataset.source; })()`);
+          const card = `[data-test="hit"][data-source="${key}"]`;
+          await r.click(card);
+          await r.waitFor(`__j.find('${card}[aria-pressed="true"]') && __j.designer().shadowRoot.querySelector(".root.drawer-open")`, "the drawer to open");
+          await sleep(400);
+          await pictureIs(r, 960, "with the drawer open");
+          const clear = await r.eval(`(() => { const side = __j.designer().shadowRoot.querySelector('[data-test="side"]').getBoundingClientRect();
+            const hit = __j.find('${card}').getBoundingClientRect(); return { card: hit.right, drawer: side.left }; })()`);
+          check(clear.card <= clear.drawer - 16 + 0.5, `the card ends at ${clear.card}, the drawer starts at ${clear.drawer}`);
+          shot = await r.screen("121-medium-drawer");
+          // Made 5 wide, it slides only until its left edge is at the stage's padding.
+          for (let press = 0; press < 6 && !(await r.text('.size-value')).startsWith("5 of 6 wide"); press += 1) {
+            await openPart(r, "place");
+            await r.click('[data-test="wider"]');
+            await sleep(150);
+          }
+          check((await r.text('.size-value')).startsWith("5 of 6 wide"), `the card is ${await r.text('.size-value')}`);
+          await r.waitSaved("made 5 wide");
+          await sleep(500);
+          const wide = await r.eval(`(() => { const area = __j.designer().shadowRoot.querySelector(".stage-area").getBoundingClientRect();
+            const hit = __j.find('[data-test="hit"][aria-pressed="true"]').getBoundingClientRect(); return { card: hit.left, area: area.left }; })()`);
+          check(Math.abs(wide.card - (wide.area + 16)) <= 1, `the 5 wide card starts at ${wide.card}, the stage's padding at ${wide.area + 16}`);
+          await r.click('[data-test="close-panel"]');
+          await r.waitFor(`!__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "the drawer to close");
+          await sleep(400);
+          const back = await r.eval(`getComputedStyle(__j.designer().shadowRoot.querySelector(".device")).transform`);
+          check(back === "none", `the picture is still moved: ${back}`);
+          // The list is in the closed drawer, out of reach: after Done focus
+          // is on the card on the picture, not on the page.
+          check((await focused(r)) === "hit", `after Done with the drawer closed focus is on ${await focused(r)}, not the card on the picture`);
+          await checkNoSidewaysScroll(r, 1280);
+          // The window made narrower and wider again with a card selected:
+          // focus stays in the editor (the edit mode's title, then the
+          // drawer's form), so Escape still lets the card go.
+          const first = '[data-test="hit"]';
+          await r.click(first);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "the drawer to open again");
+          await dock(r, false);
+          await sizeTo(r, 820, 800);
+          await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode at 820 px");
+          await r.waitFor(`__j.active()?.dataset?.test === "side-title"`, "focus on the edit mode's title after the window got narrower");
+          await sizeTo(r, 1280, 800);
+          await dock(r, true);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium.drawer-open")`, "the drawer again at 1024 px");
+          await sleep(300);
+          check(await focused(r), "after the window got wider again focus fell to the page");
+          await r.key("Escape");
+          await r.waitFor(`!__j.find('${pressed}') && !__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "Escape to let the card go and close the drawer");
+          check((await focused(r)) === "hit", `after Escape focus is on ${await focused(r)}, not the card on the picture`);
+          // Remove card in the drawer's form: the drawer closes with the list
+          // in it, so focus goes on to the next card on the picture.
+          await r.click(first);
+          await r.waitFor(`__j.find('[data-test="remove-card"]')`, "the card's form in the drawer");
+          const removedKey = await r.eval(`__j.find('[data-test="hit"][aria-pressed="true"]').dataset.source`);
+          await pressRemoving(r, '[data-test="remove-card"]', "hit", "removing a card in the drawer's form");
+          await r.waitSaved("after the removal in the drawer");
+          await sleep(400);
+          check((await focused(r)) === "hit", `once the picture was drawn again focus is on ${await focused(r)}`);
+          // Undo in the toast: the card comes back with focus on the picture,
+          // as the list is in the closed drawer (polish decision 13).
+          await r.eval(`__j.find('[data-test="toast-undo"]').focus(); true`);
+          await r.key("Enter");
+          await r.waitSaved("after Undo in the drawer layout");
+          await r.waitFor(`__j.active()?.dataset?.focus === "hit:${removedKey}"`, `focus on the card that came back (${removedKey}) after Undo`);
+          // A card moved in the list from the keyboard stays in the list,
+          // so it can be moved again: its form does not take the list's
+          // place. The card moved is the one made 5 wide, the only one that
+          // differs from the others.
+          await r.click('[data-test="open-cards"]');
+          await r.waitFor(`__j.find('[data-test="list-row"]')`, "the card list in the drawer");
+          const wideAt = async () => (await r.draft()).views[0].sections[0].cards.findIndex((card) => card.grid_options);
+          let at = await wideAt();
+          check(at >= 0, "no card with a size of its own is left to move");
+          const way = at >= 2 ? -1 : 1;
+          const arrow = { key: way < 0 ? "ArrowLeft" : "ArrowRight", windowsVirtualKeyCode: way < 0 ? 37 : 39, modifiers: 8 };
+          arrow.code = arrow.key;
+          await r.eval(`__j.find('[data-test="list-row"][data-source="0.0.${at}"]').focus(); true`);
+          for (const press of [1, 2]) {
+            await r.browser.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...arrow });
+            await r.browser.send("Input.dispatchKeyEvent", { type: "keyUp", ...arrow });
+            await sleep(300);
+            const now = await wideAt();
+            check(now === at + way, `press ${press} of Shift+${arrow.key} on a list row left the card at ${now}, not ${at + way}`);
+            at = now;
+            const row = await r.eval(`({ test: __j.active()?.dataset?.test || null, source: __j.active()?.dataset?.source || null })`);
+            check(row.test === "list-row" && row.source === `0.0.${at}`, `after moving a card in the list focus is on ${JSON.stringify(row)}, not its row`);
+          }
+          await r.waitSaved("after the moves in the list");
+          await r.key("Escape");
+          await r.waitFor(`!__j.designer().shadowRoot.querySelector(".root.drawer-open")`, "Escape to close the card list");
+          await lastDrawnCardGone(r, async () => {
+            await sizeTo(r, 1280, 800);
+            await dock(r, true);
+            await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium")`, "the medium layout for the real dashboard");
+          }, "at 1024 px");
+          // With a pager, a failed picture and "Cards" together the status
+          // strip stays one line of 40 px, at 1024 and at 900 px.
+          await r.eval(`__apolloMockHass.addDashboard("spill-1", "Spill", ${JSON.stringify(SPILL_CONFIG)});
+            __apolloOpenPanel("/edit/spill-1"); true`);
+          for (const [width, docked] of [
+            [1280, true],
+            [900, false],
+          ]) {
+            await sizeTo(r, width, 800);
+            await dock(r, docked);
+            const when = docked ? "at 1024 px" : "at 900 px";
+            await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium") && __j.find('[data-test="screen-next"]')`, `the pager ${when}`);
+            await r.eval(`__apolloMockHass.failCalls("apollo_tab/layout/preview", 100); __j.designer()._requestPreview(); true`);
+            try {
+              await r.waitFor(`__j.find(".status-strip .alert")`, `the failed picture ${when}`);
+              const strip = await r.eval(`(() => { const d = __j.designer().shadowRoot; const cards = __j.find('[data-test="open-cards"]');
+                const words = cards.querySelector("span"); const line = parseFloat(getComputedStyle(words).lineHeight);
+                const sentence = d.querySelector(".status-strip .alert > span");
+                return { strip: d.querySelector(".status-strip").getBoundingClientRect().height,
+                  cards: cards.getBoundingClientRect().height, words: words.getBoundingClientRect().height, line,
+                  sentence: [sentence.scrollWidth, sentence.clientWidth],
+                  pager: d.querySelector(".status-strip .screens-brief")?.getClientRects().length > 0 }; })()`);
+              check(Math.round(strip.strip) === 40, `${when} the status strip is ${strip.strip} px high`);
+              check(strip.cards <= 40.5 && strip.words < strip.line * 1.5, `${when} "Cards" is not one line: ${JSON.stringify(strip)}`);
+              // The pager gives way to the failure: "1 / 2", so the failure's
+              // sentence is whole.
+              check(strip.pager && strip.sentence[0] <= strip.sentence[1] + 1, `${when} the failure's sentence is cut: ${JSON.stringify(strip)}`);
+              await checkNoSidewaysScroll(r, width);
+            } finally {
+              await r.eval(`__apolloMockHass.failCalls("apollo_tab/layout/preview", 0); __j.designer()._requestPreview(); true`);
+            }
+            await r.waitFor(`!__j.find(".status-strip .alert")`, `the picture back ${when}`);
+          }
+        } finally {
+          await dock(r, false);
+          await r.viewport();
+        }
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "122",
+      "compact-picture",
+      async (r) => {
+        try {
+          await oneCard(r);
+          await sizeTo(r, 820, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.compact")`, "the compact layout");
+          await pictureIs(r, 784, "at 820 x 800");
+          await checkNoSidewaysScroll(r, 820);
+          return await r.screen("122-compact-picture");
+        } finally {
+          await r.viewport();
+        }
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "123",
+      "edit-mode",
+      async (r) => {
+        await openSample(r);
+        const start = await shell(r);
+        check(start.stage.top <= 180, `the picture starts at ${start.stage.top}`);
+        await selectRow(r, "0.1.0");
+        const layer = await r.eval(`(() => { const side = __j.find('[data-test="side"][data-mode="edit"]'); if (!side) return null;
+          const rect = side.getBoundingClientRect(); const strip = __j.find('[data-test="edit-preview"]').getBoundingClientRect();
+          const header = __j.designer().shadowRoot.querySelector(".ed-header").getBoundingClientRect();
+          return { top: rect.top, bottom: rect.bottom, header: header.bottom, strip: strip.height, height: innerHeight }; })()`);
+        check(layer, "no edit mode");
+        check(Math.abs(layer.top - layer.header) <= 1 && Math.abs(layer.bottom - layer.height) <= 1, `the edit mode spans ${layer.top}..${layer.bottom}: ${JSON.stringify(layer)}`);
+        check(layer.strip >= 128 && layer.strip <= 240, `the edit mode's picture is ${layer.strip} px high`);
+        await checkSelectedCardVisible(r, "in the edit mode");
+        const shot = await r.screen("123-edit-mode");
+        const width = async () => (await r.draft()).views[0].sections[1].cards[0].grid_options?.columns;
+        const before = await width();
+        await openPart(r, "place");
+        await r.tap('[data-test="wider"]');
+        await r.waitFor(`__j.designer()._history.past.length > 0`, "Wider to change the card");
+        await sleep(300);
+        await checkSelectedCardVisible(r, "after Wider");
+        await r.eval(`(() => { const form = __j.find(".edit-form"); form.scrollTop = form.scrollHeight; return true; })()`);
+        await sleep(300);
+        await checkSelectedCardVisible(r, "with the form scrolled to its end");
+        await r.click('[data-test="undo"]');
+        await r.waitFor(`__j.designer()._history.past.length === 0`, "Undo in the top bar");
+        check((await width()) === before, "Undo in the top bar did not undo Wider");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Escape to close the edit mode");
+        await r.click('[data-test="list-row"][data-source="0.1.0"]');
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode again");
+        await r.click('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done to close the edit mode");
+        await r.waitFor(`__j.active()?.dataset?.focus === "row:0.1.0"`, "focus on the card's row after Done");
+        // The same row pressed where it is, just above the window's bottom
+        // edge: after Done the page column has not moved.
+        await r.eval(`(() => { const main = __j.find(".main"); const row = __j.find('[data-test="list-row"][data-source="0.1.0"]');
+          main.scrollTop += row.getBoundingClientRect().bottom - (innerHeight - 8); return true; })()`);
+        await sleep(300);
+        const low = await r.eval(`__j.find(".main").scrollTop`);
+        await r.tap('[data-test="list-row"][data-source="0.1.0"]');
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode from a row at the bottom edge");
+        await r.tap('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done after a row at the bottom edge");
+        await sleep(300);
+        const kept = await r.eval(`({ scroll: __j.find(".main").scrollTop, focus: __j.active()?.dataset?.focus })`);
+        check(Math.abs(kept.scroll - low) <= 1, `after Done the page column moved from ${low} to ${kept.scroll}`);
+        check(kept.focus === "row:0.1.0", `after Done focus is on ${kept.focus}, not the card's row`);
+        // A card pressed on the picture whose row is below the fold: after
+        // Done the picture is where it was and the card has focus.
+        // Focus leaves the row first: a redraw gives focus back to it, which
+        // would scroll the row into view again.
+        await r.eval(`(() => { __j.active()?.blur(); __j.find(".main").scrollTop = 0; return true; })()`);
+        await sleep(600);
+        const last = await r.eval(`(() => { const rows = [...__j.designer().shadowRoot.querySelectorAll('[data-test="list-row"]')];
+          const row = rows[rows.length - 1]; return { source: row.dataset.source, top: row.getBoundingClientRect().top,
+          picture: __j.find('[data-test="canvas"]').getBoundingClientRect().top, height: innerHeight }; })()`);
+        check(last.top > last.height, `the last card's row is in view at ${last.top}, so the check below means nothing`);
+        await r.tap(`[data-test="hit"][data-source="${last.source}"]`);
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode from the picture");
+        await r.tap('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done after a card pressed on the picture");
+        await sleep(300);
+        const after = await r.eval(`({ picture: __j.find('[data-test="canvas"]').getBoundingClientRect().top, focus: __j.active()?.dataset?.focus })`);
+        check(Math.abs(after.picture - last.picture) <= 1, `after Done the picture's top moved from ${last.picture} to ${after.picture}`);
+        check(after.focus === `hit:${last.source}`, `after Done focus is on ${after.focus}, not the card on the picture`);
+        // Where the picture is and what has focus; null when focus fell to
+        // the page.
+        const place = () =>
+          r.eval(`(() => { const active = __j.active();
+            return { picture: __j.find('[data-test="canvas"]').getBoundingClientRect().top,
+              focus: active && active !== document.body ? active.dataset.focus || active.dataset.test || active.tagName : null }; })()`);
+        const onPicture = (focus) => /^(hit:|add-card$|add-first-card$)/.test(focus || "");
+        // Remove card in an edit mode opened from the picture, for a card
+        // whose follower's row is below the fold: the picture stays where it
+        // was, and focus goes on on the picture (the card that took its
+        // place, or Add card), not to that row and not to the page.
+        const gone = await r.eval(`(() => { const rows = [...__j.designer().shadowRoot.querySelectorAll('[data-test="list-row"]')];
+          const hits = new Set(__j.all('[data-test="hit"]').map((hit) => hit.dataset.source));
+          for (let index = rows.length - 2; index >= 0; index -= 1) {
+            if (hits.has(rows[index].dataset.source) && rows[index + 1].getBoundingClientRect().top > innerHeight) {
+              return { source: rows[index].dataset.source, rows: rows.length };
+            }
+          }
+          return null; })()`);
+        check(gone, "no card on the picture is followed by a row below the fold, so the check below means nothing");
+        await r.tap(`[data-test="hit"][data-source="${gone.source}"]`);
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode from the picture, to remove the card");
+        await r.eval(`(() => { const form = __j.find(".edit-form"); form.scrollTop = form.scrollHeight; return true; })()`);
+        await sleep(300);
+        await r.tap('[data-test="remove-card"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]') && __j.find('[data-test="toast-undo"]')`, "the card to be removed");
+        const removed = await place();
+        check(Math.abs(removed.picture - last.picture) <= 1, `after Remove card the picture's top moved from ${last.picture} to ${removed.picture}`);
+        check(onPicture(removed.focus), `after Remove card focus is on ${removed.focus}, not on the picture`);
+        // The same once the picture was drawn again without the card.
+        await r.waitSaved("after Remove card");
+        await r.waitFor(`__j.designer().shadowRoot.querySelectorAll('[data-test="list-row"]').length === ${gone.rows - 1}`, "the list without the card");
+        await sleep(500);
+        const drawn = await place();
+        check(Math.abs(drawn.picture - last.picture) <= 1, `once the picture was drawn again its top moved from ${last.picture} to ${drawn.picture}`);
+        check(onPicture(drawn.focus), `once the picture was drawn again focus is on ${drawn.focus}, not on the picture`);
+        await r.screen("123-edit-mode-removed");
+        // Add card with the floating button, then Done: the picture is
+        // where it was, with focus on the new card there, not at the end of
+        // the list.
+        await r.eval(`(() => { __j.active()?.blur(); __j.find(".main").scrollTop = 0; return true; })()`);
+        await sleep(300);
+        const fresh = await place();
+        await r.addCard("add-card", "apollo/light", "light.kitchen");
+        await r.waitFor(`__j.find('[data-test="side"][data-mode="edit"]')`, "the edit mode for the new card");
+        await r.waitSaved("the new card");
+        const added = await r.eval(`__j.designer()._selected.join(".")`);
+        await r.waitFor(`__j.designer().shadowRoot.querySelector('[data-test="hit"][data-source="${added}"]')`, "the new card on the picture");
+        await r.tap('[data-test="close-panel"]');
+        await r.waitFor(`!__j.find('[data-test="side"][data-mode="edit"]')`, "Done after Add card");
+        await sleep(300);
+        const done = await place();
+        check(Math.abs(done.picture - fresh.picture) <= 1, `after Add card and Done the picture's top moved from ${fresh.picture} to ${done.picture}`);
+        check(done.focus === `hit:${added}`, `after Add card and Done focus is on ${done.focus}, not the new card on the picture`);
+        await lastDrawnCardGone(r, async () => {}, "on a phone");
+        return shot;
+      },
+      { phoneOnly: true },
+    ),
+    step(
+      "124",
+      "short-screens",
+      async (r) => {
+        let shot = null;
+        try {
+          await oneCard(r);
+          for (const [width, height, picture, tall] of [
+            [844, 390, 412, 258],
+            [640, 400, 324, 202],
+          ]) {
+            await sizeTo(r, width, height, width === 844);
+            const when = `at ${width} x ${height}`;
+            await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.short")`, `the short layout ${when}`);
+            await pictureIs(r, picture, when);
+            const now = await shell(r);
+            check(Math.abs(now.stage.height - tall) <= 1, `${when} the picture is ${now.stage.height} px high`);
+            check(now.stage.left >= 0 && now.stage.top >= 0 && now.stage.right <= now.innerWidth && now.stage.bottom <= now.innerHeight, `${when} the picture is not wholly in the window: ${JSON.stringify(now.stage)}`);
+            check(now.side.width >= 280 && Math.min(now.side.bottom, now.innerHeight) - now.side.top >= 250, `${when} the inspector is ${JSON.stringify(now.side)}`);
+            check(Math.round(now.header.height) === 48 && Math.round(now.strip.height) === 48, `${when} the bars are ${now.header.height} and ${now.strip.height} px high`);
+            await checkNoSidewaysScroll(r, width);
+            if (width === 844) {
+              await r.eval(UI);
+              const small = await r.eval(`__ui.controls().filter((control) => control.height < 43.5)`);
+              const inBars = await r.eval(`(() => { const d = __j.designer().shadowRoot;
+                return [...d.querySelectorAll(".ed-header button, .tab-strip button")].filter((node) => node.getClientRects().length)
+                  .map((node) => [__j.describe(node), node.getBoundingClientRect().height]).filter(([, h]) => h < 43.5); })()`);
+              check(inBars.length === 0, `${when} controls in the bars under 44 px: ${JSON.stringify(inBars)} (${JSON.stringify(small.slice(0, 3))})`);
+              shot = await r.screen("124-short-screens");
+            }
+          }
+          // The layout holds while a text field has focus.
+          await sizeTo(r, 1280, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.wide")`, "the wide layout");
+          await r.click('[data-test="hit"]');
+          await openPart(r, "shows");
+          await r.waitFor(`__j.find('[data-test="form-name"]')`, "the card's form");
+          await r.eval(`__j.find('[data-test="form-name"]').focus(); true`);
+          await sizeTo(r, 1280, 500);
+          await sleep(300);
+          check(await r.eval(`Boolean(__j.designer().shadowRoot.querySelector(".root.wide"))`), "the layout changed while the name field had focus");
+          await r.eval(`__j.active().blur(); true`);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.short")`, "the short layout once the field lost focus");
+          // The keyboard changes only the height: a change of width is
+          // followed at once, also with a text field in focus.
+          await sizeTo(r, 1280, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.wide")`, "the wide layout again");
+          if (!(await r.count('[data-test="form-name"]'))) {
+            await r.click('[data-test="hit"]');
+          }
+          await r.waitFor(`__j.find('[data-test="form-name"]')`, "the card's form again");
+          await r.eval(`__j.find('[data-test="form-name"]').focus(); true`);
+          await sizeTo(r, 1000, 800);
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.medium")`, "the medium layout when the width changed with the name field in focus");
+          // A laptop at 200 % with three tablets: the bar keeps the name,
+          // the menu, Undo and Redo in the window; the chip gives way.
+          await sizeTo(r, 640, 400);
+          await openSample(r, { tablets: "three" });
+          await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.short")`, "the short layout at 640 x 400 with tablets");
+          await r.waitFor(`__j.find('[data-test="tablet-chip"]')?.title.includes("Bedroom")`, "the chip to name a tablet");
+          for (const control of ["title-button", "tablet-chip", "dash-menu", "undo", "redo"]) {
+            const problem = await r.eval(inViewUncovered(`[data-test="${control}"]`));
+            check(problem === "", `at 640 x 400 ${control} is ${problem}`);
+          }
+          const name = await r.eval(`__j.find('[data-test="title-button"] .title-text').getBoundingClientRect().width`);
+          check(name >= 40, `at 640 x 400 the dashboard's name is ${name} px wide`);
+          await checkNoSidewaysScroll(r, 640);
+        } finally {
+          await r.viewport();
+        }
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "125",
+      "zoom",
+      async (r) => {
+        await oneCard(r);
+        await pictureIs(r, 879, "at the start");
+        const caption = await r.text(".zoom-caption");
+        check(caption === "1280 x 800 · 69 %", `the caption reads "${caption}"`);
+        await r.click('[data-test="hit"]');
+        await r.waitFor(`__j.find('[data-test="hit"][aria-pressed="true"]')`, "the card to be selected");
+        await r.click('[data-test="zoom-100"]');
+        await pictureIs(r, 1280, "at 100 %");
+        const seen = await r.eval(`(() => { const area = __j.designer().shadowRoot.querySelector(".stage-area").getBoundingClientRect();
+          const hit = __j.find('[data-test="hit"][aria-pressed="true"]').getBoundingClientRect();
+          return hit.left >= area.left && hit.top >= area.top && hit.right <= area.right && hit.bottom <= area.bottom; })()`);
+        check(seen, "at 100 % the selected card is not in view");
+        const shot = await r.screen("125-zoom");
+        await r.click('[data-test="zoom-fit"]');
+        await pictureIs(r, 879, "after Fit");
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    step("126", "toast-home", async (r) => {
+      const phone = r.setup.device === "phone";
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await r.click('[data-test="remove-card"]');
+      await r.waitFor(`__j.find('[data-test="toast-undo"]')`, "the removal's toast");
+      await sleep(300);
+      await checkToastHome(r, "after a card was removed", phone ? "fab" : "stage");
+      const shot = await r.screen("126-toast-home");
+      await selectRow(r, "0.1.0");
+      await openPart(r, "place");
+      await r.waitFor(`__j.find('[data-test="move-page"]')`, "Move to page");
+      await r.eval(`(() => { const field = __j.find('[data-test="move-page"]'); field.value = "new";
+        field.dispatchEvent(new Event("change")); return true; })()`);
+      await openPart(r, "place");
+      await r.tap('[data-test="move-page-go"]');
+      await r.waitFor(`__j.text('[data-test="toast"] span').startsWith("Moved to")`, "the toast saying where the card went");
+      await sleep(300);
+      await checkToastHome(r, "after Move to page", phone ? "edit" : "stage");
+      await r.screen("126-toast-home-edit");
+      return shot;
+    }),
+  ];
+
+  // Layout version 2 as the tablet draws it: the contract's kit page by
+  // page, and schema 2 cards in a browser with their own tap and hold.
+  const card2 = (component, variant) =>
+    `document.querySelector('apollo-tab-card[data-component="${component}"][data-variant="${variant}"]')`;
+  const openView = async (r, params, ready) => {
+    const query = new URLSearchParams({ ha: r.setup.ha, ...params });
+    await r.browser.send("Page.navigate", { url: `${r.browser.base}/tests/harness/index.html?${query}` });
+    await r.waitFor(`document.readyState === "complete" && (${ready})`, `the ${params.view} view`);
+  };
+  const drawing = [
+    step("204", "kit-pages", async (r) => {
+      let first = null;
+      const pages = [];
+      for (let page = 0; page < 5; page += 1) {
+        await openView(r, { view: "kit", page: String(page) }, `document.querySelector('[data-test="kit-page"][data-ready="1"]')`);
+        pages.push(await r.eval(`(() => {
+          const host = document.querySelector('[data-test="kit-page"]');
+          const wall = host.querySelector(".at-page");
+          return {
+            nav: host.querySelectorAll(".at-nav-button").length,
+            back: host.querySelectorAll(".at-nav-button.back").length,
+            wall: wall.style.getPropertyValue("--at-wall"),
+            cards: host.querySelectorAll(".at-card").length,
+            lit: host.querySelectorAll(".at-card.is-on, .at-card.is-lit, .at-card.is-outline").length,
+          };
+        })()`));
+        const shot = await r.screen(`204-kit-page${page}`);
+        first ||= shot;
+      }
+      // The detail page's entry is not drawn on the other pages.
+      check(pages[0].nav === 3 && pages[0].back === 0, `page 0 has ${pages[0].nav} side bar entries`);
+      // Detail pages draw only the back entry.
+      check(pages[3].nav === 1 && pages[3].back === 1, "the detail page does not show one back entry");
+      check(pages[4].nav === 1 && pages[4].back === 1, "the second detail page does not show one back entry");
+      // The climate page has a theme of its own.
+      check(pages[1].wall && pages[1].wall !== pages[0].wall, "the climate page does not use its own theme");
+      check(pages[0].cards > 0 && pages[0].lit > 0, "the kit page shows no lit card");
+      return first;
+    }, { desktopOnly: true }),
+    step("205", "cards-v2-in-browser", async (r) => {
+      await openView(r, { view: "cards2" }, `${card2("apollo/light", "tile")}?.shadowRoot?.querySelector(".at-card .at-slider")`);
+      await sleep(200);
+      const look = await r.eval(`(() => {
+        const root = ${card2("apollo/light", "tile")}.shadowRoot;
+        const card = root.querySelector(".at-card");
+        return {
+          on: card.classList.contains("is-on"),
+          tint: card.style.getPropertyValue("--at-onbg"),
+          bar: Boolean(root.querySelector(".at-slider.bar")),
+          error: Boolean(root.querySelector(".status")),
+        };
+      })()`);
+      check(!look.error, "the light card shows an error in a browser");
+      check(look.on && look.tint && look.bar, `the light card is not drawn as layout version 2 (${JSON.stringify(look)})`);
+      const errors = await r.eval(`[...document.querySelectorAll('apollo-tab-card')].filter((card) => card.shadowRoot.querySelector(".status")).map((card) => card.dataset.component + " " + card.dataset.variant)`);
+      check(errors.length === 0, `cards show an error: ${errors.join(", ")}`);
+      const shot = await r.shot("205-cards-v2");
+
+      // A tap on the card's name is the card's: widget -1.
+      const spot = await r.eval(`(() => {
+        const host = ${card2("apollo/light", "tile")};
+        host.scrollIntoView({ block: "center" });
+        const label = host.shadowRoot.querySelector(".at-label");
+        const box = label.getBoundingClientRect();
+        return { x: box.left + 8, y: box.top + box.height / 2 };
+      })()`);
+      const before = (await r.calls("apollo_tab/card/call")).length;
+      await r.clickAt(spot.x, spot.y);
+      await r.waitFor(`__apolloMockHass.calls.filter((call) => call.type === "apollo_tab/card/call").length > ${before}`, "the card's tap");
+      const [tap] = (await r.calls("apollo_tab/card/call")).slice(before);
+      check(tap.widget === -1 && tap.event === "tap", `the tap went to widget ${tap.widget}`);
+
+      // A hold opens its controls in a dialog.
+      await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: spot.x, y: spot.y });
+      await r.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: spot.x, y: spot.y, button: "left", buttons: 1, clickCount: 1 });
+      await sleep(650);
+      await r.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: spot.x, y: spot.y, button: "left", buttons: 0, clickCount: 1 });
+      await r.waitFor(`document.querySelector('[role="dialog"] apollo-tab-card')?.shadowRoot?.querySelector(".at-card")`, "the detail dialog");
+      check((await r.calls("apollo_tab/card/call")).length === before + 1, "the hold also sent a tap");
+      const detail = await r.eval(`(() => {
+        const card = document.querySelector('[role="dialog"] apollo-tab-card');
+        return { sliders: card.shadowRoot.querySelectorAll(".at-slider").length, error: Boolean(card.shadowRoot.querySelector(".status")) };
+      })()`);
+      check(!detail.error && detail.sliders >= 2, `the detail dialog does not show the light's controls (${JSON.stringify(detail)})`);
+      // The dialog has its title and close button inside its frame, stays
+      // within the window, and leaves no empty band above the controls.
+      const frame = await r.eval(`(() => {
+        const box = document.querySelector('[role="dialog"]');
+        const close = box.querySelector("button");
+        const card = box.querySelector("apollo-tab-card");
+        const b = box.getBoundingClientRect();
+        const c = close.getBoundingClientRect();
+        const header = card.shadowRoot.querySelector(".at-header, .at-label");
+        const first = [...card.shadowRoot.querySelectorAll(".at-slider")].map((el) => el.getBoundingClientRect().top).sort((x, y) => x - y)[0];
+        return {
+          title: box.querySelector("h2")?.textContent || "",
+          label: box.getAttribute("aria-labelledby") === box.querySelector("h2")?.id,
+          closeInside: c.top >= b.top && c.right <= b.right && c.bottom <= b.bottom,
+          inWindow: b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth,
+          band: first - header.getBoundingClientRect().bottom,
+          scale: card.getBoundingClientRect().width / 568,
+        };
+      })()`);
+      check(frame.title && frame.label, `the detail dialog has no title (${JSON.stringify(frame)})`);
+      check(frame.closeInside, "the dialog's close button is outside its frame");
+      check(frame.inWindow, `the detail dialog does not fit the window (${JSON.stringify(frame)})`);
+      check(frame.band < 120 * frame.scale, `the detail dialog leaves an empty band above its controls (${JSON.stringify(frame)})`);
+      await r.screen("205-detail-dialog");
+      await r.key("Escape");
+      await r.waitFor(`!document.querySelector('[role="dialog"]')`, "the dialog to close");
+
+      // From the keyboard: Enter taps the card, the menu key opens its
+      // controls, and Escape brings the focus back to the card.
+      await r.eval(`${card2("apollo/light", "tile")}.shadowRoot.querySelector(".at-card").focus()`);
+      const role = await r.eval(`(() => {
+        const card = ${card2("apollo/light", "tile")}.shadowRoot.querySelector(".at-card");
+        return { role: card.getAttribute("role"), name: card.getAttribute("aria-label"), focused: card.matches(":focus") };
+      })()`);
+      check(role.role === "button" && role.name && role.focused, `the card cannot take the keyboard's focus (${JSON.stringify(role)})`);
+      const keyed = (await r.calls("apollo_tab/card/call")).length;
+      await r.key("Enter");
+      await r.waitFor(`__apolloMockHass.calls.filter((call) => call.type === "apollo_tab/card/call").length > ${keyed}`, "the card's tap from the keyboard");
+      const [enter] = (await r.calls("apollo_tab/card/call")).slice(keyed);
+      check(enter.widget === -1 && enter.event === "tap", `Enter went to widget ${enter.widget}`);
+      await r.key("ContextMenu");
+      await r.waitFor(`document.querySelector('[role="dialog"] apollo-tab-card')?.shadowRoot?.querySelector(".at-card")`, "the detail dialog from the keyboard");
+      await r.key("Escape");
+      await r.waitFor(`!document.querySelector('[role="dialog"]')`, "the dialog to close");
+      const back = await r.eval(`${card2("apollo/light", "tile")}.shadowRoot.querySelector(".at-card").matches(":focus")`);
+      check(back, "the focus does not go back to the card when its dialog closes");
+      return shot;
+    }),
+  ];
+
+  // The form of a schema 2 card (cards spec C.7, package I8): the Light card
+  // for a colour lamp and for an on/off lamp, and an older light card that
+  // is offered the new card.
+  const optionRows = (r) =>
+    r.eval(`__j.all('[data-test="option-row"]').filter((row) => __j.visible(row)).map((row) => ({
+      option: row.dataset.option,
+      usable: row.dataset.usable === "true",
+      text: row.innerText.replace(/\\s+/g, " ").trim(),
+    }))`);
+  // The selected card on the picture: its width and its sliders.
+  const lightPicture = (r) =>
+    r.eval(`(() => {
+      const designer = __j.designer();
+      const root = designer.shadowRoot.querySelector(".page-host").shadowRoot;
+      const card = root.querySelector(".at-card");
+      if (!card) return null;
+      const sliders = [...card.querySelectorAll(".at-slider")];
+      return {
+        w: card.getBoundingClientRect().width,
+        sliders: sliders.length,
+        tracked: sliders.filter((slider) => slider.classList.contains("tracked")).length,
+        heights: sliders.map((slider) => slider.getBoundingClientRect().height),
+      };
+    })()`);
+  const savedCard = async (r) => (await r.config()).views[0].sections[0].cards[0];
+  // A choice of up to four is a segmented control, pressed by its words;
+  // a longer one is a list.
+  const pickChoice = async (r, option, value) => {
+    if (await r.count(`select[data-focus="option:${option}"]`)) {
+      await r.eval(`(() => { const field = __j.find('select[data-focus="option:${option}"]');
+        field.value = ${JSON.stringify(value)}; field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+      return;
+    }
+    await r.click(`label:has(> input[data-focus="option:${option}:${value}"])`);
+  };
+  const newLight = async (r, entity) => {
+    await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+    await r.click('[data-test="create"]');
+    await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's empty editor");
+    await r.click('[data-test="add-first-card"]');
+    await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+    check((await r.count('[data-test="tile"][data-component="apollo/light-tile"]')) === 0, "the picker offers the older light tile");
+    // One device field: the card is added the moment the lamp is chosen.
+    await r.click('[data-test="tile"][data-component="apollo/light"]');
+    await r.waitFor(`__j.find('[data-test="entity"][data-entity="${entity}"]')`, `the ${entity} option`);
+    await r.click(`[data-test="entity"][data-entity="${entity}"]`);
+    await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+    await r.waitFor(`__j.find('[data-test="option-row"][data-option="show_brightness"]')`, "the Light card's own rows");
+    await r.waitSaved("the light added");
+  };
+  const cardForms = [
+    step("206", "light-form-colour-lamp", async (r) => {
+      await newLight(r, "light.kitchen");
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="effects_shown"] input')`, "the lamp's effects");
+      const rows = await optionRows(r);
+      check(
+        stable(rows.map((row) => row.option)) ===
+          stable(["show_brightness", "bar_on_tile", "colour_control", "show_saturation", "show_white", "effects_shown"]),
+        `the form shows ${rows.map((row) => row.option)}`,
+      );
+      check(rows.every((row) => row.usable), `a row is greyed for a lamp that can do everything: ${JSON.stringify(rows)}`);
+      check((await r.count('[data-test="card-note"]')) === 0, "a note shows for a colour lamp");
+      const effects = rows.find((row) => row.option === "effects_shown");
+      check(effects.text.includes("Rainbow") && effects.text.includes("Storm") && effects.text.includes("4 chosen, up to 8."), `the effects read "${effects.text}"`);
+      // The inspector's five parts; the card's own rows are in Controls,
+      // open with Device, so what the card can do is on the first screen.
+      const parts = await r.eval(`__j.all('details.part').filter((part) => __j.visible(part)).map((part) => [part.dataset.test, part.open])`);
+      check(
+        stable(parts) === stable([["part-device", true], ["part-shows", false], ["part-controls", true], ["part-look", false], ["part-place", false]]),
+        `the form's parts are ${JSON.stringify(parts)}`,
+      );
+      // Size and place starts closed, and the icon is one line until Change
+      // is pressed.
+      check(!(await r.eval(`__j.find('[data-test="part-place"]').open`)), "Size and place is open at first");
+      await openPart(r, "shows");
+      check((await r.count('[data-test="card-icon"]')) === 0 && (await r.count('[data-test="icon-change"]')) === 1, "the icon grid shows before Change");
+      const chips = await r.eval(`__j.all('[data-test="size-chip"]').map((chip) => [chip.dataset.variant, chip.querySelector("input").checked])`);
+      check(stable(chips) === stable([["tile", true], ["wide", false], ["large", false]]), `the sizes read ${JSON.stringify(chips)}`);
+      const tile = await lightPicture(r);
+      check(tile && tile.sliders === 1, `the tile on the picture is ${JSON.stringify(tile)}`);
+      // The picture of the form shows the card's own rows.
+      await r.eval(`__j.find('[data-test="option-row"][data-option="show_brightness"]').scrollIntoView({ block: "start" }); true`);
+      const shot = await r.shot("206-light-form");
+
+      // A switch: no brightness bar on the small tile. It is saved and the
+      // picture follows: the thin level line instead of the bar.
+      await r.click('input[data-focus="option:bar_on_tile"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.bar_on_tile === false`, "the switch to be saved");
+      await r.waitFor(
+        `(() => { const root = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot;
+          const bar = root.querySelector(".at-card .at-slider");
+          return bar && bar.getBoundingClientRect().height < ${tile.heights[0]} / 2; })()`,
+        "the picture to show the level line",
+      );
+      // A choice: favourite colours as well. Their swatches show.
+      await pickChoice(r, "colour_control", "both");
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="favourites"]')`, "the favourite colours");
+      check((await r.count('[data-test="option-row"][data-option="favourites"] [data-test="swatch"]')) === 8, "the favourites are not eight swatches");
+      await r.waitSaved("the colour choice");
+      check(stable((await savedCard(r)).options) === stable({ bar_on_tile: false, colour_control: "both" }), `the card's options are ${JSON.stringify((await savedCard(r)).options)}`);
+      // A size: Wide. The card takes its size on the grid, and the picture
+      // shows it twice as wide with one brightness bar; colour and white are
+      // on the controls page.
+      await openPart(r, "place");
+      await r.click('[data-test="size-chip"][data-variant="wide"]');
+      await r.waitFor(
+        `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
+          return card.variant === "wide" && card.grid_options?.columns === 12 && card.grid_options?.rows === 3; })()`,
+        "the size to be saved",
+      );
+      await r.waitFor(
+        `(() => { const root = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot;
+          const card = root.querySelector(".at-card");
+          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8
+            && card.querySelectorAll(".at-slider").length === 1 && !card.querySelector(".at-slider.tracked"); })()`,
+        "the picture to show the wide card with its one brightness bar",
+      );
+      check((await r.eval(`__j.find('[data-test="size-chip"][data-variant="wide"] input').checked`)) === true, "Wide is not marked as the size");
+      await r.waitSaved("the size");
+      await openPart(r, "look");
+      await r.eval(`__j.find('[data-test="card-lit"]').scrollIntoView({ block: "start" }); true`);
+      await r.screen("206-light-form-wide");
+      // One Undo takes the size back, and the picture with it.
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].variant === undefined`, "Undo to take the size back");
+      await r.waitFor(
+        `(() => { const root = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot;
+          const card = root.querySelector(".at-card");
+          return card && card.getBoundingClientRect().width < ${tile.w} * 1.2; })()`,
+        "the picture to show the tile again",
+      );
+      return shot;
+    }),
+    step("207", "light-form-onoff-lamp", async (r) => {
+      await newLight(r, "light.living_room");
+      await r.waitFor(`__j.find('[data-test="card-note"]')`, "the note about the lamp");
+      check((await r.text('[data-test="card-note"]')) === "This light only turns on and off.", `the note reads "${await r.text('[data-test="card-note"]')}"`);
+      const rows = await optionRows(r);
+      const row = (name) => rows.find((entry) => entry.option === name);
+      // What the lamp cannot do is drawn greyed with its reason, not hidden.
+      for (const [name, reason] of [
+        ["show_brightness", "This light cannot be dimmed"],
+        ["colour_control", "This light has no colour"],
+        ["show_white", "This light has one white only"],
+        ["show_saturation", "This light has no colour"],
+        ["effects_shown", "This light has no effects"],
+      ]) {
+        check(row(name) && !row(name).usable, `${name} is not greyed: ${JSON.stringify(row(name))}`);
+        check(row(name).text.includes(reason), `${name} reads "${row(name)?.text}"`);
+      }
+      check(!row("bar_on_tile") && !row("favourites"), `rows that follow a greyed one are drawn: ${rows.map((entry) => entry.option)}`);
+      const off = await r.eval(`(() => { const input = __j.find('input[data-focus="option:show_brightness"]'); return [input.disabled, input.checked]; })()`);
+      check(stable(off) === stable([true, false]), `Brightness is ${JSON.stringify(off)}, not off and greyed`);
+      // A greyed choice has none marked, not "Off" as if it had been chosen.
+      const colourList = await r.eval(`(() => { const inputs = __j.all('input[data-focus^="option:colour_control:"]').filter((input) => __j.visible(input.closest("label")));
+        return [inputs.length > 0, inputs.every((input) => input.disabled), inputs.filter((input) => input.checked).length]; })()`);
+      check(stable(colourList) === stable([true, true, 0]), `the greyed colour choice is ${JSON.stringify(colourList)}`);
+      // The lamp has no colour to show on the card either.
+      await openPart(r, "look");
+      const tint = await r.eval(`(() => { const input = __j.find('input[data-test="card-tint"]');
+        return [input.disabled, input.checked, input.closest(".option-row").innerText.includes("This device has no colour to show.")]; })()`);
+      check(stable(tint) === stable([true, false, true]), `Show the device's colour is ${JSON.stringify(tint)}`);
+      await r.eval(`__j.find('[data-test="option-row"][data-option="show_brightness"]').scrollIntoView({ block: "start" }); true`);
+      const shot = await r.shot("207-light-form-onoff");
+      // The tap row still works: it opens its controls now.
+      await r.eval(`(() => { const field = __j.find('select[data-focus="card-tap"]');
+        field.value = "detail"; field.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.tap === "detail"`, "the tap to be saved");
+      await r.waitSaved("the tap");
+      return shot;
+    }),
+    step("208", "older-card-swap", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.0");
+      await r.waitFor(`__j.find('[data-test="newer-card"]')`, "the offer of the newer card");
+      const offer = await r.text('[data-test="newer-card"]');
+      check(offer.includes("A newer card does this: Light."), `the offer reads "${offer}"`);
+      await openPart(r, "shows");
+      await r.click('[data-test="form-name"]');
+      await r.type("Desk lamp");
+      await r.waitSaved("the name");
+      const before = (await r.config()).views[0].sections[1].cards[0];
+      check(before.component === "apollo/light-tile" && before.title === "Desk lamp", `the card is ${JSON.stringify(before)}`);
+      const shot = await r.shot("208-older-card");
+      await r.click('[data-test="swap-card"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light"`, "the swap to be saved");
+      await r.waitSaved("the swap");
+      const after = (await r.config()).views[0].sections[1].cards[0];
+      check(
+        stable(after) ===
+          stable({
+            type: "custom:apollo-tab-card",
+            component: "apollo/light",
+            params: before.params,
+            title: "Desk lamp",
+            variant: "tile",
+            grid_options: { columns: 6, rows: 3 },
+          }),
+        `the new card is ${JSON.stringify(after)}`,
+      );
+      // The same card stays selected, now with the Light card's form.
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="show_brightness"]')`, "the Light card's form");
+      check((await r.count('[data-test="newer-card"]')) === 0, "the offer stays after the swap");
+      check((await r.eval(`__j.designer()._selected.join(".")`)) === "0.1.0", "another card is selected after the swap");
+      // One Undo brings the older card back.
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light-tile"`, "Undo to bring the older card back");
+      return shot;
+    }),
+    step("209", "light-sizes-and-steps", async (r) => {
+      // The picker's example of a card one row high fits its box.
+      await r.open({ seed: "none" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's empty editor");
+      await r.click('[data-test="add-first-card"]');
+      await r.waitFor(`__j.find('dialog[data-test="picker"][open]')`, "the picker");
+      const example = '[data-test="tile"][data-component="apollo/switch"] .tile-preview';
+      await r.waitFor(`__j.find('${example} apollo-tab-card')?.shadowRoot?.querySelector(".at-card")`, "the Switch card's example");
+      const fit = await r.eval(`(() => { const box = __j.find('${example}'); const card = box.querySelector("apollo-tab-card");
+        return [Math.round(box.getBoundingClientRect().height), Math.round(card.getBoundingClientRect().height)]; })()`);
+      check(fit[1] <= fit[0] + 1, `the Switch example is ${fit[1]} px high in a box of ${fit[0]} px`);
+      await r.click('[data-test="tile"][data-component="apollo/light"]');
+      await r.waitFor(`__j.find('[data-test="entity"][data-entity="light.kitchen"]')`, "the light.kitchen option");
+      await r.click('[data-test="entity"][data-entity="light.kitchen"]');
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+      await r.waitFor(`__j.find('[data-test="option-row"][data-option="show_brightness"]')`, "the Light card's own rows");
+      await r.waitSaved("the light added");
+      const tile = await lightPicture(r);
+      const marked = () => r.eval(`__j.all('[data-test="size-chip"]').filter((chip) => chip.querySelector("input").checked).map((chip) => chip.dataset.variant)`);
+      // Size and place shows Width and Height at once.
+      await openPart(r, "place");
+      await r.waitFor(`__j.find('[data-test="wider"]')`, "the size steps");
+      check((await r.text('[data-test="size-words"]')) === "1 of 6 wide, 1 of 4 high", `the size reads "${await r.text('[data-test="size-words"]')}"`);
+      check((await r.count('[data-test="size-reset"]')) === 0, "Back is offered at the size marked");
+      // Wider: the card shows the largest size that fits, and that size is
+      // marked; the picture shows the wide card, with its one brightness bar.
+      await r.click('[data-test="wider"]');
+      await r.waitFor(
+        `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
+          return card.grid_options?.columns === 12 && card.variant === undefined; })()`,
+        "Wider to be saved",
+      );
+      await r.waitFor(
+        `(() => { const card = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot.querySelector(".at-card");
+          return card && card.getBoundingClientRect().width > ${tile.w} * 1.8 && card.querySelector(".at-slider"); })()`,
+        "the picture to show the wide card",
+      );
+      check(stable(await marked()) === stable(["wide"]), `after Wider the size marked is ${JSON.stringify(await marked())}`);
+      await r.waitSaved("Wider");
+      const shot = await r.shot("209-light-wider");
+      // Taller, then Narrower: Large, then the tile in a taller box.
+      await openPart(r, "place");
+      await r.click('[data-test="taller"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].grid_options?.rows === 6`, "Taller to be saved");
+      check(stable(await marked()) === stable(["large"]), `after Taller the size marked is ${JSON.stringify(await marked())}`);
+      await openPart(r, "place");
+      await r.click('[data-test="narrower"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].grid_options?.columns === 6`, "Narrower to be saved");
+      check(stable(await marked()) === stable(["tile"]), `after Narrower the size marked is ${JSON.stringify(await marked())}`);
+      // 1 wide and 2 high is not the tile's own size, so Back is offered.
+      check((await r.text('[data-test="size-reset"]')) === "Back to the Tile size", `Back reads "${await r.text('[data-test="size-reset"]')}"`);
+      await r.waitSaved("Narrower");
+      // A press on the marked size puts the card back to that size.
+      await r.click('[data-test="size-chip"][data-variant="tile"]');
+      await r.waitFor(
+        `(() => { const card = __apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0];
+          return card.variant === "tile" && card.grid_options?.columns === 6 && card.grid_options?.rows === 3; })()`,
+        "the tile size to come back",
+      );
+      check(stable(await marked()) === stable(["tile"]), `after Tile the size marked is ${JSON.stringify(await marked())}`);
+      await r.waitSaved("the tile size");
+      return shot;
+    }),
+  ];
+
+  // One home per thing (package 3): the dashboard's things in the top bar,
+  // a page's things in a pop-up at its tab, the right panel for the
+  // selected card only.
+  // Whether a control is on screen and nothing covers its centre, without
+  // scrolling anything.
+  const inViewUncovered = (selector) =>
+    `(() => { const node = __j.find(${JSON.stringify(selector)}); if (!node) return "not found";
+      const rect = node.getBoundingClientRect();
+      if (rect.top < 0 || rect.left < 0 || rect.bottom > innerHeight || rect.right > innerWidth) return "off screen";
+      const hit = __j.at(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
+      return __j.inside(node, hit) ? "" : "covered by " + __j.describe(hit); })()`;
+  const anyDialogOpen = `__j.all("dialog").some((dialog) => dialog.open)`;
+  // The inspector (package 4): a header that stays, five parts that fold,
+  // the device list by keyboard, size and place, the look, a copy, a
+  // card's own options and the newer cards everywhere.
+  const cardAt = (config, key) => {
+    const [v, s, c] = key.split(".").map(Number);
+    return config.views[v].sections[s].cards[c];
+  };
+  const inspecting = [
+    step("139", "inspector-header", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.0");
+      await r.waitFor(`__j.find('[data-test="side-head"]')`, "the inspector's header");
+      const head = await r.eval(`(() => {
+        const box = __j.find('[data-test="side-head"]').getBoundingClientRect();
+        const inView = (test) => { const node = __j.find('[data-test="' + test + '"]'); if (!node) return false;
+          const rect = node.getBoundingClientRect();
+          return rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth
+            && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1; };
+        return { top: box.top, name: inView("side-title"), duplicate: inView("duplicate-card"), remove: inView("remove-card"), done: inView("close-panel") };
+      })()`);
+      check(head.name && head.duplicate && head.remove && head.done, `the header is not all in view: ${JSON.stringify(head)}`);
+      // The parts scroll under the header; the header stays where it is.
+      await r.eval(`(() => { const form = __j.find(".edit-form"); form.scrollTop = form.scrollHeight; return true; })()`);
+      await sleep(150);
+      const after = await r.eval(`__j.find('[data-test="side-head"]').getBoundingClientRect().top`);
+      check(Math.abs(after - head.top) <= 1, `the header moved from ${head.top} to ${after} when the parts scrolled`);
+      if (r.setup.device === "desktop") {
+        await r.eval(`(() => { __j.find(".edit-form").scrollTop = 0; return true; })()`);
+        const tall = await r.eval(`({ form: __j.find(".edit-form").scrollHeight, side: __j.find('[data-test="side"]').clientHeight })`);
+        check(tall.form <= tall.side * 1.2, `the form as it first opens is ${tall.form} px in an inspector of ${tall.side} px`);
+      }
+      return r.shot("139-inspector-header");
+    }),
+    step("140", "parts", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.0");
+      await r.waitFor(`__j.find('[data-test="part-device"]')`, "the parts");
+      const parts = await r.eval(`__j.all('details.part').filter((part) => __j.visible(part)).map((part) => ({
+        id: part.dataset.part, open: part.open, summary: part.querySelector('[data-test="part-summary"]').textContent.trim() }))`);
+      const part = (id) => parts.find((entry) => entry.id === id);
+      const controls = Boolean(part("controls"));
+      check(part("device")?.open, `Device is not open: ${JSON.stringify(parts)}`);
+      check(part("shows") && part("shows").open === !controls, `What it shows is ${JSON.stringify(part("shows"))}`);
+      check(part("look") && !part("look").open && part("place") && !part("place").open, `Look or Size and place is open: ${JSON.stringify(parts)}`);
+      for (const id of ["device", "shows", "look", "place"]) {
+        check(part(id).summary, `${id} has no summary: ${JSON.stringify(parts)}`);
+      }
+      const shot = await r.shot("140-parts");
+      // Size and place stays open for the next card.
+      await openPart(r, "place");
+      await selectRow(r, "0.1.1");
+      await r.waitFor(`__j.find('[data-test="part-place"]')`, "the next card's parts");
+      check(await r.eval(`__j.find('[data-test="part-place"]').open`), "Size and place closed for the next card");
+      // A heading keeps its short form, with the same header.
+      await r.clearSelection();
+      const heading = await r.eval(`__j.all('[data-test="list-row"]').find((row) => __j.visible(row) && row.textContent.includes("Heading"))?.dataset.source`);
+      check(heading, "the sample has no heading in the list");
+      await r.click(`[data-test="list-row"][data-source="${heading}"]`);
+      await r.waitFor(`__j.find('[data-test="heading-text"]')`, "the heading's form");
+      const label = await r.eval(`__j.find('[data-test="heading-text"]').closest("label, .field").textContent`);
+      check(label.includes(await uiString(r, "form.heading_text")), `the heading's field reads "${label}"`);
+      check((await r.count('[data-test="side-head"] [data-test="remove-heading"]')) === 1, "the heading's Remove is not in the header");
+      return shot;
+    }),
+    step(
+      "141",
+      "device-list-keys",
+      async (r) => {
+        await openSample(r);
+        await selectRow(r, "0.1.0");
+        await r.click('[data-test="change-device"]');
+        await r.waitFor(`__j.find('[data-test="entity-search"]')`, "the device list");
+        check((await focused(r)) === "entity-search", `after Change focus is on ${await focused(r)}`);
+        // The search is the list's one Tab stop.
+        await r.key("Tab");
+        const next = await focused(r);
+        check(next && next !== "entity-search" && next !== "entity", `Tab from the search went to ${next}`);
+        await r.eval(`__j.find('[data-test="entity-search"]').focus(); true`);
+        const active = () => r.eval(`(() => { const search = __j.find('[data-test="entity-search"]');
+          const id = search.getAttribute("aria-activedescendant"); const option = id ? search.getRootNode().getElementById(id) : null;
+          return option ? option.dataset.entity : null; })()`);
+        await r.key("ArrowDown");
+        const first = await active();
+        check(first !== null, "Down marks no device");
+        await r.key("ArrowDown");
+        const second = await active();
+        check(second !== null && second !== first, `Down did not move: ${first}, then ${second}`);
+        check((await focused(r)) === "entity-search", "Down moved focus out of the search");
+        // Escape: the search, then the list, then the form.
+        await r.type("kit");
+        await r.key("Escape");
+        check((await r.eval(`__j.find('[data-test="entity-search"]')?.value`)) === "", "the first Escape left the search");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('[data-test="entity-search"]') && __j.find('[data-test="change-device"]')`, "the second Escape to close the list");
+        await r.key("Escape");
+        await r.waitFor(`!__j.designer()._selected`, "the third Escape to close the form");
+        return r.shot("141-device-list-keys");
+      },
+      { desktopOnly: true },
+    ),
+    step("142", "size-and-place", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await openPart(r, "place");
+      const words = () => r.text('[data-test="size-words"]');
+      const size = async () => {
+        const match = /^(\d+) of 6 wide, (\d+) of 4 high$/.exec(await words());
+        check(match, `the size reads "${await words()}"`);
+        return [Number(match[1]), Number(match[2])];
+      };
+      const [w, h] = await size();
+      const resetAtFirst = await r.count('[data-test="size-reset"]');
+      // On a page in narrow columns Wider may stop at once; Narrower then.
+      const widen = !(await r.eval(`__j.find('[data-test="wider"]').disabled`));
+      const w2 = widen ? w + 1 : w - 1;
+      await r.click(widen ? '[data-test="wider"]' : '[data-test="narrower"]');
+      await r.waitFor(`/^${w2} of 6 wide/.test(__j.text('[data-test="size-words"]'))`, "Wider or Narrower to change the words");
+      const h2 = h < 4 ? h + 1 : h - 1;
+      await r.click(h < 4 ? '[data-test="taller"]' : '[data-test="shorter"]');
+      await r.waitFor(`/${h2} of 4 high$/.test(__j.text('[data-test="size-words"]'))`, "Taller or Shorter to change the words");
+      const card = cardAt(await r.draft(), "0.1.1");
+      check(card.grid_options?.columns > 0 && card.grid_options?.rows > 0, `the card's size is ${JSON.stringify(card.grid_options)}`);
+      check((await r.count('[data-test="size-reset"]')) === 1, "Reset size does not show once the size differs");
+      if (!resetAtFirst) {
+        await r.click('[data-test="size-reset"]');
+        await r.waitFor(`__j.text('[data-test="size-words"]') === ${JSON.stringify(`${w} of 6 wide, ${h} of 4 high`)}`, "Reset size to bring the size back");
+        check((await r.count('[data-test="size-reset"]')) === 0, "Reset size shows at the card's own size");
+      }
+      const shot = await r.shot("142-size-and-place");
+      // With a pointer: the third cell of the second row is 3 wide, 2 high.
+      if (r.setup.device === "desktop" && !(await r.eval(`__j.find('[data-test="size-grid"] [data-w="3"][data-h="2"]').classList.contains("out")`))) {
+        await r.click('[data-test="size-grid"] [data-w="3"][data-h="2"]');
+        await r.waitFor(`__j.text('[data-test="size-words"]') === "3 of 6 wide, 2 of 4 high"`, "the size grid to make the card 3 by 2");
+      }
+      // The place: later, then earlier again.
+      const place = await r.text('[data-test="place-words"]');
+      await r.click('[data-test="move-later"]');
+      await r.waitFor(`__j.designer()._selected?.join(".") === "0.1.2"`, "Move later");
+      check((await r.text('[data-test="place-words"]')) !== place, `the place still reads "${place}"`);
+      await r.click('[data-test="move-earlier"]');
+      await r.waitFor(`__j.designer()._selected?.join(".") === "0.1.1"`, "Move earlier");
+      check((await r.text('[data-test="place-words"]')) === place, `the place reads "${await r.text('[data-test="place-words"]')}", not "${place}"`);
+      return shot;
+    }),
+    step("143", "look", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await openPart(r, "look");
+      const style = async () => cardAt(await r.draft(), "0.1.1").style;
+      const swatch = '[data-test="look-background"] [data-test="swatch-choice"]:not([data-value=""])';
+      await r.click(swatch);
+      await r.waitFor(`/^#[0-9A-F]{6}$/i.test(__j.designer()._history.present.views[0].sections[1].cards[1].style?.color || "")`, "the background colour");
+      check((await r.eval(`__j.find('${swatch}').getAttribute("aria-checked")`)) === "true", "the chosen swatch is not marked");
+      await r.click('[data-test="look-background"] [data-test="swatch-choice"][data-value=""]');
+      await r.waitFor(`!__j.designer()._history.present.views[0].sections[1].cards[1].style?.color`, "None to take the colour away");
+      // Fade, with Fade to.
+      await r.click('[data-test="look-gradient"] label[data-value="vertical"]');
+      await r.waitFor(`__j.find('[data-test="look-gradient-to"]')`, "Fade to");
+      await r.click('[data-test="look-gradient-to"] [data-test="swatch-choice"]');
+      await r.waitFor(`JSON.stringify(__j.designer()._history.present.views[0].sections[1].cards[1].style || {}).includes("vertical")`, "the fade");
+      const faded = await style();
+      check(faded.gradient?.direction === "vertical" && /^#[0-9A-F]{6}$/i.test(faded.gradient?.to || ""), `the faded look is ${JSON.stringify(faded)}`);
+      const shot = await r.shot("143-look");
+      // Reset look leaves no style.
+      await r.click('[data-test="look-reset"]');
+      await r.waitFor(`!("style" in __j.designer()._history.present.views[0].sections[1].cards[1])`, "Reset look");
+      check((await r.count('[data-test="look-reset"]')) === 0, "Reset look shows with nothing to reset");
+      await r.waitSaved("the look");
+      return shot;
+    }),
+    step("144", "duplicate", async (r) => {
+      await openSample(r);
+      await selectRow(r, "0.1.1");
+      await r.waitSaved("the editor");
+      const before = await r.draft();
+      await r.click('[data-test="duplicate-card"]');
+      await r.waitFor(`__j.designer()._history.present.views[0].sections[1].cards.length === ${before.views[0].sections[1].cards.length + 1}`, "the copy");
+      const now = await r.draft();
+      check(stable(cardAt(now, "0.1.2")) === stable(cardAt(before, "0.1.1")), `the copy is ${JSON.stringify(cardAt(now, "0.1.2"))}`);
+      check((await r.eval(`__j.designer()._selected.join(".")`)) === "0.1.2", "the copy is not selected");
+      await r.waitSaved("the copy");
+      const shot = await r.shot("144-duplicate");
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__j.designer()._history.present.views[0].sections[1].cards.length === ${before.views[0].sections[1].cards.length}`, "Undo to take the copy away");
+      check(stable(await r.draft()) === stable(before), "one Undo did not bring the dashboard back as it was");
+      return shot;
+    }),
+    step("145", "light-options", async (r) => {
+      await newLight(r, "light.kitchen");
+      const tile = await lightPicture(r);
+      check(tile && tile.sliders === 1, `the new Light has ${JSON.stringify(tile)}`);
+      await r.click('input[data-focus="option:show_brightness"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.show_brightness === false`, "Brightness off to be saved");
+      await r.waitFor(
+        `(() => { const card = __j.designer().shadowRoot.querySelector(".page-host").shadowRoot.querySelector(".at-card");
+          return card && !card.querySelector(".at-slider"); })()`,
+        "the picture without the bar",
+      );
+      await r.waitSaved("Brightness off");
+      const shot = await r.shot("145-light-options");
+      await leaveEditMode(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[0].cards[0].options?.show_brightness === undefined`, "Undo to bring Brightness back");
+      return shot;
+    }),
+    step("146", "newer-cards-everywhere", async (r) => {
+      await openSample(r);
+      const before = await r.draft();
+      check(cardAt(before, "0.1.0").component === "apollo/light-tile", "the sample has no older light card");
+      await openDashMenu(r);
+      await r.waitFor(`__j.find('[data-test="use-newer-everywhere"]')`, "Use the newer cards everywhere");
+      const shot = await r.shot("146-newer-cards-everywhere");
+      await r.click('[data-test="use-newer-everywhere"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light"`, "the newer card to be saved");
+      const swapped = cardAt(await r.config(), "0.1.0");
+      check(stable(swapped.params) === stable(cardAt(before, "0.1.0").params), `the device changed: ${JSON.stringify(swapped)}`);
+      await r.waitSaved("the newer cards");
+      await openDashMenu(r);
+      check((await r.count('[data-test="use-newer-everywhere"]')) === 0, "the menu still offers the newer cards");
+      await closePops(r);
+      await r.click('[data-test="undo"]');
+      await r.waitFor(`__apolloMockHass.getConfig("tab-1").views[0].sections[1].cards[0].component === "apollo/light-tile"`, "Undo to bring the older card back");
+      return shot;
+    }),
+  ];
+
+  const popups = [
+    step("127", "top-bar", async (r) => {
+      const phone = r.setup.device === "phone";
+      await openSample(r);
+      await r.addCard("add-card", "apollo/fan-speed", "fan.bedroom_main_bedroom_fan");
+      await r.waitFor(`__j.find('${pressed}')`, "the new card to be selected");
+      if (phone) {
+        await leaveEditMode(r);
+        await r.eval(`(() => { const main = __j.designer().shadowRoot.querySelector(".main"); main.scrollTop = 0; return true; })()`);
+        const chip = await r.eval(inViewUncovered('[data-test="tablet-chip"]'));
+        check(chip === "", `after Done the Tablets chip under the picture is ${chip}`);
+        check(await r.eval(`Boolean(__j.find('.chip-row [data-test="tablet-chip"]'))`), "on a phone the chip is not under the picture");
+        await phoneBarKeepsTheName(r);
+      } else {
+        for (const control of ["tablet-chip", "theme-button"]) {
+          const problem = await r.eval(inViewUncovered(`[data-test="${control}"]`));
+          check(problem === "", `right after a card was added ${control} is ${problem}`);
+        }
+      }
+      const shot = await r.shot("127-top-bar");
+      // Every tablet status at once: one short line, the whole one in its
+      // tooltip and name.
+      await openSample(r, { tablets: "all" });
+      await r.waitFor(`__j.find('[data-test="tablet-chip"]')?.dataset.tone === "problem"`, "the chip to know the tablets");
+      const look = await r.eval(`(() => { const chip = __j.find('[data-test="tablet-chip"]');
+        return { text: chip.querySelector(".chip-words").textContent, title: chip.title, label: chip.getAttribute("aria-label") }; })()`);
+      check(look.text.length <= 34, `the chip reads "${look.text}" (${look.text.length} characters)`);
+      const lead = look.text.replace(/ \+\d+$/, "").replace(/….*$/, "");
+      check(look.title.startsWith(lead) && look.title.length >= look.text.length && look.label === look.title,
+        `the chip's tooltip "${look.title}" and name "${look.label}" do not hold its line "${look.text}"`);
+      for (const [mac, changes] of [[KITCHEN, { online: false }], [HALLWAY, { online: true }]]) {
+        await r.eval(`__apolloMockHass.setTablet(${JSON.stringify(mac)}, ${JSON.stringify(changes)}); true`);
+        await sleep(200);
+        const text = await r.text('[data-test="tablet-chip"] .chip-words');
+        check(text.length <= 34, `the chip reads "${text}" (${text.length} characters)`);
+      }
+      // The chip and the Theme button follow the sidebar's colours in the bar.
+      if (!phone) {
+        await r.eval(`(() => { const style = document.documentElement.style;
+          style.setProperty("--sidebar-background-color", "#123456"); style.setProperty("--sidebar-text-color", "#fedcba"); return true; })()`);
+        try {
+          await sleep(200);
+          const ratios = await r.eval(`[__j.textContrast(__j.find('[data-test="tablet-chip"] .chip-words')),
+            __j.textContrast(__j.find('[data-test="theme-button"] .theme-word'))]`);
+          check(ratios.every((ratio) => ratio >= 4.5), `with the sidebar's colours the chip and Theme have ${ratios.join(" and ")}`);
+        } finally {
+          await r.eval(`(() => { const style = document.documentElement.style;
+            style.removeProperty("--sidebar-background-color"); style.removeProperty("--sidebar-text-color"); return true; })()`);
+        }
+      }
+      return shot;
+    }),
+    step("128", "page-pop-up", async (r) => {
+      const phone = r.setup.device === "phone";
+      await openSample(r);
+      await r.click('[data-test="page-settings"]');
+      await r.waitFor(popOpen("page-menu"), "the page pop-up");
+      if (phone) {
+        const typing = await r.eval(`["INPUT", "TEXTAREA"].includes(__j.active()?.tagName)`);
+        check(!typing, "on a phone the page pop-up gave focus to a text field");
+        await r.tap('[data-test="page-name"]');
+      } else {
+        await r.waitFor(`__j.active()?.dataset?.test === "page-name"`, "focus on the page's name");
+        const selected = await r.eval(`(() => { const input = __j.active(); return input.selectionStart === 0 && input.selectionEnd === input.value.length; })()`);
+        check(selected, "the page's name is not selected when the pop-up opens");
+        await r.eval(`(() => { const input = __j.active(); input.setSelectionRange(input.value.length, input.value.length); return true; })()`);
+      }
+      const place = () => r.eval(`(() => { const rect = __j.find('dialog[data-test="page-menu"]').getBoundingClientRect();
+        return { left: rect.left, top: rect.top }; })()`);
+      const before = await place();
+      await r.type("a");
+      await r.type("b");
+      await r.type("c");
+      await r.waitFor(`__j.find('[data-test="page-tab"][aria-selected="true"]').title === "Homeabc"`, "the tab to take the new name");
+      await sleep(300);
+      const after = await place();
+      check(await r.eval(`Boolean(${popOpen("page-menu")})`), "the page pop-up closed while its name was typed");
+      check(Math.abs(after.left - before.left) <= 1 && Math.abs(after.top - before.top) <= 1,
+        `the page pop-up moved while its name was typed: ${JSON.stringify([before, after])}`);
+      const shot = await r.shot("128-page-pop-up");
+      await r.key("Escape");
+      await r.waitFor(`!${popOpen("page-menu")} && __j.active()?.dataset?.test === "page-settings"`, "Escape to close it and give focus to its opener");
+      // Add page opens it for the new page.
+      await r.click('[data-test="add-page"]');
+      await r.waitFor(popOpen("page-menu"), "the pop-up of the new page");
+      const named = await r.eval(`[__j.find('[data-test="page-name"]').value, __j.find('[data-test="page-tab"][aria-selected="true"]').title]`);
+      check(named[0] === named[1] && named[0], `the pop-up is for "${named[0]}", the page shown is "${named[1]}"`);
+      await r.waitSaved("the new page");
+      // The page deleted in another browser: its pop-up closes.
+      await saveElsewhere(r, `(config) => config.views.splice(config.views.length - 1, 1)`);
+      await r.waitFor(`!${popOpen("page-menu")}`, "the pop-up to close once its page is gone");
+      check(!(await r.eval(anyDialogOpen)), "a dialog is left open");
+      return shot;
+    }),
+    step("129", "theme-gallery", async (r) => {
+      await openSample(r);
+      const before = await r.eval(`__j.designer()._history.present.apollo_tab?.theme || "midnight"`);
+      await openTheme(r);
+      const glass = await r.text('[data-test="theme-tile"][data-theme="glass"] .theme-preview');
+      check(glass === "Preview", `Glass is tagged "${glass}"`);
+      const ids = await r.eval(`__j.all('[data-test="theme-tile"]').map((tile) => tile.dataset.theme)`);
+      // Every bundled theme is offered.
+      const bundled = await r.eval(`__apolloFixtures.library.themes.map((theme) => theme.id)`);
+      check(bundled.length === 15 && stable([...ids].sort()) === stable([...bundled].sort()), `the gallery offers ${ids.length} themes: ${ids}`);
+      const tried = ids.filter((id) => id !== before).slice(0, 3);
+      check(tried.length === 3, `only ${tried.length} other themes to try`);
+      for (const id of tried) {
+        await r.click(`[data-test="theme-tile"][data-theme="${id}"]`);
+        await r.waitFor(`__j.find('[data-test="theme-tile"][data-theme="${id}"]')?.getAttribute("aria-checked") === "true"`, `${id} to be chosen`);
+        const checked = await r.eval(`__j.all('[data-test="theme-tile"][aria-checked="true"]').map((tile) => tile.dataset.theme)`);
+        check(JSON.stringify(checked) === JSON.stringify([id]), `the chosen tiles are ${JSON.stringify(checked)}`);
+        await sleep(1200);
+      }
+      const shot = await r.shot("129-theme-gallery");
+      await closePops(r);
+      const themeIs = (id) => `(__j.designer()._history.present.apollo_tab?.theme || "midnight") === ${JSON.stringify(id)}`;
+      // Ctrl+Z once the gallery is closed takes the three tries back at once,
+      // Redo brings them back, and the Undo button takes them back again.
+      await shortcut(r, "z");
+      await r.waitFor(themeIs(before), "one Ctrl+Z to bring the first theme back");
+      await pressRedo(r);
+      await r.waitFor(themeIs(tried[2]), "one Redo to bring the last theme tried back");
+      await r.click('[data-test="undo"]');
+      await r.waitFor(themeIs(before), "one Undo to bring the first theme back");
+      await r.waitSaved("after Undo");
+      // Short layout: the gallery lies over the inspector and the picture
+      // beside it stays in view, so each theme tried can be seen.
+      await r.browser.send("Emulation.setDeviceMetricsOverride", { width: 844, height: 390, deviceScaleFactor: 1, mobile: r.setup.mobile });
+      try {
+        await openSample(r);
+        await r.waitFor(`__j.designer().shadowRoot.querySelector(".root.short")`, "the short layout at 844 x 390");
+        await r.click('[data-test="theme-button"]');
+        await r.waitFor(popOpen("theme-gallery"), "the theme gallery in the short layout");
+        await sleep(200);
+        const boxes = await r.eval(`(() => { const box = (node) => { const b = node.getBoundingClientRect(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
+          return { gallery: box(__j.find('dialog[data-test="theme-gallery"]')), picture: box(__j.find('[data-test="canvas"]')), side: box(__j.find('[data-test="side"]')) }; })()`);
+        check(boxes.gallery.left >= boxes.picture.right, `in the short layout the theme gallery covers the picture: ${JSON.stringify(boxes)}`);
+        check(Math.abs(boxes.gallery.left - boxes.side.left) <= 1 && Math.abs(boxes.gallery.bottom - boxes.side.bottom) <= 1,
+          `in the short layout the theme gallery is not over the inspector: ${JSON.stringify(boxes)}`);
+        const other = before === "daylight" ? "warm" : "daylight";
+        await r.click(`[data-test="theme-tile"][data-theme="${other}"]`);
+        await r.waitFor(themeIs(other), "a theme chosen in the short layout");
+        await checkNoSidewaysScroll(r, 844);
+        await r.shot("129-theme-gallery-short");
+        await r.key("Escape");
+        await r.waitFor(`!__j.find("dialog.popover")`, "Escape to close the gallery in the short layout");
+        check((await focused(r)) === "theme-button", `after the short gallery closed focus is on ${await focused(r)}`);
+        await r.waitSaved("the theme chosen in the short layout");
+      } finally {
+        await r.viewport();
+      }
+      return shot;
+    }),
+    step("130", "pop-ups-close", async (r) => {
+      const phone = r.setup.device === "phone";
+      await openSample(r, { tablets: "three" });
+      await r.waitFor(`__j.find('[data-test="tablet-chip"]') && __j.find('[data-test="tablet-chip"]').title !== "Tablets"`, "the chip to know the tablets");
+      const opens = [
+        ["tablet-chip", "tablets-pop", () => r.click('[data-test="tablet-chip"]')],
+        [phone ? "dash-menu" : "theme-button", "theme-gallery", () => openTheme(r)],
+        ["dash-menu", "dash-menu-pop", () => r.click('[data-test="dash-menu"]')],
+        ["page-settings", "page-menu", () => r.click('[data-test="page-settings"]')],
+      ];
+      for (const [opener, test, open] of opens) {
+        await open();
+        await r.waitFor(popOpen(test), `the ${test} pop-up`);
+        await r.key("Escape");
+        await r.waitFor(`!__j.find('dialog[data-test="${test}"]')`, `Escape to close ${test}`);
+        await r.waitFor(`__j.active()?.dataset?.test === "${opener}"`, `focus back on ${opener} after ${test}`);
+        // A press outside closes it too.
+        await open();
+        await r.waitFor(popOpen(test), `the ${test} pop-up again`);
+        const point = await r.eval(`(() => { const rect = __j.find('dialog[data-test="${test}"]').getBoundingClientRect();
+          const x = Math.round(Math.min(Math.max(rect.left + 10, 4), innerWidth - 4));
+          const y = rect.top > 60 ? Math.round(rect.top - 30) : Math.round(Math.min(rect.bottom + 30, innerHeight - 4));
+          return { x, y }; })()`);
+        // A drag that begins inside it and ends outside does not: only a
+        // press that began outside does.
+        const from = await r.eval(`(() => { const rect = __j.find('dialog[data-test="${test}"]').getBoundingClientRect();
+          return { x: Math.round(rect.left + 12), y: Math.round(rect.top + 12) }; })()`);
+        const mouse = (type, at, buttons) =>
+          r.browser.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", buttons, clickCount: 1 });
+        await mouse("mouseMoved", from, 0);
+        await mouse("mousePressed", from, 1);
+        await mouse("mouseMoved", point, 1);
+        await mouse("mouseReleased", point, 0);
+        await sleep(200);
+        check(await r.eval(`Boolean(${popOpen(test)})`), `a drag from inside ${test} to outside closed it`);
+        await r.clickAt(point.x, point.y);
+        await r.waitFor(`!__j.find('dialog[data-test="${test}"]')`, `a press outside to close ${test}`);
+      }
+      // A window that crosses into another layout closes an open pop-up and
+      // gives focus back to the control that opened it.
+      if (!phone) {
+        await r.click('[data-test="tablet-chip"]');
+        await r.waitFor(popOpen("tablets-pop"), "the tablets-pop pop-up before a resize");
+        await sizeTo(r, 1000, r.setup.height);
+        await r.waitFor(`!__j.find('dialog[data-test="tablets-pop"]')`, "the layout change to close tablets-pop");
+        await r.waitFor(`__j.active()?.dataset?.test === "tablet-chip"`, "focus back on tablet-chip after the layout change");
+        await r.viewport();
+        await sleep(100);
+      }
+      // Leaving the editor with one open leaves no open dialog. The editor is
+      // opened from the start screen first, so the browser's Back goes to
+      // that screen in this page and not to the page of an earlier step.
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.find('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]')`, "the start screen");
+      await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="dash-menu"]')`, "the editor again");
+      await openDashMenu(r);
+      await r.eval(`history.back(); true`);
+      await r.waitFor(`${home} && (!__j.designer()?.isConnected || !__j.find('[data-test="canvas"]'))`, "the editor to be left");
+      await sleep(300);
+      check(!(await r.eval(anyDialogOpen)), "a dialog is left open after leaving the editor");
+      return null;
+    }),
+    step("131", "first-card-notice", async (r) => {
+      const phone = r.setup.device === "phone";
+      const turnOns = `__j.all('[data-test="tablet-turn-on"]').filter((node) => __j.visible(node))`;
+      // What may travel outside memory: the address, the history state and
+      // the storage hold no tablet address and no handover.
+      const nothingTravels = async (urlPath, when) => {
+        const where = await r.eval(`({ href: location.href, state: history.state,
+          local: Object.entries(localStorage), session: Object.entries(sessionStorage) })`);
+        check(!where.href.includes(PORCH) && !where.href.includes(PATIO) && !where.href.includes(urlPath),
+          `${when}: the address holds the handover: ${where.href}`);
+        check(where.state === null, `${when}: the history state is ${JSON.stringify(where.state)}`);
+        const stored = [...where.local, ...where.session].filter(([key, value]) =>
+          [PORCH, PATIO].some((mac) => key.includes(mac) || value.includes(mac)) ||
+          (key !== "apollo_tab.first_card" && (key.includes(urlPath) || value.includes(urlPath))));
+        check(stored.length === 0, `${when}: the storage holds ${JSON.stringify(stored)}`);
+      };
+      const nothingPicked = async (macs, when) => {
+        for (const mac of macs) {
+          const shows = await r.eval(`__j.find(${JSON.stringify(tabletShows(mac))})?.value ?? null`);
+          check(!shows, `${when}: ${mac} has ${shows} picked`);
+          const disabled = await r.eval(`__j.find('${tabletRow(mac)} [data-test="tablet-turn-on"]')?.disabled ?? true`);
+          check(disabled, `${when}: the Turn on button of ${mac} can be pressed`);
+        }
+      };
+      // Rule 9: with the gate on, the editor's dashboard becomes the porch
+      // tablet's pick once the start screen has read the dashboards; the
+      // button waits. With the gate off nothing is picked.
+      const handoverPicked = async (dashboard, when) => {
+        if (!PREPICK_ONLY_DASHBOARD) {
+          await nothingPicked([PORCH], when);
+          return;
+        }
+        await r.waitFor(`(__j.find(${JSON.stringify(tabletShows(PORCH))})?.value ?? null) === ${JSON.stringify(dashboard)}`,
+          `${when}: the handover's pick`, 3000);
+        const button = await r.eval(`(() => { const b = __j.find('${tabletRow(PORCH)} [data-test="tablet-turn-on"]');
+          return { disabled: b.disabled, settling: b.hasAttribute("data-settling") }; })()`);
+        check(!button.disabled && button.settling, `${when}: the porch button after the handover's pick: ${JSON.stringify(button)}`);
+      };
+      const arrive = async (focusKey, when) => {
+        await r.waitFor(`${home} && __j.active()?.dataset?.focus === "${focusKey}"`, `${when}: focus on ${focusKey}`);
+        const settling = await r.eval(`${turnOns}.every((node) => node.hasAttribute("data-settling"))`);
+        check(settling, `${when}: a Turn on button takes presses right after the arrival`);
+        const onTurnOn = await r.eval(`__j.active()?.dataset?.test === "tablet-turn-on"`);
+        check(!onTurnOn, `${when}: focus is on a Turn on button`);
+      };
+      // pick: a dashboard is picked for the porch tablet first, as on an
+      // earlier visit; the start screen must not keep it.
+      const newDashboard = async (tablets, { pick = false } = {}) => {
+        await r.open({ seed: "sample", night: "1", tablets }, `${home} && __j.find('[data-test="create"]')`);
+        if (pick) {
+          await pickShows(r, PORCH, "night");
+          // The pick redraws the row; the page is still before a press.
+          await r.waitFor(`(() => { const button = __j.find('${tabletRow(PORCH)} [data-test="tablet-turn-on"]');
+            return button?.disabled === false && !button.hasAttribute("data-settling"); })()`,
+            "the porch tablet's Turn on button after a pick");
+          await r.eval(`__j.active()?.blur(); true`);
+          await sleep(300);
+        }
+        // Each run is a new home, but the browser keeps its storage between
+        // runs and the new dashboard gets the same address each time: the
+        // memory of which dashboards had their notice starts empty.
+        await r.eval(`localStorage.removeItem("apollo_tab.first_card"); true`);
+        // The start screen has finished loading (the tiles' pictures come
+        // last) before the press.
+        await r.waitFor(`__j.pics('.tablet-pic').length === __j.count('[data-test="dashboard-row"]')`, "the tiles' pictures");
+        await r.click('[data-test="create"]');
+        await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's editor");
+        await r.waitSaved("the new dashboard");
+        return r.eval(`__j.designer().urlPath || __j.designer()._urlPath`);
+      };
+      const firstCard = async () => {
+        const width = await r.eval(`__j.find('[data-test="canvas"]').getBoundingClientRect().width`);
+        await r.addCard("add-first-card", "apollo/light", "light.kitchen");
+        await r.waitSaved("the first card");
+        await leaveEditMode(r);
+        await r.waitFor(`__j.find('[data-test="first-card-notice"]')`, "the first-card notice");
+        // Its sentence is never cut short.
+        const cut = await r.eval(`(() => { const words = __j.find('[data-test="first-card-notice"] .notice-words');
+          return words.scrollWidth - words.clientWidth; })()`);
+        check(cut <= 1, `the first-card notice's words are cut by ${cut} px`);
+        if (!phone) {
+          const now = await r.eval(`__j.find('[data-test="canvas"]').getBoundingClientRect().width`);
+          check(Math.abs(now - width) <= 1, `the picture went from ${width} to ${now} px wide with the notice`);
+        }
+      };
+
+      // One new tablet: the notice names it and hands it over.
+      const urlPath = await newDashboard("new", { pick: true });
+      await firstCard();
+      const words = await r.text('[data-test="first-card-notice"] .notice-words');
+      check(words === "Saved. Porch tablet is waiting for a dashboard.", `the notice reads "${words}"`);
+      check((await r.text('[data-test="put-on-tablet"]')) === "Put it on the tablet", "no Put it on the tablet");
+      const shot = await r.shot("131-first-card-notice");
+      await r.click('[data-test="put-on-tablet"]');
+      await arrive(`name:${PORCH}`, "after Put it on the tablet");
+      const row = await r.eval(inViewUncovered(`${tabletRow(PORCH)} .tablet-name`));
+      check(row === "", `the porch tablet's name is ${row}`);
+      check((await r.calls("apollo_tab/tablet/assign")).length === 0, "the handover sent an assign");
+      await nothingTravels(urlPath, "after Put it on the tablet");
+      await handoverPicked(urlPath, "after Put it on the tablet");
+      await r.screen("131-first-card-arrival");
+      // Back in the editor the notice does not come again; [Set it up] in
+      // the Tablets pop-up hands the tablet over the same way.
+      await r.click(`[data-test="dashboard-row"][data-url-path="${urlPath}"] [data-test="edit"]`);
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor again");
+      await sleep(500);
+      check((await r.count('[data-test="first-card-notice"]')) === 0, "the first-card notice came again");
+      await openTablets(r);
+      const setUpName = await r.eval(`__j.find('[data-test="set-up-tablet"][data-mac="${PORCH}"]').getAttribute("aria-label")`);
+      check(setUpName === "Set it up: Porch tablet", `the Set it up button is named "${setUpName}"`);
+      // Home Assistant may set the panel's route while the move's event is
+      // sent: the handover still arrives.
+      await r.eval(`window.addEventListener("location-changed", () => {
+        window.__apolloPanel.route = { prefix: "/apollo-tab", path: "" }; }, { once: true }); true`);
+      await r.click(`[data-test="set-up-tablet"][data-mac="${PORCH}"]`);
+      await arrive(`name:${PORCH}`, "after Set it up");
+      check((await r.calls("apollo_tab/tablet/assign")).length === 0, "Set it up sent an assign");
+      await nothingTravels(urlPath, "after Set it up");
+      await handoverPicked(urlPath, "after Set it up");
+      // The browser's Back and Forward bring no pick and no focus on a
+      // Turn on button.
+      await r.eval(`history.back(); true`);
+      await r.waitFor(editorReady, "the editor after Back");
+      await r.eval(`history.forward(); true`);
+      await r.waitFor(`${home} && __j.find(${JSON.stringify(tabletRow(PORCH))})`, "the start screen after Forward");
+      await sleep(300);
+      await nothingPicked([PORCH], "after Back and Forward");
+      check(!(await r.eval(`__j.active()?.dataset?.test === "tablet-turn-on"`)), "after Back and Forward focus is on a Turn on button");
+      // The handover was used once: Forward is a plain arrival, on the
+      // page's heading. Every button waits at its first look (rule 4), and
+      // only for that long.
+      await r.waitFor(`__j.all("button[data-settling]").length === 0`, "the buttons to stop waiting after Forward", TURN_ON_SETTLE_MS + 1000);
+      const forward = await r.eval(`({ focus: __j.active()?.dataset?.focus ?? null,
+        settling: __j.all("button[data-settling]").length })`);
+      check(forward.focus === "heading" && forward.settling === 0, `after Back and Forward: ${JSON.stringify(forward)}`);
+      // A handover of a tablet that is on goes to the Tablets box, not to
+      // the tablet.
+      await r.click(`[data-test="dashboard-row"][data-url-path="${urlPath}"] [data-test="edit"]`);
+      await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor once more");
+      await r.eval(`__j.designer().onExit({ tablet: ${JSON.stringify(KITCHEN)}, dashboard: ${JSON.stringify(urlPath)} }); true`);
+      await arrive("tablets-heading", "after a handover of a tablet that is on");
+      check((await r.calls("apollo_tab/tablet/assign")).length === 0, "the handover of a tablet that is on sent an assign");
+
+      // On a phone the start screen's Turn on button comes up about where
+      // [Put it on the tablet] was. A run of taps there, with a dashboard
+      // picked on an earlier visit, turns nothing on.
+      if (phone) {
+        await newDashboard("new", { pick: true });
+        await firstCard();
+        const place = await r.eval(`(() => { const rect = __j.find('[data-test="put-on-tablet"]').getBoundingClientRect();
+          return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`);
+        for (let press = 0; press < 3; press += 1) {
+          if (press) {
+            await sleep(400);
+          }
+          await r.clickAt(place.x, place.y);
+        }
+        await r.waitFor(home, "the start screen after a run of taps");
+        await sleep(1000);
+        check((await r.calls("apollo_tab/tablet/assign")).length === 0, "a run of taps on Put it on the tablet sent an assign");
+        await nothingPicked([PORCH], "after a run of taps");
+      }
+
+      // Two new tablets: the notice names neither and goes to the Tablets box.
+      const second = await newDashboard("two-new");
+      await firstCard();
+      const two = await r.text('[data-test="first-card-notice"] .notice-words');
+      check(two === "Saved. 2 tablets are waiting for a dashboard.", `the notice reads "${two}"`);
+      check((await r.text('[data-test="put-on-tablet"]')) === "Go to Tablets", "no Go to Tablets");
+      await r.click('[data-test="put-on-tablet"]');
+      await arrive("tablets-heading", "after Go to Tablets");
+      check((await r.calls("apollo_tab/tablet/assign")).length === 0, "Go to Tablets sent an assign");
+      await nothingTravels(second, "after Go to Tablets");
+      await nothingPicked([PORCH, PATIO], "after Go to Tablets");
+      return shot;
+    }),
+    step("132", "dash-menu", async (r) => {
+      const updates = () => r.calls("lovelace/dashboards/update");
+      await openSample(r);
+      // The name: a press gives a field with the name selected.
+      await r.click('[data-test="title-button"]');
+      await r.waitFor(`__j.active()?.dataset?.test === "dashboard-name"`, "the name field");
+      const selected = await r.eval(`(() => { const input = __j.active(); return input.value === "TAB-1" && input.selectionStart === 0 && input.selectionEnd === input.value.length; })()`);
+      check(selected, "the name is not selected in its field");
+      await r.type("Living room");
+      await r.key("Enter");
+      await r.waitFor(`__apolloMockHass.getDashboard("tab-1").title === "Living room"`, "Enter to save the name");
+      await r.waitFor(`__j.text('[data-test="title-button"]').includes("Living room")`, "the new name in the bar");
+      // Escape cancels.
+      const sent = (await updates()).length;
+      await r.click('[data-test="title-button"]');
+      await r.waitFor(`__j.active()?.dataset?.test === "dashboard-name"`, "the name field again");
+      await r.type("Something else");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('[data-test="dashboard-name"]')`, "Escape to end the rename");
+      check((await updates()).length === sent, "Escape saved the name");
+      check((await r.text('[data-test="title-button"]')).includes("Living room"), "Escape changed the name");
+      // A refused rename puts the old name back and says why.
+      await r.eval(`__apolloMockHass.failCalls("lovelace/dashboards/update", 1); true`);
+      await r.click('[data-test="title-button"]');
+      await r.waitFor(`__j.active()?.dataset?.test === "dashboard-name"`, "the name field once more");
+      await r.type("Refused");
+      await r.key("Enter");
+      await r.waitFor(`__j.find('[data-test="rename-error"]')`, "the rename's failure");
+      await r.waitFor(`__j.text('[data-test="title-button"]').includes("Living room")`, "the old name back");
+      await checkTextContrast(r, ['[data-test="rename-error"]']);
+      // The failure lies under the name as a small pop-up: the bar keeps its
+      // height, the name stays whole in it, and the words stay in their box.
+      const bar = await r.eval(`(() => { const header = __j.find(".ed-header").getBoundingClientRect();
+        const name = __j.find('[data-test="title-button"]').getBoundingClientRect();
+        const error = __j.find('[data-test="rename-error"]');
+        const box = error.getBoundingClientRect();
+        return { height: Math.round(header.height), nameTop: name.top - header.top, nameBottom: header.bottom - name.bottom,
+          nameWidth: name.width, errorTop: box.top - header.top, spill: error.scrollHeight - error.clientHeight,
+          left: box.left, right: innerWidth - box.right }; })()`);
+      check([48, 56].includes(bar.height), `after a refused rename the bar is ${bar.height} px high`);
+      check(bar.nameTop >= 0 && bar.nameBottom >= 0 && bar.nameWidth >= 40, `after a refused rename the name is not whole in the bar: ${JSON.stringify(bar)}`);
+      check(bar.errorTop >= 40 && bar.spill <= 1 && bar.left >= 0 && bar.right >= 0, `the rename's failure is not a box under the name: ${JSON.stringify(bar)}`);
+      const shot = await r.shot("132-dash-menu-rename");
+      // The menu: the sidebar switch, the name for automations, Delete.
+      await openDashMenu(r);
+      const name = await r.text('[data-test="automation-name"]');
+      check(/Name for automations/.test(name) && /tab-1/.test(name), `the name for automations reads "${name}"`);
+      check((await r.count('[data-test="automation-copy"]')) === 1, "no copy button for the name");
+      const sidebar = await r.eval(`__apolloMockHass.getDashboard("tab-1").show_in_sidebar`);
+      await r.click('[data-test="sidebar-checkbox"]');
+      await r.waitFor(`__apolloMockHass.getDashboard("tab-1").show_in_sidebar === ${!sidebar}`, "the sidebar switch to be saved");
+      await r.shot("132-dash-menu");
+      await r.click('[data-test="dashboard-delete"]');
+      await r.waitFor(`__j.find('dialog[data-test="confirm"][open]')`, "the delete question");
+      await r.key("Escape");
+      await r.waitFor(`!__j.find('dialog[data-test="confirm"]')`, "the question to close");
+      check(Boolean(await r.eval(`__apolloMockHass.getDashboard("tab-1")`)), "Escape deleted the dashboard");
+      // Ticking the switch answered the sidebar notice for tab-1, which the
+      // browser remembers; the next set-ups run in the same browser and
+      // still need to see that notice.
+      if (!sidebar) {
+        const kept = await r.eval(`localStorage.getItem("apollo_tab.sidebar_keep") || ""`);
+        check(kept.includes("tab-1"), `ticking the switch did not answer the sidebar notice (${kept})`);
+      }
+      await r.eval(`localStorage.removeItem("apollo_tab.sidebar_keep"); true`);
+      return shot;
+    }),
+  ];
+
+  // Package 6: the start screen, and turning a tablet on under the twelve
+  // rules of the security review. Steps 133 to 135 count the assign calls
+  // the stand-in received. They read the gate (PREPICK_ONLY_DASHBOARD)
+  // from tablets.js and expect what its value says.
+  const assigns = async (r) => (await r.calls("apollo_tab/tablet/assign")).length;
+  const turnOnOf = (mac) => `${tabletRow(mac)} [data-test="tablet-turn-on"]`;
+  const centre = (r, selector) =>
+    r.eval(`(() => { const rect = __j.find(${JSON.stringify(selector)}).getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }; })()`);
+  const settling = (r, mac) => r.eval(`__j.find(${JSON.stringify(turnOnOf(mac))})?.hasAttribute("data-settling") ?? null`);
+  const waitSettled = (r, mac) =>
+    r.waitFor(
+      `(() => { const b = __j.find(${JSON.stringify(turnOnOf(mac))}); return b && !b.hasAttribute("data-settling"); })()`,
+      "the turn-on button to stop waiting",
+      3000,
+    );
+  const focusIs = (r) => r.eval(`__j.active()?.dataset?.focus ?? null`);
+  // With the gate off nothing is picked for the person, and a button with
+  // nothing picked is disabled, so a press on it proves nothing. These
+  // attacks run on a button that has a dashboard and takes presses.
+  const enabledButton = async (r, mac, when) => {
+    const button = await r.eval(`(() => { const b = __j.find(${JSON.stringify(turnOnOf(mac))});
+      return { disabled: b.disabled, settling: b.hasAttribute("data-settling") }; })()`);
+    check(!button.disabled, `${when}: the turn-on button is disabled, so the checks below would prove nothing`);
+    return button;
+  };
+  // Enter held down on the button: every key-down flagged as a repeat.
+  const holdEnter = async (r, mac, ms) => {
+    await r.eval(`__j.find(${JSON.stringify(turnOnOf(mac))}).focus(); true`);
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      await r.keyEvent("keyDown", "Enter", { repeat: true });
+      await sleep(50);
+    }
+    await r.keyEvent("keyUp", "Enter");
+    await sleep(150);
+  };
+  // The second click of a double click whose first click was on the
+  // tablet's check line, beside the button: the run began elsewhere.
+  const runFromElsewhere = async (r, mac) => {
+    const spot = await r.eval(`__j.target(${JSON.stringify(turnOnOf(mac))})`);
+    check(spot && !spot.error, spot?.error || "cannot reach the turn-on button");
+    await waitSettled(r, mac);
+    await sleep(100);
+    const line = await centre(r, `${tabletRow(mac)} [data-test="tablet-device"]`);
+    const height = await r.eval("innerHeight");
+    check(line.y > 0 && line.y < height, `the check line is out of view at ${JSON.stringify(line)}`);
+    await r.clickAt(line.x, line.y);
+    await r.secondClickAt(spot.x, spot.y);
+    await sleep(150);
+  };
+  const startScreen = [
+    step("133", "cold-path", async (r) => {
+      await r.open({ seed: "none", tablets: "new" }, `${home} && __j.find('[data-test="first-run"]')`);
+      check((await r.count('[data-test="first-run"] .guide-step')) === 3, "the guide has not three rows");
+      const filled = await r.eval(`__j.all("button.primary").filter((node) => __j.visible(node)).map((node) => node.dataset.test)`);
+      check(JSON.stringify(filled) === '["create"]', `the filled buttons are ${JSON.stringify(filled)}`);
+      // The guide's sample picture: 320 x 200 in the tablet's frame,
+      // captioned, on panels 900 px and wider; none on a phone.
+      if (r.setup.device === "desktop") {
+        await r.waitFor(`__j.pics('.guide-sample-screen')[0]`, "the guide's sample picture");
+        const sample = await r.eval(`(() => { const page = __j.pics('.guide-sample-screen')[0].getBoundingClientRect();
+          return { width: Math.round(page.width), height: Math.round(page.height), caption: __j.text('.guide-sample figcaption'),
+            hidden: __j.find('.guide-sample').getAttribute("aria-hidden") }; })()`);
+        check(
+          sample.width === 320 && sample.height === 200 && sample.caption === "A sample." && sample.hidden === "true",
+          `the sample picture: ${JSON.stringify(sample)}`,
+        );
+        // Scaled whole: the thermostat's two buttons are circles of 36
+        // tablet pixels, and the page button is a square inside the rail.
+        const parts = await r.eval(`(() => { const page = __j.pics('.guide-sample-screen')[0];
+          const size = (node) => { const box = node.getBoundingClientRect(); return [box.width * 4, box.height * 4]; };
+          return { thermostat: [...page.querySelectorAll(".at-thermostat button")].map(size),
+            rail: [...page.querySelectorAll(".at-nav-button")].map(size) }; })()`);
+        check(
+          parts.thermostat.length === 2 && parts.thermostat.every(([w, h]) => Math.abs(w - 36) < 0.5 && Math.abs(h - 36) < 0.5) &&
+            parts.rail.length === 1 && parts.rail.every(([w, h]) => Math.abs(w - 64) < 0.5 && Math.abs(h - 64) < 0.5),
+          `the sample picture's buttons: ${JSON.stringify(parts)}`,
+        );
+        // Fixed sample values, not this home's states: the stand-in home has
+        // none of the sample's entities.
+        const words = await r.eval(`__j.pics('.guide-sample-screen')[0].textContent`);
+        check(
+          words.includes("Kitchen") && words.includes("21.5°C") && !/unknown|None|unavailable/.test(words),
+          `the sample picture says "${words}"`,
+        );
+      } else {
+        await r.waitFor(`__j.pics('.guide-sample-screen').length === 1`, "the guide's sample picture, drawn but hidden");
+        check(!(await r.eval(`__j.visible(__j.all('.guide-sample')[0])`)), "a phone shows the sample picture");
+      }
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the new dashboard's editor");
+      await r.waitSaved("the new dashboard");
+      await r.addCard("add-first-card", "apollo/light", "light.kitchen");
+      await r.waitSaved("the first card");
+      await leaveEditMode(r);
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.find('[data-test="guide-go"]')`, "the guide's row 3");
+      check(
+        (await r.eval(`__j.find('[data-test="first-run"] .guide-step:nth-child(2)').dataset.done`)) === "true",
+        "row 2 is not done",
+      );
+      const go = await r.eval(`(() => { const go = __j.find('[data-test="guide-go"]');
+        return { primary: go.classList.contains("primary"), turnOn: !!__j.find('[data-test="first-run"] [data-test="tablet-turn-on"]') }; })()`);
+      check(!go.primary && !go.turnOn, `row 3: ${JSON.stringify(go)}`);
+      check((await r.count('[data-test="tablet-turn-on"]')) === 1, "not exactly one turn-on button");
+      // With the gate off, pick the new dashboard first, so every check
+      // below is made on a button that takes presses.
+      const live = !PREPICK_ONLY_DASHBOARD;
+      let made = null;
+      if (live) {
+        const options = await r.eval(`[...__j.find(${JSON.stringify(tabletShows(PORCH))}).options].map((option) => option.value).filter(Boolean)`);
+        check(options.length === 1, `the porch tablet's list offers ${JSON.stringify(options)}`);
+        made = options[0];
+        await pickShows(r, PORCH, made);
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        await enabledButton(r, PORCH, "after the pick");
+        await holdEnter(r, PORCH, 1000);
+        check((await assigns(r)) === 0, "Enter held on the settled button sent an assign");
+        await runFromElsewhere(r, PORCH);
+        check((await assigns(r)) === 0, "the second click of a run begun on the check line sent an assign");
+      }
+      // A real double click on the guide's button sends nothing; the
+      // button it brings into view waits, and focus is on the tablet's name.
+      const before = await assigns(r);
+      const place = await centre(r, '[data-test="guide-go"]');
+      await r.doubleClickAt(place.x, place.y);
+      await sleep(150);
+      check((await assigns(r)) === before, "a double click on the guide's button sent an assign");
+      check((await settling(r, PORCH)) === true, "the turn-on button does not wait after the guide's button");
+      check((await focusIs(r)) === `name:${PORCH}`, `focus is on ${await focusIs(r)}`);
+      if (live) {
+        // The enabled button waits after the scroll: a bare click at once
+        // (no pointer, no key) sends nothing.
+        check((await enabledButton(r, PORCH, "after the guide's button")).settling, "the enabled button does not wait after the guide's button");
+        await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).click(); true`);
+        await sleep(80);
+        check((await assigns(r)) === before, "a bare click right after the guide's button sent an assign");
+      }
+      const shot = await r.shot("133-cold-path");
+      // By keyboard too.
+      await r.eval(`__j.find('[data-test="guide-go"]').focus(); true`);
+      await r.key("Enter");
+      await r.waitFor(`__j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the tablet's name after Enter");
+      await sleep(800);
+      check((await assigns(r)) === before, "the guide's button sent an assign");
+      if (live) {
+        // Space down during the wait after the guide's button, up after it.
+        await r.eval(`__j.find('[data-test="guide-go"]').focus(); true`);
+        await r.key("Enter");
+        await r.waitFor(`__j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the tablet's name before Space");
+        check((await enabledButton(r, PORCH, "before Space")).settling, "the button does not wait before Space");
+        await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+        await r.keyEvent("keyDown", " ");
+        await sleep(900);
+        await r.keyEvent("keyUp", " ");
+        await sleep(150);
+        check((await assigns(r)) === before, "Space that went down during the wait sent an assign");
+        // A pointer down during the wait, up after it.
+        await r.eval(`__j.find('[data-test="guide-go"]').focus(); true`);
+        await r.key("Enter");
+        await r.waitFor(`__j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the tablet's name before the pointer");
+        check((await enabledButton(r, PORCH, "before the pointer")).settling, "the button does not wait before the pointer");
+        const at = await centre(r, turnOnOf(PORCH));
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
+        await sleep(900);
+        await r.browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
+        await sleep(150);
+        check((await assigns(r)) === before, "a pointer that went down during the wait sent an assign");
+        // One plain press after the wait sends one call, with that dashboard.
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        const spot = await centre(r, turnOnOf(PORCH));
+        await r.clickAt(spot.x, spot.y);
+        await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the plain press");
+        const calls = await r.calls("apollo_tab/tablet/assign");
+        check(
+          calls.length === 1 && calls[0].approve === true && calls[0].url_path === made && calls[0].mac === PORCH,
+          `the plain press sent ${JSON.stringify(calls)}`,
+        );
+      }
+      // Two new tablets: row 3 names none and goes to the Tablets heading.
+      await r.open({ seed: "none", tablets: "two-new" }, `${home} && __j.find('[data-test="create"]')`);
+      await r.click('[data-test="create"]');
+      await r.waitFor(`__j.find('[data-test="add-first-card"]')`, "the second editor");
+      await r.waitSaved("the second dashboard");
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.find('[data-test="guide-go"]')`, "the guide's row 3 with two tablets");
+      check((await r.text('[data-test="guide-go"]')) === "Go to Tablets", `row 3's button reads ${await r.text('[data-test="guide-go"]')}`);
+      await r.click('[data-test="guide-go"]');
+      await r.waitFor(`__j.active()?.dataset?.focus === "tablets-heading"`, "focus on the Tablets heading");
+      check((await assigns(r)) === 0, "the guide's button sent an assign");
+      return shot;
+    }),
+    step("134", "pre-pick", async (r) => {
+      // One dashboard, one new tablet without a suggestion, there when the
+      // start screen opens.
+      await r.open({ seed: "sample", tablets: "new" }, `${home} && __j.find(${JSON.stringify(turnOnOf(PORCH))})`);
+      const first = await r.eval(`({ settling: __j.find(${JSON.stringify(turnOnOf(PORCH))}).hasAttribute("data-settling"),
+        list: !!__j.find(${JSON.stringify(tabletShows(PORCH))}),
+        disabled: __j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled,
+        name: __j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') })`);
+      // The new tablet's block reads top to bottom: "Shows" right above the
+      // button, in one column; the status at the top right on a desktop,
+      // under the name on a phone, where the button is full width.
+      if (first.list) {
+        const block = await r.eval(`(() => {
+          const box = (selector) => { const r = __j.find('${tabletRow(PORCH)} ' + selector).getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+          return { name: box(".tablet-name"), status: box('[data-test="tablet-status"]'),
+            shows: box("label.tablet-shows"), button: box('[data-test="tablet-turn-on"]'), notes: box(".tablet-notes") }; })()`);
+        const above = block.shows.bottom <= block.button.top && block.button.top - block.shows.bottom <= 24;
+        check(above && Math.abs(block.shows.left - block.button.left) <= 1, `Shows and the button: ${JSON.stringify(block)}`);
+        if (r.setup.device === "desktop") {
+          check(block.status.top < block.name.bottom && block.status.left > block.name.right, `the status: ${JSON.stringify(block)}`);
+        } else {
+          check(block.status.top >= block.name.bottom && block.status.bottom <= block.shows.top, `the status: ${JSON.stringify(block)}`);
+          check(Math.abs(block.button.right - block.button.left - (block.notes.right - block.notes.left)) <= 1, `the button is not full width: ${JSON.stringify(block)}`);
+        }
+      }
+      if (PREPICK_ONLY_DASHBOARD) {
+        check(!first.list, "the pre-picked row draws a Shows list");
+        check(first.name === "TAB-1", `the button names "${first.name}"`);
+        check(first.settling, "the button takes presses at first paint");
+        check(!first.disabled, "the pre-picked button is disabled");
+        await r.click(turnOnOf(PORCH));
+        check((await assigns(r)) === 0, "a press during the wait sent an assign");
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        await r.click(turnOnOf(PORCH));
+        await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the press after the wait");
+        const calls = await r.calls("apollo_tab/tablet/assign");
+        check(
+          calls.length === 1 && calls[0].approve === true && calls[0].url_path === "tab-1" && calls[0].mac === PORCH,
+          `the presses sent ${JSON.stringify(calls)}`,
+        );
+      } else {
+        check(first.list, "the row draws no Shows list with the gate off");
+        check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "", "something is picked");
+        check(first.disabled, "the button can be pressed with nothing picked");
+      }
+      const shot = await r.shot("134-pre-pick");
+      // The button is in no label, and its description holds both lines.
+      await r.open({ seed: "sample", tablets: "new" }, `${home} && __j.find(${JSON.stringify(turnOnOf(PORCH))})`);
+      const named = await r.eval(`(() => { const b = __j.find(${JSON.stringify(turnOnOf(PORCH))});
+        const root = b.getRootNode();
+        const described = (b.getAttribute("aria-describedby") || "").split(" ").map((id) => root.getElementById(id)?.textContent || "").join(" ");
+        return { label: !!b.closest("label"), described }; })()`);
+      check(!named.label, "the turn-on button is inside a label");
+      check(named.described.includes("ddee0e") && named.described.includes("do not turn it on"), `its description is "${named.described}"`);
+      // A tablet added while the screen is open: no pick, also with one
+      // dashboard.
+      await r.eval(`__apolloMockHass.addTablet(17, "Garden tablet", { approved: false, dashboard: null }); true`);
+      const GARDEN = "aa:bb:cc:dd:ee:11";
+      await r.waitFor(`__j.find(${JSON.stringify(turnOnOf(GARDEN))})`, "the added tablet's row");
+      const garden = await r.eval(`({ value: __j.find(${JSON.stringify(tabletShows(GARDEN))})?.value ?? null,
+        disabled: __j.find(${JSON.stringify(turnOnOf(GARDEN))}).disabled })`);
+      check(garden.value === "" && garden.disabled, `the added tablet: ${JSON.stringify(garden)}`);
+      // Two dashboards: the list shows, the button is disabled, picking
+      // sends nothing.
+      await r.open({ seed: "sample", night: "1", tablets: "new" }, `${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`);
+      check(await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled`), "the button can be pressed with two dashboards");
+      await pickShows(r, PORCH, "night");
+      await sleep(300);
+      check((await assigns(r)) === 0, "picking sent an assign");
+      // Deleting one of two dashboards: the waiting tablet's button names
+      // the one left and waits again.
+      await r.open({ seed: "sample", night: "1", tablets: "new" }, `${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`);
+      await sleep(900);
+      await r.eval(`__apolloMockHass.callWS({ type: "lovelace/dashboards/delete", dashboard_id: "night" }).then(() => true)`);
+      if (PREPICK_ONLY_DASHBOARD) {
+        await r.waitFor(`__j.text('${tabletRow(PORCH)} [data-test="tablet-turn-on-name"]') === "TAB-1"`, "the button to name the dashboard left", 5000);
+        check((await settling(r, PORCH)) === true, "the button does not wait after the delete");
+        await sleep(200);
+        await r.click(turnOnOf(PORCH));
+        check((await assigns(r)) === 0, "a press 200 ms after the delete sent an assign");
+      } else {
+        await r.waitFor(`__j.count('[data-test="dashboard-row"]') === 1`, "the deleted dashboard to go", 5000);
+        await sleep(300);
+        check(await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled`), "the button can be pressed after the delete");
+      }
+      return shot;
+    }),
+    step("135", "arrival-from-editor", async (r) => {
+      const params = { seed: "sample", night: "1", tablets: "new" };
+      const want = PREPICK_ONLY_DASHBOARD ? "tab-1" : "";
+      const toEditor = async () => {
+        await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="edit"]');
+        await r.waitFor(`(${editorReady}) && __j.find('[data-test="tablet-chip"]')`, "the editor");
+      };
+      const setItUp = async () => {
+        await openTablets(r);
+        await r.click(`[data-test="set-up-tablet"][data-mac="${PORCH}"]`);
+        await r.waitFor(`${home} && __j.active()?.dataset?.focus === "name:${PORCH}"`, "focus on the porch tablet's name");
+      };
+      const arrived = async (when) => {
+        check((await assigns(r)) === 0, `${when}: the arrival sent an assign`);
+        const href = await r.eval("location.href");
+        check(!href.includes(PORCH) && !href.includes("tab-1"), `${when}: the address is ${href}`);
+        const shows = await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))})?.value ?? null`);
+        check(shows === want, `${when}: the porch tablet's list holds "${shows}"`);
+        check((await settling(r, PORCH)) === true, `${when}: the button does not wait`);
+      };
+      await r.open(params, `${home} && __j.find('[data-test="dashboard-row"][data-url-path="tab-1"]')`);
+      await toEditor();
+      await setItUp();
+      // The read of the dashboards answers, with the handover's pick.
+      await r.waitFor(`(__j.find(${JSON.stringify(tabletShows(PORCH))})?.value ?? null) === ${JSON.stringify(want)}`, "the handover's pick", 3000);
+      await arrived("after Set it up");
+      // With the gate off nothing is picked on arrival and the button is
+      // disabled; pick during the wait, so the presses below meet a button
+      // that takes presses once the wait is over.
+      const live = !PREPICK_ONLY_DASHBOARD;
+      if (live) {
+        await pickShows(r, PORCH, "tab-1");
+        check((await enabledButton(r, PORCH, "after the pick on arrival")).settling, "the button does not wait after the pick on arrival");
+      }
+      const place = await centre(r, turnOnOf(PORCH));
+      await sleep(100);
+      await r.secondClickAt(place.x, place.y);
+      if (live) {
+        await waitSettled(r, PORCH);
+        await sleep(100);
+        await enabledButton(r, PORCH, "before the late second click");
+      } else {
+        await sleep(750);
+      }
+      await r.secondClickAt(place.x, place.y);
+      check((await assigns(r)) === 0, "a second click of a double click sent an assign");
+      if (live) {
+        await runFromElsewhere(r, PORCH);
+        check((await assigns(r)) === 0, "the second click of a run begun on the check line sent an assign");
+      }
+      const shot = await r.shot("135-arrival-from-editor");
+      // Enter held from the editor: key-downs flagged as repeats, also with
+      // focus put on the button by script.
+      await toEditor();
+      await setItUp();
+      if (live) {
+        await pickShows(r, PORCH, "tab-1");
+        await enabledButton(r, PORCH, "before Enter held");
+      }
+      await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+      const until = Date.now() + 1500;
+      while (Date.now() < until) {
+        await r.keyEvent("keyDown", "Enter", { repeat: true });
+        await sleep(50);
+      }
+      await r.keyEvent("keyUp", "Enter");
+      check((await assigns(r)) === 0, "Enter held from the editor sent an assign");
+      if (live) {
+        // Still held once the wait is surely over.
+        await waitSettled(r, PORCH);
+        await holdEnter(r, PORCH, 600);
+        check((await assigns(r)) === 0, "Enter held on the settled button sent an assign");
+      }
+      // Space down during the wait and up after it.
+      await toEditor();
+      await setItUp();
+      if (live) {
+        await pickShows(r, PORCH, "tab-1");
+        check((await enabledButton(r, PORCH, "before Space")).settling, "the button does not wait before Space");
+      }
+      await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+      await r.keyEvent("keyDown", " ");
+      await sleep(900);
+      await r.keyEvent("keyUp", " ");
+      await sleep(100);
+      check((await assigns(r)) === 0, "Space that went down during the wait sent an assign");
+      // A fresh Enter after the wait sends one call, with that dashboard.
+      await waitSettled(r, PORCH);
+      if (!PREPICK_ONLY_DASHBOARD) {
+        await pickShows(r, PORCH, "tab-1");
+        await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).focus(); true`);
+      }
+      await sleep(100);
+      await r.key("Enter");
+      await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the fresh Enter");
+      const calls = await r.calls("apollo_tab/tablet/assign");
+      check(calls.length === 1 && calls[0].url_path === "tab-1" && calls[0].approve === true, `Enter sent ${JSON.stringify(calls)}`);
+      // A second run: a bare click (no pointer, no key) after the wait.
+      await r.open(params, `${home} && __j.find('[data-test="dashboard-row"][data-url-path="tab-1"]')`);
+      await toEditor();
+      await setItUp();
+      if (!PREPICK_ONLY_DASHBOARD) {
+        await pickShows(r, PORCH, "tab-1");
+      }
+      await waitSettled(r, PORCH);
+      await sleep(100);
+      await r.eval(`__j.find(${JSON.stringify(turnOnOf(PORCH))}).click(); true`);
+      await r.waitFor(`__apolloMockHass.calls.some((call) => call.type === "apollo_tab/tablet/assign")`, "the bare click");
+      check((await assigns(r)) === 1, "the bare click did not send one call");
+      // The editor's Back and the browser's Back pick nothing, and a pick
+      // made before going to the editor is gone.
+      await r.open(params, `${home} && __j.find('[data-test="dashboard-row"][data-url-path="tab-1"]')`);
+      await pickShows(r, PORCH, "tab-1");
+      await toEditor();
+      await r.click('[data-test="back"]');
+      await r.waitFor(`${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`, "the start screen after Back");
+      await sleep(400);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "", "Back picked a dashboard");
+      await pickShows(r, PORCH, "tab-1");
+      await toEditor();
+      await r.eval(`history.back(); true`);
+      await r.waitFor(`${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`, "the start screen after the browser's Back");
+      await sleep(400);
+      check((await r.eval(`__j.find(${JSON.stringify(tabletShows(PORCH))}).value`)) === "", "the browser's Back picked a dashboard");
+      check((await assigns(r)) === 0, "going back sent an assign");
+      // The same panel taken out of the page and put back starts at "Pick
+      // a dashboard" too.
+      await pickShows(r, PORCH, "tab-1");
+      await r.eval(`(() => { const panel = __apolloPanel; const parent = panel.parentNode; const next = panel.nextSibling;
+        panel.remove(); parent.insertBefore(panel, next); return true; })()`);
+      await r.waitFor(`${home} && __j.find(${JSON.stringify(tabletShows(PORCH))})`, "the start screen put back");
+      await sleep(900);
+      const back = await r.eval(`({ value: __j.find(${JSON.stringify(tabletShows(PORCH))}).value,
+        disabled: __j.find(${JSON.stringify(turnOnOf(PORCH))}).disabled })`);
+      check(back.value === "" && back.disabled, `the panel put back: ${JSON.stringify(back)}`);
+      check((await assigns(r)) === 0, "putting the panel back sent an assign");
+      return shot;
+    }),
+    step(
+      "136",
+      "start-screen-layout",
+      async (r) => {
+        await r.browser.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+        try {
+          await r.open({ seed: "sample", night: "1", tablets: "three" }, `${home} && __j.pics('.tablet-pic').length === 2`);
+          const lefts = await r.eval(`(() => {
+            const left = (selector) => __j.find(selector).getBoundingClientRect().left;
+            return [left(".panel-header h1"), left('[data-test="tablets"]'), left('[data-test="dashboards"]')]; })()`);
+          check(Math.max(...lefts) - Math.min(...lefts) <= 1, `the title and the boxes start at ${JSON.stringify(lefts)}`);
+          const drawn = await r.eval(`__j.all('[data-test="dashboard-row"]').every((tile) => tile.querySelector(".tablet-pic")?.shadowRoot?.querySelector(".at-page"))`);
+          check(drawn, "a dashboard tile has no drawn page");
+          // The small pictures are scaled whole: each page button of the
+          // tablet's rail is a square of 64 tablet pixels inside the rail,
+          // whatever the panel's own button rules say.
+          const rails = await r.eval(`__j.pics('.tablet-pic').flatMap((page) => {
+            const scale = page.getBoundingClientRect().width / 1280;
+            const rail = page.querySelector(".at-nav").getBoundingClientRect();
+            return [...page.querySelectorAll(".at-nav-button")].map((button) => {
+              const box = button.getBoundingClientRect();
+              return { width: box.width / scale, height: box.height / scale,
+                inside: box.left >= rail.left && box.right <= rail.right + 0.01 }; }); })`);
+          check(
+            rails.length >= 2 && rails.every((box) => Math.abs(box.width - 64) < 0.5 && Math.abs(box.height - 64) < 0.5 && box.inside),
+            `the pictures' page buttons: ${JSON.stringify(rails)}`,
+          );
+          // Three tiles in a row, each with its action label at its foot,
+          // and Advanced as one 56 px row that is all one button.
+          const tiles = await r.eval(`(() => {
+            const tiles = __j.all('[data-test="dashboard-row"], .create-tile').map((tile) => tile.getBoundingClientRect());
+            const labels = __j.all('[data-test="dashboard-row"]').map((tile) => ({
+              label: tile.querySelector(".tile-action")?.textContent ?? null,
+              link: tile.querySelector('[data-test="edit"], [data-test="view"]')?.dataset.test ?? null,
+              last: tile.lastElementChild?.classList.contains("tile-action") ?? false }));
+            const open = __j.find('[data-test="open-advanced"]').getBoundingClientRect();
+            const box = __j.find('[data-test="open-advanced"]').closest(".box").getBoundingClientRect();
+            return { tops: tiles.map((tile) => Math.round(tile.top)), labels, open: { height: open.height, width: open.width }, box: box.width }; })()`);
+          check(tiles.tops.length === 3 && new Set(tiles.tops).size === 1, `the tiles start at ${JSON.stringify(tiles.tops)}`);
+          for (const tile of tiles.labels) {
+            const want = tile.link === "view" ? "Look at it" : "Edit";
+            check(tile.label === want && tile.last, `a tile's label: ${JSON.stringify(tile)}`);
+          }
+          check(tiles.open.height >= 56 && tiles.box - tiles.open.width <= 2, `the Advanced row: ${JSON.stringify(tiles)}`);
+          const shot = await r.shot("136-start-screen-layout");
+          // While the start screen loads, a screen reader hears "Loading…".
+          const loading = await r.eval(`(() => { const panel = window.__apolloOpenPanel("");
+            return panel.shadowRoot.querySelector('[data-test="home-loading"] .sr-only')?.textContent ?? null; })()`);
+          check(loading === "Loading…", `while loading the text is ${JSON.stringify(loading)}`);
+          await r.waitFor(`${home} && __j.find('[data-test="dashboard-row"]')`, "the start screen after loading");
+          return shot;
+        } finally {
+          await r.viewport();
+        }
+      },
+      { desktopOnly: true },
+    ),
+    step("137", "left-out-link", async (r) => {
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="row-not-shown"]')`);
+      await r.click('[data-test="dashboard-row"][data-url-path="tab-1"] [data-test="row-not-shown"]');
+      await r.waitFor(`(${editorReady}) && __j.designer()._selected`, "the editor with a card selected");
+      const at = await r.eval(`({ view: __j.designer()._view, selected: __j.designer()._selected })`);
+      check(at.view === 0 && Array.isArray(at.selected) && at.selected[0] === 0, `the editor opened at ${JSON.stringify(at)}`);
+      // The card's panel says why: "Left out" and what to do.
+      await r.waitFor(`__j.text('[data-test="side"]').includes(${JSON.stringify(NOT_SHOWN)})`, "the card's panel with its reason");
+      return r.shot("137-left-out-link");
+    }),
+    step("138", "screen-says", async (r) => {
+      await r.open({ seed: "sample", night: "1", tablets: "three" }, `${home} && __j.find('[data-test="tablets-add"]')`);
+      await r.click('[data-test="tablets-add"]');
+      await r.waitFor(`__j.find('[data-test="screen-says"]').open`, "the fold-out to open");
+      const rows = await r.eval(`__j.all('[data-test="screen-row"]').map((row) => ({
+        screen: row.querySelector("dt").dataset.screen, headline: row.querySelector("dt").textContent }))`);
+      check(rows.length >= 8, `the fold-out has ${rows.length} rows`);
+      for (const { screen, headline } of rows) {
+        check(SCREENS.waiting[screen]?.headline === headline, `the row for ${screen} reads "${headline}"`);
+      }
+      check(new Set(rows.map((row) => row.screen)).size === rows.length, "a screen has two rows");
+      // On a phone its link to Devices & services is a 44 px touch target.
+      if (r.setup.device === "phone") {
+        const height = await r.eval(`__j.find(".screen-devices").getBoundingClientRect().height`);
+        check(height >= 44, `the link to Devices & services is ${height} px high`);
+      }
+      await checkTextContrast(r, ['[data-test="screen-row"] dt', '[data-test="screen-row"] dd']);
+      const shot = await r.shot("138-screen-says");
+      // An offline tablet's "What to do" shows its own help.
+      await r.click('[data-test="tablets-add"]');
+      await r.waitFor(`!__j.find('[data-test="screen-says"]').open`, "the fold-out to close");
+      await r.click(`${tabletRow(HALLWAY)} [data-test="tablet-what-to-do"] summary`);
+      await r.waitFor(`__j.find('${tabletRow(HALLWAY)} [data-test="tablet-what-to-do"]').open`, "What to do to open");
+      const help = await r.text(`${tabletRow(HALLWAY)} [data-test="tablet-offline-help"]`);
+      check(help === (await uiString(r, "tablets.offline_help")), `What to do reads "${help}"`);
+      check(!(await r.eval(`__j.find('[data-test="screen-says"]').open`)), "What to do opened the fold-out");
+      return shot;
+    }),
+  ];
+
+
+  // Free placement: a card dragged to a free place on the picture stays
+  // there; a drop on another card changes nothing; arrows move, Shift +
+  // arrows and the corner handle size; one Undo per gesture, and Undo of
+  // the first one gives back the flowing page.
+  const placing = [
+    step(
+      "210",
+      "drag-a-card",
+      async (r) => {
+        await openSample(r);
+        await r.waitSaved("the sample");
+        // The fourth graph of the first section: column 0, row 4, 12 x 3.
+        await r.waitFor(`__j.find('[data-test="hit"][data-source="0.0.3"]')`, "the fourth graph");
+        const start = await hitBox(r, "0.0.3");
+        const cell = { x: 32 * start.scale, y: 64 * start.scale };
+        const saves = async () => (await r.eval(SAVES)).length;
+        // Escape during a drag changes nothing.
+        let before = await saves();
+        await drag(r, start, { x: start.x + 24 * cell.x, y: start.y + 3 * cell.y }, {
+          beforeRelease: async () => {
+            check((await r.count('[data-test="place-ghost"]')) === 1, "no landing outline during the drag");
+            await r.key("Escape");
+            check((await r.count('[data-test="place-ghost"]')) === 0, "the outline stays after Escape");
+          },
+        });
+        await sleep(500);
+        check((await saves()) === before, "Escape during a drag saved a change");
+        check(!(await r.eval(`${SAVED_CARDS}.some((card) => card.apollo_tab)`)), "Escape during a drag placed a card");
+        // A drop on a free place: the whole page keeps its look and the card
+        // lands on the snapped cells.
+        await drag(r, start, { x: start.x + 24 * cell.x + 10, y: start.y + 3 * cell.y - 5 });
+        await r.waitFor(`${SAVED_CARDS}[4]?.apollo_tab?.col === 24`, "the card's place to be saved");
+        const cards = await r.eval(SAVED_CARDS);
+        check(stable(cards[4].apollo_tab) === stable({ page: 0, col: 24, row: 7 }), `the card was placed at ${stable(cards[4].apollo_tab)}`);
+        check(cards[0].type === "heading" && cards[0].heading === "Energy", "the section title is not a heading card");
+        check(stable(cards[0].apollo_tab) === stable({ page: 0, col: 0, row: 0 }), `the heading sits at ${stable(cards[0].apollo_tab)}`);
+        check(stable(cards[1].apollo_tab) === stable({ page: 0, col: 0, row: 1 }), `the first graph moved to ${stable(cards[1].apollo_tab)}`);
+        await r.waitSaved("the drag");
+        await r.waitFor(`(() => { const hit = __j.find('[data-test="hit"][data-source="0.0.4"]');
+          return hit && Math.abs(parseFloat(hit.style.left) - ${(100 + 24 * 32) * start.scale}) < 1.5
+            && Math.abs(parseFloat(hit.style.top) - ${(20 + 7 * 64) * start.scale}) < 1.5; })()`, "the card on the picture at its new place");
+        const moved = await r.shot("210-drag-a-card");
+        // A drop on another card: red outline, and nothing changes.
+        before = await saves();
+        const here = await hitBox(r, "0.0.4");
+        await drag(r, here, { x: here.x - 24 * cell.x, y: here.y - 6 * cell.y }, {
+          beforeRelease: async () => {
+            check((await r.count('[data-test="place-ghost"].bad')) === 1, "no red outline over another card");
+          },
+        });
+        await sleep(500);
+        check((await saves()) === before, "a drop on another card saved a change");
+        check((await r.eval(`${SAVED_CARDS}[4].apollo_tab.col`)) === 24, "a drop on another card moved it");
+        // One Undo gives back the flowing page: no card has a place.
+        await shortcut(r, "z");
+        await r.waitFor(`!${SAVED_CARDS}.some((card) => card.apollo_tab)`, "Undo to give back the flowing page");
+        await r.waitSaved("the undo");
+        return moved;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "211",
+      "place-keys-and-handle",
+      async (r) => {
+        await openSample(r);
+        await r.waitSaved("the sample");
+        await r.waitFor(`__j.find('[data-test="hit"][data-source="0.0.3"]')`, "the fourth graph");
+        // Arrow Down moves the card one row: the page is frozen and the card
+        // placed in one commit.
+        await r.click('[data-test="hit"][data-source="0.0.3"]');
+        await r.waitFor(`__j.designer()._previewOf === __j.designer()._draft`, "the picture of the draft");
+        await r.eval(`__j.find('[data-test="hit"][data-source="0.0.3"]').focus(); true`);
+        await arrow(r, "ArrowDown");
+        await r.waitFor(`${SAVED_CARDS}[4]?.apollo_tab?.row === 5`, "Arrow Down to move the card");
+        await r.waitSaved("Arrow Down");
+        // Shift + Arrow Down: one row taller.
+        await r.waitFor(`__j.active()?.dataset?.source === "0.0.4"`, "focus on the moved card");
+        await arrow(r, "ArrowDown", true);
+        await r.waitFor(`${SAVED_CARDS}[4].grid_options?.rows === 4`, "Shift + Arrow Down to make the card taller");
+        await r.waitSaved("Shift + Arrow Down");
+        // Into another card (the left-out graph's box): refused, nothing saved.
+        const saves = (await r.eval(SAVES)).length;
+        await arrow(r, "ArrowRight");
+        await sleep(500);
+        check((await r.eval(SAVES)).length === saves, "a move onto another card was saved");
+        // The corner handle: one step to the left is 3 columns narrower.
+        await r.waitFor(`__j.find('[data-test="resize-handle"]') && __j.designer()._previewOf === __j.designer()._draft`, "the size handle");
+        const handle = await r.eval(`(() => { const box = __j.find('[data-test="resize-handle"]').getBoundingClientRect();
+          return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) }; })()`);
+        const scale = (await hitBox(r, "0.0.4")).scale;
+        await drag(r, handle, { x: handle.x - Math.round(96 * scale) - 4, y: handle.y + 2 }, {
+          beforeRelease: async () => {
+            const label = await r.text('[data-test="place-ghost"]');
+            check(label === "9 by 4", `the size label reads "${label}"`);
+          },
+        });
+        await r.waitFor(`${SAVED_CARDS}[4].grid_options?.columns === 9`, "the handle to make the card narrower");
+        await r.waitSaved("the handle");
+        const shot = await r.shot("211-place-keys-and-handle");
+        // One Undo per gesture: the handle, then the run of keys (one step).
+        await shortcut(r, "z");
+        await r.waitFor(`${SAVED_CARDS}[4].grid_options?.columns === 12`, "Undo of the handle");
+        await shortcut(r, "z");
+        await r.waitFor(`!${SAVED_CARDS}.some((card) => card.apollo_tab)`, "Undo of the keys and the freeze");
+        await r.waitSaved("the undos");
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    // A TAB dashboard shown in Home Assistant's sidebar is hidden once when
+    // the start screen lists it; never again, and never when the owner
+    // keeps it there.
+    step("212", "sidebar-hidden-once", async (r) => {
+      const updates = `__apolloMockHass.calls.filter((call) => call.type === "lovelace/dashboards/update")`;
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await r.eval(`localStorage.removeItem("apollo_tab.sidebar_hidden"); localStorage.removeItem("apollo_tab.sidebar_keep"); true`);
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await r.waitFor(`${updates}.length === 1`, "the dashboard to be hidden from the sidebar");
+      await sleep(400);
+      const calls = await r.eval(updates);
+      check(calls.length === 1, `${calls.length} updates`);
+      check(calls[0].show_in_sidebar === false && calls[0].dashboard_id === "tab_1" && Object.keys(calls[0]).length === 3,
+        `the update was ${stable(calls[0])}`);
+      check((await r.eval(`__apolloMockHass.getDashboard("tab-1").show_in_sidebar`)) === false, "still in the sidebar");
+      check((await r.eval(`__apolloMockHass.getDashboard("tab-1").title`)) === "TAB-1", "the dashboard was renamed");
+      // Shown again (the stand-in starts with it shown): not hidden twice.
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await sleep(800);
+      check((await r.eval(updates)).length === 0, "the dashboard was hidden a second time");
+      // One the owner keeps in the sidebar is never hidden.
+      await r.eval(`localStorage.removeItem("apollo_tab.sidebar_hidden"); localStorage.setItem("apollo_tab.sidebar_keep", '["tab-1"]'); true`);
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await sleep(800);
+      check((await r.eval(updates)).length === 0, "a dashboard kept in the sidebar was hidden");
+      await r.eval(`localStorage.removeItem("apollo_tab.sidebar_keep"); true`);
+      return null;
+    }),
+  ];
+  // The picker for 30 or more cards (package 5): the rail of groups, tiles
+  // of one size, the search over devices, the second step and Suggested.
+  const openPicker = async (r, params = {}) => {
+    await openSample(r, params);
+    await leaveEditMode(r);
+    if (await r.count('[data-test="hit"][aria-pressed="true"]')) {
+      await r.clearSelection();
+    }
+    await r.click('[data-test="add-card"]');
+    await r.waitFor(`__j.find('dialog[data-test="picker"][open]') && __j.count('[data-test="tile"]') > 0`, "the picker");
+  };
+  const railRows = (r) =>
+    r.eval(`__j.all('[data-test="picker-rail-row"]').map((row) => ({ view: row.dataset.view,
+      count: Number(row.querySelector(".rail-count").textContent), checked: row.getAttribute("aria-checked") === "true",
+      tab: row.tabIndex }))`);
+  const tileIds = (r) => r.eval(`__j.all('[data-test="tile"]').map((tile) => tile.dataset.component)`);
+  const closePicker = async (r) => {
+    await r.key("Escape");
+    await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+  };
+  const picking5 = [
+    step("147", "picker-rail", async (r) => {
+      await openPicker(r);
+      const rows = await railRows(r);
+      const all = rows.find((row) => row.view === "all");
+      const groups = rows.filter((row) => GROUP_ORDER.includes(row.view));
+      check(all && all.checked, `"All cards" is not where the picker starts: ${JSON.stringify(rows)}`);
+      check(groups.reduce((sum, row) => sum + row.count, 0) === all.count, `the groups do not add up to All cards: ${JSON.stringify(rows)}`);
+      check(all.count === OFFERED_CARDS && (await tileIds(r)).length === OFFERED_CARDS, `All cards counts ${all.count}`);
+      const order = groups.map((row) => GROUP_ORDER.indexOf(row.view));
+      check(order.every((value, index) => index === 0 || value > order[index - 1]), `the rail's groups are in the order ${groups.map((row) => row.view)}`);
+      // One Tab stop.
+      check(rows.filter((row) => row.tab === 0).length === 1, `${rows.filter((row) => row.tab === 0).length} rail rows take Tab`);
+      // A group row shows only its group.
+      const climate = groups.find((row) => row.view === "climate");
+      await r.click('[data-test="picker-rail-row"][data-view="climate"]');
+      await r.waitFor(`__j.find('[data-test="picker-rail-row"][data-view="climate"]').getAttribute("aria-checked") === "true"`, "Heating and fans to be chosen");
+      const headings = await r.eval(`__j.all('[data-test="picker-group"]').map((heading) => heading.dataset.group)`);
+      check(stable(headings) === stable(["climate"]), `the climate row shows the groups ${headings}`);
+      check((await tileIds(r)).length === climate.count, `the climate row shows ${(await tileIds(r)).length} cards, not ${climate.count}`);
+      // The arrow keys move between the rows and choose the one reached.
+      await r.key("ArrowDown");
+      const next = groups[groups.indexOf(climate) + 1].view;
+      await r.waitFor(`__j.find('[data-test="picker-rail-row"][data-view="${next}"]')?.getAttribute("aria-checked") === "true"`, "the arrow key to choose the next group");
+      check((await focused(r)) === "picker-rail-row", `after the arrow key focus is on ${await focused(r)}`);
+      const shot = await r.shot("147-picker-rail");
+      await closePicker(r);
+      return shot;
+    }),
+    step("148", "picker-tiles", async (r) => {
+      await openPicker(r, { cards: "many" });
+      await r.waitFor(`__j.count('[data-test="tile"]') === 32`, "32 cards in the picker");
+      await sleep(400);
+      const look = await r.eval(`(() => { const body = __j.find(".picker-body"); const box = body.getBoundingClientRect();
+        const tiles = __j.all('[data-test="tile"]'); const first = __j.find(".tiles");
+        return { columns: getComputedStyle(first).gridTemplateColumns.split(" ").length,
+          heights: [...new Set(tiles.map((tile) => Math.round(tile.getBoundingClientRect().height)))],
+          rows: new Set(tiles.filter((tile) => { const rect = tile.getBoundingClientRect(); return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5; })
+            .map((tile) => Math.round(tile.getBoundingClientRect().top))).size,
+          ratio: body.scrollHeight / body.clientHeight }; })()`);
+      check(look.columns === 4, `${look.columns} columns of tiles`);
+      check(look.heights.length === 1, `the tiles are ${look.heights.join(", ")} px high`);
+      // Two whole rows of four on the first screen: 8 tiles where the
+      // groups are full.
+      check(look.rows >= 2, `${look.rows} whole rows of tiles on the first screen`);
+      // The plan's 3.7 screens assumed full rows; eight groups of 32 cards
+      // end in half rows, so the bound is 5.
+      check(look.ratio <= 5, `All cards is ${look.ratio.toFixed(2)} screens long`);
+      // The largest group is at most 1.5 screens.
+      const rows = await railRows(r);
+      const largest = rows.filter((row) => GROUP_ORDER.includes(row.view)).sort((a, b) => b.count - a.count)[0];
+      await r.click(`[data-test="picker-rail-row"][data-view="${largest.view}"]`);
+      await r.waitFor(`__j.count('[data-test="tile"]') === ${largest.count}`, "the largest group");
+      const ratio = await r.eval(`(() => { const body = __j.find(".picker-body"); return body.scrollHeight / body.clientHeight; })()`);
+      check(ratio <= 1.5, `a group of ${largest.count} is ${ratio.toFixed(2)} screens long`);
+      await r.click('[data-test="picker-rail-row"][data-view="all"]');
+      await sleep(400);
+      const shot = await r.shot("148-picker-tiles");
+      await closePicker(r);
+      return shot;
+    }, { desktopOnly: true }),
+    step("149", "picker-device-search", async (r) => {
+      await openPicker(r);
+      const before = (await r.config()).views[0].sections.flatMap((section) => section.cards || []).length;
+      await r.click('[data-test="picker-search"]');
+      await r.type("Living");
+      await r.waitFor(`__j.find('[data-test="picker-device"][data-entity="light.living_room"]')`, "the block of cards for the living room light");
+      const heading = await r.text('[data-test="picker-device"][data-entity="light.living_room"]');
+      check(heading === "Cards for Living room", `the block is called "${heading}"`);
+      const shot = await r.shot("149-picker-device-search");
+      await r.click('[data-test="tile"][data-entity="light.living_room"][data-component="apollo/light"]');
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close without the second step");
+      await r.waitFor(`${SAVED_CARDS}.length === ${before + 1}`, "the card to be saved");
+      const added = await r.eval(`${SAVED_CARDS}.find((card) => card.component === "apollo/light" && card.params?.entity === "light.living_room")`);
+      check(Boolean(added), "the light card was not added with the living room light");
+      await r.waitSaved("the card for the living room light");
+      return shot;
+    }),
+    step("150", "picker-second-step", async (r) => {
+      const desktop = r.setup.device === "desktop";
+      await openPicker(r);
+      const size = () => r.eval(`(() => { const rect = __j.find('dialog[data-test="picker"]').getBoundingClientRect(); return [Math.round(rect.width), Math.round(rect.height)]; })()`);
+      const first = await size();
+      await r.click('[data-test="picker-search"]');
+      await r.type("together");
+      await r.waitFor(`__j.find('[data-test="tile"][data-component="apollo/light-group"]')`, "Lights together in the search");
+      await r.click('[data-test="tile"][data-component="apollo/light-group"]');
+      await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the second step");
+      if (desktop) {
+        const second = await size();
+        check(stable(first) === stable(second), `the dialog is ${first} in the first step and ${second} in the second`);
+      }
+      check((await r.count('[data-test="tile-size"]')) === 3, `${await r.count('[data-test="tile-size"]')} sizes offered for Lights together`);
+      const shot = await r.shot("150-picker-second-step");
+      await r.key("Escape");
+      await r.waitFor(`__j.find('[data-test="picker-search"]')`, "Escape to go back to the cards");
+      check((await r.eval(`__j.find('[data-test="picker-search"]').value`)) === "together", "the search was not kept");
+      check((await tileIds(r)).includes("apollo/light-group"), "the search's cards are not shown again");
+      await closePicker(r);
+      return shot;
+    }),
+    step("151", "suggested", async (r) => {
+      await openPicker(r);
+      await r.click('[data-test="picker-rail-row"][data-view="suggested"]');
+      await r.waitFor(`__j.find('[data-test="picker-suggested"]')`, "Suggested");
+      const kinds = await r.eval(`(() => {
+        const library = __apolloFixtures.library.components;
+        const kindOf = (id) => { const card = library.find((entry) => entry.id === id);
+          const field = (card.params ? Object.values(card.params) : []).find((spec) => spec.kind === "entity");
+          return Array.isArray(field.domains) ? field.domains[0] : field.domain; };
+        const home = new Set(Object.keys(__apolloMockHass.states).filter((id) => !__apolloMockHass.entities[id]?.hidden).map((id) => id.split(".")[0]));
+        return { shown: __j.all('[data-test="tile"]').map((tile) => kindOf(tile.dataset.component)), home: [...home] }; })()`);
+      const ORDER = ["light", "climate", "media_player", "weather", "scene", "sensor", "cover", "lock"];
+      const expected = ORDER.filter((kind) => kinds.home.includes(kind));
+      check(kinds.shown.length <= 8, `${kinds.shown.length} suggested cards`);
+      check(stable(kinds.shown) === stable(expected), `Suggested shows ${kinds.shown}, not ${expected}`);
+      const shot = await r.shot("151-suggested");
+      await closePicker(r);
+      return shot;
+    }),
+  ];
   return [
     first,
     real,
@@ -5060,10 +8950,20 @@ function chains(realConfig) {
     tabletsNoEngine,
     tabletsAll,
     tabletsPreview,
+    starting,
     tabletsNew,
     tabletsPairAgain,
     tabletsNewGuards,
     tabletsTurnOn,
+    foundation,
+    workspace,
+    drawing,
+    cardForms,
+    inspecting,
+    picking5,
+    popups,
+    startScreen,
+    placing,
   ];
 }
 
@@ -5073,8 +8973,9 @@ async function runSetup(browser, setup, shotsDir, realConfig, steps = null) {
   const results = [];
   for (const chain of chains(realConfig)) {
     let failed = null;
-    for (const { n, name, run: body, desktopOnly } of chain) {
+    for (const { n, name, run: body, desktopOnly, phoneOnly } of chain) {
       if (desktopOnly && setup.device !== "desktop") continue;
+      if (phoneOnly && setup.device === "desktop") continue;
       if (steps && !steps.includes(n)) continue;
       const result = { n, name, ok: false };
       if (failed) {

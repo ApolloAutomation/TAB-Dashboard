@@ -1,4 +1,4 @@
-"""The TAB-1 tablet contract, version 1: chunks, state, pairing, signatures.
+"""The TAB-1 tablet contract, versions 1 and 2: chunks, state, pairing, signatures.
 
 ``contract/CONTRACT.md`` in the tests is the specification; the device
 layout itself is compiled in ``maker/device.py``. Everything here is pure
@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import secrets
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +25,14 @@ from .maker.device import (
 
 __all__ = ["CAPS_DEFAULTS", "ContractError"]
 
-PROTO = 1
-# The contract versions this integration speaks, lowest first.
-PROTO_RANGE = (1, 1)
+# The contract versions this integration speaks (the handshake range,
+# contract section 9). Version 2 is version 1 with device layout version 2.
+PROTO_LOW = 1
+PROTO = 2
+PROTO_RANGE = (PROTO_LOW, PROTO)
+# Field 1 of the input payload and of the knock. It is 1 in both versions
+# and is not PROTO: the engine writes "1|" whatever it speaks.
+INPUT_VERSION = 1
 
 MAX_SET_BYTES = 12000
 MAX_INPUT_PAYLOAD = 200
@@ -113,34 +119,56 @@ def chunk_layout(data: bytes, chunk_bytes: int = CHUNK_BYTES) -> list[str]:
 
 
 def encode_set(
-    layout: str, values: dict[int, Any], *, full: bool, limit: int = MAX_SET_BYTES
+    layout: str,
+    values: dict[int, Any],
+    *,
+    full: bool,
+    limit: int = MAX_SET_BYTES,
+    together: Iterable[tuple[int, int]] = (),
 ) -> list[str]:
     """Encode slot values as one or more tab_set payloads.
 
     values maps device slot numbers to wire values (already coerced). With
     full=True the first payload carries "f":1, which tells the tablet to set
-    every slot to "no value" before applying the pairs.
+    every slot to "no value" before applying the pairs. together lists slot
+    pairs that must share a payload when both are sent: a widget's value
+    and its rate (contract 8).
     """
-    pairs = [[slot, values[slot]] for slot in sorted(values)]
+    partner: dict[int, int] = {}
+    for first, second in together:
+        if first in values and second in values and first != second:
+            partner[first] = second
+            partner[second] = first
+    units: list[list[list]] = []
+    placed: set[int] = set()
+    for slot in sorted(values):
+        if slot in placed:
+            continue
+        group = sorted({slot, partner.get(slot, slot)})
+        placed.update(group)
+        units.append([[number, values[number]] for number in group])
     payloads: list[str] = []
     batch: list[list] = []
 
     def flush() -> None:
         """Write the gathered pairs as one payload."""
-        message: dict[str, Any] = {"h": layout, "v": batch.copy()}
+        message: dict[str, Any] = {
+            "h": layout,
+            "v": sorted(batch, key=lambda pair: pair[0]),
+        }
         if full and not payloads:
             message["f"] = 1
         payloads.append(canonical(message).decode("utf-8"))
         batch.clear()
 
     size = 64
-    for pair in pairs:
-        pair_size = len(canonical(pair)) + 1
-        if batch and size + pair_size > limit:
+    for unit in units:
+        unit_size = sum(len(canonical(pair)) + 1 for pair in unit)
+        if batch and size + unit_size > limit:
             flush()
             size = 64
-        batch.append(pair)
-        size += pair_size
+        batch.extend(unit)
+        size += unit_size
     if batch or not payloads:
         flush()
     return payloads
@@ -249,7 +277,7 @@ def input_payload(
     """Build the signed text of one input event."""
     return "|".join(
         [
-            str(PROTO),
+            str(INPUT_VERSION),
             mac,
             nonce,
             str(counter),
@@ -289,11 +317,14 @@ def verify_input(
     *,
     mac: str,
     secret: bytes | None,
-    nonce: str,
+    nonce: str | None,
     last_counter: int,
     layouts: tuple[str, ...] | list[str] | set[str],
 ) -> tuple[str, dict | None]:
     """Check one esphome.tab1_input event (contract 7.3).
+
+    nonce is the current session's, or None while HA holds no session: then
+    no input is the current session's, not even one with an empty nonce.
 
     layouts holds the hashes HA keeps bindings for on this tablet: the
     wanted one, and the one before it until the tablet confirms the switch.
@@ -312,7 +343,7 @@ def verify_input(
     if len(parts) != INPUT_FIELDS or len(payload) > MAX_INPUT_PAYLOAD:
         return "malformed", None
     version, p_mac, p_nonce, p_counter, p_layout, p_widget, event, conf, value = parts
-    if version != str(PROTO):
+    if version != str(INPUT_VERSION):
         return "version", None
     if p_mac != mac:
         return "wrong_tablet", None
@@ -320,7 +351,7 @@ def verify_input(
         return "not_paired", None
     if not hmac.compare_digest(sign(secret, payload), signature):
         return "bad_signature", None
-    if p_nonce != nonce:
+    if nonce is None or p_nonce != nonce:
         return "stale_session", None
     if not (p_counter.isdigit() and p_widget.isdigit()):
         return "malformed", None
@@ -356,7 +387,7 @@ def parse_knock(data: Any) -> tuple[str, int] | None:
     if not isinstance(payload, str) or not payload.isascii() or len(payload) > 64:
         return None
     parts = payload.split("|")
-    if len(parts) != 3 or parts[0] != str(PROTO) or not is_hex(parts[1], 12):
+    if len(parts) != 3 or parts[0] != str(INPUT_VERSION) or not is_hex(parts[1], 12):
         return None
     if not parts[2].isdigit() or len(parts[2]) > 10:
         return None
@@ -380,20 +411,39 @@ def knock_times(limit: float) -> list[int]:
             gap = min(gap * 2, KNOCK_MAX_S)
 
 
-def proto_verdict(response: dict) -> str:
-    """Return "" when HA speaks the tablet's range, else tablet_old or tablet_new."""
+def _proto_range(response: dict) -> tuple[int, int] | None:
+    """Return the tablet's [low, high] proto range, or None when unreadable."""
     proto = response.get("proto")
     try:
-        low, high = int(proto[0]), int(proto[1])  # type: ignore[index]
+        return int(proto[0]), int(proto[1])  # type: ignore[index]
     except TypeError, ValueError, IndexError, KeyError:
+        return None
+
+
+def layout_version(response: dict) -> int:
+    """Return the device layout version HA compiles for a tablet, 0 for none.
+
+    HA and the tablet can talk when the ranges [low, high] and PROTO_RANGE
+    share a version; HA speaks the highest one they share (contract 9).
+    Version 2 is the only one with device layout version 2.
+    """
+    tablet = _proto_range(response)
+    if tablet is None:
+        return 0
+    shared = min(tablet[1], PROTO_RANGE[1])
+    if shared < max(tablet[0], PROTO_RANGE[0]):
+        return 0
+    return 2 if shared >= 2 else 1
+
+
+def proto_verdict(response: dict) -> str:
+    """Return "" when the ranges overlap, else tablet_old or tablet_new."""
+    tablet = _proto_range(response)
+    if tablet is None:
         return "tablet_old"
-    if high < PROTO_RANGE[0]:
-        return "tablet_old"
-    if low > PROTO_RANGE[1]:
-        return "tablet_new"
-    if not low <= PROTO <= high:
-        return "tablet_old" if high < PROTO else "tablet_new"
-    return ""
+    if layout_version(response):
+        return ""
+    return "tablet_new" if tablet[0] > PROTO_RANGE[1] else "tablet_old"
 
 
 def hello_steps(
@@ -403,10 +453,12 @@ def hello_steps(
 
     steps is a list of: "pair", "hello" (greet again, a pairing ends the
     session), "send_layout", "send_state". status is "" or "unsupported".
+    dl is the device layout version HA compiles: the highest version both
+    ranges share, 0 when they share none.
     """
     reason = proto_verdict(response)
     if reason:
-        return {"steps": [], "status": "unsupported", "reason": reason}
+        return {"steps": [], "status": "unsupported", "reason": reason, "dl": 0}
     steps: list[str] = []
     if response.get("enc") == 1:
         if (
@@ -423,7 +475,12 @@ def hello_steps(
         if response.get("layout") != want_hash:
             steps.append("send_layout")
         steps.append("send_state")
-    return {"steps": steps, "status": "", "reason": reason}
+    return {
+        "steps": steps,
+        "status": "",
+        "reason": reason,
+        "dl": layout_version(response),
+    }
 
 
 def knock_step(*, session: bool, status: dict | None = None) -> str:
@@ -456,7 +513,11 @@ def status_verdict(response: dict, want_hash: str) -> str:
 
 
 def caps_of(response: dict) -> dict[str, Any]:
-    """Return the tablet's caps with the contract defaults for missing keys."""
+    """Return the tablet's caps with the contract defaults for missing keys.
+
+    max_pages and max_stored are kept too: a tablet without max_pages gets
+    at most 20 pages (contract 3).
+    """
     caps = response.get("caps")
     if not isinstance(caps, dict):
         caps = {}

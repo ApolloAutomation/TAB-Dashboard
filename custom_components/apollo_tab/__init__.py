@@ -18,6 +18,7 @@ from homeassistant.helpers.typing import ConfigType
 from . import websocket
 from .assignments import Assignments, async_show_dashboard
 from .const import DOMAIN
+from .facts import FactKeeper
 from .library import Library
 from .live import SlotHub
 from .manager import DashboardManager
@@ -44,6 +45,7 @@ class ApolloTabData:
 
     library: Library
     manager: DashboardManager
+    facts: FactKeeper
     module_url: str
     slot_hub: SlotHub
     assignments: Assignments
@@ -113,8 +115,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ApolloTabConfigEntry) ->
     library = Library(hass)
     await library.async_load()
     slot_hub = SlotHub(hass, library)
-    manager = DashboardManager(hass, library)
+    facts = FactKeeper(hass)
+    await facts.async_load()
     _contract, icons = await hass.async_add_executor_job(load_contract)
+    manager = DashboardManager(hass, library, facts, icons)
     assignments = Assignments(hass, manager)
     await assignments.async_load()
     sender = TabletSender(
@@ -130,6 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ApolloTabConfigEntry) ->
     entry.runtime_data = ApolloTabData(
         library=library,
         manager=manager,
+        facts=facts,
         module_url=module_url,
         slot_hub=slot_hub,
         assignments=assignments,
@@ -153,6 +158,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ApolloTabConfigEntry) -
         await data.assignments.async_flush()
         data.slot_hub.async_stop()
         data.manager.async_stop()
+        data.facts.async_stop()
+        await data.facts.async_flush()
         async_remove_frontend(hass, data.module_url)
     return unload_ok
 

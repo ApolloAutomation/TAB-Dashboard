@@ -1,8 +1,13 @@
-"""Compile a layout v1 into the device layout a TAB-1 tablet draws.
+"""Compile a layout into the device layout a TAB-1 tablet draws.
 
 This follows contract section 4 (``contract/CONTRACT.md``). The bytes this
 module makes are compared with the contract's golden fixtures, so a change
 here is a change to the contract. Pure Python, no Home Assistant imports.
+
+``compile_device_layout`` picks the writer by the layout's ``v``: version 1
+is today's path in ``device_v1.py``, left as it was; version 2 is written
+here. This file also holds what both share: the error class, the defaults,
+the wire encoding and the conversion of slot values.
 """
 
 from __future__ import annotations
@@ -12,16 +17,24 @@ import json
 import math
 from typing import Any
 
-DL_VERSION = 1
+# The newest device layout version (contract.json dl_version). The version 1
+# writer has its own constant.
+DL_VERSION = 2
 
 MAX_LAYOUT_BYTES = 262144
 MAX_TEXT_BYTES = 255
 MAX_LIST = 120
 MAX_NUMBER = 1_000_000_000
+# Version 1, and normal pages in version 2.
 MAX_PAGES = 20
+MAX_PAGES_V2 = 64
 MAX_NAV = 8
 MAX_SLOTS = 1024
 MAX_WIDGETS = 2048
+MAX_OPTIONS = 16
+MAX_OPTION_TEXT_BYTES = 40
+MAX_TRACK = 8
+MAX_STORED_BYTES = 131072
 CHUNK_BYTES = 16000
 
 # What a tablet has when tab_hello leaves a caps key out. Key names are the
@@ -30,6 +43,33 @@ CAPS_DEFAULTS: dict[str, Any] = {
     "icons": 1,
     "screen": [1280, 800],
     "max_layout": MAX_LAYOUT_BYTES,
+    "max_chunk": CHUNK_BYTES,
+    "max_slots": MAX_SLOTS,
+    "max_widgets": MAX_WIDGETS,
+    "max_pages": MAX_PAGES,
+    "max_stored": MAX_STORED_BYTES,
+}
+
+# What a tablet with engine 0.2.0 answers (contract.json engine_caps). The
+# converter fits a layout v2 to these when it is not told a tablet's caps.
+ENGINE_CAPS_V2: dict[str, Any] = {
+    "w": [
+        "heading",
+        "card",
+        "label",
+        "button",
+        "switch",
+        "slider",
+        "thermostat",
+        "chart",
+        "image",
+        "choice",
+    ],
+    "icons": 2,
+    "screen": [1280, 800],
+    "max_pages": 64,
+    "max_layout": MAX_LAYOUT_BYTES,
+    "max_stored": MAX_STORED_BYTES,
     "max_chunk": CHUNK_BYTES,
     "max_slots": MAX_SLOTS,
     "max_widgets": MAX_WIDGETS,
@@ -83,6 +123,49 @@ STYLE_COLOURS = (
     "ontx",
 )
 RADII = ("r", "r2", "bw")
+
+# What version 2 adds (contract.json "v2"). The version 2 writer writes
+# exactly these keys on top of the keys of version 1.
+WIDGET_KINDS_V2 = ("choice",)
+STYLE_COLOURS_V2 = ("card_pr", "card2_pr", "accf", "accf_pr", "onbg_pr", "ion")
+CARD_KEYS_V2 = ("tap", "cf", "confirm", "hold", "ic", "tint", "lit", "un")
+PAGE_KEYS_V2 = ("sub", "ttl", "theme")
+WIDGET_KEYS_V2: dict[str, tuple[str, ...]] = {
+    "heading": ("c",),
+    "label": ("vis", "hold", "px", "al", "c", "clk", "value"),
+    "button": ("vis", "hold", "value", "ic", "c", "shape", "isz"),
+    "switch": ("vis", "hold", "c"),
+    "slider": ("vis", "look", "dir", "track", "icon", "c", "nv", "rate"),
+    "thermostat": ("vis", "c", "mark", "bs"),
+    "chart": ("vis", "hold", "c", "mark", "st"),
+    "image": ("vis", "hold", "look", "c"),
+    "choice": ("vis", "texts", "icons", "cols", "value", "rows", "look"),
+}
+# Keys that only change the look: the tablet holds a value out of range to
+# the nearest allowed one (contract 4.3).
+LOOK_KEYS = (
+    "px",
+    "al",
+    "shape",
+    "isz",
+    "look",
+    "dir",
+    "rows",
+    "st",
+    "bs",
+    "lit",
+    "ttl",
+)
+LIT = ("fill", "icon", "outline", "none")
+ALIGN = ("left", "centre", "right")
+SHAPES = ("box", "round", "bare")
+SLIDER_LOOKS = ("knob", "bar")
+DIRS = ("right", "up", "down")
+IMAGE_LOOKS = ("box", "badge", "bare")
+CHOICE_LOOKS = ("cells", "dots")
+
+# How a number slot is converted when it holds a colour (slot plan "coerce").
+COERCE_COLOUR = "colour"
 
 
 class ContractError(Exception):
@@ -200,13 +283,63 @@ def to_icon(value: Any, icons: dict, level: int) -> int:
     return 0
 
 
-def coerce(kind: str, value: Any, icons: dict, level: int) -> Any:
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def to_colour(value: Any, roles: dict[str, int] | None = None) -> int | None:
+    """Return a colour as 0xRRGGBB, or None (contract 4.4, colour conversion).
+
+    Taken: [r, g, b] with each part 0 to 255 after rounding halves up;
+    "#RRGGBB" in either case; a whole number 0 to 16777215 (also written
+    16711680.0); a role name of roles (name to 0xRRGGBB). Anything else,
+    a bool or a fraction among it, is None.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        if roles and value in roles:
+            return roles[value]
+        if len(value) == 7 and value[0] == "#" and set(value[1:]) <= _HEX_DIGITS:
+            return int(value[1:], 16)
+        return None
+    if isinstance(value, int | float):
+        if not math.isfinite(value) or value != math.floor(value):
+            return None
+        whole = int(value)
+        return whole if 0 <= whole <= 0xFFFFFF else None
+    if isinstance(value, list | tuple) and len(value) == 3:
+        out = 0
+        for part in value:
+            if isinstance(part, bool) or not isinstance(part, int | float):
+                return None
+            if not math.isfinite(part):
+                return None
+            channel = math.floor(part + 0.5)
+            if not 0 <= channel <= 255:
+                return None
+            out = out << 8 | channel
+        return out
+    return None
+
+
+def coerce(
+    kind: str,
+    value: Any,
+    icons: dict,
+    level: int,
+    how: str | None = None,
+    roles: dict[str, int] | None = None,
+) -> Any:
     """Turn an evaluated slot value into the wire value of a typed slot.
 
     None means "no value": the tablet draws the widget as unavailable.
+    how "colour" (a number slot that holds a colour) follows to_colour, with
+    the role names of roles.
     """
     if value is None:
         return None
+    if how == COERCE_COLOUR:
+        return to_colour(value, roles)
     if kind == "b":
         return 1 if is_on(value) else 0
     if kind == "n":
@@ -224,33 +357,6 @@ def icon_level(icons: dict, caps: dict | None) -> int:
     """Return the icon level HA uses for a tablet with these caps."""
     caps = {**CAPS_DEFAULTS, **(caps or {})}
     return min(int(caps["icons"]), int(icons["version"]))
-
-
-# ---------------------------------------------------- device layout (DL v1)
-
-
-class _Slots:
-    """Give each (source slot, type) pair one device slot number."""
-
-    def __init__(self) -> None:
-        """Start with no slots."""
-        self.plan: list[dict] = []
-        self._index: dict[tuple[int, str], int] = {}
-
-    def ref(self, source: int, kind: str) -> dict:
-        """Return the reference to the device slot of this source and type."""
-        key = (source, kind)
-        if key not in self._index:
-            self._index[key] = len(self.plan) + 1
-            self.plan.append({"d": self._index[key], "src": source, "type": kind})
-        return {"s": self._index[key]}
-
-
-def _bound(value: Any, kind: str, slots: _Slots, icons: dict, level: int) -> Any:
-    """Compile one bound field: a slot reference or a coerced constant."""
-    if isinstance(value, dict) and "s" in value:
-        return slots.ref(value["s"], kind)
-    return coerce(kind, value, icons, level)
 
 
 def _icon(name: Any, icons: dict, level: int) -> int:
@@ -272,7 +378,173 @@ def _tap(tap: Any, page_index: dict[str, int]) -> dict | None:
     return None
 
 
-def _widget(
+# ---------------------------------------------------------- either version
+
+
+def compile_device_layout(
+    layout: dict,
+    icons: dict,
+    caps: dict | None = None,
+    confirm: dict[int, str] | None = None,
+) -> dict:
+    """Compile a layout into the device layout of the version it names.
+
+    A layout without "v", or with "v": 1, goes through today's writer in
+    device_v1.py; "v": 2 through the version 2 writer. Any other version
+    raises ContractError("version"). Both return {"bytes", "hash", "size",
+    "slots", "dropped", "counts"}; see compile_device_layout_v2.
+    """
+    version = layout.get("v", 1)
+    if version == 2 and not isinstance(version, bool):
+        return compile_device_layout_v2(layout, icons, caps, confirm)
+    if version == 1 and not isinstance(version, bool):
+        # Imported here: device_v1 imports its helpers from this module.
+        from . import device_v1
+
+        return device_v1.compile_device_layout(layout, icons, caps, confirm)
+    raise ContractError("version", f"layout version {version!r}")
+
+
+# ---------------------------------------------------- device layout (DL v2)
+#
+# Layout v2 is layout v1's shape with "v": 2 and the keys of contract 4.3
+# under their device names and numbers. As in version 1, four things differ
+# from the device layout: colours are "#RRGGBB" or {"s": n} (a colour slot
+# may carry "roles": {name: "#RRGGBB"}), icons are "mdi:" names, slots are
+# source slots, and tap, change and hold hold {"policy": name} or
+# {"local": "go_to_page" | "back", "page": id}.
+
+
+class _Slots:
+    """Give each slot key one device slot number.
+
+    The key is (source slot, type, coerce, roles). So one source used as a
+    number and as a colour, or as a colour by two cards whose role colours
+    differ, gets two device slots (contract 4.4).
+    """
+
+    def __init__(self) -> None:
+        """Start with no slots."""
+        self.plan: list[dict] = []
+        self._index: dict[tuple, int] = {}
+
+    def ref(
+        self,
+        source: int,
+        kind: str,
+        how: str | None = None,
+        roles: dict[str, int] | None = None,
+    ) -> dict:
+        """Return the reference to the device slot of this slot key."""
+        key = (source, kind, how, tuple(sorted(roles.items())) if roles else None)
+        if key not in self._index:
+            self._index[key] = len(self.plan) + 1
+            entry: dict[str, Any] = {"d": self._index[key], "src": source, "type": kind}
+            if how:
+                entry["coerce"] = how
+            if roles:
+                entry["roles"] = dict(sorted(roles.items()))
+            self.plan.append(entry)
+        return {"s": self._index[key]}
+
+
+def _bound(value: Any, kind: str, slots: _Slots, icons: dict, level: int) -> Any:
+    """Compile one bound field: a slot reference or a coerced constant."""
+    if isinstance(value, dict) and "s" in value:
+        return slots.ref(value["s"], kind)
+    return coerce(kind, value, icons, level)
+
+
+def _colour_const(value: Any) -> int:
+    """Compile a constant colour; one the contract does not take is an error."""
+    out = to_colour(value)
+    if out is None:
+        raise ContractError("bad_colour", repr(value))
+    return out
+
+
+def _colour(value: Any, slots: _Slots) -> Any:
+    """Compile a colour field: a colour slot reference or a constant."""
+    if isinstance(value, dict) and "s" in value:
+        roles = value.get("roles")
+        names = {k: _colour_const(v) for k, v in roles.items()} if roles else None
+        return slots.ref(value["s"], "n", COERCE_COLOUR, names)
+    return _colour_const(value)
+
+
+def _tap2(tap: Any, page_index: dict[str, int]) -> dict | None:
+    """Compile a tap or change of version 2: version 1's forms and back."""
+    if isinstance(tap, dict) and tap.get("local") == "back":
+        return {"back": 1}
+    return _tap(tap, page_index)
+
+
+def _hold(hold: Any, page_index: dict[str, int]) -> dict | None:
+    """Compile a hold: only a page to go to."""
+    if (
+        isinstance(hold, dict)
+        and hold.get("local") == "go_to_page"
+        and hold.get("page") in page_index
+    ):
+        return {"go": page_index[hold["page"]]}
+    return None
+
+
+def _radius_const(value: Any) -> int:
+    """Compile a radius or border width; anything but a whole number is an error."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContractError("bad_value", repr(value))
+    return value
+
+
+def _theme2(theme_in: dict, keys_only: bool) -> dict[str, Any]:
+    """Compile a theme entry. keys_only: only the keys it has (a page theme).
+
+    A colour, radius or width the contract does not take is an error.
+    """
+    theme: dict[str, Any] = {}
+    if not keys_only or "dark" in theme_in:
+        theme["dark"] = 1 if theme_in.get("dark") else 0
+    for key in THEME_COLOURS:
+        if not keys_only or key in theme_in:
+            theme[key] = _colour_const(theme_in.get(key, "#000000"))
+    for key in RADII:
+        if not keys_only or key in theme_in:
+            theme[key] = _radius_const(theme_in.get(key, 0))
+    return theme
+
+
+def _style2(style: dict) -> dict[str, Any]:
+    """Compile one card's style overrides, with the colours of version 2."""
+    compiled: dict[str, Any] = {}
+    for key in STYLE_COLOURS + STYLE_COLOURS_V2:
+        if key in style:
+            compiled[key] = _colour_const(style[key])
+    for key in RADII:
+        if key in style:
+            compiled[key] = _radius_const(style[key])
+    if style.get("gd") in ("h", "v"):
+        compiled["gd"] = 1 if style["gd"] == "h" else 0
+    return compiled
+
+
+def _ask(
+    out: dict, question: str | None, slots: _Slots, icons: dict, level: int
+) -> None:
+    """Set the question and cf of an item that HA confirms (contract 4.3).
+
+    An item with a confirm text, or with policy 3, asks first. HA's own
+    question (a garage, gate or door cover) goes onto an item that sends and
+    has no text of its own.
+    """
+    action = out.get("tap") or out.get("change") or {}
+    if "confirm" not in out and question and "p" in action:
+        out["confirm"] = coerce("t", question, icons, level)
+    if "confirm" in out or action.get("p") == POLICIES.index("confirm"):
+        out["cf"] = 1
+
+
+def _widget2(
     widget: dict,
     slots: _Slots,
     icons: dict,
@@ -280,28 +552,39 @@ def _widget(
     page_index: dict[str, int],
     question: str | None = None,
 ) -> dict:
-    """Compile one widget of a card.
+    """Compile one widget of a card, version 2.
 
-    question: what the tablet asks before it sends, when HA wants a yes
-    first (a garage, gate or door cover) and the card has no confirm text.
+    The keys of version 1 come first, as the version 1 writer makes them,
+    then the keys of contract.json v2.widget_keys. Slot numbers follow the
+    order in which fields are met, so this order is part of the bytes.
     """
     kind = widget["t"]
     out: dict[str, Any] = {"id": widget["id"], "t": kind, "r": widget["r"]}
+
+    def bound(key: str, kind_char: str) -> None:
+        """Compile a bound field when the widget has it."""
+        if key in widget:
+            out[key] = _bound(widget[key], kind_char, slots, icons, level)
+
+    def whole(key: str) -> None:
+        """Write a whole-number key when the widget has it."""
+        if key in widget:
+            out[key] = int(widget[key])
+
+    # The keys of version 1.
     if kind == "label":
         out["text"] = _bound(widget.get("text", ""), "t", slots, icons, level)
         size = widget.get("size", "m")
         out["size"] = LABEL_SIZES.index(size) if size in LABEL_SIZES else 1
     elif kind == "button":
-        if "text" in widget:
-            out["text"] = _bound(widget["text"], "t", slots, icons, level)
+        bound("text", "t")
         if widget.get("icon"):
             out["icon"] = _icon(widget["icon"], icons, level)
     elif kind == "switch":
         out["value"] = _bound(widget.get("value"), "b", slots, icons, level)
     elif kind in ("slider", "thermostat"):
         for key, default in (("value", None), ("min", 0), ("max", 100), ("step", 1)):
-            raw = widget.get(key)
-            compiled = _bound(raw, "n", slots, icons, level)
+            compiled = _bound(widget.get(key), "n", slots, icons, level)
             if compiled is None and default is not None:
                 compiled = default
             out[key] = compiled
@@ -311,78 +594,155 @@ def _widget(
         out["kind"] = CHART_KINDS.index(chart_kind) if chart_kind in CHART_KINDS else 0
     elif kind == "image":
         out["value"] = _bound(widget.get("value"), "i", slots, icons, level)
+    if kind != "choice":
+        bound("confirm", "t")
+
+    # The keys of version 2.
+    bound("vis", "b")
+    if "c" in widget:
+        out["c"] = _colour(widget["c"], slots)
+    if kind == "label":
+        for key in ("px", "al", "clk"):
+            whole(key)
+        if "clk" in widget:
+            bound("value", "n")
+    elif kind == "button":
+        bound("value", "b")
+        bound("ic", "i")
+        whole("shape")
+        whole("isz")
+    elif kind == "slider":
+        for key in ("look", "dir", "nv"):
+            whole(key)
+        if "track" in widget:
+            out["track"] = [_colour_const(c) for c in widget["track"]][:MAX_TRACK]
+        if widget.get("icon"):
+            out["icon"] = _icon(widget["icon"], icons, level)
+        bound("rate", "n")
+    elif kind == "thermostat":
+        bound("mark", "n")
+        whole("bs")
+    elif kind == "chart":
+        bound("mark", "n")
+        whole("st")
+    elif kind == "image":
+        whole("look")
+    elif kind == "choice":
+        if "texts" in widget:
+            out["texts"] = [
+                clip_text(text, MAX_OPTION_TEXT_BYTES)
+                for text in widget["texts"][:MAX_OPTIONS]
+            ]
+        if "icons" in widget:
+            out["icons"] = [
+                _icon(name, icons, level) if name else 0
+                for name in widget["icons"][:MAX_OPTIONS]
+            ]
+        if "cols" in widget:
+            out["cols"] = [_colour_const(c) for c in widget["cols"][:MAX_OPTIONS]]
+        bound("value", "n")
+        whole("rows")
+        whole("look")
     for key in ("tap", "change"):
-        compiled = _tap(widget.get(key), page_index)
+        compiled = _tap2(widget.get(key), page_index)
         if compiled is not None:
             out[key] = compiled
-    action = out.get("tap") or out.get("change") or {}
-    if "confirm" in widget:
-        out["confirm"] = _bound(widget["confirm"], "t", slots, icons, level)
-    elif question and "p" in action:
-        out["confirm"] = coerce("t", question, icons, level)
-    if "confirm" in out or action.get("p") == POLICIES.index("confirm"):
-        out["cf"] = 1
+    if kind not in ("slider", "thermostat", "choice"):
+        hold = _hold(widget.get("hold"), page_index)
+        if hold is not None:
+            out["hold"] = hold
+    if kind == "choice":
+        bound("confirm", "t")
+    _ask(out, question, slots, icons, level)
     return out
 
 
-def _theme(theme_in: dict) -> dict[str, Any]:
-    """Compile the layout's theme into integers."""
-    theme: dict[str, Any] = {"dark": 1 if theme_in.get("dark") else 0}
-    for key in THEME_COLOURS:
-        theme[key] = colour(theme_in.get(key, "#000000"))
-    for key in RADII:
-        theme[key] = int(theme_in.get(key, 0))
-    return theme
+def _card2(
+    source: dict,
+    slots: _Slots,
+    icons: dict,
+    level: int,
+    page_index: dict[str, int],
+    question: str | None,
+) -> dict:
+    """Compile a card's own keys, version 2 (its widgets come after)."""
+    card: dict[str, Any] = {"id": source["id"], "t": "card", "r": source["r"]}
+    header = source.get("header")
+    if isinstance(header, dict):
+        card["hr"] = header["r"]
+        if header.get("icon"):
+            card["icon"] = _icon(header["icon"], icons, level)
+        if "title" in header:
+            card["title"] = _bound(header["title"], "t", slots, icons, level)
+    if source.get("on") is not None:
+        card["on"] = _bound(source["on"], "b", slots, icons, level)
+    tap = _tap2(source.get("tap"), page_index)
+    if tap is not None:
+        card["tap"] = tap
+    hold = _hold(source.get("hold"), page_index)
+    if hold is not None:
+        card["hold"] = hold
+    if "confirm" in source:
+        card["confirm"] = _bound(source["confirm"], "t", slots, icons, level)
+    if "ic" in source:
+        card["ic"] = _bound(source["ic"], "i", slots, icons, level)
+    if "tint" in source:
+        card["tint"] = _colour(source["tint"], slots)
+    if "lit" in source:
+        card["lit"] = int(source["lit"])
+    if "un" in source:
+        card["un"] = _bound(source["un"], "b", slots, icons, level)
+    _ask(card, question, slots, icons, level)
+    style = source.get("style")
+    if isinstance(style, dict):
+        card["style"] = _style2(style)
+    return card
 
 
-def _style(style: dict) -> dict[str, Any]:
-    """Compile one card's style overrides."""
-    compiled: dict[str, Any] = {}
-    for key in STYLE_COLOURS:
-        if key in style:
-            compiled[key] = colour(style[key])
-    for key in RADII:
-        if key in style:
-            compiled[key] = int(style[key])
-    if style.get("gd") in ("h", "v"):
-        compiled["gd"] = 1 if style["gd"] == "h" else 0
-    return compiled
-
-
-def compile_device_layout(
+def compile_device_layout_v2(
     layout: dict,
     icons: dict,
     caps: dict | None = None,
     confirm: dict[int, str] | None = None,
 ) -> dict:
-    """Compile a layout v1 (from convert.py) into the device layout.
+    """Compile a layout v2 into a device layout of version 2.
 
-    confirm maps widget ids to a question the tablet asks before it sends
-    (contract 4.3 `confirm`, `cf`), for widgets whose action HA confirms.
+    confirm maps widget and card ids to a question the tablet asks before it
+    sends, for items whose action HA confirms and that have no text of
+    their own.
 
-    Returns {"bytes", "hash", "size", "slots", "dropped", "counts"}. slots is
-    the plan that maps each device slot to its source slot number and type.
-    dropped lists the widget ids left out because the tablet cannot draw
-    their kind. counts holds pages, slots and widgets (every object with an
-    id). Raises ContractError("too_big") when the bytes exceed the tablet's
-    limit and ContractError("limits") when pages, slots or widgets do.
+    Returns {"bytes", "hash", "size", "slots", "dropped", "counts"}. slots
+    is the plan: each device slot with its source slot and type, and for a
+    colour "coerce": "colour" and the role colours it knows. dropped lists
+    the widget ids left out because the tablet cannot draw their kind.
+    counts holds pages, normal pages, slots and widgets. Raises
+    ContractError("limits") for more pages than min(caps.max_pages, 64),
+    more than 20 normal pages, too many slots or widgets, and ("too_big")
+    for more bytes than the tablet takes. A page is a detail page when its
+    "sub" is set and it is not page 0; HA writes no nav entry for one.
     """
     caps = {**CAPS_DEFAULTS, **(caps or {})}
-    # A missing caps.w is the default list; an empty list is a tablet that
-    # draws no widget kind inside a card. Headings and cards always stay.
     listed = caps.get("w")
     kinds = set(listed) if isinstance(listed, list) else set(WIDGET_KINDS)
+    known = set(WIDGET_KINDS) | set(WIDGET_KINDS_V2)
     level = min(int(caps["icons"]), int(icons["version"]))
     limit = min(int(caps["max_layout"]), MAX_LAYOUT_BYTES)
     max_slots = min(int(caps["max_slots"]), MAX_SLOTS)
     max_widgets = min(int(caps["max_widgets"]), MAX_WIDGETS)
+    max_pages = min(int(caps["max_pages"]), MAX_PAGES_V2)
+    questions = confirm or {}
     slots = _Slots()
     dropped: list[int] = []
     page_index = {page["id"]: index for index, page in enumerate(layout["pages"])}
+    detail = {
+        index
+        for index, page in enumerate(layout["pages"])
+        if index > 0 and page.get("sub")
+    }
 
     nav = []
     for entry in layout.get("nav", []):
-        if entry["page"] not in page_index:
+        if entry["page"] not in page_index or page_index[entry["page"]] in detail:
             continue
         item: dict[str, Any] = {
             "p": page_index[entry["page"]],
@@ -406,38 +766,46 @@ def compile_device_layout(
                 }
                 if source.get("icon"):
                     heading["icon"] = _icon(source["icon"], icons, level)
+                if "c" in source:
+                    heading["c"] = _colour(source["c"], slots)
                 items.append(heading)
                 continue
-            card: dict[str, Any] = {"id": source["id"], "t": "card", "r": source["r"]}
-            header = source.get("header")
-            if isinstance(header, dict):
-                card["hr"] = header["r"]
-                if header.get("icon"):
-                    card["icon"] = _icon(header["icon"], icons, level)
-                if "title" in header:
-                    card["title"] = _bound(header["title"], "t", slots, icons, level)
-            if source.get("on") is not None:
-                card["on"] = _bound(source["on"], "b", slots, icons, level)
-            style = source.get("style")
-            if isinstance(style, dict):
-                card["style"] = _style(style)
+            card = _card2(
+                source, slots, icons, level, page_index, questions.get(source["id"])
+            )
             widgets = []
             for widget in source.get("w", []):
-                if widget.get("t") not in kinds or widget.get("t") not in WIDGET_KINDS:
+                if widget.get("t") not in kinds or widget.get("t") not in known:
                     dropped.append(widget["id"])
                     continue
-                question = (confirm or {}).get(widget["id"])
                 widgets.append(
-                    _widget(widget, slots, icons, level, page_index, question)
+                    _widget2(
+                        widget,
+                        slots,
+                        icons,
+                        level,
+                        page_index,
+                        questions.get(widget["id"]),
+                    )
                 )
             card["w"] = widgets
             items.append(card)
-        pages.append({"title": clip_text(page.get("title", ""), 40), "w": items})
+        out_page: dict[str, Any] = {
+            "title": clip_text(page.get("title", ""), 40),
+            "w": items,
+        }
+        if page.get("sub"):
+            out_page["sub"] = 1
+        if "ttl" in page:
+            out_page["ttl"] = int(page["ttl"])
+        if isinstance(page.get("theme"), dict):
+            out_page["theme"] = _theme2(page["theme"], True)
+        pages.append(out_page)
 
     device = {
         "v": DL_VERSION,
         "screen": layout.get("screen", [1280, 800]),
-        "theme": _theme(layout.get("theme", {})),
+        "theme": _theme2(layout.get("theme", {}), False),
         "nav": nav,
         "pages": pages,
         "slots": "".join(entry["type"] for entry in slots.plan),
@@ -445,9 +813,17 @@ def compile_device_layout(
     widget_count = sum(len(page["w"]) for page in pages) + sum(
         len(item.get("w", [])) for page in pages for item in page["w"]
     )
-    counts = {"pages": len(pages), "slots": len(slots.plan), "widgets": widget_count}
-    if len(pages) > MAX_PAGES:
-        raise ContractError("limits", f"{len(pages)} pages, limit {MAX_PAGES}")
+    normal = len(pages) - len(detail)
+    counts = {
+        "pages": len(pages),
+        "normal_pages": normal,
+        "slots": len(slots.plan),
+        "widgets": widget_count,
+    }
+    if len(pages) > max_pages:
+        raise ContractError("limits", f"{len(pages)} pages, limit {max_pages}")
+    if normal > MAX_PAGES:
+        raise ContractError("limits", f"{normal} normal pages, limit {MAX_PAGES}")
     if len(slots.plan) > max_slots:
         raise ContractError("limits", f"{len(slots.plan)} slots, limit {max_slots}")
     if widget_count > max_widgets:

@@ -9,14 +9,41 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { format } from "../../custom_components/apollo_tab/frontend/logic.js";
+import {
+  barMarks,
+  blendOf,
+  cardColours,
+  cardColourTokens,
+  choiceAt,
+  choiceCells,
+  clockText,
+  contrastOf,
+  fillWords,
+  format,
+  imageLook,
+  LINEAR,
+  labelSize,
+  legible,
+  linePoints,
+  lum,
+  mix,
+  readable,
+  sliderAmount,
+  sliderGeometry,
+  sliderLength,
+  sliderValue,
+  stepRects,
+  toColour,
+  trackPieces,
+} from "../../custom_components/apollo_tab/frontend/logic.js";
 import * as tablets from "../../custom_components/apollo_tab/frontend/tablets.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const SHAPES = JSON.parse(fs.readFileSync(path.join(root, "tests/harness/tablet-shapes.json"), "utf8"));
 const FIXTURES = JSON.parse(fs.readFileSync(path.join(root, "tests/harness/fixtures.json"), "utf8"));
-const STRINGS = JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8"));
+// As the panel loads them: with the word for turning a tablet on put in.
+const STRINGS = fillWords(JSON.parse(fs.readFileSync(path.join(root, "custom_components/apollo_tab/library/strings.json"), "utf8")));
 // The tablet's own words, from the shared contract (CONTRACT.md section 11).
 const SCREENS = JSON.parse(fs.readFileSync(path.join(root, "tests/contract/screens.json"), "utf8"));
 
@@ -142,6 +169,11 @@ function checkTablet(where, tablet) {
   assert.ok(shortNames(tablet.name).has(tablet.short_name), `${where}: short name "${tablet.short_name}"`);
   // The name Repairs uses comes with what it waits for, and only then.
   assert.equal(tablet.reauth === null, tablet.reauth_name === null, `${where}: reauth ${tablet.reauth}, ${tablet.reauth_name}`);
+  // What the layout made for it leaves out or keeps; nothing without a dashboard.
+  assert.ok(tablet.simpler >= 0 && tablet.dropped >= 0, `${where}: simpler ${tablet.simpler}, dropped ${tablet.dropped}`);
+  if (tablet.dashboard === null) {
+    assert.deepEqual([tablet.simpler, tablet.dropped, tablet.not_kept], [0, 0, false], where);
+  }
 }
 
 function checkTabletList(where, list) {
@@ -237,6 +269,13 @@ test("the shapes file's example passes its own rules", () => {
   assert.throws(() => checkTablet("reauth without a name", { ...SHAPES.example, reauth: "erased" }));
   assert.throws(() => checkTablet("a name without reauth", { ...SHAPES.example, reauth_name: "Kitchen" }));
   assert.throws(() => checkTablet("a padded name", { ...SHAPES.example, reauth: "key", reauth_name: " Kitchen" }));
+  checkTablet("older software", { ...SHAPES.example, simpler: 3, dropped: 2, not_kept: true });
+  assert.throws(() => checkTablet("simpler as text", { ...SHAPES.example, simpler: "3" }));
+  assert.throws(() => checkTablet("a fraction", { ...SHAPES.example, dropped: 1.5 }));
+  assert.throws(() => checkTablet("below 0", { ...SHAPES.example, simpler: -1 }));
+  assert.throws(() => checkTablet("not_kept as a number", { ...SHAPES.example, not_kept: 1 }));
+  assert.throws(() => checkTablet("simpler without a dashboard", { ...fresh, simpler: 1 }));
+  assert.throws(() => checkTablet("not_kept without a dashboard", { ...fresh, not_kept: true }));
 });
 
 test("the panel knows every status and reason of the shapes file, with words", () => {
@@ -376,8 +415,8 @@ test("docs/tablets.md quotes the panel's own words", () => {
   for (const key of ["tablets.shows", "tablets.title", "editor.on_tablet_name", "settings.heading"]) {
     assert.ok(docs.includes(`"${STRINGS[key]}"`), `docs/tablets.md does not quote "${STRINGS[key]}"`);
   }
-  assert.ok(docs.includes("Turn on encryption for it in ESPHome"), "the encryption hint");
-  assert.ok(STRINGS["tablets.needs_encryption"].includes("Turn on encryption for it in ESPHome"));
+  assert.ok(docs.includes("Switch on encryption for it in ESPHome"), "the encryption hint");
+  assert.ok(STRINGS["tablets.needs_encryption"].includes("Switch on encryption for it in ESPHome"));
   assert.ok(docs.includes("It is still being set up"), "the set-up hint");
   assert.ok(STRINGS["tablets.not_paired"].includes("It is still being set up"));
   for (const message of Object.values(SHAPES.commands["apollo_tab/tablet/assign"].errors)) {
@@ -486,7 +525,7 @@ test("docs/tablets.md quotes the panel's own words", () => {
   assert.ok(guide.includes(`"${STRINGS["tablets.add_another"]}"`), "the line about another tablet");
   const adding = docs.slice(docs.indexOf("## Adding a tablet"), docs.indexOf("## A new tablet"));
   assert.deepEqual(numberedSteps(adding), [
-    "1. Power the tablet on.",
+    "1. Plug the tablet in.",
     '2. If its screen says "Set up Wi-Fi", join the open Wi-Fi "Apollo TAB1 Hotspot" from a phone within 15 minutes, and pick your home\'s Wi-Fi on the page that opens.',
     `3. Its screen then says "${add.headline}" and "${add.step}". Add it there.`,
     `4. Its screen then says "${SCREENS.waiting.turn_on.headline}". Turn it on in the panel, as below.`,
@@ -534,4 +573,325 @@ test("the stand-in's offline tablet without a dashboard reads offline, like the 
     "Kitchen tablet": ["no_dashboard", null, "0.1.0"],
   });
   checkTabletList("tablets", list);
+});
+
+test("a send the stand-in ended at once leaves no timer behind", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "three", night: true });
+  const mac = hass.getTablets().find((tablet) => tablet.name === "Kitchen tablet").mac;
+  const status = () => hass.getTablets().find((tablet) => tablet.mac === mac).status;
+  hass.sendDelay(20);
+  hass.setTablet(mac, {});
+  hass.finishSends();
+  assert.equal(status(), "on_tablet");
+  // A held send stays "sending", also after the first send's 20 ms.
+  hass.holdSends();
+  hass.setTablet(mac, {});
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(status(), "sending");
+  hass.finishSends();
+  assert.equal(status(), "on_tablet");
+});
+
+// Home Assistant gives the first dashboard to the tablets whatever a
+// browser hears of it.
+test("a save this browser does not hear of still gives the first dashboard to the tablets", async () => {
+  const hass = createMockHass(FIXTURES, { seed: "none", tablets: "new" });
+  hass.sendDelay(0);
+  const events = [];
+  for (const type of ["apollo_tab/tablets/subscribe", "apollo_tab/layout/subscribe"]) {
+    await hass.connection.subscribeMessage((event) => events.push(event), { type });
+  }
+  await flush();
+  events.length = 0;
+  const approved = hass.getTablets().find((tablet) => tablet.approved);
+  const fresh = hass.getTablets().find((tablet) => !tablet.approved);
+  assert.equal(approved.dashboard, null);
+
+  await hass.callWS({
+    type: "lovelace/dashboards/create",
+    url_path: "tab-1",
+    title: "TAB-1",
+    icon: "mdi:tablet-dashboard",
+    mode: "storage",
+    require_admin: false,
+    show_in_sidebar: false,
+  });
+  hass.saveWhileOffline("tab-1", FIXTURES.sample_config);
+  await flush();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await flush();
+
+  const after = Object.fromEntries(hass.getTablets().map((tablet) => [tablet.mac, [tablet.dashboard, tablet.status]]));
+  assert.deepEqual(after[approved.mac], ["tab-1", "on_tablet"]);
+  assert.deepEqual(after[fresh.mac], [null, "new"]);
+  const listed = await hass.callWS({ type: "apollo_tab/dashboards" });
+  assert.deepEqual(listed.dashboards[0].shown_on, [approved.mac]);
+  // Nothing reached this browser.
+  assert.deepEqual(events, []);
+});
+
+// Home Assistant moves the tablets off a deleted dashboard whatever a
+// browser hears of it.
+test("a delete this browser does not hear of still moves the tablets", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "all", night: true });
+  const events = [];
+  for (const type of ["apollo_tab/tablets/subscribe", "apollo_tab/layout/subscribe"]) {
+    await hass.connection.subscribeMessage((event) => events.push(event), { type });
+  }
+  await flush();
+  events.length = 0;
+  const before = hass.getTablets();
+  const showed = before.filter((tablet) => tablet.dashboard === "tab-1").map((tablet) => tablet.mac);
+  const waiting = before.find((tablet) => tablet.suggested === "tab-1");
+  assert.ok(showed.length > 3 && waiting, "the stand-in tablets do not show the sample dashboard");
+
+  hass.deleteWhileOffline("tab-1");
+  await flush();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await flush();
+
+  const after = hass.getTablets();
+  checkTabletList("tablets", after);
+  for (const tablet of after) {
+    const was = before.find((entry) => entry.mac === tablet.mac);
+    // The ones that showed it went to the dashboard that is left.
+    assert.equal(tablet.dashboard, was.dashboard === "tab-1" ? "night" : was.dashboard, tablet.name);
+    // No send was started for this browser to hear of.
+    assert.equal(tablet.status, was.status, tablet.name);
+  }
+  // A new tablet loses the deleted dashboard as its suggestion.
+  assert.equal(after.find((tablet) => tablet.mac === waiting.mac).suggested, null);
+  const listed = await hass.callWS({ type: "apollo_tab/dashboards" });
+  assert.deepEqual(
+    listed.dashboards.map((dashboard) => dashboard.url_path),
+    ["night"],
+  );
+  for (const mac of showed) {
+    assert.ok(listed.dashboards[0].shown_on.includes(mac), `${mac} is not listed under the dashboard that is left`);
+  }
+  // Nothing reached this browser.
+  assert.deepEqual(events, []);
+
+  // With no dashboard left the tablets show none.
+  hass.deleteWhileOffline("night");
+  await flush();
+  for (const tablet of hass.getTablets()) {
+    assert.equal(tablet.dashboard, null, tablet.name);
+  }
+  assert.equal(hass.getTablets().find((tablet) => tablet.name === "Kitchen tablet").status, "no_dashboard");
+  assert.deepEqual(events, []);
+  assert.throws(() => hass.deleteWhileOffline("night"), { code: "not_found" });
+});
+
+// Home Assistant's connection opens a subscription again after it was lost,
+// unless the subscription was made with resubscribe: false. The panel makes
+// its own that way and opens them again itself at "ready".
+test("the stand-in's connection comes back without the subscriptions made with resubscribe false", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "three" });
+  const type = "apollo_tab/tablets/subscribe";
+  const kept = [];
+  const gone = [];
+  await hass.connection.subscribeMessage((event) => kept.push(event), { type });
+  const stop = await hass.connection.subscribeMessage((event) => gone.push(event), { type }, { resubscribe: false });
+  await flush();
+  assert.deepEqual([kept.length, gone.length], [1, 1]);
+  assert.equal(hass.subscriptions(type), 2);
+  let ready = 0;
+  hass.connection.addEventListener("ready", () => {
+    // Its own are gone by the time "ready" is heard.
+    assert.equal(hass.subscriptions(type), 1);
+    ready += 1;
+  });
+
+  // Until the connection is back both are open.
+  hass.dropConnection();
+  hass.emitTablets();
+  await flush();
+  assert.deepEqual([kept.length, gone.length], [2, 2]);
+
+  hass.reconnect();
+  assert.equal(ready, 1);
+  hass.emitTablets();
+  await flush();
+  assert.deepEqual([kept.length, gone.length], [3, 2]);
+  assert.equal(hass.subscriptions(type), 1);
+  // Closing the one that is gone changes nothing.
+  stop();
+  assert.equal(hass.subscriptions(type), 1);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+});
+
+// While Home Assistant starts, or with an older integration, it answers
+// unknown_command. A subscription its connection opens again by itself is
+// then lost, and nobody is told.
+test("the stand-in answers unknown_command for commands Home Assistant does not know", async () => {
+  const hass = createMockHass(FIXTURES, { tablets: "three" });
+  const type = "apollo_tab/tablets/subscribe";
+  const events = [];
+  await hass.connection.subscribeMessage((event) => events.push(event), { type });
+  await flush();
+  events.length = 0;
+
+  hass.unknownCommands("apollo_tab/");
+  await assert.rejects(hass.callWS({ type: "apollo_tab/tablets" }), { code: "unknown_command" });
+  await assert.rejects(hass.connection.subscribeMessage(() => {}, { type }), { code: "unknown_command" });
+  await assert.rejects(
+    hass.connection.subscribeMessage(() => {}, { type: "apollo_tab/card/subscribe", card: {} }),
+    { code: "unknown_command" },
+  );
+  // Home Assistant's own commands are there.
+  assert.ok(Array.isArray(await hass.callWS({ type: "lovelace/dashboards/list" })));
+  // A subscription that is open stays open on the same connection.
+  assert.equal(hass.subscriptions(type), 1);
+
+  hass.dropConnection();
+  hass.reconnect();
+  assert.equal(hass.subscriptions(type), 0);
+  hass.unknownCommands(null);
+  hass.emitTablets();
+  await flush();
+  assert.deepEqual(events, []);
+  assert.deepEqual((await hass.callWS({ type: "apollo_tab/tablets" })).tablets, hass.getTablets());
+  await new Promise((resolve) => setTimeout(resolve, 60));
+});
+
+// ------------------------------------------- the rules of contract 4.7 (v2)
+// The editor's picture draws with the same numbers as the tablet: every
+// vector of the contract's fixtures/maths.json, against logic.js.
+
+const MATHS = JSON.parse(fs.readFileSync(path.join(root, "tests/contract/fixtures/maths.json"), "utf8"));
+
+test("logic.js holds the contract's table of linear values, number for number", () => {
+  assert.equal(LINEAR.length, 256);
+  assert.equal(MATHS.linear.length, 256);
+  MATHS.linear.forEach((value, index) => assert.ok(Object.is(LINEAR[index], value), `linear[${index}]`));
+});
+
+test("mix, lum, contrast, readable, legible and blend give the contract's answers", () => {
+  for (const [a, b, p, expect] of MATHS.mix) {
+    assert.equal(mix(a, b, p), expect, `mix(${a}, ${b}, ${p})`);
+  }
+  for (const [weight, cases] of Object.entries(MATHS.mix_halves)) {
+    for (const [a, b, expect] of cases) {
+      assert.equal(mix(a, b, Number(weight)), expect, `mix of channels ${a}, ${b} at ${weight}`);
+    }
+  }
+  for (const [c, expect] of MATHS.lum) {
+    assert.ok(Object.is(lum(c), expect), `lum(${c})`);
+  }
+  for (const [a, b, expect] of MATHS.contrast) {
+    assert.ok(Object.is(contrastOf(a, b), expect), `contrast(${a}, ${b})`);
+  }
+  for (const [c, expect] of MATHS.readable) {
+    assert.equal(readable(c), expect, `readable(${c})`);
+  }
+  for (const [c, b, t, expect] of MATHS.legible) {
+    assert.equal(legible(c, b, t), expect, `legible(${c}, ${b}, ${t})`);
+  }
+  for (const [a, b, expect] of MATHS.blend.cases) {
+    assert.equal(blendOf(a, b, 0.82), expect, `blend(${a}, ${b})`);
+  }
+});
+
+test("a card's colours follow the contract for every theme, style, tint, on and lit", () => {
+  assert.ok(MATHS.card.length > 100);
+  for (const entry of MATHS.card) {
+    const tokens = cardColourTokens(MATHS.themes[entry.theme], MATHS.styles[entry.style]);
+    for (const [key, value] of Object.entries(entry.tokens)) {
+      assert.equal(tokens[key], value, `${entry.theme}/${entry.style} token ${key}`);
+    }
+    const got = cardColours(tokens, Boolean(entry.on), entry.lit, entry.tint);
+    assert.deepEqual(got, entry.expect, JSON.stringify({ ...entry, expect: undefined }));
+  }
+});
+
+test("an image's box, badge and bare looks follow the contract", () => {
+  assert.ok(MATHS.image.length > 100);
+  for (const entry of MATHS.image) {
+    const tokens = cardColourTokens(MATHS.themes[entry.theme], {});
+    const card = cardColours(tokens, Boolean(entry.on), entry.lit, entry.tint);
+    const got = imageLook(tokens, card, Boolean(entry.on), entry.lit, entry.look, entry.w, entry.h, entry.c);
+    assert.deepEqual(got, entry.expect, JSON.stringify({ ...entry, expect: undefined }));
+  }
+});
+
+test("a label's size and a clock's text follow the contract", () => {
+  for (const entry of MATHS.label) {
+    assert.deepEqual(labelSize(entry.px, entry.text, entry.size), entry.expect, JSON.stringify(entry));
+  }
+  for (const entry of MATHS.clock) {
+    assert.equal(clockText(entry.value, entry.age_s, entry.clk), entry.expect, JSON.stringify(entry));
+  }
+});
+
+test("a slider's amounts, values and shapes follow the contract in every look and direction", () => {
+  assert.ok(MATHS.slider.length > 100);
+  for (const entry of MATHS.slider) {
+    const { rect, look, dir, track, r2 } = entry;
+    for (const [x, y, amount, value] of entry.presses) {
+      const got = sliderAmount(rect, look, dir, track, r2, x, y);
+      assert.ok(Object.is(got, amount) || got === amount, `${entry.rect_name} ${look}/${dir}/${track} amount at ${x},${y}: ${got}`);
+      const length = sliderLength(rect, look, dir, track, r2);
+      assert.equal(sliderValue(got, entry.min, entry.max, entry.step, length), value, `${entry.rect_name} value at ${x},${y}`);
+    }
+    for (const shape of entry.shapes) {
+      const got = sliderGeometry(rect, look, dir, track, r2, shape.value, entry.min, entry.max, Boolean(shape.change));
+      assert.deepEqual(got, shape.expect, `${entry.rect_name} ${look}/${dir}/${track} at ${shape.value}`);
+    }
+  }
+  for (const entry of MATHS.track) {
+    assert.deepEqual(trackPieces(entry.n, entry.x0, entry.x1), entry.expect, JSON.stringify(entry));
+  }
+});
+
+test("a choice's cells and the option under a point follow the contract", () => {
+  for (const entry of MATHS.choice) {
+    const cells = choiceCells(entry.n, entry.rows, entry.w, entry.h, entry.look);
+    assert.deepEqual(cells, entry.cells, JSON.stringify({ ...entry, cells: undefined }));
+    for (const [x, y, expect] of entry.presses) {
+      assert.equal(choiceAt(cells, x, y), expect, `${JSON.stringify(entry.cells)} at ${x},${y}`);
+    }
+  }
+});
+
+test("a chart's steps and the colour of each bar follow the contract", () => {
+  for (const entry of MATHS.steps) {
+    const points = linePoints(entry.values, entry.w, entry.h, 4);
+    assert.deepEqual(points, entry.points, JSON.stringify(entry.values));
+    assert.deepEqual(stepRects(points), entry.expect, JSON.stringify(entry.values));
+  }
+  for (const entry of MATHS.bars) {
+    assert.deepEqual(barMarks(entry.n, entry.mark), entry.expect, JSON.stringify(entry));
+  }
+});
+
+test("a colour value counts as the contract says, with a card's roles", () => {
+  const roles = { good: "#4CC38A", bad: 0xff6b5e };
+  const cases = [
+    [[255, 167, 87], 0xffa757],
+    [[254.5, 0, 0.4], 0xff0000],
+    [[255.5, 0, 0], null],
+    [[1, 2], null],
+    [[1, 2, 3, 4], null],
+    [[true, 0, 0], null],
+    ["#ff453a", 0xff453a],
+    ["#FF453A", 0xff453a],
+    ["#FFF", null],
+    ["red", null],
+    ["good", 0x4cc38a],
+    ["bad", 0xff6b5e],
+    [16711680, 0xff0000],
+    [16711680.0, 0xff0000],
+    [16777216, null],
+    [-1, null],
+    [0.5, null],
+    [true, null],
+    [null, null],
+    [undefined, null],
+  ];
+  for (const [value, expect] of cases) {
+    assert.equal(toColour(value, roles), expect, JSON.stringify(value));
+  }
+  // A role name is a colour only where the card has that role.
+  assert.equal(toColour("good"), null);
 });

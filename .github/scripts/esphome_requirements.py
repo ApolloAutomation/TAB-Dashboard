@@ -13,6 +13,13 @@ one per line, for ``pip install -c <pip freeze> -r <this output>``. Packages
 that are installed are left out, so the install never changes a version the
 test requirements chose.
 
+Imports are followed from esphome and usb only, on purpose. Followed further,
+they reach integrations the import of RuntimeEntryData never loads, and their
+packages would be installed too (those of cast, matter and openai among
+them). The workflow imports RuntimeEntryData right after ``--check``: should a
+Home Assistant version need more, that step fails and names the module, and
+its integration is added to START.
+
 ``--check`` instead fails when the installed aioesphomeapi is not the version
 the installed Home Assistant pins, or when a listed package is still missing.
 It runs after the install.

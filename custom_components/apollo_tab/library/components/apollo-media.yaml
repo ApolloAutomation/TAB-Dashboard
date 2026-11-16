@@ -1,0 +1,172 @@
+schema: 2
+id: apollo/media
+version: 2.0.0
+name: Media
+description: Play, pause and skip, and set the volume of a speaker or a TV.
+icon: mdi:music
+group: media
+replaces: [apollo/media-player]
+v1: apollo/media-player
+
+params:
+  entity: {domain: media_player, label: Player}
+
+options:
+  show_volume:   {type: toggle, section: controls, label: Volume, default: true,
+                  needs: can.volume, needs_text: This player has no volume}
+  show_progress: {type: toggle, section: shows, label: How far it has played, default: true}
+  sources_shown: {type: choice, multiple: true, max: 8, from: can.sources, default_first: 0,
+                  section: controls, label: Sources, needs: can.sources}
+
+inputs:
+  title:       "{{ state_attr(entity, 'media_title') or state_attr(entity, 'friendly_name') or entity }}"
+  has_title:   "{{ (state_attr(entity, 'media_title') or '') != '' }}"
+  artist:      "{{ state_attr(entity, 'media_artist') or '' }}"
+  album:       "{{ state_attr(entity, 'media_album_name') or '' }}"
+  state:       "{{ state_translated(entity) }}"
+  playing:     "{{ is_state(entity, 'playing') }}"
+  play_icon:   "{{ 'mdi:pause' if playing else 'mdi:play' }}"
+  vol:         "{{ ((state_attr(entity, 'volume_level') or 0) * 100) | round | int }}"
+  muted:       "{{ state_attr(entity, 'is_volume_muted') == true }}"
+  pos:         {source: media_position, entity: "{{ entity }}"}
+  length:      "{{ state_attr(entity, 'media_duration') or 0 }}"
+  rate:        "{{ 1 if playing else 0 }}"
+  length_text: >-
+    {% set s = (state_attr(entity, 'media_duration') or 0) | int %}{{ ((s // 60) ~ ':' ~ ('0' if s % 60 < 10 else '') ~ (s % 60)) if s else '' }}
+  source_at:   >-
+    {{ sources_shown.index(state_attr(entity, 'source')) if state_attr(entity, 'source') in sources_shown else none }}
+  shuffling:   "{{ state_attr(entity, 'shuffle') == true }}"
+  line:        "{{ artist if artist else state }}"
+  # What is playing: the track, else the player's state. While the player
+  # is gone a dash: the header already says why.
+  track:       "{{ state_attr(entity, 'media_title') or ('—' if states(entity) in ['unavailable', 'unknown'] else state) }}"
+  # The album under the track, unless it only says the track again.
+  album_line:  "{{ '' if album == track else album }}"
+  # The track and the artist on one line, for the header of the narrow sizes.
+  now_line:    "{{ [state_attr(entity, 'media_title') or '', artist] | select | join(' · ') or state }}"
+
+outputs:
+  play_pause:  {action: media_player.media_play_pause, data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+  next:        {action: media_player.media_next_track, data: {entity_id: "{{ entity }}"}, feedback: pulse}
+  previous:    {action: media_player.media_previous_track, data: {entity_id: "{{ entity }}"}, feedback: pulse}
+  set_volume:  {action: media_player.volume_set,
+                data: {entity_id: "{{ entity }}", volume_level: "{{ value / 100 }}"}, feedback: optimistic}
+  mute:        {action: media_player.volume_mute, uses: {muted: bool},
+                data: {entity_id: "{{ entity }}", is_volume_muted: "{{ not muted }}"}, feedback: optimistic}
+  pick_source: {action: media_player.select_source,
+                data: {entity_id: "{{ entity }}", source: "{{ option }}"}, feedback: optimistic}
+  shuffle:     {action: media_player.shuffle_set, uses: {shuffling: bool},
+                data: {entity_id: "{{ entity }}", shuffle: "{{ not shuffling }}"}, feedback: optimistic}
+  power:       {action: media_player.toggle, data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+
+on: playing
+state: line
+lit: icon
+tap:
+  default: play_pause
+  choices:
+    play_pause: {label: Plays or pauses, output: play_pause}
+    detail:     {label: Opens its controls}
+    none:       {label: Does nothing}
+hold: detail
+
+parts:
+  buttons:
+    type: row
+    items:
+      - {type: button, icon: "mdi:skip-previous", on_tap: previous, when: [can.previous]}
+      - {type: button, icon: "mdi:play-pause", icon_live: play_icon, selected: playing,
+         on_tap: play_pause}
+      - {type: button, icon: "mdi:skip-next", on_tap: next, when: [can.next]}
+  round_buttons:
+    type: row
+    items:
+      - {type: button, icon: "mdi:skip-previous", shape: round, on_tap: previous, when: [can.previous]}
+      - {type: button, icon: "mdi:play-pause", icon_live: play_icon, selected: playing, shape: round,
+         on_tap: play_pause}
+      - {type: button, icon: "mdi:skip-next", shape: round, on_tap: next, when: [can.next]}
+  progress: {type: slider, look: bar, height: 8, value: pos, min: 0, max: "{{ length }}", rate: rate,
+             when: [show_progress, tablet.v2]}
+  length:   {type: label, text: "{{ length_text }}", size: s, align: right, when: [show_progress]}
+  volume:
+    type: row
+    when: [can.volume, show_volume]
+    items:
+      - {type: button, icon: "mdi:volume-off", selected: muted, on_tap: mute, width: 48,
+         when: [can.mute]}
+      - {type: slider, look: bar, value: vol, min: 0, max: 100, icon: "mdi:volume-high",
+         on_change: set_volume}
+  sources:  {type: choice, options: sources_shown, value: source_at, on_change: pick_source,
+             when: [can.sources, sources_shown]}
+  more:
+    type: row
+    items:
+      - {type: button, text: Shuffle, icon: "mdi:shuffle", selected: shuffling, on_tap: shuffle, when: [can.shuffle]}
+      - {type: button, text: Power, icon: "mdi:power", on_tap: power, when: [can.power]}
+
+variants:
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    state: now_line
+    # The buttons take the card's height, up to 96, as on the alarm: no
+    # empty foot under buttons of 48 (LOOK-NOTES decision 12).
+    layout: [{use: buttons, grow: true, most: 96}]
+  large:
+    name: Large
+    grid: [12, 6]
+    header: tile
+    # The header names the player and the artist; the track is the large
+    # line under it.
+    # The rows stack under the header; the title takes what is left, up
+    # to 56, so the controls stay under it and a taller card has its
+    # spare height at the foot (LOOK-NOTES decision 12).
+    layout:
+      - {type: label, text: "{{ track }}", size: ml, grow: true, most: 56}
+      - {type: label, text: "{{ album_line }}", size: s}
+      - {use: progress}
+      - {use: length}
+      - {use: round_buttons, height: 72}
+      - {use: volume, height: 48}
+  hero:
+    name: Now playing
+    grid: [24, 9]
+    header: none
+    layout:
+      - {type: image, value: "{{ 'mdi:music-note' }}", look: badge, side: true}
+      # The track; with none the player's name, cut in the middle (L4).
+      - type: swap
+        items:
+          - {type: label, text: "{{ title }}", size: l, visible: has_title}
+          - {type: label, text: "{{ state_attr(entity, 'friendly_name') or entity }}", size: l,
+             visible: "{{ not has_title }}"}
+      - {type: label, text: "{{ artist }}", size: m}
+      - {type: label, text: "{{ album_line }}", size: s}
+      - {type: label, text: "{{ state }}", size: s}
+      - {use: progress}
+      - {use: round_buttons, height: 96}
+      - {use: volume}
+  full:
+    name: Controls
+    grid: [18, 11]
+    header: tile
+    state: now_line
+    picker: false
+    # Every row a finger uses at least 56 high (LOOK-NOTES decision 1).
+    layout:
+      - {use: progress}
+      - {use: length}
+      - {use: round_buttons, height: 72}
+      - {use: volume, height: 56}
+      - {use: sources, rows: 2, height: 120}
+      - {use: more, height: 56}
+detail: full
+
+preview:
+  params: {entity: media_player.example}
+  can: {previous: true, next: true, volume: true, mute: true, shuffle: true, power: true, sources: []}
+  inputs: {title: Clair de lune, has_title: true, artist: Debussy, album: Suite bergamasque, state: Playing,
+           playing: true, play_icon: "mdi:pause", vol: 40, muted: false, pos: 80, length: 300,
+           rate: 1, length_text: "5:00", source_at: null, shuffling: false, line: Debussy,
+           track: Clair de lune, album_line: Suite bergamasque, now_line: "Clair de lune · Debussy"}

@@ -6,7 +6,11 @@ from typing import Any
 
 from .const import FOR_EACH_MAX, MAX_WIDGETS
 from .errors import MakerError
-from .geometry import card_size_px, layout_card
+from .geometry import PAD, card_size_px, layout_card
+from .names import NAME_WIDTHS, cut_to_fit_template, name_chars
+
+ICON_ALONE = 48  # the most an icon alone in a tiny card is across
+ICON_ALONE_MIN = 24
 
 _PARAM_REF = re.compile(r"\{\{\s*([a-z][a-z0-9_]*)\s*\}\}")
 
@@ -14,6 +18,87 @@ _PARAM_REF = re.compile(r"\{\{\s*([a-z][a-z0-9_]*)\s*\}\}")
 def compile_card(component: dict, card: dict) -> dict:
     """Compile a validated card configuration into a concrete card."""
     return _Compiler(component, card).run()
+
+
+def add_unavailable(component: dict, card: dict, compiled: dict) -> None:
+    """Give a camera card its `un` for a layout v2: its camera is gone.
+
+    A schema 2 card fades while its device is unavailable (contract 4.7). A
+    schema 1 card that shows a camera's picture fades the same way in a
+    layout v2, so the placeholder of a camera that is gone does not look
+    live. The device is the one the camera input names. Other schema 1
+    cards stay as they are in both versions. An example card gets none;
+    the layout v1 never sees it.
+    """
+    inputs = component.get("inputs") or {}
+    if compiled.get("demo"):
+        return
+    cameras = [spec for spec in inputs.values() if spec.get("kind") == "camera"]
+    if not cameras:
+        return
+    name = cameras[0]["param"]
+    value = card["params"].get(name)
+    if not isinstance(value, str):
+        return
+    slot = {
+        "kind": "template",
+        "template": "{{ states(" + name + ") in ['unavailable', 'unknown'] }}",
+        "variables": {name: value},
+    }
+    number = len(compiled["slots"]) + 1
+    compiled["slots"] = [*compiled["slots"], {"n": number, **slot}]
+    compiled["un"] = {"s": number}
+
+
+# A label's text that is a device's name: written out, or an input that is.
+_NAME_TEXT_1 = re.compile(
+    r"\{\{\s*state_attr\((\w+), 'friendly_name'\)(?: or (\w+))?\s*\}\}"
+)
+# The text size of a schema 1 label (contract 4.7).
+_LABEL_PX_1 = {"s": 14, "m": 18, "l": 34}
+
+
+def cut_names(component: dict, card: dict, compiled: dict) -> None:
+    """Cut a schema 1 label that shows its device's name in the middle.
+
+    Layout v2 only, as the names of schema 2 cards (names.cut_to_fit): the
+    camera's caption read "Driveway Cam…" with its end cut by the tablet.
+    The new slot is fixed source; the device's id is a variable.
+    """
+    if compiled.get("demo"):
+        return
+    inputs = component.get("inputs") or {}
+    layout = component.get("layout") or []
+    for widget in compiled["widgets"]:
+        index = widget.get("i")
+        if widget["t"] != "label" or not isinstance(index, int):
+            continue
+        if index >= len(layout) or layout[index].get("for_each"):
+            continue
+        text = layout[index].get("text")
+        ref = _PARAM_REF.fullmatch(text.strip()) if isinstance(text, str) else None
+        spec = inputs.get(ref[1]) if ref else None
+        if spec is not None and spec.get("kind") == "template":
+            text = spec["template"]
+        found = _NAME_TEXT_1.fullmatch(text.strip()) if isinstance(text, str) else None
+        if found is None or (found[2] is not None and found[2] != found[1]):
+            continue
+        param = found[1]
+        entity = card["params"].get(param)
+        px = _LABEL_PX_1.get(widget.get("size"))
+        if not isinstance(entity, str) or px is None:
+            continue
+        width = widget["r"][2]
+        slot = {
+            "kind": "template",
+            "template": "{%- set n = (state_attr(" + param + ", 'friendly_name')"
+            " or '') | string -%}"
+            + cut_to_fit_template(name_chars(width, px), width, px),
+            "variables": {param: entity, "name_w": dict(NAME_WIDTHS[px])},
+        }
+        number = len(compiled["slots"]) + 1
+        compiled["slots"] = [*compiled["slots"], {"n": number, **slot}]
+        widget["text"] = {"s": number}
 
 
 def public_card(compiled: dict) -> dict:
@@ -84,6 +169,20 @@ class _Compiler:
         laid = layout_card(geo_items, width, height, self.component["header"])
         header = self._header(laid["header"])
         widgets = self._widgets(expanded, laid["rects"])
+        if not widgets and header is None and self.component["icon"] is not None:
+            # A card too small for anything shows its icon, not an empty box.
+            side = max(min(width, height, ICON_ALONE + 2 * PAD) - 2 * PAD, 0)
+            if side >= ICON_ALONE_MIN:
+                rect = [(width - side) // 2, (height - side) // 2, side, side]
+                widgets.append(
+                    {
+                        "i": len(expanded),
+                        "t": "image",
+                        "r": rect,
+                        "value": self.component["icon"],
+                        "refresh": 0,
+                    }
+                )
         clipped = laid["clipped"] or any(rect is None for rect in laid["rects"])
         return {
             "component": self.component["id"],

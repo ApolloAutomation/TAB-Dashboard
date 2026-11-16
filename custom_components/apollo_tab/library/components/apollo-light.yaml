@@ -1,0 +1,217 @@
+schema: 2
+id: apollo/light
+version: 2.0.0
+name: Light
+description: Turn a light on or off, dim it and change its colour.
+icon: mdi:lightbulb
+group: lights
+replaces: [apollo/light-tile, apollo/light-slider]
+
+params:
+  entity: {domain: light, label: Light}
+
+options:
+  show_brightness: {type: toggle, section: controls, label: Brightness, default: true,
+                    help: "A bar to dim the light.",
+                    needs: can.brightness, needs_text: This light cannot be dimmed}
+  bar_on_tile:     {type: toggle, section: controls, label: Brightness bar on the small tile, default: true,
+                    help: "When off, the small tile shows a thin line for the level.",
+                    when: [show_brightness], needs: can.brightness, needs_text: This light cannot be dimmed}
+  colour_control:  {type: choice, section: controls, label: Colour, default: bar,
+                    choices: {none: "Off", bar: Colour bar, dots: Favourite colours, both: Both},
+                    help: "A bar for any colour, buttons for your favourite colours, or both.",
+                    needs: can.colour, needs_text: This light has no colour}
+  show_saturation: {type: toggle, section: controls, label: Colour strength, default: false,
+                    help: "A bar from pale to deep colour.",
+                    needs: can.colour, needs_text: This light has no colour}
+  show_white:      {type: toggle, section: controls, label: Warm to cool, default: true,
+                    help: "A bar from warm to cool white.",
+                    needs: can.temperature, needs_text: This light has one white only}
+  favourites:      {type: colours, section: controls, label: Favourite colours, max: 8,
+                    default: ["#FF453A", "#FF9F0A", "#FFD60A", "#32D74B", "#64D2FF", "#0A84FF", "#BF5AF2", "2700K"],
+                    help: "Press a colour to change it.",
+                    when: [colour_control=dots|both]}
+  effects_shown:   {type: choice, multiple: true, max: 8, from: can.effect_list, default_first: 4,
+                    section: controls, label: Effects,
+                    help: "Buttons on the card's controls page.",
+                    needs: can.effects, needs_text: This light has no effects}
+
+inputs:
+  is_on:     "{{ is_state(entity, 'on') }}"
+  pct:       "{{ ((state_attr(entity, 'brightness') or 0) / 2.55) | round | int }}"
+  colour:    {source: colour, entity: "{{ entity }}", of: rgb}       # none while off
+  hue_tone:  {source: colour, entity: "{{ entity }}", of: hue}       # the hue at full strength
+  # No hue while the lamp shows a white: only the bar of the mode it is in
+  # has a marker.
+  hue:       "{{ none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[0] }}"
+  sat:       "{{ none if state_attr(entity, 'color_mode') == 'color_temp' else (state_attr(entity, 'hs_color') or [none, none])[1] }}"
+  kelvin:    "{{ state_attr(entity, 'color_temp_kelvin') }}"          # none while the light shows a colour
+  effect_at: "{{ effects_shown.index(state_attr(entity, 'effect')) if state_attr(entity, 'effect') in effects_shown else none }}"
+  # No text for a lamp that has no brightness, so its tile is badge, name, state.
+  level:     "{{ (pct ~ '%') if is_on and state_attr(entity, 'brightness') is not none else '' }}"
+  state:     "{{ state_translated(entity) }}"
+  # The header line of the larger sizes: the state, the brightness, and the
+  # white while the lamp shows one ("On · 55% · 3000 K").
+  readout: >-
+    {{ [state_translated(entity), level, ((kelvin | round(-2) | int) ~ ' K') if is_on and kelvin is number else ''] | select | join(' · ') }}
+  # The tile's state line: the state and the brightness ("On · 68%").
+  tile_line: "{{ [state_translated(entity), level] | select | join(' · ') }}"
+  # Large for a lamp that only dims shows its brightness large, so its
+  # header line says only the state: two lines, as on every Large card.
+  large_line: "{{ readout if can.colour or can.temperature else state_translated(entity) }}"
+  # The brightness, or a dash while there is none: the header line says why
+  # ("Off", "unavailable"), so "Off" shows once.
+  big:       "{{ level if level else '—' }}"
+
+outputs:
+  toggle:         {action: light.toggle,  data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+  set_brightness: {action: light.turn_on, data: {entity_id: "{{ entity }}", brightness_pct: "{{ value }}"}, feedback: optimistic}
+  set_hue:        {action: light.turn_on, uses: {sat: number}, data: {entity_id: "{{ entity }}",
+                   hs_color: ["{{ value }}", "{{ sat if sat is number and sat >= 10 else 100 }}"]}, feedback: optimistic}
+  set_sat:        {action: light.turn_on, uses: {hue: number}, data: {entity_id: "{{ entity }}",
+                   hs_color: ["{{ hue if hue is number else 0 }}", "{{ value }}"]}, feedback: optimistic}
+  set_white:      {action: light.turn_on, data: {entity_id: "{{ entity }}", color_temp_kelvin: "{{ value | int }}"}, feedback: optimistic}
+  set_favourite:  {action: light.turn_on, data: {entity_id: "{{ entity }}",
+                   rgb_color: "{{ option.rgb }}", color_temp_kelvin: "{{ option.kelvin }}"}, feedback: pulse}
+  set_effect:     {action: light.turn_on, data: {entity_id: "{{ entity }}", effect: "{{ option }}"}, feedback: optimistic}
+
+notes:
+  - {text: This light only turns on and off., when: ["!can.brightness"]}
+
+on: is_on
+tint: colour
+lit: fill
+state: state
+tap:
+  default: toggle
+  choices:
+    toggle: {label: Turns it on or off, output: toggle}
+    detail: {label: Opens its controls}
+    none:   {label: Does nothing}
+hold: detail
+
+parts:
+  dim:     {type: slider, look: bar, value: pct, min: 1, max: 100, icon: mdi:brightness-6, colour: colour,
+            on_change: set_brightness, when: [can.brightness, show_brightness]}
+  level:   {type: slider, look: bar, height: 8, value: pct, min: 0, max: 100, colour: colour, when: [can.brightness]}
+  # The colour and white bars stay active without a value while the lamp is
+  # on (`kelvin` has none while it shows a colour). While it is off or
+  # unavailable the second copy shows: no value, so it is faded, with an
+  # icon instead of a track, so it costs none of the page's tracks.
+  hue:
+    type: swap
+    when: [can.colour, colour_control=bar|both]
+    items:
+      - {type: slider, look: bar, track: hue, value: hue, min: 0, max: 360, keep_active: true,
+         on_change: set_hue, visible: is_on, grow: true}
+      - {type: slider, look: bar, value: hue, min: 0, max: 360, icon: mdi:palette,
+         on_change: set_hue, visible: "{{ not is_on }}", grow: true}
+  sat:     {type: slider, look: bar, value: sat, min: 0, max: 100, colour: hue_tone, icon: mdi:palette-outline,
+            on_change: set_sat, when: [can.colour, show_saturation]}
+  white:
+    type: swap
+    when: [can.temperature, show_white]
+    items:
+      - {type: slider, look: bar, track: {kelvin: ["{{ can.min_kelvin }}", "{{ can.max_kelvin }}"]},
+         value: kelvin, min: "{{ can.min_kelvin }}", max: "{{ can.max_kelvin }}", step: 50, keep_active: true,
+         on_change: set_white, visible: is_on, grow: true}
+      - {type: slider, look: bar, value: kelvin, min: "{{ can.min_kelvin }}", max: "{{ can.max_kelvin }}",
+         step: 50, icon: mdi:white-balance-sunny, on_change: set_white, visible: "{{ not is_on }}", grow: true}
+  dots:    {type: choice, look: dots, options: favourites, on_change: set_favourite,
+            when: [colour_control=dots|both]}
+  effects: {type: choice, options: effects_shown, value: effect_at, on_change: set_effect,
+            when: [can.effects, effects_shown]}
+  switch:  {type: switch, value: is_on, on_tap: toggle}
+  # A lamp that only turns on and off: one large button fills the wide card.
+  # In a taller card it stops at 120, not a block of light in a dark room;
+  # in a card grown past its grid at 160 (L4).
+  power:   {type: button, icon: mdi:power, on_tap: toggle, selected: is_on, big_icon: true, grow: true,
+            most: 120, most_grown: 160, when: ["!can.brightness"]}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    # As Lights together: the name over "On · 68%", then the bar takes the
+    # tile's height (LOOK-NOTES decision 10). The level joins the state
+    # line: a column at the right would leave the name four letters.
+    header: tile
+    state: tile_line
+    v1: apollo/light-tile
+    layout:
+      - {use: dim, grow: true, when: [can.brightness, show_brightness, bar_on_tile]}
+      - {use: level, when: [can.brightness, "!bar_on_tile"]}
+      - {use: power}
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    trailing: switch
+    state: readout
+    v1: apollo/light-slider
+    # One bar that takes the card's height: two would be under 48 px each,
+    # too low for a finger. Colour and white are a hold away, on the
+    # controls page.
+    layout:
+      - {use: dim, grow: true}
+      - {use: power}
+  large:
+    name: Large
+    grid: [12, 6]
+    # A lamp that only turns on and off has nothing to show here (D.1).
+    needs: can.brightness
+    needs_text: This light only turns on and off
+    header: tile
+    trailing: switch
+    v1: apollo/light-slider
+    # Every row at least 48 high. When they do not fit, the favourite dots
+    # go first, then saturation; both stay on the controls page (LOOK-NOTES
+    # decision 11). A lamp that only dims shows its brightness large, in the
+    # middle of the room over a bar of 128, not one bar of the card's height;
+    # the number stops at 152, so the bar follows it in a taller card.
+    # Colour, strength and white stop at 72: the height left over goes to
+    # brightness, up to 192; a card grown taller keeps the rest as its foot
+    # (LOOK-NOTES decision 12). Grown past its grid every bar goes further,
+    # brightness to 320, colour, strength and white to 144, so the owner's
+    # lamp (brightness, colour, white) fills a card of twelve rows. The
+    # number of a lamp that only dims keeps its 152 there and its bar takes
+    # the height, up to 320: no band over 56 above or under the number. A
+    # foot over 56 is shared above the header and under the rows (L4).
+    state: large_line
+    layout:
+      - {type: label, text: "{{ big }}", size: xxl, align: centre, grow: true, most: 152,
+         when: ["!can.colour", "!can.temperature"]}
+      - {use: dim, grow: true, most: 128, most_grown: 320, when: ["!can.colour", "!can.temperature"]}
+      - {use: dim, grow: true, most: 192, most_grown: 320, when: [can.colour]}
+      - {use: dim, grow: true, most: 192, most_grown: 320, when: ["!can.colour", can.temperature]}
+      - {use: hue, most: 72, most_grown: 144}
+      - {use: sat, grow: true, most: 72, most_grown: 144, drop: 2}
+      - {use: white, most: 72, most_grown: 144}
+      - {use: dots, drop: 1}
+  full:
+    name: Controls
+    grid: [18, 11]
+    # D.1: no controls page, and so no hold, for a lamp that only turns on
+    # and off.
+    needs: can.brightness
+    needs_text: This light only turns on and off
+    header: tile
+    trailing: switch
+    state: readout
+    picker: false
+    # One order on every lamp; each row at least 56 high, brightness the
+    # tallest, swatches 56 across. The page cuts the card under its rows.
+    layout:
+      - {use: dim, height: 72}
+      - {use: hue, height: 56}
+      - {use: sat, height: 56}
+      - {use: white, height: 56}
+      - {use: dots, height: 56}
+      - {use: effects, rows: 2, height: 120}
+detail: full
+
+preview:
+  can: {brightness: true, colour: true, temperature: true, effects: false, min_kelvin: 2000, max_kelvin: 6500}
+  inputs: {is_on: true, pct: 68, colour: 16757575, hue_tone: 16744448, hue: 30, sat: 58, kelvin: null,
+           level: "68%", state: "On", readout: "On · 68%", tile_line: "On · 68%",
+           large_line: "On · 68%", big: "68%"}

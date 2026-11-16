@@ -1,0 +1,123 @@
+schema: 2
+id: apollo/reading
+version: 2.0.0
+name: Status
+description: Show what a sensor reads or what state a device is in.
+icon: mdi:information-outline
+group: sensors
+replaces: [apollo/sensor-value]
+
+params:
+  entity: {domain: any, label: Device}
+
+options:
+  decimals:    {type: number, section: shows, label: Decimals, min: 0, max: 3, step: 1, default: 1}
+  unit:        {type: text, section: shows, label: Unit, max: 8,
+                help: Leave empty to use the unit Home Assistant gives}
+  word_on:     {type: text, section: shows, label: Word while on, max: 20,
+                help: Leave empty to use the word Home Assistant gives}
+  word_off:    {type: text, section: shows, label: Word while off, max: 20,
+                help: Leave empty to use the word Home Assistant gives}
+  highlight:   {type: choice, section: look, label: Highlight, default: never,
+                choices: {never: Never, active: "While on, open or unlocked", above: Above the high mark,
+                          below: Below the low mark}}
+  low:         {type: number, section: look, label: Low mark, default: 0,
+                when: ["highlight=below"]}
+  high:        {type: number, section: look, label: High mark, default: 100,
+                when: ["highlight=above"]}
+  low_colour:  {type: colour, section: look, label: Colour below the low mark, default: info,
+                when: ["highlight=below"]}
+  high_colour: {type: colour, section: look, label: Colour above the high mark, default: warn,
+                when: ["highlight=above"]}
+
+inputs:
+  number:  "{{ states(entity) | float(none) }}"
+  reading: >-
+    {% set s = states(entity) %}{% if number is number %}{{ number | round(decimals | int) }}{% elif s == 'on' and word_on %}{{ word_on }}{% elif s == 'off' and word_off %}{{ word_off }}{% else %}{{ state_translated(entity) }}{% endif %}
+  unit_text: "{{ unit or state_attr(entity, 'unit_of_measurement') or '' }}"
+  line:    "{{ (reading ~ ' ' ~ unit_text) | trim if number is number else reading }}"
+  # The large value: a dash while the device has none, its state then is
+  # the line under it.
+  big_line: "{{ '—' if states(entity) in ['unavailable', 'unknown'] else line }}"
+  gone_line: "{{ state_translated(entity) if states(entity) in ['unavailable', 'unknown'] else '' }}"
+  is_number: "{{ number is number }}"
+  # One expression, so it stays a yes or no where other inputs use it.
+  active:  >-
+    {{ (highlight == 'active' and states(entity) in ['on', 'open', 'opening', 'unlocked', 'home', 'playing'])
+       or (highlight == 'above' and number is number and number > high)
+       or (highlight == 'below' and number is number and number < low) }}
+  tone:    "{{ (high_colour if highlight == 'above' else low_colour if highlight == 'below' else none) if active else none }}"
+  icon:    {source: state_icon, entity: "{{ entity }}"}
+
+outputs:
+  toggle: {action: {switch: switch.toggle, input_boolean: input_boolean.toggle, light: light.toggle,
+                    fan: fan.toggle, siren: siren.toggle, cover: cover.toggle, valve: valve.toggle},
+           data: {entity_id: "{{ entity }}"}, feedback: optimistic}
+
+on: active
+tint: tone
+lit: icon
+state: line
+# A card too small for its name shows the value, not its icon.
+alone: big_line
+tap:
+  default: none
+  choices:
+    none:   {label: Does nothing}
+    toggle: {label: Turns it on or off, output: toggle, needs: can.toggle}
+
+parts:
+  # The reading at 48 px when it is a number, else at 28 px.
+  big:
+    type: swap
+    items:
+      - {type: label, text: "{{ big_line }}", size: xl, visible: is_number}
+      - {type: label, text: "{{ big_line }}", size: ml, visible: "{{ not is_number }}"}
+  # The tile's state line goes under its value: why there is none.
+  gone:    {type: label, text: "{{ gone_line }}", size: s, when: [tablet.v2]}
+  # What a tablet with older software shows instead.
+  old: {type: label, text: "{{ line }}", size: l, when: ["!tablet.v2"]}
+
+variants:
+  chip:
+    name: Chip
+    grid: [12, 1]
+    header: chip
+    # The value column holds a value: a dash while the device is gone (the
+    # card fades), never a cut "unavail…".
+    state: big_line
+    v1: note
+    layout:
+      - {type: space}
+  tile:
+    name: Tile
+    grid: [6, 3]
+    # As the Link Tile: the name alone, on two lines ("Living Room" over
+    # "Temperature"), then the value; a badge would leave the name a few
+    # letters under an empty line (L4). Without a value a dash, and the
+    # line under it says why.
+    header: tile
+    badge: false
+    state: none
+    v1: apollo/sensor-value
+    layout:
+      - {use: big}
+      - {use: gone}
+      - {use: old}
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: tile
+    # The value once, large, right under the name. The line under the name
+    # only says why a value is missing.
+    state: gone_line
+    align: top
+    v1: apollo/sensor-value
+    layout:
+      - {use: big}
+      - {use: old}
+
+preview:
+  inputs: {number: 21.4, reading: "21.4", unit_text: "°C", line: "21.4 °C", big_line: "21.4 °C", gone_line: "",
+           is_number: true,
+           active: false, tone: null}

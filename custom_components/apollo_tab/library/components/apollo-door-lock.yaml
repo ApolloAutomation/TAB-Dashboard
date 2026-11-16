@@ -1,0 +1,74 @@
+schema: 2
+id: apollo/door-lock
+version: 2.0.0
+name: Lock
+description: See whether a door is locked, and lock or unlock it after a question.
+icon: mdi:lock
+group: security
+replaces: [apollo/lock]
+v1: apollo/lock
+
+params:
+  entity: {domain: lock, label: Lock}
+
+options:
+  highlight: {type: toggle, section: shows, label: Stand out while unlocked, default: true}
+
+inputs:
+  is_locked: "{{ is_state(entity, 'locked') }}"
+  open_now:  "{{ states(entity) in ['unlocked', 'unlocking', 'open', 'opening', 'jammed'] }}"
+  lit_now:   "{{ highlight and open_now }}"
+  state:     "{{ state_translated(entity) }}"
+  icon:      {source: state_icon, entity: "{{ entity }}"}
+  tone: >-
+    {{ 'bad' if is_state(entity, 'jammed') else 'good' if is_state(entity, 'locked') else 'warn' if open_now else none }}
+
+outputs:
+  lock:   {action: lock.lock, data: {entity_id: "{{ entity }}"}, feedback: confirm}
+  unlock: {action: lock.unlock, data: {entity_id: "{{ entity }}"}, feedback: confirm}
+
+on: lit_now
+state: state
+tint: tone
+lit: outline
+# No card tap: a wipe over the screen must not even open the question.
+
+parts:
+  lock_or_unlock:
+    type: swap
+    items:
+      - {type: button, text: Unlock, icon: "mdi:lock-open", on_tap: unlock,
+         confirm: "Unlock this door?", visible: is_locked}
+      - {type: button, text: Lock, icon: "mdi:lock", on_tap: lock,
+         confirm: "Lock this door?", visible: open_now}
+
+variants:
+  tile:
+    name: Tile
+    grid: [6, 3]
+    # As every tile: the state beside the badge, the name on its own line
+    # across the tile (LOOK-NOTES decision 14).
+    header: tile
+    layout: [{use: lock_or_unlock}]
+  wide:
+    name: Wide
+    grid: [12, 3]
+    header: none
+    layout:
+      - {type: image, value: icon, look: badge, colour: tone, side: true}
+      - {type: label, text: "{{ state_attr(entity, 'friendly_name') or entity }}", size: m}
+      - {type: label, text: "{{ state }}", size: s}
+      - {use: lock_or_unlock}
+  tall:
+    name: Tall
+    grid: [6, 6]
+    # The tile header names it and says its state (LOOK-NOTES decision 14);
+    # the large badge takes the room under it, the button the foot.
+    header: tile
+    layout:
+      - {type: image, value: icon, look: badge, colour: tone, grow: true}
+      - {use: lock_or_unlock, height: 56}
+
+preview:
+  params: {entity: lock.example}
+  inputs: {is_locked: true, open_now: false, lit_now: false, state: Locked, tone: good}

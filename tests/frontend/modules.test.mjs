@@ -34,6 +34,15 @@ const expected = [
   "feedbackReduce",
   "warningText",
   "warningPlace",
+  "parseCssColour",
+  "accentInk",
+  "accentGrounds",
+  "accentText",
+  "layoutBand",
+  "shellHeight",
+  "fitStage",
+  "drawerShift",
+  "placeBeside",
 ];
 
 test("logic module exports the complete public surface", async () => {
@@ -70,6 +79,7 @@ const modelExpected = [
   "MAX_ENTITIES",
   "HISTORY_LIMIT",
   "DEFAULT_THEME",
+  "PREVIEW_THEMES",
   "GROUP_IDS",
   "PAGE_ICONS",
   "stableStringify",
@@ -97,6 +107,7 @@ const modelExpected = [
   "getCard",
   "usesWholeScreen",
   "pageScreens",
+  "omittedOnPage",
   "pageItems",
   "pageNotes",
   "dashboardNotes",
@@ -119,6 +130,8 @@ const modelExpected = [
   "useWholeScreen",
   "groupOf",
   "pickerGroups",
+  "suggestedCards",
+  "deviceMatches",
   "paramFields",
   "singleEntityParam",
   "entityChoices",
@@ -130,6 +143,7 @@ const modelExpected = [
   "historyPush",
   "historyUndo",
   "historyRedo",
+  "historyCloseGroup",
   "canUndo",
   "canRedo",
   "SaveQueue",
@@ -154,5 +168,21 @@ test("every relative frontend import resolves to a file", () => {
       const target = path.resolve(path.dirname(sourcePath), match[1]);
       assert.equal(fs.existsSync(target), true, `${name} imports missing ${match[1]}`);
     }
+  }
+});
+
+test("placement and drag modules export their public surface", async () => {
+  const placement = await import(pathToFileURL(path.join(frontend, "placement.js")));
+  for (const name of [
+    "GRID_COLS", "GRID_ROWS", "SNAP_COLS", "SNAP_ROWS", "MIN_COLS", "MIN_ROWS",
+    "rectOfCell", "cellOfRect", "readPosition", "cardCells", "isPlaced", "isEmptyPage",
+    "occupied", "canPlace", "freeSlot", "firstFree", "freezePage", "placeCard", "sizeCard",
+    "snapMove", "snapSize",
+  ]) {
+    assert.equal(Object.hasOwn(placement, name), true, `missing export ${name}`);
+  }
+  const drag = await import(pathToFileURL(path.join(frontend, "drag.js")));
+  for (const name of ["START_PX", "HOLD_MS", "followPress"]) {
+    assert.equal(Object.hasOwn(drag, name), true, `missing export ${name}`);
   }
 });

@@ -40,6 +40,34 @@ EXPECTED_BUILTIN_IDS = {
     "community/energy-gauge",
     "community/presence-chips",
     "community/room-summary",
+    # Cards, step A (schema 2).
+    "apollo/button",
+    "apollo/light",
+    "apollo/number",
+    "apollo/page-link",
+    "apollo/reading",
+    "apollo/scenes",
+    "apollo/screen",
+    "apollo/select",
+    "apollo/switch",
+    # Cards, step B (schema 2).
+    "apollo/alarm",
+    "apollo/appliance",
+    "apollo/climate",
+    "apollo/clock",
+    "apollo/cover",
+    "apollo/dial",
+    "apollo/door-lock",
+    "apollo/fan-speed",
+    "apollo/light-group",
+    "apollo/media",
+    "apollo/people",
+    "apollo/readings",
+    "apollo/room",
+    "apollo/volume",
+    # Richer inputs, package I11 (schema 2).
+    "apollo/graph",
+    "apollo/forecast",
 }
 
 
@@ -86,9 +114,9 @@ def _camera_doc(refresh):
 
 
 def test_all_builtin_components_validate():
-    """Validate all 16 bundled component files."""
+    """Validate all 41 bundled component files."""
     files = sorted(COMPONENTS_DIR.glob("*.yaml"))
-    assert len(files) == 16
+    assert len(files) == 41
     seen = {}
     for path in files:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))

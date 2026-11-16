@@ -4,7 +4,7 @@ import asyncio
 import json
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -65,6 +65,29 @@ DOOR_CARD = {
     "type": "custom:apollo-tab-card",
     "component": "me/door",
     "params": {"entity": "lock.front_door"},
+}
+
+SWAP_COMPONENT = """\
+id: me/swap
+version: 1.0.0
+name: Swap
+size: 1x1
+params:
+  lamp: {domain: light}
+outputs:
+  go:
+    action: light.turn_on
+    data: {entity_id: "{{ lamp }}"}
+    feedback: pulse
+layout:
+  - type: button
+    text: "On"
+    on_tap: go
+"""
+SWAP_CARD = {
+    "type": "custom:apollo-tab-card",
+    "component": "me/swap",
+    "params": {"lamp": "light.kitchen"},
 }
 
 TWO_COMPONENT = """\
@@ -607,6 +630,119 @@ async def test_previous_layout_taps_work_during_a_build(
     assert len(toggles) == 1
 
 
+async def test_old_screen_tap_after_a_component_change_is_stale(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+    user_components: WriteComponent,
+) -> None:
+    """The old screen's button never runs a changed Component's new action.
+
+    The bindings name an output, and the Component's file may give that
+    name another action while the old screen is still up.
+    """
+    user_components("swap.yaml", SWAP_COMPONENT)
+    on = async_mock_service(hass, "light", "turn_on")
+    off = async_mock_service(hass, "light", "turn_off")
+    hass.states.async_set("light.kitchen", "off", {"friendly_name": "Kitchen"})
+    tablet = make_tablet()
+    await setup_integration(hass, config_entry)
+    library = config_entry.runtime_data.library
+    await save_tab_dashboard("tab-home", tab_config(SWAP_CARD))
+    session = config_entry.runtime_data.sender.sessions[MAC]
+    await until(hass, lambda: session.status == STATUS_ON_TABLET)
+    widget = widget_for(session, "me/swap", "go")
+    shown = tablet.active
+
+    tablet.tap(widget)
+    await acked(hass, tablet, 1)
+    assert tablet.acks[-1] == (1, True, "")
+    assert (len(on), len(off)) == (1, 0)
+
+    # The button now says "Off" and turns the light off. The tablet still
+    # shows "On" while the new layout builds.
+    tablet.hold_build = True
+    user_components(
+        "swap.yaml",
+        SWAP_COMPONENT.replace("light.turn_on", "light.turn_off").replace(
+            '"On"', '"Off"'
+        ),
+    )
+    await library.async_load()
+    await until(hass, lambda: tablet.staged not in ("", shown))
+    assert tablet.active == shown
+    assert shown in session.kept
+
+    tablet.tap(widget)
+    await acked(hass, tablet, 2)
+    assert tablet.acks[-1] == (2, False, "stale")
+    assert (len(on), len(off)) == (1, 0)
+
+    # The new screen's button runs the new action.
+    tablet.finish_build()
+    await until(
+        hass,
+        lambda: session.status == STATUS_ON_TABLET and tablet.active != shown,
+    )
+    tablet.tap(widget_for(session, "me/swap", "go"))
+    await acked(hass, tablet, 3)
+    assert tablet.acks[-1] == (3, True, "")
+    assert (len(on), len(off)) == (1, 1)
+
+
+async def test_tap_right_after_a_reload_without_changes_still_runs(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+) -> None:
+    """Reading the same Component files again leaves the screen's taps alone."""
+    toggles = async_mock_service(hass, "light", "toggle")
+    tablet, session = await ready(
+        hass, config_entry, make_tablet, save_tab_dashboard, LIGHT_CARD
+    )
+    widget = widget_for(session, "apollo/light-tile", "toggle")
+    await config_entry.runtime_data.library.async_load()
+    tablet.tap(widget)
+    await acked(hass, tablet, 1)
+    assert tablet.acks[-1] == (1, True, "")
+    assert len(toggles) == 1
+
+
+@pytest.mark.parametrize("missing", ["revision", "hash", "both"])
+async def test_tap_without_a_component_revision_is_stale(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+    missing: str,
+) -> None:
+    """A tap runs only when its Component is known to be the layout's one.
+
+    A layout without a recorded revision for the Component, or a Component
+    without a hash, cannot show that, so nothing runs.
+    """
+    calls = async_mock_service(hass, "light", "toggle")
+    tablet, session = await ready(
+        hass, config_entry, make_tablet, save_tab_dashboard, LIGHT_CARD
+    )
+    widget = widget_for(session, "apollo/light-tile", "toggle")
+    if missing in ("revision", "both"):
+        session.kept[tablet.active].revisions = {}
+    if missing in ("hash", "both"):
+        components = config_entry.runtime_data.library.components
+        tile = components["apollo/light-tile"]
+        components["apollo/light-tile"] = {
+            key: value for key, value in tile.items() if key != "hash"
+        }
+
+    tablet.tap(widget)
+    await acked(hass, tablet, 1)
+    assert tablet.acks == [(1, False, "stale")]
+    assert calls == []
+
+
 async def test_stale_layout_is_acked_stale(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
@@ -735,6 +871,44 @@ async def test_stale_session_starts_a_new_session_once(
     assert tablet.acks == []
 
 
+async def test_input_without_a_session_is_stale(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+) -> None:
+    """While HA holds no session, no input is the session's and none runs.
+
+    Not even input signed over an empty nonce field. The signature is the
+    tablet's, so HA greets it again, as after any stale session.
+    """
+    calls = async_mock_service(hass, "light", "toggle")
+    tablet, session = await ready(
+        hass, config_entry, make_tablet, save_tab_dashboard, LIGHT_CARD
+    )
+    widget = widget_for(session, "apollo/light-tile", "toggle")
+    hellos = len(tablet.calls_of("tab_hello"))
+    # As after the connection ended: no session, the secret and bindings stay.
+    session.drop_session()
+    assert session.input == "ok"
+
+    tablet.tap(widget, nonce="", counter=1)
+    # Signed over the session the tablet still believes in.
+    tablet.tap(widget, counter=2)
+    await until(hass, lambda: session.nonce is not None)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert calls == []
+    assert tablet.calls_of("tab_ack") == []
+    assert session.dropped["stale_session"] == 2
+    assert len(tablet.calls_of("tab_hello")) == hellos + 1
+
+    # In the new session the tablet's taps count again.
+    tablet.tap(widget)
+    await acked(hass, tablet, 1)
+    assert tablet.acks == [(1, True, "")]
+    assert len(calls) == 1
+
+
 async def test_more_than_ten_inputs_a_second_are_busy(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
@@ -796,6 +970,59 @@ async def test_acks_are_signed_in_order(
     numbers = [int(args["auth"].partition(".")[0]) for args in acks]
     assert numbers == sorted(numbers)
     assert all(tp.is_hex(args["auth"].partition(".")[2], 32) for args in acks)
+
+
+async def test_ack_of_an_ended_session_is_not_sent(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    make_tablet: MakeTablet,
+    save_tab_dashboard: SaveTabDashboard,
+    memory_link: MemoryTabletLink,
+) -> None:
+    """An action that ends after a new session began is not answered there.
+
+    Input counters start at 1 again in every session, so the new session's
+    first input would take the old answer for its own.
+    """
+    release = asyncio.Event()
+    started: list[ServiceCall] = []
+
+    async def toggle(call: ServiceCall) -> None:
+        """Wait and then fail the first time; succeed at once afterwards."""
+        started.append(call)
+        if len(started) == 1:
+            await release.wait()
+            raise ValueError("the first action fails late")
+
+    hass.services.async_register("light", "toggle", toggle)
+    tablet, session = await ready(
+        hass, config_entry, make_tablet, save_tab_dashboard, LIGHT_CARD
+    )
+    widget = widget_for(session, "apollo/light-tile", "toggle")
+
+    tablet.tap(widget)
+    await until(hass, lambda: len(started) == 1)
+    first = session.nonce
+
+    memory_link.async_reconnect(MAC)
+    await until(
+        hass,
+        lambda: (
+            session.nonce not in (None, first) and session.status == STATUS_ON_TABLET
+        ),
+    )
+    assert tablet.acks == []
+
+    # Input 1 of the new session.
+    tablet.tap(widget)
+    await acked(hass, tablet, 1)
+    assert tablet.acks == [(1, True, "")]
+
+    release.set()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert tablet.acks == [(1, True, "")]
+    assert len(tablet.calls_of("tab_ack")) == 1
+    assert tablet.refused == []
 
 
 async def test_taps_work_after_a_restart_without_a_resend(

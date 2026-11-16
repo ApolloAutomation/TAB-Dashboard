@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
+import fs from "node:fs";
 import * as logic from "../../custom_components/apollo_tab/frontend/logic.js";
 
 test("isHex accepts six digit colours", () => {
@@ -101,6 +102,18 @@ test("subscriptionKey ignores key order and unrelated keys", () => {
     component: "a/b",
   }, "tab-1");
   assert.equal(first, second);
+});
+
+test("subscriptionKey tells schema 2 cards apart by look, settings and detail", () => {
+  const base = { component: "apollo/light", params: { entity: "light.den" } };
+  const keys = [
+    logic.subscriptionKey(base, "tab-1"),
+    logic.subscriptionKey({ ...base, variant: "tile" }, "tab-1"),
+    logic.subscriptionKey({ ...base, variant: "wide" }, "tab-1"),
+    logic.subscriptionKey({ ...base, options: { show_white: false } }, "tab-1"),
+    logic.subscriptionKey(base, "tab-1", true),
+  ];
+  assert.equal(new Set(keys).size, keys.length);
 });
 
 test("formToStyle drops empty parts", () => {
@@ -325,4 +338,310 @@ test("tabletFit gives a missing character the tablet's box width", () => {
   assert.equal(logic.tabletFit("aΩb😀", 45, 18, advance), `a${box}b…`);
   // The box is never measured in the browser's font.
   assert.ok(!asked.includes(box) && !asked.includes("Ω"));
+});
+
+// The accent made readable (build plan 1.8). The themes are the harness
+// page's: Home Assistant's default light and dark colours.
+const hex = (text) => [1, 3, 5].map((start) => Number.parseInt(text.slice(start, start + 2), 16));
+const toHex = (rgb) => `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+const ratio = (a, b) => {
+  const light = (rgb) => {
+    const [r, g, bl] = rgb.map((value) => {
+      const c = value / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [light(a), light(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+const TONES = { ok: hex("#43a047"), warn: hex("#ffa600"), err: hex("#db4437"), info: hex("#039be5") };
+const THEMES = {
+  light: { surface: hex("#ffffff"), page: hex("#fafafa"), stage: hex("#e5e5e5"), text: hex("#141414") },
+  dark: { surface: hex("#1c1c1c"), page: hex("#111111"), stage: hex("#282828"), text: hex("#e1e1e1") },
+};
+const grounds = (theme, accent) => logic.accentGrounds({ ...THEMES[theme], accent: hex(accent), tones: TONES });
+
+test("parseCssColour reads rgb and color(srgb), clamps, and gives null for what it cannot read", () => {
+  assert.deepEqual(logic.parseCssColour("rgb(0, 154, 199)"), [0, 154, 199]);
+  assert.deepEqual(logic.parseCssColour("rgba(0, 154, 199, 1)"), [0, 154, 199]);
+  assert.deepEqual(logic.parseCssColour("color(srgb 0 0.6 0.78)"), [0, 153, 199]);
+  // A wide-gamut theme colour can come out a little past 0 or 1.
+  assert.deepEqual(logic.parseCssColour("color(srgb 1.02 -0.01 0.5)"), [255, 0, 128]);
+  assert.equal(logic.parseCssColour("rgba(0, 154, 199, 0.5)"), null);
+  assert.equal(logic.parseCssColour("color(srgb 0 0.6 0.78 / 0.5)"), null);
+  assert.equal(logic.parseCssColour("oklch(0.6 0.12 220)"), null);
+  assert.equal(logic.parseCssColour("#009ac7"), null);
+  assert.equal(logic.parseCssColour(""), null);
+  assert.equal(logic.parseCssColour(undefined), null);
+});
+
+test("accentInk darkens a mid accent until white has 4.5 to 1", () => {
+  const blue = logic.accentInk(hex("#009ac7"));
+  assert.equal(toHex(blue.fill), "#007b9f");
+  assert.equal(toHex(blue.ink), "#ffffff");
+  assert.ok(ratio(blue.fill, blue.ink) >= 4.5);
+  assert.equal(toHex(logic.accentInk(hex("#03a9f4")).fill), "#027ab0");
+  const dark = logic.accentInk(hex("#1565c0"));
+  assert.equal(toHex(dark.fill), "#1565c0");
+  assert.equal(toHex(dark.ink), "#ffffff");
+});
+
+test("accentInk keeps a light accent and gives it dark ink", () => {
+  for (const colour of ["#f5b547", "#ffeb3b"]) {
+    const { fill, ink } = logic.accentInk(hex(colour));
+    assert.equal(toHex(fill), colour);
+    assert.equal(toHex(ink), "#111111");
+    assert.ok(ratio(fill, ink) >= 4.5);
+  }
+});
+
+test("accentText moves toward black on a light surface and toward white on a dark one", () => {
+  const cases = [
+    ["#009ac7", "light", "#006f8f"],
+    ["#009ac7", "dark", "#14a2cb"],
+    ["#f5b547", "light", "#7f5e25"],
+    ["#f5b547", "dark", "#f5b547"],
+    ["#1565c0", "light", "#1565c0"],
+    ["#1565c0", "dark", "#699cd7"],
+  ];
+  for (const [accent, theme, expected] of cases) {
+    assert.equal(toHex(logic.accentText(hex(accent), grounds(theme, accent))), expected, `${accent} in ${theme}`);
+  }
+  // The focus ring, on white.
+  assert.equal(toHex(logic.accentText(hex("#009ac7"), [hex("#ffffff")])), "#007b9f");
+  assert.equal(toHex(logic.accentText(hex("#f5b547"), [hex("#ffffff")])), "#936d2b");
+});
+
+test("the accent as text has 4.5 to 1 on every ground", () => {
+  for (const accent of ["#009ac7", "#f5b547", "#1565c0", "#03a9f4", "#4caf50", "#e91e63"]) {
+    for (const theme of ["light", "dark"]) {
+      const list = grounds(theme, accent);
+      // The surface, the page, the stage, accent-soft, tonal and four notices.
+      assert.equal(list.length, 9);
+      const text = logic.accentText(hex(accent), list);
+      for (const ground of list) {
+        assert.ok(ratio(text, ground) >= 4.5, `${accent} in ${theme}: ${toHex(text)} on ${toHex(ground)}`);
+      }
+    }
+  }
+});
+
+test("a switch that is off has a knob lighter than its track in both themes", () => {
+  // Home Assistant's default surfaces and text colours (tests/harness/index.html).
+  const themes = [
+    [hex("#ffffff"), hex("#141414")],
+    [hex("#1c1c1c"), hex("#e1e1e1")],
+  ];
+  assert.equal(toHex(logic.switchKnob(...themes[0])), "#ffffff");
+  assert.equal(toHex(logic.switchKnob(...themes[1])), "#e1e1e1");
+  for (const [surface, text] of themes) {
+    // The track is the text at 48 % over the surface (--tab-field-line).
+    const track = surface.map((value, index) => Math.round(value + (text[index] - value) * 0.48));
+    const knob = logic.switchKnob(surface, text);
+    const light = (rgb) => rgb.reduce((sum, value) => sum + value, 0);
+    assert.ok(light(knob) > light(track), `${toHex(knob)} on ${toHex(track)}`);
+  }
+});
+
+test("layoutBand picks wide, medium, compact and short", () => {
+  const cases = [
+    [1280, 800, "wide"],
+    [1160, 800, "wide"],
+    [1159, 800, "medium"],
+    [900, 800, "medium"],
+    [899, 800, "compact"],
+    [844, 390, "short"],
+    [599, 390, "compact"],
+    [1280, 559, "short"],
+  ];
+  for (const [width, height, band] of cases) {
+    assert.equal(logic.layoutBand(width, height), band, `${width} x ${height}`);
+  }
+});
+
+test("fitStage gives the table of the build plan", () => {
+  // [availW, availH, picture width]; compact passes Infinity as the height.
+  const rows = [
+    [879.2, 584, 879],
+    [796, 584, 796],
+    [972, 600, 960],
+    [1452, 864, 1280],
+    [2092, 1224, 1280],
+    [879.2, 504, 806],
+    [942.8, 552, 883],
+    [772, 584, 772],
+    [848, 600, 848],
+    [784, Infinity, 784],
+    [354, Infinity, 354],
+    [284, Infinity, 284],
+    [470.4, 258, 412],
+    [324, 268, 324],
+  ];
+  for (const [w, h, width] of rows) {
+    assert.equal(logic.fitStage(w, h), width, `${w} x ${h}`);
+  }
+  // With the one line of page notices, 44 px less height.
+  const withNotice = [
+    [879.2, 584, 864],
+    [942.8, 552, 812],
+    [879.2, 504, 736],
+    [972, 600, 889],
+    [796, 584, 796],
+    [772, 584, 772],
+    [470.4, 258, 342],
+  ];
+  for (const [w, h, width] of withNotice) {
+    assert.equal(logic.fitStage(w, h - 44), width, `${w} x ${h} with a notice`);
+  }
+  assert.equal(logic.fitStage(-5, 100), 0);
+});
+
+test("drawerShift keeps the card clear of the drawer and never moves it past the padding", () => {
+  // Clear of the drawer already: no move.
+  assert.equal(logic.drawerShift(100, 400, 704, 16), 0);
+  assert.equal(logic.drawerShift(100, 688, 704, 16), 0);
+  // Just under it: moved by what it needs, 16 px clear.
+  assert.equal(logic.drawerShift(500, 800, 704, 16), 112);
+  // Wider than the room beside the drawer: only until the left edge is at
+  // the padding.
+  assert.equal(logic.drawerShift(100, 900, 704, 16), 84);
+  // Already at the padding: no move left.
+  assert.equal(logic.drawerShift(16, 900, 704, 16), 0);
+  assert.equal(logic.drawerShift(10, 900, 704, 16), 0);
+});
+
+test("shellHeight follows the keyboard and ignores a pinch zoom", () => {
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: null, top: 56 }), 744);
+  // The keyboard is up: the visible part is 500 high.
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 500, offsetTop: 0, scale: 1 }, top: 0 }), 500);
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 500, offsetTop: 40, scale: 1 }, top: 20 }), 520);
+  // Pinch zoom at 2: the window's own height.
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 400, offsetTop: 120, scale: 2 }, top: 10 }), 790);
+  assert.equal(logic.shellHeight({ innerHeight: 800, visual: { height: 640.6, offsetTop: 0, scale: 1.005 }, top: 0.4 }), 640);
+  assert.equal(logic.shellHeight({ innerHeight: 300, visual: null, top: 400 }), 0);
+});
+
+test("compactCard cuts the empty band of a detail copy down to one gap", () => {
+  const card = {
+    w: 568,
+    h: 696,
+    header: { r: [16, 16, 536, 48] },
+    widgets: [
+      { i: 0, t: "switch", r: [488, 22, 64, 36] },
+      { i: 1, t: "slider", r: [16, 540, 536, 56] },
+      { i: 2, t: "slider", r: [16, 604, 536, 76] },
+      { i: 3, t: "label", r: [16, 604, 0, 0] },
+    ],
+  };
+  const out = logic.compactCard(card);
+  // 64 to 540 is empty: 468 of it go, 8 stay.
+  assert.equal(out.h, 696 - 468);
+  assert.deepEqual(out.header.r, [16, 16, 536, 48]);
+  assert.deepEqual(out.widgets.map((widget) => widget.r), [
+    [488, 22, 64, 36],
+    [16, 72, 536, 56],
+    [16, 136, 536, 76],
+    [16, 136, 0, 0],
+  ]);
+  // The input is not changed.
+  assert.equal(card.h, 696);
+  assert.deepEqual(card.widgets[1].r, [16, 540, 536, 56]);
+  // Gaps of 16 or less stay, and a device layout is left as it is.
+  const tight = { w: 100, h: 100, widgets: [{ r: [0, 0, 10, 10] }, { r: [0, 26, 10, 10] }] };
+  assert.equal(logic.compactCard(tight), tight);
+  const layout = { w: [], r: [0, 0, 10, 10] };
+  assert.equal(logic.compactCard(layout), layout);
+  assert.equal(logic.compactCard(null), null);
+});
+
+// ---- `when` (C.2.5): the vectors shared with maker/when.py ----
+
+const whenVectors = JSON.parse(
+  fs.readFileSync(new URL("../fixtures/when_vectors.json", import.meta.url), "utf8"),
+);
+
+test("whenHolds gives every answer of when_vectors.json", () => {
+  assert.ok(whenVectors.cases.length >= 50);
+  const wrong = [];
+  for (const entry of whenVectors.cases) {
+    const names = entry.names === "base" ? whenVectors.base : entry.names;
+    if (logic.whenHolds(entry.terms, names) !== entry.holds) {
+      wrong.push(`${JSON.stringify(entry.terms)}: ${entry.why}`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test("whenHolds reads only a map's own names", () => {
+  assert.equal(logic.termHolds("constructor", {}), false);
+  assert.equal(logic.termHolds("!constructor", {}), true);
+  // A name the map only inherits is not a fact.
+  const inherited = Object.create({ "can.dim": true, "has.effects": "on" });
+  assert.equal(logic.termHolds("can.dim", inherited), false);
+  assert.equal(logic.termHolds("has.effects=on", inherited), false);
+  // A negated comparison is a bad term, so it never holds either way.
+  assert.equal(logic.termHolds("!has.mode=heat", { "has.mode": "heat" }), false);
+  assert.equal(logic.termHolds("!has.mode=heat", { "has.mode": "cool" }), false);
+  assert.equal(logic.whenHolds(null, {}), true);
+  assert.equal(logic.whenHolds(["a"], null), false);
+});
+
+test("kelvinRgb gives Home Assistant's whites", () => {
+  // The values of maker/compile2.py::kelvin_rgb.
+  assert.deepEqual(logic.kelvinRgb(2700), [255, 167, 87]);
+  assert.deepEqual(logic.kelvinRgb(6500), [255, 254, 250]);
+  assert.deepEqual(logic.kelvinRgb(1500), [255, 108, 0]);
+});
+
+test("placeBeside keeps a pop-up inside its bounds", () => {
+  const bounds = { left: 0, top: 0, right: 1000, bottom: 700 };
+  const anchor = { left: 600, top: 10, right: 700, bottom: 50 };
+  // Under its opener, lined up with the opener's start edge.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 200 }, bounds), { left: 600, top: 54 });
+  // Too wide to start there: moved left until its end is inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 500, height: 200 }, bounds), { left: 500, top: 54 });
+  // Right to left: its end lines up with the opener's end.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 200 }, bounds, { rtl: true }), { left: 400, top: 54 });
+  // No room under an opener near the bottom: above it.
+  const low = { left: 20, top: 600, right: 120, bottom: 640 };
+  assert.deepEqual(logic.placeBeside(low, { width: 200, height: 300 }, bounds), { left: 20, top: 296 });
+  // Taller than the bounds: its top stays inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 300, height: 900 }, bounds), { left: 600, top: 0 });
+  // Wider than the bounds: its start edge stays inside.
+  assert.deepEqual(logic.placeBeside(anchor, { width: 1200, height: 100 }, bounds), { left: 0, top: 54 });
+  // Every result is inside whenever it fits.
+  for (const x of [-50, 0, 400, 990, 1100]) {
+    for (const y of [-20, 0, 300, 690, 800]) {
+      const box = { left: x, top: y, right: x + 40, bottom: y + 40 };
+      const place = logic.placeBeside(box, { width: 344, height: 240 }, bounds);
+      assert.ok(place.left >= 0 && place.left + 344 <= 1000, `left ${place.left} for ${x},${y}`);
+      assert.ok(place.top >= 0 && place.top + 240 <= 700, `top ${place.top} for ${x},${y}`);
+    }
+  }
+});
+
+test("fillWords puts the approve words into every sentence and leaves other braces alone", () => {
+  const strings = {
+    "tablets.word.approve": "turn on",
+    "tablets.word.approve_cap": "Turn on",
+    "tablets.word.approve_it": "turn it on",
+    "tablets.turn_on": "{approve_cap} with this dashboard",
+    "tablets.note": "Do not {approve_it} unless {name} is yours.",
+    "tablets.status": "Ready to {approve}",
+    "home.plain": "{count} cards",
+    "home.unknown": "{approve_later}",
+  };
+  const filled = logic.fillWords(strings);
+  assert.equal(filled["tablets.turn_on"], "Turn on with this dashboard");
+  assert.equal(filled["tablets.note"], "Do not turn it on unless {name} is yours.");
+  assert.equal(filled["tablets.status"], "Ready to turn on");
+  assert.equal(filled["home.plain"], "{count} cards");
+  assert.equal(filled["home.unknown"], "{approve_later}");
+  // The words themselves stay, and the file it was given is not changed.
+  assert.equal(filled["tablets.word.approve"], "turn on");
+  assert.equal(strings["tablets.turn_on"], "{approve_cap} with this dashboard");
+  // Nothing to fill from: the same sentences.
+  assert.deepEqual(logic.fillWords({ a: "{approve}" }), { a: "{approve}" });
+  assert.deepEqual(logic.fillWords(null), {});
 });

@@ -1,4 +1,5 @@
-import { cleanConfig, isIcon } from "./logic.js";
+import { cleanConfig, isIcon, termHolds, warningBoxKind, whenTruthy } from "./logic.js";
+import { cardCells, firstFree, isEmptyPage, isPlaced } from "./placement.js";
 
 export const CARD_TYPE = "custom:apollo-tab-card";
 export const PREVIEW_TYPE = "custom:apollo-tab-preview";
@@ -11,13 +12,17 @@ export const MAX_UNITS_WIDE = 6;
 export const MAX_ENTITIES = 8;
 export const HISTORY_LIMIT = 50;
 export const DEFAULT_THEME = "midnight";
+// Themes the gallery tags "Preview": they may still change. Kept here, not
+// in the theme's own entry, whose keys stay as they are.
+export const PREVIEW_THEMES = ["glass"];
 export const GROUP_IDS = [
   "lights",
   "climate",
-  "media",
+  "covers",
   "security",
+  "media",
   "sensors",
-  "rooms",
+  "home",
   "more",
 ];
 export const PAGE_ICONS = [
@@ -80,6 +85,7 @@ const ITEM_REASON_CODES = new Set([
 
 const ITEM_NOTE_CODES = new Set([
   "params_incomplete",
+  "position_adjusted",
   "element_clipped",
   "card_too_wide",
   "card_too_tall",
@@ -121,7 +127,6 @@ const LIGHT_DOMAINS = new Set([
 const CLIMATE_DOMAINS = new Set([
   "climate",
   "fan",
-  "cover",
   "humidifier",
   "water_heater",
   "valve",
@@ -761,11 +766,21 @@ export function pageScreens(preview, vi) {
 
   const result = [];
   preview.layout.pages.forEach((page, index) => {
-    if (isPlainObject(page) && page.view === vi) {
+    // A detail page carries its card's view, but it is no screen of it.
+    if (isPlainObject(page) && page.view === vi && !(index > 0 && page.sub === 1)) {
       result.push(index);
     }
   });
   return result;
+}
+
+// The cards left out of one screen: the warnings that have a rectangle on
+// it. They can be all the screen holds, when its only card is over the
+// chart or dial budget.
+export function omittedOnPage(preview, pageId) {
+  return warningList(preview).filter(
+    (warning) => warningBoxKind(warning) === "omitted" && warning.page === pageId,
+  );
 }
 
 export function pageItems(config, vi, library, preview) {
@@ -972,18 +987,37 @@ export function notShownCounts(config, library, preview) {
   const drawn = isPlainObject(preview);
   let cards = 0;
   let pages = 0;
+  // The first thing left out, in page order: { view, key, source } for a
+  // card, { view, key: null, source: null } for a page the tablet cannot
+  // show, or null. The start screen's link opens the editor there.
+  let first = null;
   for (const page of pageList(config)) {
     if (page.kind !== "page") {
       pages += 1;
+      first ??= { view: page.view, key: null, source: null };
       continue;
     }
     for (const row of pageItems(config, page.view, library, preview)) {
       if (drawn ? !row.shown : NEVER_SHOWN_KINDS.has(row.kind)) {
         cards += 1;
+        first ??= { view: page.view, key: row.key, source: [...row.source] };
       }
     }
   }
-  return { cards, pages };
+  return { cards, pages, first };
+}
+
+// How many cards a dashboard holds, on every page; headings are not cards.
+export function cardCount(config) {
+  let count = 0;
+  for (const view of configViews(config)) {
+    const sections = isPlainObject(view) && Array.isArray(view.sections) ? view.sections : [];
+    for (const section of sections) {
+      const cards = isPlainObject(section) && Array.isArray(section.cards) ? section.cards : [];
+      count += cards.filter((card) => isPlainObject(card) && card.type !== "heading").length;
+    }
+  }
+  return count;
 }
 
 export function addPage(config, title, icon) {
@@ -1089,7 +1123,9 @@ export function removePage(config, vi) {
   };
 }
 
-export function addCard(config, vi, component, params) {
+// `after`: the selected card's source. The new card goes right after it
+// when it is a card of this page; otherwise at the end of the last grid.
+export function addCard(config, vi, component, params, after = null) {
   const next = structuredClone(config);
   if (
     !Array.isArray(next.views)
@@ -1108,10 +1144,22 @@ export function addCard(config, vi, component, params) {
   }
 
   let si = -1;
-  for (let index = view.sections.length - 1; index >= 0; index -= 1) {
+  let at = null;
+  const selected = sourceParts(after);
+  if (
+    selected !== null
+    && selected[0] === vi
+    && selected[2] !== null
+    && isGridSection(view.sections[selected[1]])
+    && Array.isArray(view.sections[selected[1]].cards)
+    && selected[2] < view.sections[selected[1]].cards.length
+  ) {
+    si = selected[1];
+    at = selected[2] + 1;
+  }
+  for (let index = view.sections.length - 1; si === -1 && index >= 0; index -= 1) {
     if (isGridSection(view.sections[index])) {
       si = index;
-      break;
     }
   }
 
@@ -1152,12 +1200,23 @@ export function addCard(config, vi, component, params) {
       rows,
     },
   });
+  // On a placed page, and on an empty one (so every new page is placed
+  // from its first card), the card takes the first free slot.
+  if (isPlaced(next, vi) || isEmptyPage(next, vi)) {
+    const size = cardCells(card);
+    card.apollo_tab = firstFree(next, vi, size.cols, size.rows);
+  }
 
-  section.cards.push(card);
+  if (at === null) {
+    section.cards.push(card);
+    at = section.cards.length - 1;
+  } else {
+    section.cards.splice(at, 0, card);
+  }
 
   return {
     config: next,
-    source: [vi, si, section.cards.length - 1],
+    source: [vi, si, at],
   };
 }
 
@@ -1193,6 +1252,11 @@ export function updateCard(config, source, changes) {
     "title",
     "style",
     "grid_options",
+    // A schema 2 card's own settings and its named size (C.2.3).
+    "options",
+    "variant",
+    // The card's own place on a placed page (placement.js).
+    "apollo_tab",
   ]) {
     if (!Object.prototype.hasOwnProperty.call(changes, key)) {
       continue;
@@ -1205,6 +1269,9 @@ export function updateCard(config, source, changes) {
     }
   }
 
+  if (isPlainObject(card.options) && !Object.keys(card.options).length) {
+    delete card.options;
+  }
   section.cards[ci] = cleanConfig(card);
   return next;
 }
@@ -1252,9 +1319,16 @@ export function cardSize(card, component) {
 
   const rawWidth = columns / UNIT_COLUMNS;
   const rawHeight = rows / UNIT_ROWS;
-  const exact = columnsExact
+  // A named size of the card (a variant, such as Small 6 x 2) is one of its
+  // own sizes, not an unusual one.
+  const named = columnsExact && pickerVariants(component).some(
+    (variant) => variant.grid[0] === columns && variant.grid[1] === rows,
+  );
+  const exact = named || (
+    columnsExact
     && Number.isInteger(rawWidth)
-    && Number.isInteger(rawHeight);
+    && Number.isInteger(rawHeight)
+  );
 
   return {
     w: exact ? rawWidth : Math.max(1, Math.round(rawWidth)),
@@ -1269,6 +1343,9 @@ export function maxUnitsWide(config, source) {
     return 2;
   }
 
+  if (isPlaced(config, parts[0])) {
+    return MAX_UNITS_WIDE;
+  }
   const section = sectionAt(config, parts[0], parts[1]);
   return section ? 2 * sectionSpan(section) : 2;
 }
@@ -1403,6 +1480,10 @@ export function moveItem(config, source, delta) {
 }
 
 export function canMove(config, source, delta) {
+  // On a placed page cards are moved on the picture, not in a list order.
+  if (Array.isArray(source) && isPlaced(config, source[0])) {
+    return false;
+  }
   const result = moveItem(config, source, delta);
   return !sameSource(result.source, source);
 }
@@ -1462,6 +1543,13 @@ export function moveCardToPage(config, source, target, title = "") {
   const widest = 12 * sectionSpan(section);
   if (isPlainObject(moved.grid_options) && Number(moved.grid_options.columns) > widest) {
     moved.grid_options = { ...moved.grid_options, columns: widest };
+  }
+  // A placed or empty page gives it its first free slot; a flowing page
+  // takes it without a place.
+  delete moved.apollo_tab;
+  if (isPlaced(next, view) || isEmptyPage(next, view)) {
+    const size = cardCells(moved);
+    moved.apollo_tab = firstFree(next, view, size.cols, size.rows);
   }
   section.cards.push(moved);
   return { config: next, source: [view, grid, section.cards.length - 1], view };
@@ -1585,6 +1673,55 @@ export function removeItem(config, source) {
   return next;
 }
 
+// A copy of the card right after it, in the same group of cards, with the
+// same device, name, look and size. Returns the new config and the copy's
+// place; source null when there is no card there.
+export function duplicateCard(config, source) {
+  const next = structuredClone(config);
+  const parts = sourceParts(source);
+  if (parts === null || parts[2] === null) {
+    return { config: next, source: null };
+  }
+  const [vi, si, ci] = parts;
+  const section = sectionAt(next, vi, si);
+  if (!section || !Array.isArray(section.cards) || !isPlainObject(section.cards[ci])) {
+    return { config: next, source: null };
+  }
+  const copy = structuredClone(section.cards[ci]);
+  // On a placed page the copy goes to the first free slot.
+  if (isPlaced(next, vi)) {
+    delete copy.apollo_tab;
+    const size = cardCells(copy);
+    copy.apollo_tab = firstFree(next, vi, size.cols, size.rows);
+  }
+  section.cards.splice(ci + 1, 0, copy);
+  return { config: next, source: [vi, si, ci + 1] };
+}
+
+// Where a card sits among the cards of its page, in the order they fill the
+// screen: { n, count }, n from 1. Null when it is not on the page.
+export function cardPlace(config, source) {
+  const parts = sourceParts(source);
+  const view = parts === null ? null : configViews(config)[parts[0]];
+  if (!isPlainObject(view) || !Array.isArray(view.sections) || parts[2] === null) {
+    return null;
+  }
+  let count = 0;
+  let n = 0;
+  view.sections.forEach((section, si) => {
+    if (!isGridSection(section) || !Array.isArray(section.cards)) {
+      return;
+    }
+    section.cards.forEach((_card, ci) => {
+      count += 1;
+      if (si === parts[1] && ci === parts[2]) {
+        n = count;
+      }
+    });
+  });
+  return n ? { n, count } : null;
+}
+
 export function setHeadingText(config, source, text) {
   const next = structuredClone(config);
   const parts = sourceParts(source);
@@ -1686,7 +1823,12 @@ export function useWholeScreen(config, vi) {
   return next;
 }
 
+// A card's own `group` wins when it is one of the eight; otherwise the
+// group is guessed from the kind of device it controls.
 export function groupOf(component) {
+  if (isPlainObject(component) && GROUP_IDS.includes(component.group)) {
+    return component.group;
+  }
   const params = isPlainObject(component)
     && isPlainObject(component.params)
     ? component.params
@@ -1694,14 +1836,15 @@ export function groupOf(component) {
 
   for (const spec of Object.values(params)) {
     if (isPlainObject(spec) && spec.kind === "page") {
-      return "rooms";
+      return "home";
     }
   }
 
   let domain = null;
   for (const spec of Object.values(params)) {
     if (isPlainObject(spec) && spec.kind === "entity") {
-      domain = spec.domain;
+      // A field for several kinds goes by its first kind.
+      domain = typeof spec.domain === "string" ? spec.domain : fieldDomains(spec)[0] ?? null;
       break;
     }
   }
@@ -1711,6 +1854,9 @@ export function groupOf(component) {
   }
   if (CLIMATE_DOMAINS.has(domain)) {
     return "climate";
+  }
+  if (domain === "cover") {
+    return "covers";
   }
   if (domain === "media_player") {
     return "media";
@@ -1722,7 +1868,7 @@ export function groupOf(component) {
     return "sensors";
   }
   if (ROOM_DOMAINS.has(domain)) {
-    return "rooms";
+    return "home";
   }
 
   return "more";
@@ -1736,7 +1882,7 @@ function searchWords(text) {
 }
 
 // Each word of `query` has to start a word of the card's name, its
-// description, the kinds of device it controls ("media_player" gives
+// description, its search words (`keywords`), the kinds of device it controls ("media_player" gives
 // "media" and "player"), or the extra words describe(component, group)
 // gives: the picker passes the group's title and the device question.
 // Matching the start of words keeps "ac" from finding "Scene" or "Lock".
@@ -1751,19 +1897,23 @@ export function pickerGroups(library, query = "", describe = null) {
   );
 
   for (const component of components) {
-    if (!isPlainObject(component)) {
+    if (!isOffered(component)) {
       continue;
     }
 
     const group = groupOf(component);
     if (words.length) {
       const domains = paramFields(component)
-        .filter((field) => field.kind === "entity" && typeof field.domain === "string")
-        .map((field) => field.domain);
+        .filter((field) => field.kind === "entity")
+        .flatMap((field) => fieldDomains(field));
+      const keywords = Array.isArray(component.keywords)
+        ? component.keywords.filter((word) => typeof word === "string")
+        : [];
       const known = searchWords([
         component.name,
         component.description,
         ...domains,
+        ...keywords,
         typeof describe === "function" ? describe(component, group) : "",
       ].join(" "));
       if (!words.every((word) => known.some((start) => start.startsWith(word)))) {
@@ -1782,6 +1932,79 @@ export function pickerGroups(library, query = "", describe = null) {
     }));
 }
 
+// The kinds of device Suggested offers a card for, in this order.
+export const SUGGESTED_KINDS = [
+  "light",
+  "climate",
+  "media_player",
+  "weather",
+  "scene",
+  "sensor",
+  "cover",
+  "lock",
+];
+
+// Up to eight cards for a first look: for each kind of SUGGESTED_KINDS this
+// home has, the first offered built-in card whose first device field takes
+// that kind. A card is given once.
+export function suggestedCards(library, hass) {
+  const states = isPlainObject(hass) && isPlainObject(hass.states) ? hass.states : {};
+  const entities = isPlainObject(hass) && isPlainObject(hass.entities) ? hass.entities : {};
+  const has = new Set(
+    Object.keys(states)
+      .filter((id) => entities[id]?.hidden !== true)
+      .map((id) => id.split(".", 1)[0]),
+  );
+  const cards = offeredCards(library).filter((component) => component.source !== "user");
+  const chosen = [];
+  for (const kind of SUGGESTED_KINDS) {
+    if (!has.has(kind)) {
+      continue;
+    }
+    const card = cards.find((component) => {
+      if (chosen.includes(component)) {
+        return false;
+      }
+      const field = paramFields(component).find((entry) => entry.kind === "entity");
+      return Boolean(field) && fieldDomains(field)[0] === kind;
+    });
+    if (card) {
+      chosen.push(card);
+    }
+  }
+  return chosen.slice(0, 8);
+}
+
+// The person's devices whose name or room has a word starting with each
+// word of `query`, in the order of the device list: a name that starts
+// with the words, other name matches, then room matches, by name inside
+// each. `keep(entityId)` can leave some out; at most three are given.
+export function deviceMatches(hass, query, keep = null) {
+  const words = searchWords(query);
+  if (!words.length) {
+    return [];
+  }
+  const starts = (text) => {
+    const known = searchWords(text);
+    return words.every((word) => known.some((start) => start.startsWith(word)));
+  };
+  const phrase = words.join(" ");
+  const rank = (choice) => {
+    const name = choice.name.toLowerCase();
+    if (name.startsWith(phrase)) {
+      return 0;
+    }
+    return starts(choice.name) ? 1 : 2;
+  };
+  return entityChoices(hass, {}, "")
+    .filter((choice) => starts(`${choice.name} ${choice.area}`))
+    .filter((choice) => typeof keep !== "function" || keep(choice.entity_id))
+    .map((choice, index) => ({ choice, index, rank: rank(choice) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .slice(0, 3)
+    .map((entry) => entry.choice);
+}
+
 export function paramFields(component) {
   const params = isPlainObject(component)
     && isPlainObject(component.params)
@@ -1797,6 +2020,15 @@ export function paramFields(component) {
       domain: safeSpec.kind === "entity"
         ? safeSpec.domain
         : undefined,
+      // Every kind a device field takes; [] takes any (C.7). Cards of the
+      // first schema give only `domain`.
+      domains: safeSpec.kind === "entity"
+        ? fieldDomains(safeSpec)
+        : undefined,
+      optional: safeSpec.kind === "entity"
+        ? safeSpec.optional === true
+        : undefined,
+      label: typeof safeSpec.label === "string" ? safeSpec.label : "",
       multiple: safeSpec.kind === "entity"
         ? safeSpec.multiple === true
         : undefined,
@@ -1809,26 +2041,53 @@ export function paramFields(component) {
       default: safeSpec.kind === "number"
         ? safeSpec.default
         : undefined,
+      // Devices of this class come first in the list (A13); the others
+      // still follow.
+      device_class: safeSpec.kind === "entity" && typeof safeSpec.device_class === "string"
+        ? safeSpec.device_class
+        : undefined,
     };
   });
 }
 
+// The fields the picker's device step draws: for a card added with one
+// press (singleEntityParam) only that one device field, so changing another
+// field first cannot add the card without a device; for any other card all
+// fields. The fields left out keep their defaults and are in the form.
+export function pickerFields(component) {
+  const fields = paramFields(component);
+  const single = singleEntityParam(component);
+  return single ? fields.filter((field) => field.name === single) : fields;
+}
+
+// The one device field a card needs, when the picker can add the card the
+// moment that device is chosen: exactly one device field is required and it
+// takes one device. Optional device fields, number fields with a default and
+// the card's options do not count (C.7, A14). Otherwise null.
 export function singleEntityParam(component) {
   const params = isPlainObject(component)
     && isPlainObject(component.params)
     ? Object.entries(component.params)
     : [];
 
-  if (params.length !== 1) {
+  const required = [];
+  for (const [name, spec] of params) {
+    if (!isPlainObject(spec)) {
+      return null;
+    }
+    if (spec.kind === "entity" && spec.optional === true) {
+      continue;
+    }
+    if (spec.kind === "number" && spec.default !== null && spec.default !== undefined) {
+      continue;
+    }
+    required.push([name, spec]);
+  }
+  if (required.length !== 1) {
     return null;
   }
-
-  const [name, spec] = params[0];
-  return isPlainObject(spec)
-    && spec.kind === "entity"
-    && spec.multiple !== true
-    ? name
-    : null;
+  const [name, spec] = required[0];
+  return spec.kind === "entity" && spec.multiple !== true ? name : null;
 }
 
 // The device fields of `component` that can take one of `entityIds`, each
@@ -1844,14 +2103,14 @@ function fittingFields(component, entityIds) {
   const fields = [];
 
   for (const [name, spec] of params) {
-    if (
-      !isPlainObject(spec)
-      || spec.kind !== "entity"
-      || typeof spec.domain !== "string"
-    ) {
+    if (!isPlainObject(spec) || spec.kind !== "entity") {
       continue;
     }
-    const fit = ids.filter((id) => id.startsWith(`${spec.domain}.`));
+    const domains = fieldDomains(spec);
+    if (!domains.length && typeof spec.domain !== "string") {
+      continue;
+    }
+    const fit = ids.filter((id) => takesDevice(spec, id));
     if (fit.length > 0) {
       fields.push([name, fit]);
     }
@@ -1903,10 +2162,6 @@ export function entityChoices(hass, spec, query = "") {
   const areas = isPlainObject(safeHass.areas)
     ? safeHass.areas
     : {};
-  const domain = isPlainObject(spec) && typeof spec.domain === "string"
-    ? spec.domain
-    : "";
-  const prefix = `${domain}.`;
   const words = String(query)
     .trim()
     .toLowerCase()
@@ -1915,7 +2170,7 @@ export function entityChoices(hass, spec, query = "") {
   const choices = [];
 
   for (const [entityId, state] of Object.entries(states)) {
-    if (!entityId.startsWith(prefix)) {
+    if (!takesDevice(spec, entityId)) {
       continue;
     }
 
@@ -1958,15 +2213,37 @@ export function entityChoices(hass, spec, query = "") {
     if (!words.every((word) => searchable.includes(word))) {
       continue;
     }
+    // Matches in order: a name that starts with the words, other name
+    // matches, then matches by room (or address).
+    const lower = name.toLowerCase();
+    let rank = 0;
+    if (words.length) {
+      if (lower.startsWith(words.join(" "))) {
+        rank = 0;
+      } else if (words.every((word) => lower.includes(word))) {
+        rank = 1;
+      } else {
+        rank = 2;
+      }
+    }
+    const wanted = isPlainObject(spec) && typeof spec.device_class === "string" ? spec.device_class : "";
 
     choices.push({
       entity_id: entityId,
       name,
       area,
+      rank,
+      other: Boolean(wanted) && attributes.device_class !== wanted,
     });
   }
 
   choices.sort((a, b) => {
+    if (a.other !== b.other) {
+      return a.other ? 1 : -1;
+    }
+    if (a.rank !== b.rank) {
+      return a.rank - b.rank;
+    }
     const nameOrder = a.name.localeCompare(
       b.name,
       undefined,
@@ -1980,7 +2257,7 @@ export function entityChoices(hass, spec, query = "") {
       : a.entity_id.localeCompare(b.entity_id);
   });
 
-  return choices;
+  return choices.map(({ entity_id, name, area }) => ({ entity_id, name, area }));
 }
 
 export function paramsComplete(component, params) {
@@ -2084,6 +2361,8 @@ export function styleDefaults(data, theme) {
   return result;
 }
 
+// group: while an object, every change pushed with that same object joins
+// one step, however long the time between them (the theme gallery is open).
 export function createHistory(config) {
   return {
     past: [],
@@ -2091,6 +2370,7 @@ export function createHistory(config) {
     future: [],
     key: null,
     at: 0,
+    group: null,
   };
 }
 
@@ -2100,16 +2380,19 @@ export function historyPush(
   {
     key = null,
     now = 0,
+    group = null,
   } = {},
 ) {
   if (sameConfig(config, history.present)) {
     return history;
   }
 
+  const sameGroup = group !== null && group === history.group;
   if (
-    key !== null
-    && key === history.key
-    && now - history.at < 1000
+    sameGroup
+    || (key !== null
+      && key === history.key
+      && now - history.at < 1000)
   ) {
     return {
       ...history,
@@ -2117,6 +2400,7 @@ export function historyPush(
       future: [],
       key,
       at: now,
+      group,
     };
   }
 
@@ -2129,7 +2413,16 @@ export function historyPush(
     future: [],
     key,
     at: now,
+    group,
   };
+}
+
+// Ends the open group: the next change is a step of its own.
+export function historyCloseGroup(history) {
+  if (!history || history.group === null || history.group === undefined) {
+    return history;
+  }
+  return { ...history, group: null };
 }
 
 export function historyUndo(history) {
@@ -2147,6 +2440,7 @@ export function historyUndo(history) {
       ...history.future,
     ],
     key: null,
+    group: null,
   };
 }
 
@@ -2168,6 +2462,7 @@ export function historyRedo(history) {
     present,
     future,
     key: null,
+    group: null,
   };
 }
 
@@ -2576,4 +2871,628 @@ export function devicesLeft(entityIds, params) {
   return (Array.isArray(entityIds) ? entityIds : []).filter(
     (id) => typeof id === "string" && !used.has(id),
   );
+}
+
+// ---- schema 2 cards: kinds of device, the picker's rules, the form (C.7) ----
+
+// The kinds of device a device field takes; [] takes any.
+export function fieldDomains(spec) {
+  if (!isPlainObject(spec)) {
+    return [];
+  }
+  if (Array.isArray(spec.domains)) {
+    return spec.domains.filter((domain) => typeof domain === "string");
+  }
+  return typeof spec.domain === "string" ? [spec.domain] : [];
+}
+
+// Whether a device field can take this device.
+export function takesDevice(spec, entityId) {
+  if (typeof entityId !== "string" || !ENTITY_ID_RE.test(entityId)) {
+    return false;
+  }
+  const domains = fieldDomains(spec);
+  return !domains.length || domains.includes(entityId.split(".", 1)[0]);
+}
+
+// A card the picker offers: allowed or not, but never an older card that a
+// newer built-in card replaces (`legacy`). This one rule holds for the grid,
+// the search and the cards offered for a removed card's devices.
+export function isOffered(component) {
+  return isPlainObject(component) && component.legacy !== true;
+}
+
+export function offeredCards(library) {
+  const components = isPlainObject(library) && Array.isArray(library.components)
+    ? library.components
+    : [];
+  return components.filter(isOffered);
+}
+
+// The built-in card that does what an older card did: one whose `replaces`
+// names it. Only a built-in card is ever chosen; a file from the person's
+// folder cannot claim to replace one (C.2.1).
+export function newerCard(library, component) {
+  if (!isPlainObject(component) || component.legacy !== true) {
+    return null;
+  }
+  const components = isPlainObject(library) && Array.isArray(library.components)
+    ? library.components
+    : [];
+  return components.find(
+    (entry) => isPlainObject(entry)
+      && entry.source === "builtin"
+      && entry.legacy !== true
+      && Array.isArray(entry.replaces)
+      && entry.replaces.includes(component.id),
+  ) ?? null;
+}
+
+// Settings for a card's example in the picker where its defaults draw badly
+// with no devices. The Scenes card names each button after its scene, and
+// an example scene has no name, so the example shows the icons only. The
+// stand-in Home Assistant of tests/harness keeps the same list
+// (build_fixtures.py), and a test checks the two agree.
+export const EXAMPLE_OPTIONS = Object.freeze({
+  "apollo/scenes": Object.freeze({ show_names: false }),
+});
+
+// A shorter name for an example whose own name the tablet would cut
+// ("Blinds an…doors"). It is the card's title in the example only.
+export const EXAMPLE_TITLES = Object.freeze({
+  "apollo/cover": "Blinds",
+  "apollo/light-group": "Lights",
+});
+
+// The named size a picker tile draws: the Tile when the card has one, as
+// that is the size most cards are used at; otherwise the card's own first
+// size (null).
+export function exampleVariant(component) {
+  return pickerVariants(component).some((variant) => variant.id === "tile") ? "tile" : null;
+}
+
+// The card's named sizes a person can pick: every variant but its controls
+// page (`picker: false`).
+export function pickerVariants(component) {
+  const variants = isPlainObject(component) && Array.isArray(component.variants)
+    ? component.variants
+    : [];
+  return variants.filter(
+    (variant) => isPlainObject(variant)
+      && typeof variant.id === "string"
+      && variant.picker !== false
+      && Array.isArray(variant.grid)
+      && Number.isInteger(variant.grid[0])
+      && Number.isInteger(variant.grid[1]),
+  );
+}
+
+function sectionOf(config, source) {
+  const parts = sourceParts(source);
+  return parts === null ? null : sectionAt(config, parts[0], parts[1]);
+}
+
+// The grid size a named size takes in this section: as wide as the
+// section lets it be.
+function variantGrid(config, source, variant) {
+  const section = sectionOf(config, source);
+  const span = section ? sectionSpan(section) : 3;
+  return {
+    columns: Math.min(variant.grid[0], 12 * span),
+    rows: Math.min(variant.grid[1], MAX_UNITS_HIGH * UNIT_ROWS),
+  };
+}
+
+// Swaps an older card for its newer card. Kept: the devices (params of the
+// same name that the new card takes), the name on the card, the look and
+// the place; the size becomes the new card's named size closest to the old
+// card's size (A15). One change, so one undo step.
+export function swapCard(config, source, newer) {
+  const next = structuredClone(config);
+  const parts = sourceParts(source);
+  if (parts === null || parts[2] === null || !isPlainObject(newer)) {
+    return next;
+  }
+  const [vi, si, ci] = parts;
+  const section = sectionAt(next, vi, si);
+  const old = section && Array.isArray(section.cards) ? section.cards[ci] : null;
+  if (!isPlainObject(old)) {
+    return next;
+  }
+  const specs = isPlainObject(newer.params) ? newer.params : {};
+  const oldParams = isPlainObject(old.params) ? old.params : {};
+  const params = {};
+  for (const [name, value] of Object.entries(oldParams)) {
+    const spec = specs[name];
+    if (!isPlainObject(spec)) {
+      continue;
+    }
+    if (spec.kind !== "entity") {
+      params[name] = structuredClone(value);
+      continue;
+    }
+    const ids = (Array.isArray(value) ? value : [value]).filter((id) => takesDevice(spec, id));
+    if (spec.multiple === true && ids.length) {
+      params[name] = ids;
+    } else if (spec.multiple !== true && typeof value === "string" && ids.length) {
+      params[name] = value;
+    }
+  }
+  const size = cardSize(old, null);
+  const columns = isPlainObject(old.grid_options) && Number.isInteger(old.grid_options.columns)
+    ? old.grid_options.columns
+    : size.w * UNIT_COLUMNS;
+  const rows = isPlainObject(old.grid_options) && Number.isInteger(old.grid_options.rows)
+    ? old.grid_options.rows
+    : size.h * UNIT_ROWS;
+  const sizes = pickerVariants(newer);
+  let closest = null;
+  let best = Infinity;
+  for (const variant of sizes) {
+    const distance = Math.abs(variant.grid[0] - columns) + Math.abs(variant.grid[1] - rows);
+    if (distance < best) {
+      best = distance;
+      closest = variant;
+    }
+  }
+  const card = { ...old, type: CARD_TYPE, component: newer.id, params };
+  delete card.options;
+  delete card.variant;
+  if (closest) {
+    card.variant = closest.id;
+    card.grid_options = {
+      ...(isPlainObject(old.grid_options) ? old.grid_options : {}),
+      ...variantGrid(next, source, closest),
+    };
+  }
+  section.cards[ci] = cleanConfig(card);
+  return next;
+}
+
+// The places of the cards on the dashboard that a newer built-in card
+// replaces, in page order.
+export function olderCards(config, library) {
+  const found = [];
+  configViews(config).forEach((view, vi) => {
+    const sections = isPlainObject(view) && Array.isArray(view.sections) ? view.sections : [];
+    sections.forEach((section, si) => {
+      const cards = isPlainObject(section) && Array.isArray(section.cards) ? section.cards : [];
+      cards.forEach((card, ci) => {
+        if (newerCard(library, componentOf(card, library))) {
+          found.push([vi, si, ci]);
+        }
+      });
+    });
+  });
+  return found;
+}
+
+// Swaps every older card on the dashboard for its newer card, as swapCard
+// does for one. One change, so one undo step.
+export function swapAllOlder(config, library) {
+  let next = structuredClone(config);
+  for (const source of olderCards(config, library)) {
+    const newer = newerCard(library, componentOf(getCard(next, source), library));
+    if (newer) {
+      next = swapCard(next, source, newer);
+    }
+  }
+  return next;
+}
+
+// The next size up for "Make the card bigger": the next larger named size
+// ({ variant }), or one unit taller ({ w, h }), else one unit wider; {}
+// when the card is as big as it gets.
+export function biggerSize(card, component) {
+  const sizes = pickerVariants(component);
+  if (sizes.length > 1) {
+    const area = (variant) => variant.grid[0] * variant.grid[1];
+    const now = sizes.find((variant) => variant.id === activeVariant(card, component));
+    const larger = sizes
+      .filter((variant) => now && area(variant) > area(now))
+      .sort((a, b) => area(a) - area(b));
+    if (larger.length) {
+      return { variant: larger[0].id };
+    }
+  }
+  const size = cardSize(card, component);
+  if (size.h < MAX_UNITS_HIGH) {
+    return { w: size.w, h: size.h + 1 };
+  }
+  if (size.w < MAX_UNITS_WIDE) {
+    return { w: size.w + 1, h: size.h };
+  }
+  return {};
+}
+
+// Picks a named size: the card stores it and takes its size on the grid.
+export function setVariant(config, source, component, variantId) {
+  const variant = pickerVariants(component).find((entry) => entry.id === variantId);
+  const current = getCard(config, source);
+  if (!variant || !isPlainObject(current)) {
+    return structuredClone(config);
+  }
+  return updateCard(config, source, {
+    variant: variant.id,
+    grid_options: {
+      ...(isPlainObject(current.grid_options) ? current.grid_options : {}),
+      ...variantGrid(config, source, variant),
+    },
+  });
+}
+
+// The style keys the card form's colour rows write; every other key of a
+// card's style (the looks of section E: lit, tint, surface, corners, border)
+// is kept when those rows change.
+const FORM_STYLE_KEYS = ["theme", "color", "gradient", "transparency", "accent"];
+
+export function mergeStyle(current, formStyle) {
+  const kept = {};
+  for (const [key, value] of Object.entries(isPlainObject(current) ? current : {})) {
+    if (!FORM_STYLE_KEYS.includes(key)) {
+      kept[key] = structuredClone(value);
+    }
+  }
+  const style = { ...kept, ...(isPlainObject(formStyle) ? formStyle : {}) };
+  return Object.keys(style).length ? style : undefined;
+}
+
+// Sets one key of a card's style; undefined takes it out.
+export function setStyleKey(config, source, key, value) {
+  const current = getCard(config, source);
+  if (!isPlainObject(current)) {
+    return structuredClone(config);
+  }
+  const style = { ...(isPlainObject(current.style) ? current.style : {}) };
+  if (value === undefined) {
+    delete style[key];
+  } else {
+    style[key] = value;
+  }
+  return updateCard(config, source, { style: Object.keys(style).length ? style : undefined });
+}
+
+// The names a `when` reads (C.2.5), from the answer of card/facts, as the
+// converter makes them (maker/compile2.py::_fact_names): the first device's
+// facts as can.<what>, each device field's as can.<param>.<what> (for
+// several devices the first value that counts), has.<param>, and
+// tablet.v2, which the editor counts as true.
+export function factNames(component, facts) {
+  const names = {};
+  const can = isPlainObject(facts) && isPlainObject(facts.can) ? facts.can : {};
+  const has = isPlainObject(facts) && isPlainObject(facts.has) ? facts.has : {};
+  const params = isPlainObject(component) && isPlainObject(component.params) ? component.params : {};
+  const entityParams = Object.keys(params).filter((name) => params[name]?.kind === "entity");
+  for (const [key, value] of Object.entries(can)) {
+    if (!entityParams.includes(key)) {
+      names[`can.${key}`] = value;
+    }
+  }
+  for (const param of entityParams) {
+    const value = can[param];
+    if (isPlainObject(value)) {
+      for (const [key, entry] of Object.entries(value)) {
+        names[`can.${param}.${key}`] = entry;
+      }
+    } else if (Array.isArray(value)) {
+      const keys = [...new Set(value.filter(isPlainObject).flatMap((entry) => Object.keys(entry)))].sort();
+      for (const key of keys) {
+        const values = value.filter(isPlainObject).map((entry) => entry[key]);
+        const held = values.filter((entry) => whenTruthy(entry));
+        names[`can.${param}.${key}`] = held.length ? held[0] : values[0];
+      }
+    }
+  }
+  for (const [param, value] of Object.entries(has)) {
+    names[`has.${param}`] = value;
+  }
+  names["tablet.v2"] = true;
+  return names;
+}
+
+// An option's value when nothing is stored: its default, or for a choice
+// from what the device reports, the first entries of that list.
+export function optionDefault(option, listed = []) {
+  if (!isPlainObject(option)) {
+    return null;
+  }
+  if (option.from) {
+    if (option.multiple === true) {
+      return listed.slice(0, Number(option.default_first) || 0);
+    }
+    return option.default_first && listed.length ? listed[0] : null;
+  }
+  const value = option.default;
+  return Array.isArray(value) ? [...value] : value ?? null;
+}
+
+// An option the device cannot use counts as off: a toggle off, a choice its
+// first choice, a list empty (C.2.3).
+export function optionOff(option) {
+  switch (option?.type) {
+    case "toggle":
+      return false;
+    case "choice":
+      if (option.multiple === true) {
+        return [];
+      }
+      if (option.from) {
+        return null;
+      }
+      return Array.isArray(option.choices) && option.choices.length ? option.choices[0].value : null;
+    case "colours":
+      return [];
+    case "text":
+      return "";
+    case "icon":
+    case "colour":
+      return null;
+    default:
+      return option?.default ?? null;
+  }
+}
+
+// The kinds of option the form can show; another kind is left out with one
+// line (A12).
+export const OPTION_TYPES = ["toggle", "choice", "colours", "text", "number", "colour", "icon"];
+
+// The standard options a card keeps in its options next to its own
+// (maker/compile2.py::_standard).
+const STANDARD_OPTIONS = ["tap", "tap_page", "hold", "icon", "ask"];
+
+// Whether a stored value fits its option, by the converter's checks
+// (maker/schema2.py::check_option_value). A value that does not fit counts
+// as not stored, so the option's default shows, as on the tablet. Entries
+// of a list from the device are checked against that list elsewhere.
+export function optionValueFits(option, value) {
+  if (!isPlainObject(option)) {
+    return false;
+  }
+  const max = Number.isInteger(option.max) ? option.max : 8;
+  const keys = Array.isArray(option.choices) ? option.choices.map((choice) => choice?.value) : null;
+  const oneChoice = (item) => typeof item === "string" && (keys === null || keys.includes(item));
+  switch (option.type) {
+    case "toggle":
+      return typeof value === "boolean";
+    case "choice":
+      if (option.multiple !== true) {
+        return oneChoice(value);
+      }
+      return Array.isArray(value)
+        && value.length <= max
+        && value.every(oneChoice)
+        && new Set(value).size === value.length;
+    case "colours":
+      return Array.isArray(value) && value.length <= max && value.every((item) => typeof item === "string");
+    case "text":
+      return typeof value === "string" && (!Number.isInteger(option.max) || value.length <= option.max);
+    case "number":
+      return typeof value === "number"
+        && Number.isFinite(value)
+        && !(Number.isFinite(option.min) && value < option.min)
+        && !(Number.isFinite(option.max) && value > option.max);
+    case "icon":
+      return value === null || isIcon(value);
+    case "colour":
+      return typeof value === "string";
+    default:
+      return true;
+  }
+}
+
+// Takes out of a card's options what its file does not have and values
+// that do not fit, so a change in the form does not keep old leftovers.
+// With the device's facts, entries a device list no longer has go too.
+export function pruneOptions(config, source, component, facts = null) {
+  const current = getCard(config, source);
+  if (!isPlainObject(current) || !isPlainObject(current.options) || !isPlainObject(component)) {
+    return config;
+  }
+  const specs = new Map(
+    (Array.isArray(component.options) ? component.options : [])
+      .filter((option) => isPlainObject(option) && typeof option.name === "string")
+      .map((option) => [option.name, option]),
+  );
+  const known = isPlainObject(facts) && Object.values(facts.has || {}).some(Boolean);
+  const names = known ? factNames(component, facts) : {};
+  const options = {};
+  for (const [name, value] of Object.entries(current.options)) {
+    const option = specs.get(name);
+    if (!option) {
+      if (STANDARD_OPTIONS.includes(name)) {
+        options[name] = value;
+      }
+      continue;
+    }
+    if (!optionValueFits(option, value)) {
+      continue;
+    }
+    if (option.from && known) {
+      const listed = Array.isArray(names[option.from]) ? names[option.from] : [];
+      if (!(Array.isArray(value) ? value : [value]).every((entry) => listed.includes(entry))) {
+        continue;
+      }
+    }
+    options[name] = value;
+  }
+  if (stableStringify(options) === stableStringify(current.options)) {
+    return config;
+  }
+  return updateCard(config, source, { options: Object.keys(options).length ? options : undefined });
+}
+
+// Whether a term holds for the form. Until the device's facts are known
+// (no device chosen yet, or the answer not in), a term on a fact or a
+// device field counts as holding, so nothing is greyed by guess.
+function formTermHolds(term, names, known) {
+  if (!known && typeof term === "string" && /^!?(can|has)\./.test(term)) {
+    return true;
+  }
+  return termHolds(term, names);
+}
+
+function formWhen(terms, names, known) {
+  return (Array.isArray(terms) ? terms : []).every((term) => formTermHolds(term, names, known));
+}
+
+// Everything the form of a schema 2 card shows, worked out from the card's
+// file (component, from the library), the stored card and the answer of
+// card/facts (null while it is not known). Per option: its value, whether
+// it is drawn (`when`), whether the device can use it (`needs`) and why not.
+export function cardForm(component, card, facts = null) {
+  const safeCard = isPlainObject(card) ? card : {};
+  const stored = isPlainObject(safeCard.options) ? safeCard.options : {};
+  const style = isPlainObject(safeCard.style) ? safeCard.style : {};
+  const known = isPlainObject(facts) && Object.values(facts.has || {}).some(Boolean);
+  const names = known ? factNames(component, facts) : { "tablet.v2": true };
+  const options = isPlainObject(component) && Array.isArray(component.options) ? component.options : [];
+
+  const rows = [];
+  for (const option of options) {
+    if (!isPlainObject(option) || typeof option.name !== "string") {
+      continue;
+    }
+    const listed = option.from && Array.isArray(names[option.from]) ? names[option.from] : [];
+    let value;
+    if (Object.hasOwn(stored, option.name) && optionValueFits(option, stored[option.name])) {
+      value = structuredClone(stored[option.name]);
+      const values = Array.isArray(value) ? value : [value];
+      if (option.from && known && !values.every((entry) => listed.includes(entry))) {
+        value = optionDefault(option, listed);
+      }
+    } else {
+      value = optionDefault(option, listed);
+    }
+    const usable = !option.needs || formTermHolds(option.needs, names, known);
+    if (!usable) {
+      value = optionOff(option);
+    }
+    rows.push({
+      option,
+      name: option.name,
+      value,
+      usable,
+      // The file's reason, else none: the form then gives the general line.
+      reason: usable ? "" : String(option.needs_text || ""),
+      listed,
+      known: !option.from || known,
+      supported: OPTION_TYPES.includes(option.type),
+    });
+  }
+  for (const row of rows) {
+    names[row.name] = row.value;
+  }
+  for (const row of rows) {
+    row.shown = formWhen(row.option.when, names, known);
+  }
+
+  const sizes = pickerVariants(component).map((variant) => {
+    const offered = !variant.needs || formTermHolds(variant.needs, names, known);
+    return {
+      id: variant.id,
+      name: String(variant.name || variant.id),
+      grid: [...variant.grid],
+      offered,
+      reason: offered ? "" : String(variant.needs_text || ""),
+      // The options this size draws, when the card file says (A6).
+      uses: Array.isArray(variant.uses) ? variant.uses.filter((name) => typeof name === "string") : null,
+    };
+  });
+
+  const tap = isPlainObject(component?.tap) && Array.isArray(component.tap.choices) ? component.tap : null;
+  let tapRow = null;
+  if (tap) {
+    const choices = tap.choices.filter(
+      (choice) => isPlainObject(choice) && (!choice.needs || formTermHolds(choice.needs, names, known)),
+    );
+    const wanted = Object.hasOwn(stored, "tap") ? stored.tap : tap.default;
+    const chosen = choices.find((choice) => choice.value === wanted);
+    tapRow = {
+      choices,
+      value: chosen ? chosen.value : tap.default,
+      // The stored choice is one this device cannot do (A25).
+      dropped: Object.hasOwn(stored, "tap") && !chosen,
+      page: typeof stored.tap_page === "string" ? stored.tap_page : "",
+    };
+  }
+
+  const standard = isPlainObject(component?.standard) ? component.standard : {};
+  const notes = (Array.isArray(component?.notes) ? component.notes : []).filter(
+    (note) => isPlainObject(note)
+      && typeof note.text === "string"
+      // A note is about the device, so it waits for the facts.
+      && known
+      && formWhen(note.when, names, known),
+  );
+
+  return {
+    known,
+    names,
+    rows,
+    sizes,
+    variant: activeVariant(safeCard, component, sizes),
+    tap: tapRow,
+    hold: standard.hold === true && component?.has_detail === true
+      ? stored.hold !== false
+      : null,
+    icon: standard.icon === true ? (isIcon(stored.icon) ? stored.icon : null) : undefined,
+    title: standard.title !== false,
+    lit: typeof standard.lit === "string"
+      ? (typeof style.lit === "string" ? style.lit : standard.lit)
+      : null,
+    tint: standard.tint === true ? style.tint !== false : null,
+    // A device known to have no colour and no warmth of white has none to
+    // show.
+    tintUsable: !(known && names["can.colour"] === false && names["can.temperature"] !== true),
+    notes: notes.map((note) => note.text),
+  };
+}
+
+// The named size a card shows (maker/compile2.py::_variant): the one the
+// person picked, else the largest that fits the card's size, else the
+// smallest. A size the device cannot use is never the one shown: a card
+// stored with one shows the first size that can.
+export function activeVariant(card, component, sizes = null) {
+  const list = sizes || pickerVariants(component).map((variant) => ({ ...variant, offered: true }));
+  const offered = list.filter((variant) => variant.offered !== false);
+  if (!offered.length) {
+    return null;
+  }
+  const storedId = isPlainObject(card) ? card.variant : undefined;
+  if (typeof storedId === "string" && list.some((variant) => variant.id === storedId)) {
+    return offered.some((variant) => variant.id === storedId) ? storedId : offered[0].id;
+  }
+  const grid = isPlainObject(card?.grid_options) ? card.grid_options : {};
+  const columns = grid.columns === "full"
+    ? 36
+    : Number.isInteger(grid.columns) ? grid.columns : offered[0].grid[0];
+  const rows = Number.isInteger(grid.rows) ? grid.rows : offered[0].grid[1];
+  const area = (variant) => variant.grid[0] * variant.grid[1];
+  const fits = offered.filter((variant) => variant.grid[0] <= columns && variant.grid[1] <= rows);
+  const pool = fits.length ? fits : offered;
+  let best = pool[0];
+  for (const variant of pool) {
+    const better = fits.length ? area(variant) > area(best) : area(variant) < area(best);
+    if (better) {
+      best = variant;
+    }
+  }
+  return best.id;
+}
+
+// Sets one of the card's options. Only what differs from the default is
+// stored (C.2.3), so a card keeps following its file's defaults.
+// fallback is the value the form shows when nothing is stored.
+export function setOption(config, source, name, value, fallback) {
+  const current = getCard(config, source);
+  if (!isPlainObject(current) || typeof name !== "string") {
+    return structuredClone(config);
+  }
+  const options = { ...(isPlainObject(current.options) ? current.options : {}) };
+  if (value === undefined || stableStringify(value) === stableStringify(fallback)) {
+    delete options[name];
+  } else {
+    options[name] = structuredClone(value);
+  }
+  return updateCard(config, source, { options: Object.keys(options).length ? options : undefined });
 }
