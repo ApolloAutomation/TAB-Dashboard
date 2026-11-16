@@ -163,7 +163,7 @@ test("the editor's words say what really happens", () => {
   assert.equal(strings["form.change_device"], "Change");
   const form = fs.readFileSync(path.join(frontend, "card-form.js"), "utf8");
   assert.match(form, /ariaLabel: `\$\{action\}: \$\{label\}`/);
-  assert.match(strings["picker.none_help"], /^Try the name of a card or a kind of device/);
+  assert.equal(strings["picker.none_help"], "Try the name of a card, a device or a room.");
   assert.equal(strings["leave.title"], "Your last change is not saved yet");
   assert.match(strings["leave.text_error"], /keeps trying in the background while this browser page stays open/);
   assert.match(strings["leave.text_choice"], /waits until you choose which version to keep/);

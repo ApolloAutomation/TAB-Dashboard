@@ -18,10 +18,11 @@ export const PREVIEW_THEMES = ["glass"];
 export const GROUP_IDS = [
   "lights",
   "climate",
-  "media",
+  "covers",
   "security",
+  "media",
   "sensors",
-  "rooms",
+  "home",
   "more",
 ];
 export const PAGE_ICONS = [
@@ -126,7 +127,6 @@ const LIGHT_DOMAINS = new Set([
 const CLIMATE_DOMAINS = new Set([
   "climate",
   "fan",
-  "cover",
   "humidifier",
   "water_heater",
   "valve",
@@ -1123,7 +1123,9 @@ export function removePage(config, vi) {
   };
 }
 
-export function addCard(config, vi, component, params) {
+// `after`: the selected card's source. The new card goes right after it
+// when it is a card of this page; otherwise at the end of the last grid.
+export function addCard(config, vi, component, params, after = null) {
   const next = structuredClone(config);
   if (
     !Array.isArray(next.views)
@@ -1142,10 +1144,22 @@ export function addCard(config, vi, component, params) {
   }
 
   let si = -1;
-  for (let index = view.sections.length - 1; index >= 0; index -= 1) {
+  let at = null;
+  const selected = sourceParts(after);
+  if (
+    selected !== null
+    && selected[0] === vi
+    && selected[2] !== null
+    && isGridSection(view.sections[selected[1]])
+    && Array.isArray(view.sections[selected[1]].cards)
+    && selected[2] < view.sections[selected[1]].cards.length
+  ) {
+    si = selected[1];
+    at = selected[2] + 1;
+  }
+  for (let index = view.sections.length - 1; si === -1 && index >= 0; index -= 1) {
     if (isGridSection(view.sections[index])) {
       si = index;
-      break;
     }
   }
 
@@ -1193,11 +1207,16 @@ export function addCard(config, vi, component, params) {
     card.apollo_tab = firstFree(next, vi, size.cols, size.rows);
   }
 
-  section.cards.push(card);
+  if (at === null) {
+    section.cards.push(card);
+    at = section.cards.length - 1;
+  } else {
+    section.cards.splice(at, 0, card);
+  }
 
   return {
     config: next,
-    source: [vi, si, section.cards.length - 1],
+    source: [vi, si, at],
   };
 }
 
@@ -1804,7 +1823,12 @@ export function useWholeScreen(config, vi) {
   return next;
 }
 
+// A card's own `group` wins when it is one of the eight; otherwise the
+// group is guessed from the kind of device it controls.
 export function groupOf(component) {
+  if (isPlainObject(component) && GROUP_IDS.includes(component.group)) {
+    return component.group;
+  }
   const params = isPlainObject(component)
     && isPlainObject(component.params)
     ? component.params
@@ -1812,7 +1836,7 @@ export function groupOf(component) {
 
   for (const spec of Object.values(params)) {
     if (isPlainObject(spec) && spec.kind === "page") {
-      return "rooms";
+      return "home";
     }
   }
 
@@ -1831,6 +1855,9 @@ export function groupOf(component) {
   if (CLIMATE_DOMAINS.has(domain)) {
     return "climate";
   }
+  if (domain === "cover") {
+    return "covers";
+  }
   if (domain === "media_player") {
     return "media";
   }
@@ -1841,7 +1868,7 @@ export function groupOf(component) {
     return "sensors";
   }
   if (ROOM_DOMAINS.has(domain)) {
-    return "rooms";
+    return "home";
   }
 
   return "more";
@@ -1855,7 +1882,7 @@ function searchWords(text) {
 }
 
 // Each word of `query` has to start a word of the card's name, its
-// description, the kinds of device it controls ("media_player" gives
+// description, its search words (`keywords`), the kinds of device it controls ("media_player" gives
 // "media" and "player"), or the extra words describe(component, group)
 // gives: the picker passes the group's title and the device question.
 // Matching the start of words keeps "ac" from finding "Scene" or "Lock".
@@ -1877,12 +1904,16 @@ export function pickerGroups(library, query = "", describe = null) {
     const group = groupOf(component);
     if (words.length) {
       const domains = paramFields(component)
-        .filter((field) => field.kind === "entity" && typeof field.domain === "string")
-        .map((field) => field.domain);
+        .filter((field) => field.kind === "entity")
+        .flatMap((field) => fieldDomains(field));
+      const keywords = Array.isArray(component.keywords)
+        ? component.keywords.filter((word) => typeof word === "string")
+        : [];
       const known = searchWords([
         component.name,
         component.description,
         ...domains,
+        ...keywords,
         typeof describe === "function" ? describe(component, group) : "",
       ].join(" "));
       if (!words.every((word) => known.some((start) => start.startsWith(word)))) {
@@ -1899,6 +1930,79 @@ export function pickerGroups(library, query = "", describe = null) {
       id,
       cards: grouped.get(id),
     }));
+}
+
+// The kinds of device Suggested offers a card for, in this order.
+export const SUGGESTED_KINDS = [
+  "light",
+  "climate",
+  "media_player",
+  "weather",
+  "scene",
+  "sensor",
+  "cover",
+  "lock",
+];
+
+// Up to eight cards for a first look: for each kind of SUGGESTED_KINDS this
+// home has, the first offered built-in card whose first device field takes
+// that kind. A card is given once.
+export function suggestedCards(library, hass) {
+  const states = isPlainObject(hass) && isPlainObject(hass.states) ? hass.states : {};
+  const entities = isPlainObject(hass) && isPlainObject(hass.entities) ? hass.entities : {};
+  const has = new Set(
+    Object.keys(states)
+      .filter((id) => entities[id]?.hidden !== true)
+      .map((id) => id.split(".", 1)[0]),
+  );
+  const cards = offeredCards(library).filter((component) => component.source !== "user");
+  const chosen = [];
+  for (const kind of SUGGESTED_KINDS) {
+    if (!has.has(kind)) {
+      continue;
+    }
+    const card = cards.find((component) => {
+      if (chosen.includes(component)) {
+        return false;
+      }
+      const field = paramFields(component).find((entry) => entry.kind === "entity");
+      return Boolean(field) && fieldDomains(field)[0] === kind;
+    });
+    if (card) {
+      chosen.push(card);
+    }
+  }
+  return chosen.slice(0, 8);
+}
+
+// The person's devices whose name or room has a word starting with each
+// word of `query`, in the order of the device list: a name that starts
+// with the words, other name matches, then room matches, by name inside
+// each. `keep(entityId)` can leave some out; at most three are given.
+export function deviceMatches(hass, query, keep = null) {
+  const words = searchWords(query);
+  if (!words.length) {
+    return [];
+  }
+  const starts = (text) => {
+    const known = searchWords(text);
+    return words.every((word) => known.some((start) => start.startsWith(word)));
+  };
+  const phrase = words.join(" ");
+  const rank = (choice) => {
+    const name = choice.name.toLowerCase();
+    if (name.startsWith(phrase)) {
+      return 0;
+    }
+    return starts(choice.name) ? 1 : 2;
+  };
+  return entityChoices(hass, {}, "")
+    .filter((choice) => starts(`${choice.name} ${choice.area}`))
+    .filter((choice) => typeof keep !== "function" || keep(choice.entity_id))
+    .map((choice, index) => ({ choice, index, rank: rank(choice) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .slice(0, 3)
+    .map((entry) => entry.choice);
 }
 
 export function paramFields(component) {
@@ -2832,6 +2936,20 @@ export function newerCard(library, component) {
 export const EXAMPLE_OPTIONS = Object.freeze({
   "apollo/scenes": Object.freeze({ show_names: false }),
 });
+
+// A shorter name for an example whose own name the tablet would cut
+// ("Blinds an…doors"). It is the card's title in the example only.
+export const EXAMPLE_TITLES = Object.freeze({
+  "apollo/cover": "Blinds",
+  "apollo/light-group": "Lights",
+});
+
+// The named size a picker tile draws: the Tile when the card has one, as
+// that is the size most cards are used at; otherwise the card's own first
+// size (null).
+export function exampleVariant(component) {
+  return pickerVariants(component).some((variant) => variant.id === "tile") ? "tile" : null;
+}
 
 // The card's named sizes a person can pick: every variant but its controls
 // page (`picker: false`).

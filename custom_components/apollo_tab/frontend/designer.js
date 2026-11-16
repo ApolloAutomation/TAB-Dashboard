@@ -97,6 +97,7 @@ import {
   SNAP_ROWS,
   canPlace,
   cardCells,
+  firstFree,
   freezePage,
   isPlaced,
   occupied,
@@ -4884,6 +4885,8 @@ export class ApolloTabDesigner extends HTMLElement {
     this._picking = token;
     const vi = this._view;
     const run = this._run;
+    // The new card goes after the card selected when the picker opened.
+    const selected = this._selected;
     let result = null;
     try {
       result = await openCardPicker({
@@ -4912,9 +4915,22 @@ export class ApolloTabDesigner extends HTMLElement {
       Array.isArray(this._tablets) &&
       !tabletsShowing(this._tablets, this._urlPath).length &&
       !firstCardSeen().includes(this._urlPath);
-    const added = addCard(this._draft, vi, result.component, result.params);
+    const added = addCard(this._draft, vi, result.component, result.params, selected);
     if (!added.source) {
       return;
+    }
+    // A size chosen in the picker's second step.
+    if (result.variant) {
+      added.config = setVariant(added.config, added.source, result.component, result.variant);
+      // On a placed page it takes the first free slot of its new size.
+      const card = getCard(added.config, added.source);
+      if (card?.apollo_tab) {
+        const size = cardCells(card);
+        const slot = firstFree(added.config, vi, size.cols, size.rows, added.source);
+        if (slot) {
+          added.config = updateCard(added.config, added.source, { apollo_tab: slot });
+        }
+      }
     }
     this._firstCardDue = first;
     const key = sourceKey(added.source);

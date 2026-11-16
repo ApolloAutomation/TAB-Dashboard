@@ -25,7 +25,7 @@ import { PREPICK_ONLY_DASHBOARD } from "../../custom_components/apollo_tab/front
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const GROUP_ORDER = ["lights", "climate", "media", "security", "sensors", "rooms", "more"];
+const GROUP_ORDER = ["lights", "climate", "covers", "security", "media", "sensors", "home", "more"];
 const NOT_SHOWN = "Left out";
 // The tablet's own words, from the shared contract (CONTRACT.md section 11).
 const SCREENS = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/contract/screens.json"), "utf8"));
@@ -1755,7 +1755,7 @@ function chains(realConfig) {
         .filter((component) => !component.legacy && /\\blight/i.test(component.name + " " + (component.description || "")))
         .map((component) => component.id).sort()`);
       check(named.every((id) => tiles.includes(id)), `"light" finds ${tiles}, not every card named for lights (${named})`);
-      check(tiles.includes("apollo/scenes"), `"light" does not find the cards in "Lights and scenes": ${tiles}`);
+      check(tiles.includes("apollo/switch"), `"light" does not find the cards in "Lights and switches": ${tiles}`);
       check(!tiles.includes("apollo/climate"), `"light" finds the thermostat: ${tiles}`);
       const shot = await r.shot("04-picker-search");
       for (const [word, card] of [
@@ -1764,6 +1764,8 @@ function chains(realConfig) {
         ["music", "apollo/media"],
         ["climate", "apollo/climate"],
         ["curtain", "apollo/cover"],
+        // A card's own search words.
+        ["laundry", "apollo/appliance"],
       ]) {
         const found = await search(word);
         check(found.includes(card), `"${word}" finds ${JSON.stringify(found)}, not ${card}`);
@@ -1773,7 +1775,7 @@ function chains(realConfig) {
       check(!short.some((id) => ["apollo/scenes", "apollo/people"].includes(id)), `"ac" finds ${short}`);
       check((await search("spotify")).length === 0, "a card matches spotify");
       const none = await r.text('[data-test="picker-none"]');
-      check(none.includes('No card matches "spotify".') && none.includes("Try the name of a card or a kind of device"), `the picker says "${none}"`);
+      check(none.includes('No card matches "spotify".') && none.includes("Try the name of a card, a device or a room."), `the picker says "${none}"`);
       await r.shot("04-picker-search-none");
       await r.click('[data-test="picker-clear-search"]');
       await r.waitFor(`__j.count('[data-test="tile"]') === ${OFFERED_CARDS}`, "every card after Show all cards");
@@ -6037,6 +6039,9 @@ function chains(realConfig) {
           `"Add" in the picker is ${pick.join(" on ")}`,
         );
         const shot = await r.shot("111-tokens-and-type");
+        // Escape goes back to the cards, a second one closes the picker.
+        await r.key("Escape");
+        await r.waitFor(`__j.find('[data-test="picker-rail"]')`, "the cards again");
         await r.key("Escape");
         await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
         return shot;
@@ -6078,6 +6083,9 @@ function chains(realConfig) {
       await r.click('[data-test="tile"][data-component="apollo/room"]');
       await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the device step");
       await measure("the picker's device step");
+      // Escape goes back to the cards, a second one closes the picker.
+      await r.key("Escape");
+      await r.waitFor(`__j.find('[data-test="picker-rail"]')`, "the cards again");
       await r.key("Escape");
       await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
       await r.clearSelection();
@@ -6153,6 +6161,9 @@ function chains(realConfig) {
         .map((node) => node.dataset.test)`);
       check(JSON.stringify(inPicker) === JSON.stringify(["pick-add"]), `the picker's filled buttons: ${JSON.stringify(inPicker)}`);
       const shot = await r.shot("113-one-filled-button");
+      // Escape goes back to the cards, a second one closes the picker.
+      await r.key("Escape");
+      await r.waitFor(`__j.find('[data-test="picker-rail"]')`, "the cards again");
       await r.key("Escape");
       await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
       return shot;
@@ -7733,6 +7744,9 @@ function chains(realConfig) {
       const glass = await r.text('[data-test="theme-tile"][data-theme="glass"] .theme-preview');
       check(glass === "Preview", `Glass is tagged "${glass}"`);
       const ids = await r.eval(`__j.all('[data-test="theme-tile"]').map((tile) => tile.dataset.theme)`);
+      // Every bundled theme is offered.
+      const bundled = await r.eval(`__apolloFixtures.library.themes.map((theme) => theme.id)`);
+      check(bundled.length === 15 && stable([...ids].sort()) === stable([...bundled].sort()), `the gallery offers ${ids.length} themes: ${ids}`);
       const tried = ids.filter((id) => id !== before).slice(0, 3);
       check(tried.length === 3, `only ${tried.length} other themes to try`);
       for (const id of tried) {
@@ -8750,6 +8764,147 @@ function chains(realConfig) {
       return null;
     }),
   ];
+  // The picker for 30 or more cards (package 5): the rail of groups, tiles
+  // of one size, the search over devices, the second step and Suggested.
+  const openPicker = async (r, params = {}) => {
+    await openSample(r, params);
+    await leaveEditMode(r);
+    if (await r.count('[data-test="hit"][aria-pressed="true"]')) {
+      await r.clearSelection();
+    }
+    await r.click('[data-test="add-card"]');
+    await r.waitFor(`__j.find('dialog[data-test="picker"][open]') && __j.count('[data-test="tile"]') > 0`, "the picker");
+  };
+  const railRows = (r) =>
+    r.eval(`__j.all('[data-test="picker-rail-row"]').map((row) => ({ view: row.dataset.view,
+      count: Number(row.querySelector(".rail-count").textContent), checked: row.getAttribute("aria-checked") === "true",
+      tab: row.tabIndex }))`);
+  const tileIds = (r) => r.eval(`__j.all('[data-test="tile"]').map((tile) => tile.dataset.component)`);
+  const closePicker = async (r) => {
+    await r.key("Escape");
+    await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close");
+  };
+  const picking5 = [
+    step("147", "picker-rail", async (r) => {
+      await openPicker(r);
+      const rows = await railRows(r);
+      const all = rows.find((row) => row.view === "all");
+      const groups = rows.filter((row) => GROUP_ORDER.includes(row.view));
+      check(all && all.checked, `"All cards" is not where the picker starts: ${JSON.stringify(rows)}`);
+      check(groups.reduce((sum, row) => sum + row.count, 0) === all.count, `the groups do not add up to All cards: ${JSON.stringify(rows)}`);
+      check(all.count === OFFERED_CARDS && (await tileIds(r)).length === OFFERED_CARDS, `All cards counts ${all.count}`);
+      const order = groups.map((row) => GROUP_ORDER.indexOf(row.view));
+      check(order.every((value, index) => index === 0 || value > order[index - 1]), `the rail's groups are in the order ${groups.map((row) => row.view)}`);
+      // One Tab stop.
+      check(rows.filter((row) => row.tab === 0).length === 1, `${rows.filter((row) => row.tab === 0).length} rail rows take Tab`);
+      // A group row shows only its group.
+      const climate = groups.find((row) => row.view === "climate");
+      await r.click('[data-test="picker-rail-row"][data-view="climate"]');
+      await r.waitFor(`__j.find('[data-test="picker-rail-row"][data-view="climate"]').getAttribute("aria-checked") === "true"`, "Heating and fans to be chosen");
+      const headings = await r.eval(`__j.all('[data-test="picker-group"]').map((heading) => heading.dataset.group)`);
+      check(stable(headings) === stable(["climate"]), `the climate row shows the groups ${headings}`);
+      check((await tileIds(r)).length === climate.count, `the climate row shows ${(await tileIds(r)).length} cards, not ${climate.count}`);
+      // The arrow keys move between the rows and choose the one reached.
+      await r.key("ArrowDown");
+      const next = groups[groups.indexOf(climate) + 1].view;
+      await r.waitFor(`__j.find('[data-test="picker-rail-row"][data-view="${next}"]')?.getAttribute("aria-checked") === "true"`, "the arrow key to choose the next group");
+      check((await focused(r)) === "picker-rail-row", `after the arrow key focus is on ${await focused(r)}`);
+      const shot = await r.shot("147-picker-rail");
+      await closePicker(r);
+      return shot;
+    }),
+    step("148", "picker-tiles", async (r) => {
+      await openPicker(r, { cards: "many" });
+      await r.waitFor(`__j.count('[data-test="tile"]') === 32`, "32 cards in the picker");
+      await sleep(400);
+      const look = await r.eval(`(() => { const body = __j.find(".picker-body"); const box = body.getBoundingClientRect();
+        const tiles = __j.all('[data-test="tile"]'); const first = __j.find(".tiles");
+        return { columns: getComputedStyle(first).gridTemplateColumns.split(" ").length,
+          heights: [...new Set(tiles.map((tile) => Math.round(tile.getBoundingClientRect().height)))],
+          rows: new Set(tiles.filter((tile) => { const rect = tile.getBoundingClientRect(); return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5; })
+            .map((tile) => Math.round(tile.getBoundingClientRect().top))).size,
+          ratio: body.scrollHeight / body.clientHeight }; })()`);
+      check(look.columns === 4, `${look.columns} columns of tiles`);
+      check(look.heights.length === 1, `the tiles are ${look.heights.join(", ")} px high`);
+      // Two whole rows of four on the first screen: 8 tiles where the
+      // groups are full.
+      check(look.rows >= 2, `${look.rows} whole rows of tiles on the first screen`);
+      // The plan's 3.7 screens assumed full rows; eight groups of 32 cards
+      // end in half rows, so the bound is 5.
+      check(look.ratio <= 5, `All cards is ${look.ratio.toFixed(2)} screens long`);
+      // The largest group is at most 1.5 screens.
+      const rows = await railRows(r);
+      const largest = rows.filter((row) => GROUP_ORDER.includes(row.view)).sort((a, b) => b.count - a.count)[0];
+      await r.click(`[data-test="picker-rail-row"][data-view="${largest.view}"]`);
+      await r.waitFor(`__j.count('[data-test="tile"]') === ${largest.count}`, "the largest group");
+      const ratio = await r.eval(`(() => { const body = __j.find(".picker-body"); return body.scrollHeight / body.clientHeight; })()`);
+      check(ratio <= 1.5, `a group of ${largest.count} is ${ratio.toFixed(2)} screens long`);
+      await r.click('[data-test="picker-rail-row"][data-view="all"]');
+      await sleep(400);
+      const shot = await r.shot("148-picker-tiles");
+      await closePicker(r);
+      return shot;
+    }, { desktopOnly: true }),
+    step("149", "picker-device-search", async (r) => {
+      await openPicker(r);
+      const before = (await r.config()).views[0].sections.flatMap((section) => section.cards || []).length;
+      await r.click('[data-test="picker-search"]');
+      await r.type("Living");
+      await r.waitFor(`__j.find('[data-test="picker-device"][data-entity="light.living_room"]')`, "the block of cards for the living room light");
+      const heading = await r.text('[data-test="picker-device"][data-entity="light.living_room"]');
+      check(heading === "Cards for Living room", `the block is called "${heading}"`);
+      const shot = await r.shot("149-picker-device-search");
+      await r.click('[data-test="tile"][data-entity="light.living_room"][data-component="apollo/light"]');
+      await r.waitFor(`!__j.find('dialog[data-test="picker"]')`, "the picker to close without the second step");
+      await r.waitFor(`${SAVED_CARDS}.length === ${before + 1}`, "the card to be saved");
+      const added = await r.eval(`${SAVED_CARDS}.find((card) => card.component === "apollo/light" && card.params?.entity === "light.living_room")`);
+      check(Boolean(added), "the light card was not added with the living room light");
+      await r.waitSaved("the card for the living room light");
+      return shot;
+    }),
+    step("150", "picker-second-step", async (r) => {
+      const desktop = r.setup.device === "desktop";
+      await openPicker(r);
+      const size = () => r.eval(`(() => { const rect = __j.find('dialog[data-test="picker"]').getBoundingClientRect(); return [Math.round(rect.width), Math.round(rect.height)]; })()`);
+      const first = await size();
+      await r.click('[data-test="picker-search"]');
+      await r.type("together");
+      await r.waitFor(`__j.find('[data-test="tile"][data-component="apollo/light-group"]')`, "Lights together in the search");
+      await r.click('[data-test="tile"][data-component="apollo/light-group"]');
+      await r.waitFor(`__j.find('[data-test="pick-add"]')`, "the second step");
+      if (desktop) {
+        const second = await size();
+        check(stable(first) === stable(second), `the dialog is ${first} in the first step and ${second} in the second`);
+      }
+      check((await r.count('[data-test="tile-size"]')) === 3, `${await r.count('[data-test="tile-size"]')} sizes offered for Lights together`);
+      const shot = await r.shot("150-picker-second-step");
+      await r.key("Escape");
+      await r.waitFor(`__j.find('[data-test="picker-search"]')`, "Escape to go back to the cards");
+      check((await r.eval(`__j.find('[data-test="picker-search"]').value`)) === "together", "the search was not kept");
+      check((await tileIds(r)).includes("apollo/light-group"), "the search's cards are not shown again");
+      await closePicker(r);
+      return shot;
+    }),
+    step("151", "suggested", async (r) => {
+      await openPicker(r);
+      await r.click('[data-test="picker-rail-row"][data-view="suggested"]');
+      await r.waitFor(`__j.find('[data-test="picker-suggested"]')`, "Suggested");
+      const kinds = await r.eval(`(() => {
+        const library = __apolloFixtures.library.components;
+        const kindOf = (id) => { const card = library.find((entry) => entry.id === id);
+          const field = (card.params ? Object.values(card.params) : []).find((spec) => spec.kind === "entity");
+          return Array.isArray(field.domains) ? field.domains[0] : field.domain; };
+        const home = new Set(Object.keys(__apolloMockHass.states).filter((id) => !__apolloMockHass.entities[id]?.hidden).map((id) => id.split(".")[0]));
+        return { shown: __j.all('[data-test="tile"]').map((tile) => kindOf(tile.dataset.component)), home: [...home] }; })()`);
+      const ORDER = ["light", "climate", "media_player", "weather", "scene", "sensor", "cover", "lock"];
+      const expected = ORDER.filter((kind) => kinds.home.includes(kind));
+      check(kinds.shown.length <= 8, `${kinds.shown.length} suggested cards`);
+      check(stable(kinds.shown) === stable(expected), `Suggested shows ${kinds.shown}, not ${expected}`);
+      const shot = await r.shot("151-suggested");
+      await closePicker(r);
+      return shot;
+    }),
+  ];
   return [
     first,
     real,
@@ -8805,6 +8960,7 @@ function chains(realConfig) {
     drawing,
     cardForms,
     inspecting,
+    picking5,
     popups,
     startScreen,
     placing,

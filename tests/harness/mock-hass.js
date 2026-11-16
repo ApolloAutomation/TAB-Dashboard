@@ -275,6 +275,18 @@ function cardEvents2(fixture, card, themes, detail) {
   }
   if (hasParams(card)) {
     init.demo = false;
+  } else if (typeof card.title === "string") {
+    // An example with a title of its own (the picker's EXAMPLE_TITLES): the
+    // title stands where the card's name, whole or cut, stood.
+    const ownName = (text) => {
+      if (text === fixture.name) return true;
+      const [start, end] = String(text).split("\u2026");
+      return end !== undefined && fixture.name.startsWith(start) && fixture.name.endsWith(end);
+    };
+    if (init.header && ownName(init.header.title)) init.header.title = card.title;
+    for (const widget of init.widgets || []) {
+      if (typeof widget.text === "string" && ownName(widget.text)) widget.text = card.title;
+    }
   }
   const query = new URLSearchParams(location.search);
   const theme = themes.find((entry) => entry.id === query.get("theme")) || themes[0] || {};
@@ -412,9 +424,26 @@ const TABLET_SETS = {
   ],
 };
 
+// Copies of offered bundled cards under ids many/01, many/02, ... and
+// other names, so the picker offers 32 cards. No step adds one.
+// The card each copy draws as: {copy id: bundled id}.
+const MANY_SOURCES = new Map();
+function manyCards(components) {
+  const offered = components.filter((component) => !component.legacy);
+  return Array.from({ length: Math.max(1, 32 - offered.length) }, (_, index) => {
+    const copy = structuredClone(offered[index % offered.length]);
+    const number = String(index + 1).padStart(2, "0");
+    copy.id = `many/${number}`;
+    MANY_SOURCES.set(copy.id, offered[index % offered.length].id);
+    copy.name = `${copy.name} ${number}`;
+    return copy;
+  });
+}
+
 // options.seed: "none", "sample" (default) or "real" (uses options.realConfig).
 // options.community adds a lock card from the user's folder to the library,
-// options.graphs a card with five graphs. options.night adds the "Night"
+// options.graphs a card with five graphs, options.many more cards (32 in all).
+// options.night adds the "Night"
 // dashboard. options.tablets: "none" (default), "three", "no-engine", "new",
 // "two-new" or "all" (see TABLET_SETS).
 export function createMockHass(fixtures, options = {}) {
@@ -428,6 +457,9 @@ export function createMockHass(fixtures, options = {}) {
   }
   if (options.graphs) {
     library.components.push(structuredClone(FIVE_GRAPHS));
+  }
+  if (options.many) {
+    library.components.push(...manyCards(library.components));
   }
 
   // A small in-memory stand-in for Home Assistant's storage dashboards.
@@ -930,7 +962,8 @@ export function createMockHass(fixtures, options = {}) {
 
         if (message.type === "apollo_tab/card/subscribe") {
           queueMicrotask(() => {
-            const second = (fixtures.cards_v2 || []).find((entry) => entry.id === message.card.component);
+            const drawn = MANY_SOURCES.get(message.card.component) || message.card.component;
+            const second = (fixtures.cards_v2 || []).find((entry) => entry.id === drawn);
             if (second) {
               for (const event of cardEvents2(second, message.card, fixtures.themes || [], message.detail)) {
                 callback(event);
@@ -938,7 +971,7 @@ export function createMockHass(fixtures, options = {}) {
               return;
             }
             const fixture =
-              fixtures.cards.find((entry) => entry.id === message.card.component) ||
+              fixtures.cards.find((entry) => entry.id === drawn) ||
               fixtures.cards[0];
             if (!fixture) {
               callback({

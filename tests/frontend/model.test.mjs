@@ -1931,7 +1931,7 @@ test("pageNotes and dashboardNotes pick the right warning codes", () => {
   ]);
 });
 
-test("groupOf sorts the 16 bundled cards into the six groups", () => {
+test("groupOf sorts the 16 bundled cards without a group of their own into the eight groups", () => {
   const grouped = Object.fromEntries(
     model.GROUP_IDS.map((group) => [group, []]),
   );
@@ -1940,16 +1940,17 @@ test("groupOf sorts the 16 bundled cards into the six groups", () => {
     grouped[model.groupOf(card)].push(card.id);
   }
 
+  assert.deepStrictEqual(model.GROUP_IDS, ["lights", "climate", "covers", "security", "media", "sensors", "home", "more"]);
   assert.deepStrictEqual(grouped.lights, [
     "apollo/light-slider",
     "apollo/light-tile",
     "apollo/scene-row",
   ]);
   assert.deepStrictEqual(grouped.climate, [
-    "apollo/blinds",
     "apollo/fan",
     "apollo/thermostat",
   ]);
+  assert.deepStrictEqual(grouped.covers, ["apollo/blinds"]);
   assert.deepStrictEqual(grouped.media, [
     "apollo/media-player",
   ]);
@@ -1964,19 +1965,35 @@ test("groupOf sorts the 16 bundled cards into the six groups", () => {
     "apollo/weather",
     "community/energy-gauge",
   ]);
-  assert.deepStrictEqual(grouped.rooms, [
+  assert.deepStrictEqual(grouped.home, [
     "community/presence-chips",
     "community/room-summary",
   ]);
   assert.deepStrictEqual(grouped.more, []);
 });
 
-test("pickerGroups keeps group order and drops empty groups", () => {
+test("a card's own group wins over the guess", () => {
+  const light = { kind: "entity", domain: "light", multiple: false };
+  // A card with group covers is in covers whatever its device.
+  assert.equal(model.groupOf({ ...component({ id: "x/a", params: { entity: light } }), group: "covers" }), "covers");
+  // No group, or one that is not one of the eight: the guess.
+  assert.equal(model.groupOf(component({ id: "x/b", params: { entity: light } })), "lights");
+  assert.equal(model.groupOf({ ...component({ id: "x/c", params: { entity: light } }), group: "rooms" }), "lights");
+  // A card that links to a page is in home.
+  assert.equal(model.groupOf(component({ id: "x/d", params: { page: { kind: "page" } } })), "home");
+  // The library answer's group of every bundled card is one of the eight.
+  for (const entry of harnessLibrary().components) {
+    assert.ok(model.GROUP_IDS.includes(entry.group), `${entry.id} has group ${entry.group}`);
+    assert.equal(model.groupOf(entry), entry.group);
+  }
+});
+
+test("pickerGroups uses the eight groups and leaves older cards out", () => {
   const groups = model.pickerGroups(library);
 
   assert.deepStrictEqual(
     groups.map((group) => group.id),
-    ["lights", "climate", "security", "rooms"],
+    ["lights", "climate", "security", "home"],
   );
   assert.deepStrictEqual(
     groups.map((group) => group.cards.map((card) => card.id)),
@@ -1987,12 +2004,111 @@ test("pickerGroups keeps group order and drops empty groups", () => {
       ["community/room-summary"],
     ],
   );
+  // The bundled library: every card but the older ones a newer card
+  // replaces, each in its own group, the groups in the fixed order.
+  const bundled = harnessLibrary();
+  const offered = model.pickerGroups(bundled);
+  const ids = offered.flatMap((group) => group.cards.map((card) => card.id));
+  assert.deepStrictEqual(
+    [...ids].sort(),
+    bundled.components.filter((entry) => !entry.legacy).map((entry) => entry.id).sort(),
+  );
+  assert.ok(ids.includes("apollo/camera-snapshot"));
+  assert.ok(!ids.includes("apollo/blinds"));
+  const order = offered.map((group) => model.GROUP_IDS.indexOf(group.id));
+  assert.deepStrictEqual(order, [...order].sort((a, b) => a - b));
+  for (const group of offered) {
+    assert.ok(group.cards.every((card) => card.group === group.id), group.id);
+  }
+});
+
+test("search finds a card by its search words", () => {
+  const bundled = harnessLibrary();
+  const ids = (query) => model.pickerGroups(bundled, query).flatMap((group) => group.cards.map((card) => card.id));
+  // "laundry" is in no card's name or description, only in the search
+  // words of the appliance card.
+  assert.ok(bundled.components.every((entry) => !/laundry/i.test(`${entry.name} ${entry.description}`)));
+  assert.deepStrictEqual(ids("laundry"), ["apollo/appliance"]);
+  assert.ok(ids("cctv").includes("apollo/camera-snapshot"));
+  // Words of an older card never bring it back.
+  assert.ok(!ids("blinds").includes("apollo/blinds"));
+});
+
+test("suggested cards: at most eight, in the fixed order, only kinds this home has", () => {
+  const bundled = harnessLibrary();
+  const home = (ids) => ({ states: Object.fromEntries(ids.map((id) => [id, { state: "on", attributes: {} }])), entities: {} });
+  const kinds = (cards) => cards.map((card) => {
+    const field = model.paramFields(card).find((entry) => entry.kind === "entity");
+    return model.fieldDomains(field)[0];
+  });
+  const all = model.suggestedCards(bundled, home([
+    "lock.front", "cover.blind", "sensor.t", "scene.movie", "weather.home", "media_player.tv", "climate.hall", "light.kitchen", "switch.fan",
+  ]));
+  assert.ok(all.length <= 8);
+  assert.deepStrictEqual(kinds(all), ["light", "climate", "media_player", "weather", "scene", "sensor", "cover", "lock"]);
+  assert.ok(all.every((card) => !card.legacy && card.source === "builtin"));
+  assert.equal(new Set(all.map((card) => card.id)).size, all.length);
+  // Only the kinds this home has, in the same order.
+  assert.deepStrictEqual(kinds(model.suggestedCards(bundled, home(["lock.front", "light.kitchen"]))), ["light", "lock"]);
+  // A hidden device does not count.
+  const hidden = home(["light.kitchen"]);
+  hidden.entities["light.kitchen"] = { hidden: true };
+  assert.deepStrictEqual(model.suggestedCards(bundled, hidden), []);
+  assert.deepStrictEqual(model.suggestedCards(bundled, {}), []);
+});
+
+test("a search that matches a device gives it with the cards that fit, name matches first", () => {
+  const hass = {
+    states: {
+      "light.kitchen": { state: "on", attributes: { friendly_name: "Kitchen light" } },
+      "light.ceiling": { state: "on", attributes: { friendly_name: "Ceiling" } },
+      "light.lamp": { state: "on", attributes: { friendly_name: "Lamp kitchen side" } },
+      "sensor.kitchen": { state: "20", attributes: { friendly_name: "Temperature" } },
+      "lock.door": { state: "locked", attributes: { friendly_name: "Back door" } },
+    },
+    entities: {
+      "light.ceiling": { area_id: "kitchen" },
+      "sensor.kitchen": { area_id: "kitchen" },
+    },
+    areas: { kitchen: { name: "Kitchen" } },
+  };
+  const ids = (query, keep) => model.deviceMatches(hass, query, keep).map((choice) => choice.entity_id);
+  // A name that starts with the words, other name matches, then rooms;
+  // at most three.
+  assert.deepStrictEqual(ids("kitchen"), ["light.kitchen", "light.lamp", "light.ceiling"]);
+  // Only the start of a word: "itchen" finds nothing, "ac" not "Back".
+  assert.deepStrictEqual(ids("itchen"), []);
+  assert.deepStrictEqual(ids("ac"), []);
+  assert.deepStrictEqual(ids(""), []);
+  // A device no card can take is left out by `keep`.
+  assert.deepStrictEqual(ids("kitchen", (id) => !id.startsWith("light.")), ["sensor.kitchen"]);
+  // The cards that fit a device are the ones that can take it.
+  const bundled = harnessLibrary();
+  const fit = bundled.components.filter((entry) => !entry.legacy && model.fitsDevices(entry, ["light.kitchen"]));
+  assert.ok(fit.some((entry) => entry.id === "apollo/light"));
+  assert.ok(!fit.some((entry) => entry.id === "apollo/climate"));
+});
+
+test("a new card goes after the selected card", () => {
+  const card = (id) => ({ type: model.CARD_TYPE, component: id, params: {}, grid_options: { columns: 6, rows: 3 } });
+  const config = {
+    views: [{ type: "sections", max_columns: 3, sections: [{ type: "grid", column_span: 3, cards: [card("a/1"), card("a/2"), card("a/3")] }] }],
+  };
+  const newComponent = component({ id: "a/new", grid: { columns: 6, rows: 3 } });
+  const after = model.addCard(config, 0, newComponent, {}, [0, 0, 0]);
+  assert.deepStrictEqual(after.source, [0, 0, 1]);
+  assert.deepStrictEqual(after.config.views[0].sections[0].cards.map((entry) => entry.component), ["a/1", "a/new", "a/2", "a/3"]);
+  // Nothing selected, or a card of another page: at the end.
+  for (const selected of [null, [1, 0, 0], [0, 0, 9]]) {
+    const end = model.addCard(config, 0, newComponent, {}, selected);
+    assert.deepStrictEqual(end.source, [0, 0, 3]);
+  }
 });
 
 test("pickerGroups search matches every word in name or description", () => {
   const groups = model.pickerGroups(library, "room sensor");
 
-  assert.deepStrictEqual(groups.map((group) => group.id), ["rooms"]);
+  assert.deepStrictEqual(groups.map((group) => group.id), ["home"]);
   assert.deepStrictEqual(
     groups[0].cards.map((card) => card.id),
     ["community/room-summary"],
@@ -3330,6 +3446,10 @@ test("followItem picks the same copy of a card that appears twice", () => {
 
 // ---- schema 2 cards: the form data and the picker's rules (I8, C.7) ----
 
+// The bundled library as the stand-in Home Assistant answers it.
+function harnessLibrary() {
+  return harnessFixtures.library;
+}
 const harnessFixtures = JSON.parse(
   fs.readFileSync(path.resolve(here, "../harness/fixtures.json"), "utf8"),
 );
@@ -3614,8 +3734,10 @@ test("a card's named size is one of its own sizes, not an unusual one", () => {
 });
 
 test("a card for several kinds of device is grouped by its first kind", () => {
-  assert.equal(model.groupOf(v2("apollo/scenes")), "lights");
-  assert.equal(model.groupOf(v2("apollo/reading")), "more");
+  // Without the group of its own that the library answer gives it.
+  const guessed = (id) => model.groupOf({ ...v2(id), group: undefined });
+  assert.equal(guessed("apollo/scenes"), "lights");
+  assert.equal(guessed("apollo/reading"), "more");
 });
 
 test("a stored value that does not fit its option counts as not stored", () => {

@@ -4315,17 +4315,20 @@ export const canvasStyles = `
 `;
 
 export const pickerStyles = `
+/* One size in both steps, so the dialog does not jump. */
 dialog.picker {
   box-sizing: border-box;
-  width: min(960px, calc(100vw - 32px));
+  width: min(1080px, calc(100vw - 48px));
+  height: min(720px, calc(100dvh - 48px));
   max-width: none;
-  max-height: calc(100dvh - 32px);
+  max-height: none;
   padding: 0;
   border: 1px solid var(--tab-line);
   border-radius: var(--tab-r-dialog);
   background: var(--tab-surface);
   color: var(--tab-text);
   box-shadow: var(--tab-shadow-dialog);
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 dialog.picker[open] {
@@ -4337,28 +4340,52 @@ dialog.picker::backdrop {
 }
 .picker-head {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
-  padding-block: 16px 8px;
-  padding-inline: 24px;
+  gap: 12px;
+  min-height: 64px;
+  padding-block: 8px;
+  padding-inline: 24px 12px;
+  border-bottom: 1px solid var(--tab-line);
 }
 .picker-head h2 {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: var(--tab-fs-head);
-  line-height: var(--tab-lh-head);
+  font-size: var(--tab-fs-title);
+  line-height: var(--tab-lh-title);
   font-weight: 500;
 }
 .picker-head > button {
   flex: 0 0 auto;
 }
+/* The search is a normal field with the magnifier inside its start. */
+.picker-search {
+  position: relative;
+  display: block;
+  flex: 0 1 320px;
+  min-width: 0;
+}
+.picker-search ha-icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 10px;
+  color: var(--tab-text-2);
+  pointer-events: none;
+  translate: 0 -50%;
+  --mdc-icon-size: 20px;
+}
+.picker-search input {
+  width: 100%;
+}
 .picker-top {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  padding-block: 0 12px;
+  gap: 4px;
+  padding-block: 12px;
   padding-inline: 24px;
+  border-bottom: 1px solid var(--tab-line);
 }
 .picker-top p {
   margin: 0;
@@ -4370,10 +4397,48 @@ dialog.picker::backdrop {
 .picker-top > button.link {
   margin-inline-start: -4px;
 }
+.picker-main {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 0;
+}
+.picker-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 12px 8px;
+  border-inline-end: 1px solid var(--tab-line);
+  overflow: auto;
+}
+.picker-rail .rail-row {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--tab-control);
+  padding-inline: 12px;
+  border-radius: var(--tab-r-pill);
+  background-color: transparent;
+  font-weight: 400;
+  text-align: start;
+}
+.picker-rail .rail-row[aria-checked="true"] {
+  background-color: var(--tab-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--tab-accent-text);
+  font-weight: 500;
+}
+.rail-name {
+  min-width: 0;
+}
+.rail-count {
+  flex: 0 0 auto;
+  color: var(--tab-text-2);
+  font-size: var(--tab-fs-small);
+}
 .picker-body {
   flex: 1 1 auto;
   min-height: 0;
-  padding-block: 0 20px;
+  padding-block: 4px 20px;
   padding-inline: 24px;
   overflow: auto;
 }
@@ -4386,24 +4451,74 @@ dialog.picker::backdrop {
   line-height: var(--tab-lh-body);
   font-weight: 600;
 }
+.picker-group:first-child > .tiles:first-child {
+  margin-block-start: 16px;
+}
+.picker-note {
+  flex: 0 0 auto;
+  padding-block: 8px;
+  padding-inline: 24px;
+  border-top: 1px solid var(--tab-line);
+  color: var(--tab-text-2);
+}
+.picker-note p {
+  margin: 0;
+}
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
   gap: 12px;
 }
+/* Every tile has the same size: a 16:10 frame, one line of name and two
+   of description. */
 .tile {
   display: grid;
+  grid-template-rows: auto 1fr;
   align-content: start;
   justify-content: stretch;
-  justify-items: start;
-  gap: 6px;
+  justify-items: stretch;
+  gap: 0;
   min-width: 0;
-  padding: 12px;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--tab-line);
   border-radius: var(--tab-r-m);
   background-color: var(--tab-surface);
   font-weight: 400;
   text-align: start;
+}
+.tile:not(:disabled):hover {
+  border-color: var(--tab-accent-text);
+  box-shadow: var(--tab-shadow);
+}
+.tile-frame {
+  position: relative;
+  display: grid;
+  aspect-ratio: 16 / 10;
+  place-items: center;
+  overflow: hidden;
+  background: var(--tab-stage);
+}
+.tile-chip {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  padding: 0 8px;
+  border-radius: var(--tab-r-pill);
+  background: var(--tab-surface);
+  color: var(--tab-text-2);
+  font-size: var(--tab-fs-small);
+  line-height: var(--tab-lh-small);
+}
+.tile-text {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px;
+}
+.tile-text .tag {
+  justify-self: start;
 }
 /* A switched-off card looks unavailable through its dashed edge, faded
    picture and lock, not by fading the whole tile: its words say why it is
@@ -4424,32 +4539,83 @@ dialog.picker::backdrop {
   flex: 0 0 auto;
   --mdc-icon-size: 18px;
 }
-.tile-preview {
+.tile-preview,
+.pick-frame .tablet-pic {
   position: relative;
   display: grid;
   max-width: 100%;
   place-items: center;
-  overflow: hidden;
-  border-radius: var(--tab-r-s);
-  background: var(--tab-stage);
   pointer-events: none;
 }
-.tile-preview > ha-icon {
+.tile-preview > ha-icon,
+.pick-frame .tablet-pic > ha-icon {
   color: var(--tab-text-2);
 }
-.tile-preview apollo-tab-card {
+.tile-preview apollo-tab-card,
+.pick-frame .tablet-pic apollo-tab-card {
   position: absolute;
   inset: 0;
 }
 .tile-name {
+  overflow: hidden;
   font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tile-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: calc(2em * var(--tab-lh-small));
 }
 .tile-desc,
-.tile-size,
 .tile-locked {
   color: var(--tab-text-2);
   font-size: var(--tab-fs-small);
   line-height: var(--tab-lh-small);
+}
+/* The second step: the card large on the left, the questions on the right. */
+.pick-split {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 360px minmax(0, 1fr);
+  min-height: 0;
+}
+.pick-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  padding: 16px 24px;
+  border-inline-end: 1px solid var(--tab-line);
+  overflow: auto;
+}
+.pick-card p {
+  margin: 0;
+}
+.pick-frame {
+  display: grid;
+  aspect-ratio: 16 / 10;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--tab-r-m);
+  background: var(--tab-stage);
+}
+.pick-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pick-sizes .size-pick {
+  border-radius: var(--tab-r-pill);
+}
+.pick-sizes .size-pick[aria-checked="true"] {
+  background-color: var(--tab-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--tab-accent-text);
+}
+.pick-split .picker-body {
+  padding-block: 16px 20px;
 }
 .picker-fields {
   display: grid;
@@ -4462,6 +4628,7 @@ dialog.picker::backdrop {
 }
 .picker-foot {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
@@ -4471,7 +4638,9 @@ dialog.picker::backdrop {
 }
 .picker-foot .helper {
   flex: 1 1 200px;
+  margin: 0;
 }
+/* Full screen on a phone, clear of its notch and home bar. */
 dialog.picker.compact {
   width: 100vw;
   height: 100dvh;
@@ -4480,17 +4649,26 @@ dialog.picker.compact {
   margin: 0;
   border: 0;
   border-radius: 0;
+  padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+  padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
 }
 dialog.picker.compact .picker-head,
 dialog.picker.compact .picker-top,
 dialog.picker.compact .picker-body,
-dialog.picker.compact .picker-foot {
+dialog.picker.compact .picker-note,
+dialog.picker.compact .picker-foot,
+dialog.picker.compact .pick-card {
   padding-inline: 12px;
 }
-/* On a phone the device step's title gets its own line under the Back and
-   Close buttons, so none of them is squeezed. */
+/* On a phone the search gets its own line under the title and Close, and
+   the device step's title its own line under Back and Close. */
 dialog.picker.compact .picker-head {
   flex-wrap: wrap;
+  row-gap: 8px;
+}
+dialog.picker.compact .picker-search {
+  order: 1;
+  flex: 1 1 100%;
 }
 dialog.picker.compact .picker-close {
   margin-inline-start: auto;
@@ -4499,19 +4677,54 @@ dialog.picker.compact [data-test="pick-back"] ~ h2 {
   order: 1;
   flex-basis: 100%;
 }
+/* The rail becomes one row of chips that scrolls sideways. */
+dialog.picker.compact .picker-main {
+  display: flex;
+  flex-direction: column;
+}
+dialog.picker.compact .picker-rail {
+  flex: 0 0 auto;
+  flex-direction: row;
+  gap: 8px;
+  padding: 8px 12px;
+  border-inline-end: 0;
+  border-bottom: 1px solid var(--tab-line);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+dialog.picker.compact .picker-rail .rail-row {
+  flex: 0 0 auto;
+  border: 1px solid var(--tab-line);
+  white-space: nowrap;
+}
 dialog.picker.compact .tiles {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
-dialog.picker.compact .tile {
-  grid-template-columns: auto minmax(0, 1fr);
+dialog.picker.compact .pick-split {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+dialog.picker.compact .pick-split .picker-body {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+dialog.picker.compact .pick-card {
+  grid-template-columns: 96px minmax(0, 1fr);
   align-items: center;
-  column-gap: 12px;
+  border-inline-end: 0;
+  border-bottom: 1px solid var(--tab-line);
+  overflow: visible;
 }
-dialog.picker.compact .tile-preview {
-  grid-row: 1 / span 5;
+dialog.picker.compact .pick-frame {
+  grid-row: 1 / span 2;
 }
-dialog.picker.compact .tile > span {
+dialog.picker.compact .pick-card > :not(.pick-frame) {
   grid-column: 2;
+}
+dialog.picker.compact .pick-card > .pick-sizes,
+dialog.picker.compact .pick-card > .field-label {
+  grid-column: 1 / -1;
 }
 `;
 

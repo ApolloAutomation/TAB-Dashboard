@@ -62,3 +62,5 @@ variants:
 
 preview:
   params: {scenes: [scene.movie, scene.dinner, scene.relax, scene.all_off]}
+  # The example scenes are not in Home Assistant; the example must not fade.
+  inputs: {gone: false}

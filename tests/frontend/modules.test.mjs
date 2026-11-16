@@ -130,6 +130,8 @@ const modelExpected = [
   "useWholeScreen",
   "groupOf",
   "pickerGroups",
+  "suggestedCards",
+  "deviceMatches",
   "paramFields",
   "singleEntityParam",
   "entityChoices",

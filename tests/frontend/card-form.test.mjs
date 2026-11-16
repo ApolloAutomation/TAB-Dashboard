@@ -302,3 +302,16 @@ test("after Taller the marked size follows the grid", () => {
     assert.deepStrictEqual(marked, ["big"]);
   });
 });
+
+test("the theme gallery offers every one of the 15 bundled themes", async () => {
+  const { buildThemeGallery } = await import("../../custom_components/apollo_tab/frontend/card-form.js");
+  const themes = JSON.parse(
+    fs.readFileSync(path.resolve(here, "../../custom_components/apollo_tab/library/themes.json"), "utf8"),
+  );
+  assert.equal(themes.length, 15);
+  withDom(() => {
+    const gallery = buildThemeGallery({ themes, themeId: "midnight", readOnly: false, preview: [], onTheme: () => {} });
+    const offered = gallery.descendants().filter((node) => node.dataset.test === "theme-tile").map((node) => node.dataset.theme);
+    assert.deepStrictEqual([...offered].sort(), themes.map((theme) => theme.id).sort());
+  });
+});
