@@ -36,6 +36,7 @@ const WARNING_CODES = [
   "card_too_wide",
   "card_too_tall",
   "section_split",
+  "position_adjusted",
   "over_budget_charts",
   "over_budget_arcs",
   "over_budget_gradients",

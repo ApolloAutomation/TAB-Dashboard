@@ -168,3 +168,19 @@ test("every relative frontend import resolves to a file", () => {
     }
   }
 });
+
+test("placement and drag modules export their public surface", async () => {
+  const placement = await import(pathToFileURL(path.join(frontend, "placement.js")));
+  for (const name of [
+    "GRID_COLS", "GRID_ROWS", "SNAP_COLS", "SNAP_ROWS", "MIN_COLS", "MIN_ROWS",
+    "rectOfCell", "cellOfRect", "readPosition", "cardCells", "isPlaced", "isEmptyPage",
+    "occupied", "canPlace", "freeSlot", "firstFree", "freezePage", "placeCard", "sizeCard",
+    "snapMove", "snapSize",
+  ]) {
+    assert.equal(Object.hasOwn(placement, name), true, `missing export ${name}`);
+  }
+  const drag = await import(pathToFileURL(path.join(frontend, "drag.js")));
+  for (const name of ["START_PX", "HOLD_MS", "followPress"]) {
+    assert.equal(Object.hasOwn(drag, name), true, `missing export ${name}`);
+  }
+});

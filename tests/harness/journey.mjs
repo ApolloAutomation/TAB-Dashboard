@@ -1113,6 +1113,8 @@ const CREATED_CARD = {
   component: "apollo/light",
   params: { entity: "light.kitchen" },
   grid_options: { columns: 6, rows: 3 },
+  // A new page is placed from its first card.
+  apollo_tab: { page: 0, col: 0, row: 0 },
 };
 
 // A second dashboard for the steps that move between dashboards.
@@ -1655,6 +1657,46 @@ const UI = `window.__ui = {
 
 // Steps that share state are in one chain; a failed step skips the rest of
 // its chain, since they would only fail for the same reason.
+// A real mouse drag: press at `from`, move in steps with the button held,
+// release at `to`. `beforeRelease` runs while the button is still down.
+async function drag(r, from, to, { steps = 8, beforeRelease = null } = {}) {
+  const send = (event) => r.browser.send("Input.dispatchMouseEvent", event);
+  await send({ type: "mouseMoved", x: from.x, y: from.y });
+  await send({ type: "mousePressed", x: from.x, y: from.y, button: "left", buttons: 1, clickCount: 1 });
+  for (let i = 1; i <= steps; i += 1) {
+    const x = Math.round(from.x + ((to.x - from.x) * i) / steps);
+    const y = Math.round(from.y + ((to.y - from.y) * i) / steps);
+    await send({ type: "mouseMoved", x, y, button: "left", buttons: 1 });
+    await sleep(16);
+  }
+  if (beforeRelease) await beforeRelease();
+  await send({ type: "mouseReleased", x: to.x, y: to.y, button: "left", buttons: 0, clickCount: 1 });
+  await sleep(120);
+}
+
+// An arrow key on what has focus, with Shift when `shift` is true.
+async function arrow(r, key, shift = false) {
+  const codes = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
+  const event = { key, code: key, windowsVirtualKeyCode: codes[key], modifiers: shift ? 8 : 0 };
+  await r.browser.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...event });
+  await r.browser.send("Input.dispatchKeyEvent", { type: "keyUp", ...event });
+  await sleep(80);
+}
+
+// The centre of a card on the picture, and the picture's scale.
+async function hitBox(r, source) {
+  return r.eval(`(() => { const hit = __j.find('[data-test="hit"][data-source="${source}"]');
+    if (!hit) return null;
+    hit.scrollIntoView({ block: "center" });
+    const box = hit.getBoundingClientRect();
+    const stage = __j.find('[data-test="canvas"]').getBoundingClientRect();
+    return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2),
+      left: box.left - stage.left, top: box.top - stage.top, right: box.right, bottom: box.bottom, scale: stage.width / 1280 }; })()`);
+}
+
+// Every card of the saved dashboard's first page.
+const SAVED_CARDS = `__apolloMockHass.getConfig("tab-1").views[0].sections.flatMap((section) => section.cards || [])`;
+
 function chains(realConfig) {
   const home = `__j.find('[data-test="home"]')`;
   const editorReady = `__j.find('[data-test="canvas"]') || __j.find('[data-test="page-box"]')`;
@@ -8568,6 +8610,146 @@ function chains(realConfig) {
     }),
   ];
 
+
+  // Free placement: a card dragged to a free place on the picture stays
+  // there; a drop on another card changes nothing; arrows move, Shift +
+  // arrows and the corner handle size; one Undo per gesture, and Undo of
+  // the first one gives back the flowing page.
+  const placing = [
+    step(
+      "210",
+      "drag-a-card",
+      async (r) => {
+        await openSample(r);
+        await r.waitSaved("the sample");
+        // The fourth graph of the first section: column 0, row 4, 12 x 3.
+        await r.waitFor(`__j.find('[data-test="hit"][data-source="0.0.3"]')`, "the fourth graph");
+        const start = await hitBox(r, "0.0.3");
+        const cell = { x: 32 * start.scale, y: 64 * start.scale };
+        const saves = async () => (await r.eval(SAVES)).length;
+        // Escape during a drag changes nothing.
+        let before = await saves();
+        await drag(r, start, { x: start.x + 24 * cell.x, y: start.y + 3 * cell.y }, {
+          beforeRelease: async () => {
+            check((await r.count('[data-test="place-ghost"]')) === 1, "no landing outline during the drag");
+            await r.key("Escape");
+            check((await r.count('[data-test="place-ghost"]')) === 0, "the outline stays after Escape");
+          },
+        });
+        await sleep(500);
+        check((await saves()) === before, "Escape during a drag saved a change");
+        check(!(await r.eval(`${SAVED_CARDS}.some((card) => card.apollo_tab)`)), "Escape during a drag placed a card");
+        // A drop on a free place: the whole page keeps its look and the card
+        // lands on the snapped cells.
+        await drag(r, start, { x: start.x + 24 * cell.x + 10, y: start.y + 3 * cell.y - 5 });
+        await r.waitFor(`${SAVED_CARDS}[4]?.apollo_tab?.col === 24`, "the card's place to be saved");
+        const cards = await r.eval(SAVED_CARDS);
+        check(stable(cards[4].apollo_tab) === stable({ page: 0, col: 24, row: 7 }), `the card was placed at ${stable(cards[4].apollo_tab)}`);
+        check(cards[0].type === "heading" && cards[0].heading === "Energy", "the section title is not a heading card");
+        check(stable(cards[0].apollo_tab) === stable({ page: 0, col: 0, row: 0 }), `the heading sits at ${stable(cards[0].apollo_tab)}`);
+        check(stable(cards[1].apollo_tab) === stable({ page: 0, col: 0, row: 1 }), `the first graph moved to ${stable(cards[1].apollo_tab)}`);
+        await r.waitSaved("the drag");
+        await r.waitFor(`(() => { const hit = __j.find('[data-test="hit"][data-source="0.0.4"]');
+          return hit && Math.abs(parseFloat(hit.style.left) - ${(100 + 24 * 32) * start.scale}) < 1.5
+            && Math.abs(parseFloat(hit.style.top) - ${(20 + 7 * 64) * start.scale}) < 1.5; })()`, "the card on the picture at its new place");
+        const moved = await r.shot("210-drag-a-card");
+        // A drop on another card: red outline, and nothing changes.
+        before = await saves();
+        const here = await hitBox(r, "0.0.4");
+        await drag(r, here, { x: here.x - 24 * cell.x, y: here.y - 6 * cell.y }, {
+          beforeRelease: async () => {
+            check((await r.count('[data-test="place-ghost"].bad')) === 1, "no red outline over another card");
+          },
+        });
+        await sleep(500);
+        check((await saves()) === before, "a drop on another card saved a change");
+        check((await r.eval(`${SAVED_CARDS}[4].apollo_tab.col`)) === 24, "a drop on another card moved it");
+        // One Undo gives back the flowing page: no card has a place.
+        await shortcut(r, "z");
+        await r.waitFor(`!${SAVED_CARDS}.some((card) => card.apollo_tab)`, "Undo to give back the flowing page");
+        await r.waitSaved("the undo");
+        return moved;
+      },
+      { desktopOnly: true },
+    ),
+    step(
+      "211",
+      "place-keys-and-handle",
+      async (r) => {
+        await openSample(r);
+        await r.waitSaved("the sample");
+        await r.waitFor(`__j.find('[data-test="hit"][data-source="0.0.3"]')`, "the fourth graph");
+        // Arrow Down moves the card one row: the page is frozen and the card
+        // placed in one commit.
+        await r.click('[data-test="hit"][data-source="0.0.3"]');
+        await r.waitFor(`__j.designer()._previewOf === __j.designer()._draft`, "the picture of the draft");
+        await r.eval(`__j.find('[data-test="hit"][data-source="0.0.3"]').focus(); true`);
+        await arrow(r, "ArrowDown");
+        await r.waitFor(`${SAVED_CARDS}[4]?.apollo_tab?.row === 5`, "Arrow Down to move the card");
+        await r.waitSaved("Arrow Down");
+        // Shift + Arrow Down: one row taller.
+        await r.waitFor(`__j.active()?.dataset?.source === "0.0.4"`, "focus on the moved card");
+        await arrow(r, "ArrowDown", true);
+        await r.waitFor(`${SAVED_CARDS}[4].grid_options?.rows === 4`, "Shift + Arrow Down to make the card taller");
+        await r.waitSaved("Shift + Arrow Down");
+        // Into another card (the left-out graph's box): refused, nothing saved.
+        const saves = (await r.eval(SAVES)).length;
+        await arrow(r, "ArrowRight");
+        await sleep(500);
+        check((await r.eval(SAVES)).length === saves, "a move onto another card was saved");
+        // The corner handle: one step to the left is 3 columns narrower.
+        await r.waitFor(`__j.find('[data-test="resize-handle"]') && __j.designer()._previewOf === __j.designer()._draft`, "the size handle");
+        const handle = await r.eval(`(() => { const box = __j.find('[data-test="resize-handle"]').getBoundingClientRect();
+          return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) }; })()`);
+        const scale = (await hitBox(r, "0.0.4")).scale;
+        await drag(r, handle, { x: handle.x - Math.round(96 * scale) - 4, y: handle.y + 2 }, {
+          beforeRelease: async () => {
+            const label = await r.text('[data-test="place-ghost"]');
+            check(label === "9 by 4", `the size label reads "${label}"`);
+          },
+        });
+        await r.waitFor(`${SAVED_CARDS}[4].grid_options?.columns === 9`, "the handle to make the card narrower");
+        await r.waitSaved("the handle");
+        const shot = await r.shot("211-place-keys-and-handle");
+        // One Undo per gesture: the handle, then the run of keys (one step).
+        await shortcut(r, "z");
+        await r.waitFor(`${SAVED_CARDS}[4].grid_options?.columns === 12`, "Undo of the handle");
+        await shortcut(r, "z");
+        await r.waitFor(`!${SAVED_CARDS}.some((card) => card.apollo_tab)`, "Undo of the keys and the freeze");
+        await r.waitSaved("the undos");
+        return shot;
+      },
+      { desktopOnly: true },
+    ),
+    // A TAB dashboard shown in Home Assistant's sidebar is hidden once when
+    // the start screen lists it; never again, and never when the owner
+    // keeps it there.
+    step("212", "sidebar-hidden-once", async (r) => {
+      const updates = `__apolloMockHass.calls.filter((call) => call.type === "lovelace/dashboards/update")`;
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await r.eval(`localStorage.removeItem("apollo_tab.sidebar_hidden"); localStorage.removeItem("apollo_tab.sidebar_keep"); true`);
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await r.waitFor(`${updates}.length === 1`, "the dashboard to be hidden from the sidebar");
+      await sleep(400);
+      const calls = await r.eval(updates);
+      check(calls.length === 1, `${calls.length} updates`);
+      check(calls[0].show_in_sidebar === false && calls[0].dashboard_id === "tab_1" && Object.keys(calls[0]).length === 3,
+        `the update was ${stable(calls[0])}`);
+      check((await r.eval(`__apolloMockHass.getDashboard("tab-1").show_in_sidebar`)) === false, "still in the sidebar");
+      check((await r.eval(`__apolloMockHass.getDashboard("tab-1").title`)) === "TAB-1", "the dashboard was renamed");
+      // Shown again (the stand-in starts with it shown): not hidden twice.
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await sleep(800);
+      check((await r.eval(updates)).length === 0, "the dashboard was hidden a second time");
+      // One the owner keeps in the sidebar is never hidden.
+      await r.eval(`localStorage.removeItem("apollo_tab.sidebar_hidden"); localStorage.setItem("apollo_tab.sidebar_keep", '["tab-1"]'); true`);
+      await r.open({ seed: "real" }, `${home} && __j.find('[data-test="dashboard-row"]')`);
+      await sleep(800);
+      check((await r.eval(updates)).length === 0, "a dashboard kept in the sidebar was hidden");
+      await r.eval(`localStorage.removeItem("apollo_tab.sidebar_keep"); true`);
+      return null;
+    }),
+  ];
   return [
     first,
     real,
@@ -8625,6 +8807,7 @@ function chains(realConfig) {
     inspecting,
     popups,
     startScreen,
+    placing,
   ];
 }
 

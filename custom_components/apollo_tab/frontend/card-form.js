@@ -1072,8 +1072,15 @@ function moveToPageBlock({ pages, onMoveToPage }) {
 
 // The place: [<] 3 of 10 [>], the line about how cards fill the screen,
 // and Move to page.
-function positionBlock({ canEarlier, canLater, onMove, place, pages, onMoveToPage }) {
+function positionBlock({ canEarlier, canLater, onMove, place, pages, onMoveToPage, placed = false }) {
   const block = el("div", "place-block");
+  // On a placed page a card is moved on the picture; there is no order.
+  if (placed) {
+    if (onMoveToPage) {
+      block.append(moveToPageBlock({ pages, onMoveToPage }));
+    }
+    return block;
+  }
   const row = el("div", "stepper place-stepper");
   const earlier = makeButton(null, {
     kind: "icon",

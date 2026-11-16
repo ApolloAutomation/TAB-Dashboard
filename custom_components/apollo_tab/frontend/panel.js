@@ -12,7 +12,7 @@ import {
 } from "./api.js";
 import { defineAliases } from "./card.js";
 import { applyAccent, el, focusLost, icon, makeButton, screenHeading } from "./card-form.js";
-import { keptChanges, onKeptChanges } from "./designer.js";
+import { hiddenOnce, keptChanges, keptInSidebar, markHiddenOnce, onKeptChanges } from "./designer.js";
 import {
   cardCount,
   mergeDashboards,
@@ -663,6 +663,10 @@ export class ApolloTabPanel extends HTMLElement {
         previews: this._home?.previews || {},
       };
       this._failure = null;
+      // On the start screen only; the editor keeps its sidebar notice.
+      if (!this._isEditor()) {
+        this._hideFromSidebar(this._home.rows);
+      }
       counting = { configs, library };
       if (visit === this._visit) {
         visit.fresh = true;
@@ -684,6 +688,34 @@ export class ApolloTabPanel extends HTMLElement {
     // row simply has no "not shown" line.
     if (counting) {
       this._countNotShown(seq, counting.configs, counting.library).catch(() => {});
+    }
+  }
+
+  // Tablet dashboards stay out of Home Assistant's sidebar: one shown there
+  // is hidden once (its "Show in sidebar" setting is turned off), unless
+  // the owner turned that back on in its settings here. Nothing is deleted
+  // or renamed and it stays reachable by its address. YAML dashboards are
+  // left alone. When the call fails the editor's sidebar notice stays.
+  _hideFromSidebar(rows) {
+    if (!this._hass || this._hass.user?.is_admin === false) {
+      return;
+    }
+    const kept = keptInSidebar();
+    const done = hiddenOnce();
+    for (const row of rows) {
+      if (!row?.show_in_sidebar || !row.editable || kept.includes(row.url_path) || done.includes(row.url_path)) {
+        continue;
+      }
+      markHiddenOnce(row.url_path);
+      this._hass
+        .callWS({ type: "lovelace/dashboards/update", dashboard_id: row.id, show_in_sidebar: false })
+        .then(() => {
+          row.show_in_sidebar = false;
+          if (!this._isEditor()) {
+            this._draw();
+          }
+        })
+        .catch(() => {});
     }
   }
 

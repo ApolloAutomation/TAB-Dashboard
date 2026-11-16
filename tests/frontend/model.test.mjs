@@ -956,6 +956,8 @@ test("addCard creates a full-width section when the page has none", () => {
           columns: 6,
           rows: 3,
         },
+        // An empty page is placed from its first card.
+        apollo_tab: { page: 0, col: 0, row: 0 },
       },
     ],
   });
@@ -1230,7 +1232,9 @@ test("moveCardToPage can add a page for the card and leaves the page it is on al
   assert.equal(result.config.views[1].title, "Page 2");
   assert.equal(result.config.views[1].path, "page-2");
   assert.deepStrictEqual(result.config.views[0].sections[0].cards, []);
-  assert.deepStrictEqual(result.config.views[1].sections[0].cards, [{ type: "heading", heading: "One" }]);
+  assert.deepStrictEqual(result.config.views[1].sections[0].cards, [
+    { type: "heading", heading: "One", apollo_tab: { page: 0, col: 0, row: 0 } },
+  ]);
 
   // The page the card is already on, a section title, a card that is not
   // there and a page that is not a TAB-1 page move nothing.

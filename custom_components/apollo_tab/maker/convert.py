@@ -35,13 +35,16 @@ from .geometry import (
     CELL_INSET,
     COL_W,
     CONTENT_X,
+    GRID_COLS,
     PAD,
     PAGE_ROWS,
     SCREEN_H,
     SCREEN_W,
     card_rect,
     card_size_px,
+    cells_of,
     paginate,
+    place_free,
     place_section,
 )
 from .schema import validate_card_config, validate_dashboard_options
@@ -57,6 +60,8 @@ _VIEW_EXTRAS = ("header", "sidebar", "footer")
 # The most grid a detail page gives its card: the whole page, no heading.
 _DETAIL_COLUMNS = 36
 _DETAIL_ROWS = PAGE_ROWS
+# The highest screen a card's own position may name.
+_MAX_PLACED_PAGE = 31
 # Card-level keys of a schema 2 card that the layout v2 carries.
 _CARD_KEYS2 = ("on", "tint", "un", "ic", "confirm", "lit")
 
@@ -450,11 +455,10 @@ def _convert_view(vi: int, view: object, env: dict, used_bases: set[str]) -> lis
         sections = []
     page_theme = _page_theme(view, env)
     env["page_theme"] = page_theme
-    parts: list[tuple[int, list[dict]]] = []
-    for si, section in enumerate(sections):
-        for span, items in _convert_section(vi, si, section, env):
-            if items:
-                parts.append((span, items))
+    if _is_placed_view(sections):
+        screens = _place_view(vi, sections, env)
+    else:
+        screens = _flow_view(vi, sections, env)
     base = _page_base(view, vi, used_bases)
     title = view.get("title")
     if not (isinstance(title, str) and title):
@@ -462,7 +466,7 @@ def _convert_view(vi: int, view: object, env: dict, used_bases: set[str]) -> lis
     icon = view.get("icon")
     if not (isinstance(icon, str) and _ICON.match(icon)):
         icon = None
-    if not parts:
+    if not screens:
         # A page with no cards stays, with its side bar entry, so the tablet
         # has the same pages as the editor.
         page: dict[str, Any] = {"id": base, "title": title, "view": vi, "items": []}
@@ -471,23 +475,39 @@ def _convert_view(vi: int, view: object, env: dict, used_bases: set[str]) -> lis
         if page_theme is not None:
             page["theme"] = page_theme
         return [page]
-    placed = paginate([(span, _height(items, span)) for span, items in parts])
-    by_page: dict[int, list] = {}
-    for part, (page_index, section_col, band_row) in zip(parts, placed, strict=True):
-        by_page.setdefault(page_index, []).append((part, section_col, band_row))
     pages = []
-    for page_index in sorted(by_page):
-        number = page_index + 1
+    for index, items in enumerate(screens):
+        number = index + 1
         page: dict[str, Any] = {
             "id": base if number == 1 else f"{base}-{number}",
             "title": title if number == 1 else f"{title} ({number})",
             "view": vi,
-            "items": [],
+            "items": items,
         }
         if icon:
             page["icon"] = icon
         if page_theme is not None:
             page["theme"] = page_theme
+        pages.append(page)
+    return pages
+
+
+def _flow_view(vi: int, sections: list, env: dict) -> list[list[dict]]:
+    """Flow the sections of a view onto screens; items with their rects."""
+    parts: list[tuple[int, list[dict]]] = []
+    for si, section in enumerate(sections):
+        for span, items in _convert_section(vi, si, section, env):
+            if items:
+                parts.append((span, items))
+    if not parts:
+        return []
+    placed = paginate([(span, _height(items, span)) for span, items in parts])
+    by_page: dict[int, list] = {}
+    for part, (page_index, section_col, band_row) in zip(parts, placed, strict=True):
+        by_page.setdefault(page_index, []).append((part, section_col, band_row))
+    screens = []
+    for page_index in sorted(by_page):
+        items_out = []
         for (span, items), section_col, band_row in by_page[page_index]:
             positions, _ = place_section(
                 [(item["cols"], item["rows"]) for item in items], span
@@ -496,9 +516,109 @@ def _convert_view(vi: int, view: object, env: dict, used_bases: set[str]) -> lis
                 rect = card_rect(
                     section_col, band_row, col, row, item["cols"], item["rows"]
                 )
-                page["items"].append({**item, "rect": rect})
-        pages.append(page)
-    return pages
+                items_out.append({**item, "rect": rect})
+        screens.append(items_out)
+    return screens
+
+
+def _position(card: object) -> tuple[int, int, int] | None | bool:
+    """Read a card's own place on the grid: apollo_tab {page, col, row}.
+
+    Returns (page, col, row), None when the card has none, or False when
+    it is there but malformed. Out of the grid is not malformed; it is
+    clamped later.
+    """
+    if not isinstance(card, dict) or "apollo_tab" not in card:
+        return None
+    raw = card["apollo_tab"]
+    if not isinstance(raw, dict):
+        return False
+    values = [raw.get("page", 0), raw.get("col"), raw.get("row")]
+    if not all(isinstance(v, int) and not isinstance(v, bool) for v in values):
+        return False
+    page, col, row = values
+    if page < 0 or page > _MAX_PLACED_PAGE:
+        return False
+    return page, col, row
+
+
+def _is_placed_view(sections: list) -> bool:
+    """Return True when one of the cards has a valid position (a placed view)."""
+    for section in sections:
+        if not isinstance(section, dict) or not isinstance(section.get("cards"), list):
+            continue
+        for card in section["cards"]:
+            if _position(card) not in (None, False):
+                return True
+    return False
+
+
+def _place_view(vi: int, sections: list, env: dict) -> list[list[dict]]:
+    """Put the cards of a placed view at their own positions on the grid.
+
+    All grid sections are read in order onto one 36 wide grid. Placed cards
+    go first; a card out of the grid is moved in, one that overlaps a card
+    already there is flowed with the unplaced ones into the first free slot.
+    Nothing is refused and nothing is drawn over another card.
+    """
+    warnings = env["warnings"]
+    entries: list[tuple[dict, object]] = []
+    for si, section in enumerate(sections):
+        if not _section_ok(vi, si, section, warnings):
+            continue
+        title = section.get("title")
+        if isinstance(title, str) and title:
+            entries.append((_heading_item(title, 3, vi, si, None), None))
+        cards = section.get("cards")
+        for ci, card in enumerate(cards if isinstance(cards, list) else []):
+            item = _convert_card(vi, si, ci, card, 3, PAGE_ROWS, env)
+            if item is None:
+                continue
+            if item["kind"] == "heading":
+                grid = card.get("grid_options")
+                width = grid.get("columns") if isinstance(grid, dict) else None
+                if isinstance(width, int) and not isinstance(width, bool):
+                    item["cols"] = min(max(width, 1), GRID_COLS)
+            entries.append((item, _position(card)))
+    taken: set = set()
+    spots: list[tuple[int, int, int] | None] = []
+    for item, position in entries:
+        spot = None
+        if position:
+            page, col, row = position
+            cols, rows = item["cols"], item["rows"]
+            fitted = (
+                min(max(col, 0), GRID_COLS - cols),
+                min(max(row, 0), PAGE_ROWS - rows),
+            )
+            cells = cells_of(page, *fitted, cols, rows)
+            if fitted != (col, row) or cells & taken:
+                _adjusted(item, warnings)
+            if not cells & taken:
+                taken |= cells
+                spot = (page, *fitted)
+        elif position is False:
+            _adjusted(item, warnings)
+        spots.append(spot)
+    for index, (item, _) in enumerate(entries):
+        if spots[index] is None:
+            spot = place_free(taken, item["cols"], item["rows"])
+            taken |= cells_of(*spot, item["cols"], item["rows"])
+            spots[index] = spot
+    by_page: dict[int, list] = {}
+    for (item, _), (page, col, row) in zip(entries, spots, strict=True):
+        rect = card_rect(0, 0, col, row, item["cols"], item["rows"])
+        by_page.setdefault(page, []).append({**item, "rect": rect})
+    # Empty screens are dropped; items go in reading order.
+    return [
+        sorted(by_page[page], key=lambda item: (item["rect"][1], item["rect"][0]))
+        for page in sorted(by_page)
+    ]
+
+
+def _adjusted(item: dict, warnings: list[dict]) -> None:
+    """Note that a card's own position could not be used as written."""
+    warnings.append(_warning("position_adjusted", item["vi"], item["si"], item["ci"]))
 
 
 def _page_theme(view: dict, env: dict) -> dict | None:
@@ -543,18 +663,8 @@ def _convert_section(
 ) -> list[tuple[int, list[dict]]]:
     """Convert one section into a list of (span, items) parts."""
     warnings = env["warnings"]
-    if not isinstance(section, dict):
+    if not _section_ok(vi, si, section, warnings):
         return []
-    if "strategy" in section:
-        warnings.append(_warning("strategy_not_supported", vi, si))
-        return []
-    if "type" in section and section["type"] != "grid":
-        warnings.append(_warning("section_not_grid", vi, si))
-        return []
-    if "sections" in section:
-        warnings.append(_warning("nested_section_ignored", vi, si))
-    if section.get("visibility"):
-        warnings.append(_warning("visibility_ignored", vi, si))
     span = _span(section.get("column_span"))
     items: list[dict] = []
     title = section.get("title")
@@ -575,6 +685,23 @@ def _convert_section(
         return [(span, items)]
     warnings.append(_warning("section_split", vi, si))
     return [(span, part) for part in _split_items(items, span) if part]
+
+
+def _section_ok(vi: int, si: int, section: object, warnings: list[dict]) -> bool:
+    """Check one section; False when its cards are not read at all."""
+    if not isinstance(section, dict):
+        return False
+    if "strategy" in section:
+        warnings.append(_warning("strategy_not_supported", vi, si))
+        return False
+    if "type" in section and section["type"] != "grid":
+        warnings.append(_warning("section_not_grid", vi, si))
+        return False
+    if "sections" in section:
+        warnings.append(_warning("nested_section_ignored", vi, si))
+    if section.get("visibility"):
+        warnings.append(_warning("visibility_ignored", vi, si))
+    return True
 
 
 def _split_items(items: list[dict], span: int) -> list[list[dict]]:

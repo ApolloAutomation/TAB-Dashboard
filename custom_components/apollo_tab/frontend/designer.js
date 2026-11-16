@@ -89,8 +89,24 @@ import {
   useWholeScreen,
   usesWholeScreen,
 } from "./model.js";
+import { followPress } from "./drag.js";
 import { openCardPicker } from "./picker.js";
 import { openPopover } from "./popover.js";
+import {
+  SNAP_COLS,
+  SNAP_ROWS,
+  canPlace,
+  cardCells,
+  freezePage,
+  isPlaced,
+  occupied,
+  placeCard,
+  readPosition,
+  rectOfCell,
+  sizeCard,
+  snapMove,
+  snapSize,
+} from "./placement.js";
 import { renderPage } from "./render.js";
 import { canvasStyles, designerStyles, formStyles, pickerStyles, rendererStyles } from "./styles.js";
 import {
@@ -353,13 +369,46 @@ function errorMessage(error) {
   return error?.message || error?.code || String(error ?? "");
 }
 
-function keptInSidebar() {
+export function keptInSidebar() {
   try {
     const list = JSON.parse(localStorage.getItem(KEEP_IN_SIDEBAR_KEY) || "[]");
     return Array.isArray(list) ? list.filter((entry) => typeof entry === "string") : [];
   } catch {
     return [];
   }
+}
+
+// Tablet dashboards the panel has hidden from Home Assistant's sidebar
+// once. One the owner turns back on is not hidden again.
+const HIDDEN_ONCE_KEY = "apollo_tab.sidebar_hidden";
+
+function readList(key) {
+  try {
+    const list = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(list) ? list.filter((entry) => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+// Adds a dashboard to one of the lists of dashboards kept in this browser.
+function addToList(key, urlPath) {
+  try {
+    const list = readList(key);
+    if (!list.includes(urlPath)) {
+      localStorage.setItem(key, JSON.stringify([...list, urlPath]));
+    }
+  } catch {
+    // Without storage the step may simply come again on another visit.
+  }
+}
+
+export function hiddenOnce() {
+  return readList(HIDDEN_ONCE_KEY);
+}
+
+export function markHiddenOnce(urlPath) {
+  addToList(HIDDEN_ONCE_KEY, urlPath);
 }
 
 function keepInSidebar(urlPath) {
@@ -374,23 +423,12 @@ function keepInSidebar(urlPath) {
 }
 
 function firstCardSeen() {
-  try {
-    const list = JSON.parse(localStorage.getItem(FIRST_CARD_KEY) || "[]");
-    return Array.isArray(list) ? list.filter((entry) => typeof entry === "string") : [];
-  } catch {
-    return [];
-  }
+  return readList(FIRST_CARD_KEY);
 }
 
+// Without storage the notice may show once more on another visit.
 function markFirstCardSeen(urlPath) {
-  try {
-    const list = firstCardSeen();
-    if (!list.includes(urlPath)) {
-      localStorage.setItem(FIRST_CARD_KEY, JSON.stringify([...list, urlPath]));
-    }
-  } catch {
-    // Without storage the notice may show once more on another visit.
-  }
+  addToList(FIRST_CARD_KEY, urlPath);
 }
 
 // The cards on every page of a dashboard.
@@ -1896,7 +1934,8 @@ export class ApolloTabDesigner extends HTMLElement {
       pageKind(view) === "page" &&
       Array.isArray(view.sections) &&
       view.sections.length > 0 &&
-      !usesWholeScreen(this._draft, this._view)
+      !usesWholeScreen(this._draft, this._view) &&
+      !isPlaced(this._draft, this._view)
     ) {
       notices.push({
         test: "columns-notice",
@@ -2260,14 +2299,18 @@ export class ApolloTabDesigner extends HTMLElement {
     pageRoot.append(pageStyle, pageHost);
     const hits = el("div", "hit-layer");
     hits.setAttribute("role", "group");
-    hits.setAttribute("aria-label", t("a11y.canvas"));
+    hits.setAttribute("aria-label", this._readOnly ? t("a11y.canvas") : `${t("a11y.canvas")} ${t("a11y.place_keys")}`);
     const overlay = el("div");
-    stage.append(pageFrame, hits, overlay);
+    // Says where a card went, or that there is no room, as it is placed.
+    const placeLive = el("span", "sr-only");
+    placeLive.setAttribute("aria-live", "polite");
+    stage.append(pageFrame, hits, overlay, placeLive);
+    this._els.placeLive = placeLive;
     device.append(stage);
     stageArea.append(device);
     // A press on the picture outside every card clears the selection.
     stage.addEventListener("click", (event) => {
-      if (this._selected && !event.target.closest("button")) {
+      if (this._selected && !event.target.closest("button, .resize-handle")) {
         this._select(null);
       }
     });
@@ -2612,6 +2655,12 @@ export class ApolloTabDesigner extends HTMLElement {
   }
 
   _drawCanvas() {
+    // While a card is dragged the picture stays as it is; it is drawn once
+    // after the drop or the cancel.
+    if (this._drag) {
+      this._drawOwed = true;
+      return;
+    }
     const { stage, pageHost, hits, overlay } = this._els;
     if (!stage) {
       return;
@@ -2691,6 +2740,7 @@ export class ApolloTabDesigner extends HTMLElement {
       this._hitButton([warning.view, warning.section, warning.card], warning.r, scale, n, count, null);
     }
 
+    this._placeHandle();
     this._keepHitFocus(focusKey);
     this._markFilled();
     this._applyPendingFocus();
@@ -2869,7 +2919,234 @@ export class ApolloTabDesigner extends HTMLElement {
     // page and dashboard settings.
     button.addEventListener("click", () => this._select(sameSource(source, this._selected) ? null : source, "hit"));
     button.addEventListener("keydown", (event) => this._itemKeys(event, source, "hit"));
+    if (!this._readOnly) {
+      button.addEventListener("pointerdown", (event) => this._startDrag(event, source, "move", button));
+    }
     this._els.hits.append(button);
+  }
+
+  // ---- free placement: drag, the size handle and the arrow keys
+  // (placement.js holds the rules, drag.js the pointer).
+
+  // Whether the picture is the preview of the draft as it is now. A freeze
+  // reads its rectangles, so a stale one must not be used.
+  _previewCurrent() {
+    return Boolean(this._preview) && this._previewOf === this._draft && !this._previewTimer;
+  }
+
+  // The config to place in and where the card is in it. A placed page is
+  // the draft itself; a flowing page is first frozen from the picture, and
+  // the freeze and the move are one commit, so one Undo brings back the
+  // flowing page. Null when that cannot be done now.
+  _placeBase(source) {
+    const draft = this._draft;
+    if (isPlaced(draft, this._view)) {
+      return { config: draft, source: [...source], sources: null };
+    }
+    if (!this._previewCurrent()) {
+      return null;
+    }
+    const frozen = freezePage(draft, this._view, this._preview);
+    const moved = frozen.sources[sourceKey(source)];
+    return moved ? { config: frozen.config, source: moved, sources: frozen.sources } : null;
+  }
+
+  // Commits a placement made on `base`. Beside the inspector the placed
+  // card is selected; in the compact layout the selection only follows.
+  _commitPlace(base, next, { key = null, continuous = false } = {}) {
+    if (next === base.config) {
+      return false;
+    }
+    if (!this._compact) {
+      this._selected = [...base.source];
+      this._selectedFrom = "hit";
+    } else if (this._selected && base.sources) {
+      this._selected = base.sources[sourceKey(this._selected)] || null;
+    }
+    this._pendingFocus = `hit:${sourceKey(base.source)}`;
+    return this._commit(next, { key, continuous });
+  }
+
+  _announce(text) {
+    if (this._els.placeLive) {
+      this._els.placeLive.textContent = text;
+    }
+  }
+
+  // A press on a card (mode "move") or on the size handle ("resize").
+  _startDrag(event, source, mode, target) {
+    if (this._readOnly || this._drag || this._status !== "ready" || (mode === "resize" && this._compact)) {
+      return;
+    }
+    const cancel = followPress(target, event, {
+      start: () => this._dragStart(source, mode),
+      move: (dx, dy, moveEvent) => this._dragMove(dx, dy, moveEvent),
+      end: () => this._dragEnd(),
+      cancel: () => this._dragStop(),
+    });
+    if (cancel) {
+      this._dragCancel = cancel;
+    }
+  }
+
+  _dragStart(source, mode) {
+    const base = this._placeBase(source);
+    const card = base ? getCard(base.config, base.source) : null;
+    const at = readPosition(card);
+    const width = this._els.stage?.getBoundingClientRect().width;
+    if (!at || !width) {
+      return false;
+    }
+    const size = cardCells(card);
+    const grid = el("div", "place-grid");
+    const ghost = el("div", "place-ghost");
+    ghost.dataset.test = "place-ghost";
+    this._els.overlay.append(grid, ghost);
+    this._drag = {
+      mode,
+      base,
+      at,
+      size,
+      heading: card.type === "heading",
+      scale: width / 1280,
+      taken: occupied(base.config, this._view, at.page, base.source),
+      grid,
+      ghost,
+      to: null,
+      ok: true,
+    };
+    this._els.stage.classList.add("placing");
+    this._showGhost(at, size, true);
+    return true;
+  }
+
+  _dragMove(dx, dy, event) {
+    const drag = this._drag;
+    if (!drag) {
+      return;
+    }
+    // Leaving the picture cancels.
+    const box = this._els.stage.getBoundingClientRect();
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) {
+      this._dragCancel?.();
+      return;
+    }
+    const { at, size, taken } = drag;
+    let place = at;
+    let cells = size;
+    if (drag.mode === "move") {
+      place = snapMove(at, size.cols, size.rows, dx / drag.scale, dy / drag.scale);
+    } else {
+      cells = snapSize(at, size.cols, size.rows, dx / drag.scale, dy / drag.scale, drag.heading);
+    }
+    const ok = canPlace(taken, at.page, place.col, place.row, cells.cols, cells.rows);
+    if (!ok && drag.ok) {
+      this._announce(t("place.no_room"));
+    }
+    drag.ok = ok;
+    drag.to = drag.mode === "move" ? place : cells;
+    this._showGhost(place, cells, ok);
+  }
+
+  // The outline of where the card lands, on the faint grid; red where it
+  // cannot go.
+  _showGhost(place, cells, ok) {
+    const { ghost, scale, mode } = this._drag;
+    const [x, y, w, h] = rectOfCell(place.col, place.row, cells.cols, cells.rows);
+    Object.assign(ghost.style, {
+      left: `${x * scale}px`,
+      top: `${y * scale}px`,
+      width: `${w * scale}px`,
+      height: `${h * scale}px`,
+    });
+    ghost.classList.toggle("bad", !ok);
+    ghost.textContent = mode === "resize" ? t("place.sized", { cols: cells.cols, rows: cells.rows }) : "";
+    this._els.stage.classList.toggle("no-room", !ok);
+  }
+
+  _dragEnd() {
+    const drag = this._drag;
+    this._dragStop();
+    if (!drag?.ok || !drag.to) {
+      return;
+    }
+    const { base } = drag;
+    const next =
+      drag.mode === "move"
+        ? placeCard(base.config, base.source, drag.to)
+        : sizeCard(base.config, base.source, drag.to.cols, drag.to.rows);
+    if (this._commitPlace(base, next)) {
+      const to = drag.to;
+      this._announce(
+        drag.mode === "move" ? t("place.moved", { col: to.col + 1, row: to.row + 1 }) : t("place.sized", to),
+      );
+    }
+  }
+
+  // Ends a drag without a change, or after the drop.
+  _dragStop() {
+    const drag = this._drag;
+    this._drag = null;
+    this._dragCancel = null;
+    if (!drag) {
+      return;
+    }
+    drag.grid.remove();
+    drag.ghost.remove();
+    this._els.stage?.classList.remove("placing", "no-room");
+    if (this._drawOwed) {
+      this._drawOwed = false;
+      this._drawCanvas();
+    }
+  }
+
+  // The size handle at the selected card's bottom right corner. Not in the
+  // compact layout; the keyboard has Shift + arrows.
+  _placeHandle() {
+    const hits = this._els.hits;
+    hits?.querySelector(".resize-handle")?.remove();
+    if (!hits || this._readOnly || this._compact || !this._selected) {
+      return;
+    }
+    const button = [...hits.querySelectorAll(".hit")].find((hit) => hit.dataset.source === this._selectedKey());
+    if (!button) {
+      return;
+    }
+    const source = [...this._selected];
+    const handle = el("div", "resize-handle");
+    handle.dataset.test = "resize-handle";
+    handle.title = t("place.resize");
+    handle.setAttribute("aria-hidden", "true");
+    handle.style.left = `${parseFloat(button.style.left) + parseFloat(button.style.width)}px`;
+    handle.style.top = `${parseFloat(button.style.top) + parseFloat(button.style.height)}px`;
+    handle.addEventListener("pointerdown", (event) => this._startDrag(event, source, "resize", handle));
+    hits.append(handle);
+  }
+
+  // Arrow keys on a card of the picture move it one step; Shift + arrows
+  // change its size (right and down grow, left and up shrink).
+  _placeKey(source, [dx, dy], resize) {
+    const base = this._placeBase(source);
+    const card = base ? getCard(base.config, base.source) : null;
+    const at = readPosition(card);
+    if (!at) {
+      return;
+    }
+    const { cols, rows } = cardCells(card);
+    const next = resize
+      ? sizeCard(base.config, base.source, cols + dx * SNAP_COLS, rows + dy * SNAP_ROWS)
+      : placeCard(base.config, base.source, { page: at.page, col: at.col + dx * SNAP_COLS, row: at.row + dy * SNAP_ROWS });
+    if (next === base.config) {
+      this._announce(t("place.no_room"));
+      return;
+    }
+    this._commitPlace(base, next, { key: `place:${sourceKey(base.source)}`, continuous: true });
+    const now = getCard(next, base.source);
+    const place = readPosition(now);
+    const size = cardCells(now);
+    this._announce(
+      resize ? t("place.sized", size) : t("place.moved", { col: place.col + 1, row: place.row + 1 }),
+    );
   }
 
   _itemLabel(source, n, count, headingText) {
@@ -2888,6 +3165,7 @@ export class ApolloTabDesigner extends HTMLElement {
     for (const button of this._els.hits?.querySelectorAll(".hit") || []) {
       button.setAttribute("aria-pressed", String(button.dataset.source === this._selectedKey()));
     }
+    this._placeHandle();
     this._queuePlaceToast();
   }
 
@@ -3701,6 +3979,7 @@ export class ApolloTabDesigner extends HTMLElement {
         themes: this._library?.themes || [],
         dashboardTheme: this._themeId(),
         maxWide: maxUnitsWide(this._draft, source),
+        placed: isPlaced(this._draft, source[0]),
         canEarlier: canMove(this._draft, source, -1),
         canLater: canMove(this._draft, source, 1),
         // The other pages the tablet shows, which a card can move to.
@@ -3756,6 +4035,7 @@ export class ApolloTabDesigner extends HTMLElement {
         onDone: () => this._closeForm(),
         place: isCard ? cardPlace(this._draft, source) : null,
         text: String(card.heading ?? ""),
+        placed: isPlaced(this._draft, source[0]),
         canEarlier: isCard && canMove(this._draft, source, -1),
         canLater: isCard && canMove(this._draft, source, 1),
         onText: (text) =>
@@ -4196,12 +4476,15 @@ export class ApolloTabDesigner extends HTMLElement {
     }
     const seq = ++this._previewSeq;
     const run = this._run;
+    const draft = this._draft;
     try {
-      const preview = await previewLayout(this._conn, this._draft);
+      const preview = await previewLayout(this._conn, draft);
       if (seq !== this._previewSeq || run !== this._run || this._status !== "ready") {
         return;
       }
       this._preview = preview;
+      // Which draft the picture shows; a freeze needs it to be this one.
+      this._previewOf = draft;
       this._previewError = null;
       const screens = pageScreens(preview, this._view);
       if (this._screenFor) {
@@ -4363,6 +4646,14 @@ export class ApolloTabDesigner extends HTMLElement {
 
   _itemKeys(event, source, where) {
     if (this._readOnly) {
+      return;
+    }
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    // On a flowing page Shift + Left and Right still reorder.
+    const reorder = event.shiftKey && step && step[0] !== 0 && !isPlaced(this._draft, this._view);
+    if (where === "hit" && step && !reorder && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      this._placeKey(source, step, event.shiftKey);
       return;
     }
     if (event.key === "Delete" || event.key === "Backspace") {
@@ -5056,6 +5347,12 @@ export class ApolloTabDesigner extends HTMLElement {
   // "Cards" opened.
   _handleEscape(event) {
     if (event.key !== "Escape" || this._dialogOpen()) {
+      return;
+    }
+    // Escape during a drag puts the card back and changes nothing.
+    if (this._drag) {
+      event.preventDefault();
+      this._dragCancel?.();
       return;
     }
     if (!this._selected) {

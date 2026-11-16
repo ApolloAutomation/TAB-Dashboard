@@ -1,4 +1,5 @@
 import { cleanConfig, isIcon, termHolds, warningBoxKind, whenTruthy } from "./logic.js";
+import { cardCells, firstFree, isEmptyPage, isPlaced } from "./placement.js";
 
 export const CARD_TYPE = "custom:apollo-tab-card";
 export const PREVIEW_TYPE = "custom:apollo-tab-preview";
@@ -83,6 +84,7 @@ const ITEM_REASON_CODES = new Set([
 
 const ITEM_NOTE_CODES = new Set([
   "params_incomplete",
+  "position_adjusted",
   "element_clipped",
   "card_too_wide",
   "card_too_tall",
@@ -1184,6 +1186,12 @@ export function addCard(config, vi, component, params) {
       rows,
     },
   });
+  // On a placed page, and on an empty one (so every new page is placed
+  // from its first card), the card takes the first free slot.
+  if (isPlaced(next, vi) || isEmptyPage(next, vi)) {
+    const size = cardCells(card);
+    card.apollo_tab = firstFree(next, vi, size.cols, size.rows);
+  }
 
   section.cards.push(card);
 
@@ -1228,6 +1236,8 @@ export function updateCard(config, source, changes) {
     // A schema 2 card's own settings and its named size (C.2.3).
     "options",
     "variant",
+    // The card's own place on a placed page (placement.js).
+    "apollo_tab",
   ]) {
     if (!Object.prototype.hasOwnProperty.call(changes, key)) {
       continue;
@@ -1314,6 +1324,9 @@ export function maxUnitsWide(config, source) {
     return 2;
   }
 
+  if (isPlaced(config, parts[0])) {
+    return MAX_UNITS_WIDE;
+  }
   const section = sectionAt(config, parts[0], parts[1]);
   return section ? 2 * sectionSpan(section) : 2;
 }
@@ -1448,6 +1461,10 @@ export function moveItem(config, source, delta) {
 }
 
 export function canMove(config, source, delta) {
+  // On a placed page cards are moved on the picture, not in a list order.
+  if (Array.isArray(source) && isPlaced(config, source[0])) {
+    return false;
+  }
   const result = moveItem(config, source, delta);
   return !sameSource(result.source, source);
 }
@@ -1507,6 +1524,13 @@ export function moveCardToPage(config, source, target, title = "") {
   const widest = 12 * sectionSpan(section);
   if (isPlainObject(moved.grid_options) && Number(moved.grid_options.columns) > widest) {
     moved.grid_options = { ...moved.grid_options, columns: widest };
+  }
+  // A placed or empty page gives it its first free slot; a flowing page
+  // takes it without a place.
+  delete moved.apollo_tab;
+  if (isPlaced(next, view) || isEmptyPage(next, view)) {
+    const size = cardCells(moved);
+    moved.apollo_tab = firstFree(next, view, size.cols, size.rows);
   }
   section.cards.push(moved);
   return { config: next, source: [view, grid, section.cards.length - 1], view };
@@ -1644,7 +1668,14 @@ export function duplicateCard(config, source) {
   if (!section || !Array.isArray(section.cards) || !isPlainObject(section.cards[ci])) {
     return { config: next, source: null };
   }
-  section.cards.splice(ci + 1, 0, structuredClone(section.cards[ci]));
+  const copy = structuredClone(section.cards[ci]);
+  // On a placed page the copy goes to the first free slot.
+  if (isPlaced(next, vi)) {
+    delete copy.apollo_tab;
+    const size = cardCells(copy);
+    copy.apollo_tab = firstFree(next, vi, size.cols, size.rows);
+  }
+  section.cards.splice(ci + 1, 0, copy);
   return { config: next, source: [vi, si, ci + 1] };
 }
 

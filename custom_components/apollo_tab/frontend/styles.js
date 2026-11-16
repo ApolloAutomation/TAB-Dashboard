@@ -2991,6 +2991,66 @@ ${barTokens}
   outline-offset: 0;
   box-shadow: 0 0 0 5px var(--tab-ring);
 }
+/* Free placement: a card is dragged by its button, and the selected one
+   is sized by the handle at its bottom right corner. While a drag runs the
+   picture shows the faint cell grid and an outline of where the card lands,
+   red where there is no room. */
+.hit {
+  touch-action: pan-y pinch-zoom;
+}
+.stage.placing,
+.stage.placing .hit {
+  cursor: grabbing;
+}
+.stage.placing.no-room,
+.stage.placing.no-room .hit {
+  cursor: not-allowed;
+}
+.place-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 31;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: calc(100% * 96 / 1280) calc(100% * 64 / 800);
+  background-position: calc(100% * 96 / 1280) calc(100% * 16 / 800);
+}
+.place-ghost {
+  position: absolute;
+  z-index: 32;
+  box-sizing: border-box;
+  display: grid;
+  place-content: center;
+  border: 2px solid var(--tab-accent);
+  border-radius: var(--tab-r-s);
+  background: color-mix(in srgb, var(--tab-accent) 18%, transparent);
+  color: #ffffff;
+  font-size: var(--tab-fs-small);
+  pointer-events: none;
+}
+.place-ghost.bad {
+  border-color: var(--tab-err);
+  background: color-mix(in srgb, var(--tab-err) 22%, transparent);
+}
+.resize-handle {
+  position: absolute;
+  z-index: 33;
+  width: 24px;
+  height: 24px;
+  margin: -18px 0 0 -18px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 2px solid #ffffff;
+  border-radius: var(--tab-r-xs);
+  background: var(--tab-ring);
+}
 .stage-message,
 .empty-page {
   position: absolute;

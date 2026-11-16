@@ -21,6 +21,7 @@ test("warningBoxKind hatches only cards that were left out", () => {
     card_too_wide: null,
     card_too_tall: null,
     section_split: null,
+    position_adjusted: null,
     over_budget_charts: "omitted",
     over_budget_arcs: "omitted",
     over_budget_gradients: "flat",

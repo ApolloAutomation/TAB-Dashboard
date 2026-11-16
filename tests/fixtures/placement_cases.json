@@ -1,0 +1,16 @@
+{
+  "about": "First free slot on the 36 x 12 grid. taken: [page, col, row, cols, rows] per card; size: [cols, rows]; slot: [page, col, row]. Read by tests/test_maker_placement.py and tests/frontend/placement.test.mjs.",
+  "cases": [
+    { "name": "empty page", "taken": [], "size": [6, 3], "slot": [0, 0, 0] },
+    { "name": "next to the first card", "taken": [[0, 0, 0, 6, 3]], "size": [6, 3], "slot": [0, 6, 0] },
+    { "name": "under a full row", "taken": [[0, 0, 0, 36, 3]], "size": [6, 3], "slot": [0, 0, 3] },
+    { "name": "into a gap that is wide enough", "taken": [[0, 0, 0, 6, 3], [0, 12, 0, 24, 3]], "size": [6, 3], "slot": [0, 6, 0] },
+    { "name": "past a gap that is too narrow", "taken": [[0, 0, 0, 6, 3], [0, 9, 0, 27, 3]], "size": [6, 3], "slot": [0, 0, 3] },
+    { "name": "beside a taller card", "taken": [[0, 0, 0, 6, 6]], "size": [12, 2], "slot": [0, 6, 0] },
+    { "name": "low rows left at the bottom", "taken": [[0, 0, 0, 36, 10]], "size": [6, 2], "slot": [0, 0, 10] },
+    { "name": "too tall for the rows left", "taken": [[0, 0, 0, 36, 10]], "size": [6, 3], "slot": [1, 0, 0] },
+    { "name": "full screen, then the next one", "taken": [[0, 0, 0, 36, 12], [1, 0, 0, 6, 3]], "size": [6, 3], "slot": [1, 6, 0] },
+    { "name": "a whole screen card on a new screen", "taken": [[0, 30, 9, 6, 3]], "size": [36, 12], "slot": [1, 0, 0] },
+    { "name": "a free cell off the snap step", "taken": [[0, 0, 0, 7, 12], [0, 13, 0, 23, 12]], "size": [6, 2], "slot": [0, 7, 0] }
+  ]
+}

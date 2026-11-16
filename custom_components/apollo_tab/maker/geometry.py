@@ -181,6 +181,40 @@ def card_rect(
     ]
 
 
+GRID_COLS = 12 * SECTION_COLUMNS  # 36 columns on a placed page
+
+
+def rect_cell(rect: list[int]) -> tuple[int, int, int, int]:
+    """Return (col, row, cols, rows) of a page rectangle; card_rect reversed."""
+    x, y, w, h = rect
+    return (
+        (x - CONTENT_X - CELL_INSET) // COL_W,
+        (y - PAGE_TOP - CELL_INSET) // ROW_H,
+        (w + 2 * CELL_INSET) // COL_W,
+        (h + 2 * CELL_INSET) // ROW_H,
+    )
+
+
+def cells_of(page: int, col: int, row: int, cols: int, rows: int) -> set:
+    """Return the (page, col, row) cells a card covers."""
+    return {(page, col + dc, row + dr) for dr in range(rows) for dc in range(cols)}
+
+
+def place_free(taken: set, cols: int, rows: int) -> tuple[int, int, int]:
+    """First free (page, col, row) for a card, row by row from screen 0.
+
+    taken: (page, col, row) cells already used. cols and rows are already
+    clamped to the grid, so an empty screen always has room.
+    """
+    page = 0
+    while True:
+        for row in range(PAGE_ROWS - rows + 1):
+            for col in range(GRID_COLS - cols + 1):
+                if not cells_of(page, col, row, cols, rows) & taken:
+                    return page, col, row
+        page += 1
+
+
 def paginate(sections: list[tuple[int, int]]) -> list[tuple[int, int, int]]:
     """Pack whole sections into pages, in order, in rows of three columns.
 
