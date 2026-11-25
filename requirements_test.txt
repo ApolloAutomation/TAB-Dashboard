@@ -868,14 +868,7 @@ ciso8601==2.3.3 \
     # via
     #   hass-nabucasa
     #   homeassistant
-colorama==0.4.6 ; os_name == 'nt' or sys_platform == 'win32' \
-    --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
-    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
-    # via
-    #   build
-    #   pytest
-    #   tqdm
-coverage==7.16.2 \
+coverage[toml]==7.16.2 \
     --hash=sha256:00d3eb96e9988c45f50cccd1f1496571ac5c1f91386ac02c4d55516eeda19a24 \
     --hash=sha256:01c6908bc613b420c26c818fe948e1b97dfd041a53c98b01c63bd8321f5c9aae \
     --hash=sha256:066429634299e14dd2d511e1e85f8f9cecc500781f6b41907c0dd6f1baea7e63 \
@@ -1060,7 +1053,7 @@ cryptography==50.0.1 \
     #   pyopenssl
     #   securetar
     #   snitun
-dbus-fast==5.2.0 ; sys_platform == 'linux' \
+dbus-fast==5.2.0 \
     --hash=sha256:0858d3f0a9b9fe506e6847c8200e85fda4b62319aa5712e61dfa696f19e0d1f3 \
     --hash=sha256:0a772708d25c11e980642781f603882e3dc51b5767be19075ffc5a484c4d3411 \
     --hash=sha256:0c0d6ff2dffa3115fb5c670a0d17474827428ba87991f5e7b4d3791f0abcb07f \
@@ -1318,7 +1311,7 @@ frozenlist==1.8.0 \
     # via
     #   aiohttp
     #   aiosignal
-greenlet==3.5.6 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64' \
+greenlet==3.5.6 \
     --hash=sha256:0616b8f878098c5681fd8f0dc92d887551717402342a70f0abcbfea5f5ad8a44 \
     --hash=sha256:06c0e933290fba8ffe53ead4ae1b8044b0e9754b75cebf381aa2bc3e50d82fac \
     --hash=sha256:128813fc29f2336a21b4d06eedd5e16bcc7ea46f59e9ff1cb30ea70e48195d88 \
@@ -2634,7 +2627,7 @@ pycognito==2024.5.1 \
     --hash=sha256:c821895dc62b7aea410fdccae4f96d8be7cab374182339f50a03de0fcb93f9ea \
     --hash=sha256:e211c66698c2c3dc8680e95107c2b4a922f504c3f7c179c27b8ee1ab0fc23ae4
     # via hass-nabucasa
-pycparser==3.12 ; implementation_name != 'PyPy' \
+pycparser==3.12 \
     --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e \
     --hash=sha256:f03387877eab82ce01bbdfd0ba7252ee55a90b1c708d5129e2ce915475cf1db6
     # via cffi
@@ -2774,7 +2767,7 @@ pygments==2.21.0 \
     # via
     #   pytest
     #   rich
-pyjwt==2.15.1 \
+pyjwt[crypto]==2.15.1 \
     --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
     --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
     # via
@@ -2811,56 +2804,6 @@ pynacl==1.6.2 \
     # via
     #   pygithub
     #   securetar
-pyobjc-core==13.0 ; sys_platform == 'darwin' \
-    --hash=sha256:1e8752b3950ceec603bf36f57083151abed15e0c2e7c5b8c3efded9c81dc732c \
-    --hash=sha256:292462e0947a09aca3737a06c44457cb2aa58f267cfc581c16fca036fc073b45 \
-    --hash=sha256:4627348cb31c8deb2bb94702d9bcaa74869f4fef9559fd134416a6a4ca42006e \
-    --hash=sha256:5818e3d8cc2677a1e767968ebfe3bc0cb7f80c1f7c19c653ee25ef1cc1b3e188 \
-    --hash=sha256:c497a23077ba0a42b59b879d81049eebfb0b7b67a8ca80c68b6d3683bbbd6d6f \
-    --hash=sha256:d65d383efed5a803e43f6c67ccc9f4c94754842b2268da24319bb57a852b016f \
-    --hash=sha256:f29f7cdb3969268716017ada9516b94f6dd1c66c2e415274b5ac1169440da1a4 \
-    --hash=sha256:fe470bd7b8163b4b8d216b1ebe5b227f01c0fa1c4e0085d7ccade269dec02bb0 \
-    --hash=sha256:ffe154462d14aa4852f424e9116f17b5f8d44f78fc0f6c4727e721a5fa7177da
-    # via
-    #   bleak
-    #   pyobjc-framework-cocoa
-    #   pyobjc-framework-corebluetooth
-    #   pyobjc-framework-libdispatch
-pyobjc-framework-cocoa==13.0 ; sys_platform == 'darwin' \
-    --hash=sha256:16dd1e8890ed695ce12bcd367ed0ac9f3e70dd1f7a8098b6398427c162591b83 \
-    --hash=sha256:1a6b9f9e0ab123e51fa7df43bbc6c0414a444facd2225ad4f221a0d842c49ad6 \
-    --hash=sha256:88be6d452e7531f695ce6d41428aa74bcaade9ddbc50af592419b9f2fbb7c879 \
-    --hash=sha256:9282ebad57784ec18f4b7ea2e6b65bac0a6f56cc21a5c63e061fa48a9b49dd26 \
-    --hash=sha256:bb0bcba2e4e9d05af875306e0e055cfc2f152fd602d5f2f1a54490adebebcd34 \
-    --hash=sha256:bb7a23941fc8d7866578dbc84e56140efd343a1d28510f530dd1dbf80807daf4 \
-    --hash=sha256:d6fa11ea29d85d46e65ed1c9fdba3a5131ad26971bf24bb7d16aa55f06bcdc1e \
-    --hash=sha256:e1618d315939c9fae57cb858d4db496ec61f82495ce6a877398131ee494fc19d \
-    --hash=sha256:f1e26ad2225d1c84973cce725f2f4aeeb4d5f653a36c8a9f0b691c5529dc7780
-    # via
-    #   pyobjc-framework-corebluetooth
-    #   pyobjc-framework-libdispatch
-pyobjc-framework-corebluetooth==13.0 ; sys_platform == 'darwin' \
-    --hash=sha256:06c11f81d25286665460facd0b53562faff30d92d3c4a15517042b878c295443 \
-    --hash=sha256:27ffcd87cb3f953b38e2c95333af7f4a314623e4c162293600967c5aea06c2f2 \
-    --hash=sha256:2803bb9a03a0adb5a77df9995e116b6f3773480e9195dbdb6d20ee8385d0bfb2 \
-    --hash=sha256:4260f8a3b175ec5b25bda30dad37ef53732d6204c13724c90094351f47a48cf1 \
-    --hash=sha256:49e453a30b706e3e15e5afdd536d10bee11b848c918bcb99adbba8c3cb298291 \
-    --hash=sha256:5ac715fa799d90f32cc192c71bd628fcbd621f32ba63ecea6c02ae24af5a6764 \
-    --hash=sha256:73508b21b324678a9a1f1ed69fb7adf0d8a6d4ac4d9bec1144ea8a2ea9a167b7 \
-    --hash=sha256:a998fc0fa7df5b7f631c8cced62c400c25eb28d1ada9538e1e127185cb0c2adb \
-    --hash=sha256:be976ca6217393a5a771fbb7c3d7fd71c0a1a2ab25f30cf5328b0ecd908a0e84
-    # via bleak
-pyobjc-framework-libdispatch==13.0 ; sys_platform == 'darwin' \
-    --hash=sha256:17ddbf1895d231f031d0e47f598ffa6b65bbc0a6edc16ceda9474577d683ecfa \
-    --hash=sha256:4434236926360d27dbe0e0ac450153539622c37aabe87247502f44a359775fdc \
-    --hash=sha256:75d29e94aa56c505cc1da0763c69a6c93ba3dda8ad297948d4e491fe1d3c337c \
-    --hash=sha256:840f8f719984b1128ce69e3a586cd10f89a394795885a54be8c1769158cf8555 \
-    --hash=sha256:8b6e56d1be07ee39533ea528fd7a76010776bab88a7170d87fbfe69f1cb07a89 \
-    --hash=sha256:b41a078c5c6268baba39bc2b6580a2f4112709ab9146663b72eb67523ac99d72 \
-    --hash=sha256:b725e5ea9a881258d94646a3e09287c3608d560539abe04c75ba8b95847fe999 \
-    --hash=sha256:d0f070fc479b14eb6da96cf7cb4f8034eaa254a3f78d0fd3962bb2eded6f3a4e \
-    --hash=sha256:e0607c241ffb17b380c25ff30eeaf64008ff4f7749c39604da82570400f582dc
-    # via bleak
 pyopenssl==26.4.0 \
     --hash=sha256:28dfcce0162b9211413e26dfbfdf1d24317fbeba18fc93c12400a1856b2a0bc7 \
     --hash=sha256:f0eb0cb2d581d3ad2b9c489468485e7f2ab6727d08401bcf9d824c3caddf3c1c
@@ -3204,25 +3147,25 @@ rich==15.0.0 \
     --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
     --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
     # via pytest-codspeed
-ruff==0.17.4 \
-    --hash=sha256:0d1f4848fd2ec0499be4046db9b7dfcc952666885f00233cc7033515282556a8 \
-    --hash=sha256:13e781c3c5f663e7fba737eaaeb70dd943dd55171daf316afb25cd5268cfe0c7 \
-    --hash=sha256:181ae38a9a8fb94925bf7d0794327b48d7fd7f4b50cfd84c0e999cc09ef8d131 \
-    --hash=sha256:20e43d7a08e712e33067ba887e6574546c79bd4831596ce8f16803ac7ff9ad90 \
-    --hash=sha256:2b08c4ff98dc234f4a3871a3105353b922fa875ea1073ca31001eb8c06bb4d89 \
-    --hash=sha256:2cd025509b2e15721b426fc70fd946d71f43b3db3b08e946dfec2d696d911690 \
-    --hash=sha256:3971a78cba76298b284c8321e6d40d93045ed348bec5c369d85099efc97fb7cf \
-    --hash=sha256:49b77f7b3921669466882a4881168801bdb06ec2cd83fb936049016cf5fdece1 \
-    --hash=sha256:5f28cf0dd37cb172fa5a8d2e92e6ada3a9dbd0609f094ed24039929eef0b7524 \
-    --hash=sha256:6007e7f3a0e55b0fbdb947af69cf24c21b4928df6be8ef3e767c69b5ccccf496 \
-    --hash=sha256:67c5a894fc054cf41f75f7afa24815de5a74329d97634126c2a1015740ff4e8c \
-    --hash=sha256:6b21c771b296888e8a35c6f48555f4b44e4483f61675d6ed51810a5203469ce6 \
-    --hash=sha256:7e061dcc0933c7031a616ac8d66ac540309b2aa21ab558101a8f53e9ac7a1185 \
-    --hash=sha256:7ed2f416349944f908f9574215994602242b0836844eba48eec61473033afca0 \
-    --hash=sha256:8ea6e0017c785f7282092b11e46338e4ebed1b9e575ebf2e55a8a1eda968241a \
-    --hash=sha256:e3b84eb74f260d1c2dbd236fd9d4c011d4fdd0a52bdf8aea57a10e3a1b71fca5 \
-    --hash=sha256:f32d178b50e826e00f6c6c1be3f56333068acb9b67fe167143527fa9b81e890d \
-    --hash=sha256:f99e95a1515161138be3cbd1b06c06e739d8feb38ade35564556999fffc3686e
+ruff==0.17.6 \
+    --hash=sha256:0692088e6b33455572fb18465e891b443f196e98dc1986825685c77ff6f4c5ac \
+    --hash=sha256:084d9c8f5ec718e7eba007dba339e7cb4f7571d2f267558ae080bf428fb6a69b \
+    --hash=sha256:1939b3d701c7b6981b7cf93473de5bf88b129b9ba84efaed5154cc517c44634d \
+    --hash=sha256:1a0bea6aa1216e0ec4cd35d3dbccec0d772a7c2aad28ec9c6e82571dff2c20b0 \
+    --hash=sha256:2b04276561331300325040bdca21460770029ec574d4c479099e39e8ad1ed43c \
+    --hash=sha256:3db61f5015600543a581b07fa7f6f64afa0eeedefe16034cadd88c4074087582 \
+    --hash=sha256:435241c61af5909a022f76219d3d1bf24730dc1bf0acabb5ddf4b569ab3cbb30 \
+    --hash=sha256:6a12c50a33936dc00db2be21ba25fb168a8b95c55eda2a3ac85005af69885e4b \
+    --hash=sha256:9cd2fd9923e9806b8b6b67a3469e2258e84bd4d21e45d5a1a690afdfb9c8e57d \
+    --hash=sha256:9d44ef2140402043fd6f689ef541858b80883a8b0a02e38539ef0614ebe57d0c \
+    --hash=sha256:9fbddc08577592e283c265d865e0182de6e33db185494db7b06290d989d888e5 \
+    --hash=sha256:aa3b08254a732acba246891089a152c47c5733dc36b8ecb76ce8602f8326e5e4 \
+    --hash=sha256:b5aba93b3db4b70c5697e4fee6e0d5b9c8452a9a3a03679611cadc25915a2173 \
+    --hash=sha256:c2f4af6670b7a0501904e881bb3f1f24bd0d964dec1eedbd85f0eb73786e1128 \
+    --hash=sha256:d006bbb2945edb17b0ce6a0c1b5f5a8d81ba11dbac294a0a925effa22ce34feb \
+    --hash=sha256:d8b14e1473dc86ab9069cf7a2ba5041dc012f59110201844ed04cfddf07055a0 \
+    --hash=sha256:fb589e032806bb942e4fb526f30b80a1a64112147ed9f1d38cc3de2e255b6f45 \
+    --hash=sha256:fd661702202a89c00a4c9d0339008805fa5876bfa1c57e165495c2e62230dfbf
     # via -r requirements_test.in
 s3transfer==0.19.3 \
     --hash=sha256:24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553 \
@@ -3407,7 +3350,6 @@ typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via
-    #   anyio
     #   grpcio
     #   homeassistant
     #   mashumaro
@@ -3420,7 +3362,6 @@ typing-extensions==4.16.0 \
     #   pygithub
     #   sqlalchemy
     #   typing-inspection
-    #   winrt-runtime
 typing-inspection==0.4.5 \
     --hash=sha256:7f16c411e7930dc79596d42ab44672a3fe5f60eb34b781a1647e7872363120c7 \
     --hash=sha256:bc210535442b39e1bf2805e0c7a17dfd6a4ace760c84c7f7d16245d23a6b1c39
@@ -3534,92 +3475,6 @@ webrtc-models==0.3.0 \
     # via
     #   hass-nabucasa
     #   homeassistant
-winrt-runtime==4.1.0 ; sys_platform == 'win32' \
-    --hash=sha256:01571f68755750d17518009c00ba21c799b4eddac805bf38cb869da08d38a73f \
-    --hash=sha256:281a6085d07dd941873ef16b7bc236f37ad45bd166435e8cabdeff00c67d2830 \
-    --hash=sha256:2d48b68e36db5822fd040bd3667c178626752649fa6e82c84262aa01bd7eb314 \
-    --hash=sha256:41ff9980d992e9d54124b8f346891974c3b61d7dad1ce921bfe22e2e6046026f \
-    --hash=sha256:453b6d6f8568d639038fe313b37661acf372a8173040f41a36305be95dbf14f0 \
-    --hash=sha256:4fd0f5779c793235aa10d09dfe851c2e7830739b4f41766cc865d4218d2a403f \
-    --hash=sha256:708e176f518d6a1beb81640e6038abf0068b25e624dd11fced10c488934769c8 \
-    --hash=sha256:77b79a83e8af56ea98ae8644d1e9e753376c8d97586986eb05068d49d653389f \
-    --hash=sha256:9d120ebb16b3dbc8aec8b6011f399cc1f0bacfb4bf8ea6cf3b157275e046f288 \
-    --hash=sha256:a1418ed9c3592c48fa74f30004abf10d7e96df33f84e782aa61387af16013375 \
-    --hash=sha256:a2bd0d3018f3c2add91f961305e000e56ef9ec222359d069f91cc2e0d4078ace \
-    --hash=sha256:af422bbcffa7249770ab118bc5b9aa1f8fcd401566abca478f91cf7bd9a8b7dd \
-    --hash=sha256:c299e9b991b623413c5c8773dfaa3f72d039128bdce6ff0b9815c3cb07ba793e \
-    --hash=sha256:c51f2d9c0835e3628b3281eac1d5ef2f7cc772302d6a038f5d2bce9e5591d179 \
-    --hash=sha256:cf9f050cc3565163ec512eda2f834d7c201a2ece54232d7dda770bd9d232d352 \
-    --hash=sha256:d1a9b4b609bece607051b55fa234043150e233a169cd004fd9dae30331562186 \
-    --hash=sha256:d345452652ce7243ce3d97ebf63067f848717a8328cca8c4e851c2d0a53ef577 \
-    --hash=sha256:d8c4654ec0f214a29354b22039d8bd9728968f3195c4cafcded8bfe57cb6fd36 \
-    --hash=sha256:db36eeae93d36d41e6e7e67b529de122b2798ad687d661e63b287169624f6d44 \
-    --hash=sha256:e18810477ee5a23ed67abdbff3c51efd648aaa3938d5f6ce1f5a42d5fb764a56 \
-    --hash=sha256:e22c7dab4e8e6064b440661efaab9aa576cdbf7f72e6f61b79ee28535230b546 \
-    --hash=sha256:f86b52d8c82bfda0a96620a17d6b5362a15d1dc6c0fdf9a80b65c254f39adbaf
-    # via
-    #   bleak
-    #   winrt-windows-devices-bluetooth
-    #   winrt-windows-devices-bluetooth-advertisement
-    #   winrt-windows-devices-bluetooth-genericattributeprofile
-    #   winrt-windows-devices-enumeration
-    #   winrt-windows-devices-radios
-    #   winrt-windows-foundation
-    #   winrt-windows-foundation-collections
-    #   winrt-windows-storage-streams
-winrt-windows-devices-bluetooth==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:50fda25dcca0c4bada5acdf39e24f8da8a2ed85c5b98b3aba301815ca5181315 \
-    --hash=sha256:e39bcddf747396e2da78cb8c3d00c3e51214e5f1a9dc213fc009434c5264bbea
-    # via bleak
-winrt-windows-devices-bluetooth-advertisement==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:0123ebd97b37c5cfacc7b67cb348b9be839e645c8ea07df40e58db989eca676d \
-    --hash=sha256:ddf2b1bd17e92a63c892273fceb2a4aba3263123cba7be979b51e93ff7d7e32c
-    # via bleak
-winrt-windows-devices-bluetooth-genericattributeprofile==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:3e95b316a941106fd8193dead1a31e6abf9f118efceb58da2388e943fcf5f6d8 \
-    --hash=sha256:f9b20277d127ac2dd307f3fdb51e218b55158ba0963c52d555de5a1f8856a599
-    # via bleak
-winrt-windows-devices-enumeration==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:0d76f1961bede3dfaf92939ca16edb882daa97bf6481e2dadc8174fec64e7a7e \
-    --hash=sha256:a25e63b02f2d79e451e6a1a3418bfac527ca7525a4473758bb958ab7b6b8313f
-    # via bleak
-winrt-windows-devices-radios==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:27e336bee43b941742b65a66b848735b3eb92ff41436e92dfe87805bd008a084 \
-    --hash=sha256:466c47b468c381192218a6f8744d3f2966b43acd710f004bb8a4b4e4e1bcbf88
-    # via bleak
-winrt-windows-foundation==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:0669de7ce480806a0f9a46d005837799e37f1738911b54c4bc04788b37974e69 \
-    --hash=sha256:6f7d8e932e283991cd931741f84dc7c2e8bc595b4df09de73d16c1d580fc678a
-    # via
-    #   bleak
-    #   winrt-windows-devices-bluetooth
-    #   winrt-windows-devices-bluetooth-advertisement
-    #   winrt-windows-devices-bluetooth-genericattributeprofile
-    #   winrt-windows-devices-enumeration
-    #   winrt-windows-devices-radios
-    #   winrt-windows-foundation-collections
-    #   winrt-windows-storage-streams
-winrt-windows-foundation-collections==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:0401c1b6ed512d1fdad8ba1571698e9000ebee6a69781db9a01994ffcc54a503 \
-    --hash=sha256:38989873bbdace2346d24168ceb66359800b7429128ea2ef1a36da55b255af1e
-    # via
-    #   bleak
-    #   winrt-windows-devices-bluetooth
-    #   winrt-windows-devices-bluetooth-advertisement
-    #   winrt-windows-devices-bluetooth-genericattributeprofile
-    #   winrt-windows-devices-enumeration
-    #   winrt-windows-devices-radios
-    #   winrt-windows-foundation
-    #   winrt-windows-storage-streams
-winrt-windows-storage-streams==4!10.0.28000.2957 ; sys_platform == 'win32' \
-    --hash=sha256:6284341b4b01ab872007def0b8d29bf30d84d46f6922f6e42be1d738d6bf2ff7 \
-    --hash=sha256:e113832320f2e7f8b09cedfb400cb7eaf0ac769ad1f2038ddbe88801497916c4
-    # via
-    #   bleak
-    #   winrt-windows-devices-bluetooth
-    #   winrt-windows-devices-bluetooth-advertisement
-    #   winrt-windows-devices-bluetooth-genericattributeprofile
-    #   winrt-windows-devices-enumeration
 yarl==1.25.1 \
     --hash=sha256:0136d640dfa9b0523853e411430a99f8a91eca85774c6420285a33b755bc6de3 \
     --hash=sha256:03dd38de09bc213e9a8b29761eec33ee1d5318dac0e49d8af36e4d27830e23a7 \
